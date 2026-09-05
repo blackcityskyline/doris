@@ -1,0 +1,22 @@
+# T-Hunter Configuration
+# Place this file at ~/.config/t-hunter/config.toml
+
+# Browser to use (chrome, brave, helium) - auto-detect if empty
+browser = ""
+
+# TorrServer URL
+torrserver_url = "http://127.0.0.1:8090"
+
+# Extension Bridge port (set 0 to disable)
+bridge_port = 14141
+
+# Cookie file path
+cookie_file = "cookies.txt"
+
+# Keybindings (future use)
+# [keybindings]
+# quit = "q"
+# focus_search = "s"
+# cursor_up = "k"
+# cursor_down = "j"
+# select = "enter"
