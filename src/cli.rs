@@ -6,8 +6,8 @@ use std::path::PathBuf;
 pub struct Args {
     pub query: Option<String>,
 
-    #[arg(short, long, default_value = "cookies.txt")]
-    pub cookie_file: PathBuf,
+    #[arg(short, long)]
+    pub cookie_file: Option<PathBuf>,
 
     #[arg(short, long)]
     pub username: Option<String>,
