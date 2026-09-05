@@ -251,11 +251,11 @@ impl RutrackerSearcher {
         let mut result = Vec::new();
         for c in raw_cookies {
             result.push(Cookie {
-                domain: c.domain.clone(),
-                path: c.path.clone(),
-                secure: c.secure,
-                name: c.name.clone(),
-                value: c.value.clone(),
+                domain: c.get("domain").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                path: c.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                secure: c.get("secure").and_then(|v| v.as_bool()).unwrap_or(false),
+                name: c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                value: c.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             });
         }
         Ok(result)
