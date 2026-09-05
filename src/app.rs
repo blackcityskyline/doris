@@ -296,7 +296,7 @@ impl App {
         let (kind, path) = detect::detect_browser(browser_choice)?;
         self.ui.add_log(&format!("Launching {} in {} mode...", kind, self.browser_mode));
 
-        let browser = Browser::launch(&path, self.browser_mode).await?;
+        let browser = Browser::launch(&path, self.browser_mode.clone()).await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 

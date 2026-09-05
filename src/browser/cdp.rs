@@ -1,14 +1,18 @@
 use anyhow::Result;
 use fantoccini::{ClientBuilder, Client};
+use futures_util::{SinkExt, StreamExt};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BrowserMode {
     Gui,
     Headless,
+}
+
+pub struct ExtractedCookies {
+    pub profile_dir: PathBuf,
+    pub cookies: Vec<serde_json::Value>,
 }
 
 impl std::fmt::Display for BrowserMode {
@@ -42,6 +46,8 @@ impl Browser {
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
+        let extracted = extract_cookies_if_running(binary).await;
+
         let port = find_free_port()?;
 
         let mut cmd = std::process::Command::new(&chromedriver_path);
@@ -72,8 +78,12 @@ impl Browser {
             chrome_args.push("--window-size=1920,1080".into());
         }
 
-        if let Some(user_data_dir) = detect_user_data_dir(binary) {
-            chrome_args.push(format!("--user-data-dir={}", user_data_dir.display()));
+        let user_data_dir = extracted.as_ref()
+            .map(|e| e.profile_dir.clone())
+            .or_else(|| detect_user_data_dir(binary));
+
+        if let Some(ref dir) = user_data_dir {
+            chrome_args.push(format!("--user-data-dir={}", dir.display()));
         }
 
         let mut capabilities = serde_json::Map::new();
@@ -91,6 +101,17 @@ impl Browser {
             .capabilities(capabilities)
             .connect(&webdriver_url)
             .await?;
+
+        if let Some(ref ext) = extracted {
+            if !ext.cookies.is_empty() {
+                eprintln!("[browser] navigating to domain before injecting {} cookies", ext.cookies.len());
+                let _ = client.goto("https://rutracker.org/forum/index.php").await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                inject_cookies_cdp(&client, &ext.cookies).await;
+                let _ = client.goto("https://rutracker.org/forum/index.php").await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        }
 
         eprintln!("[browser] {} via patched chromedriver on port {}", mode, port);
 
@@ -138,12 +159,6 @@ impl Browser {
         Ok(values)
     }
 
-    #[allow(dead_code)]
-    pub async fn add_cookie(&self, cookie: fantoccini::cookies::Cookie<'static>) -> Result<()> {
-        self.client.add_cookie(cookie).await?;
-        Ok(())
-    }
-
     pub async fn add_cookies(&self, cookies: &[serde_json::Value]) -> Result<()> {
         for c in cookies {
             let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -165,11 +180,6 @@ impl Browser {
             self.client.add_cookie(cookie).await?;
         }
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn client(&self) -> &Client {
-        &self.client
     }
 }
 
@@ -379,16 +389,182 @@ async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
     )
 }
 
-fn kill_browser_by_name(name: &str) {
-    let output = std::process::Command::new("pkill")
-        .args(["-9", "-f", name])
-        .output();
-    if let Ok(o) = output {
-        if o.status.success() {
-            eprintln!("[browser] killed {} processes", name);
+fn read_devtools_port(profile_dir: &Path) -> Option<(u16, String)> {
+    let port_file = profile_dir.join("DevToolsActivePort");
+    let content = std::fs::read_to_string(&port_file).ok()?;
+    let mut lines = content.lines();
+    let port: u16 = lines.next()?.trim().parse().ok()?;
+    let ws_path = lines.next()?.trim().to_string();
+    Some((port, ws_path))
+}
+
+async fn extract_cookies_if_running(binary: &Path) -> Option<ExtractedCookies> {
+    let home = dirs::home_dir()?;
+    let bin_name = binary.file_name()?.to_str()?;
+    let profile_names = ["helium", "brave", "chromium", "google-chrome"];
+
+    for profile_name in &profile_names {
+        if !bin_name.contains(profile_name) {
+            continue;
+        }
+        let dirs_to_check = [
+            home.join(".config").join(format!("net.imput.{}", profile_name)),
+            home.join(".config").join(*profile_name),
+            home.join(".config").join(format!("{}-browser", profile_name)),
+        ];
+        for config_dir in &dirs_to_check {
+            if !config_dir.join("Default").exists() {
+                continue;
+            }
+            let lock = config_dir.join("SingletonLock");
+            if !lock.symlink_metadata().is_ok() {
+                continue;
+            }
+            let (cdp_port, ws_path) = match read_devtools_port(&config_dir) {
+                Some(v) => v,
+                None => {
+                    eprintln!("[browser] browser running but no DevToolsActivePort, can't extract cookies");
+                    return None;
+                }
+            };
+            eprintln!("[browser] found running browser: {} (cdp port={}, ws={})", config_dir.display(), cdp_port, &ws_path[..ws_path.len().min(40)]);
+
+            let cookies = extract_cookies_via_cdp(cdp_port, &ws_path).await;
+            if cookies.is_empty() {
+                eprintln!("[browser] no cookies extracted, using native profile directly");
+                return None;
+            }
+
+            eprintln!("[browser] extracted {} cookies via CDP", cookies.len());
+
+            kill_browser_by_profile(&config_dir);
             std::thread::sleep(std::time::Duration::from_secs(2));
+            let _ = std::fs::remove_file(&lock);
+
+            return Some(ExtractedCookies {
+                profile_dir: config_dir.clone(),
+                cookies,
+            });
         }
     }
+    None
+}
+
+fn kill_browser_by_profile(profile_dir: &Path) {
+    let profile_str = profile_dir.to_string_lossy();
+    let output = std::process::Command::new("pgrep")
+        .args(["-f", &format!("user-data-dir={}", profile_str)])
+        .output();
+    if let Ok(o) = output {
+        for pid_str in String::from_utf8_lossy(&o.stdout).lines() {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+                eprintln!("[browser] killed browser pid {}", pid);
+            }
+        }
+    }
+}
+
+async fn extract_cookies_via_cdp(cdp_port: u16, _ws_path: &str) -> Vec<serde_json::Value> {
+    let tabs_url = format!("http://127.0.0.1:{}/json", cdp_port);
+    let tabs: serde_json::Value = match reqwest::get(&tabs_url).await {
+        Ok(resp) => match resp.json().await {
+            Ok(v) => v,
+            Err(_) => return vec![],
+        },
+        Err(_) => return vec![],
+    };
+
+    let mut page_ws_url = String::new();
+    if let Some(arr) = tabs.as_array() {
+        for tab in arr {
+            let tab_type = tab["type"].as_str().unwrap_or("");
+            if tab_type == "page" {
+                if let Some(ws) = tab["webSocketDebuggerUrl"].as_str() {
+                    page_ws_url = ws.to_string();
+                    break;
+                }
+            }
+        }
+    }
+    if page_ws_url.is_empty() {
+        eprintln!("[browser] no page tab found in CDP");
+        return vec![];
+    }
+
+    eprintln!("[browser] connecting to page CDP: {}", &page_ws_url[page_ws_url.len()-40..]);
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio_tungstenite::connect_async(&page_ws_url)
+    ).await {
+        Err(_) => {
+            eprintln!("[browser] CDP connect timeout");
+            vec![]
+        }
+        Ok(Err(e)) => {
+            eprintln!("[browser] CDP websocket connect failed: {}", e);
+            vec![]
+        }
+        Ok(Ok((mut ws, _))) => {
+            let enable_msg = serde_json::json!({"id": 0, "method": "Network.enable", "params": {}});
+            let _ = ws.send(tokio_tungstenite::tungstenite::Message::Text(enable_msg.to_string())).await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            while let Ok(Some(_)) = tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await {}
+
+            let msg = serde_json::json!({"id": 1, "method": "Network.getAllCookies", "params": {}});
+            if ws.send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string())).await.is_err() {
+                return vec![];
+            }
+            while let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) = ws.next().await {
+                if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if resp["id"] == serde_json::json!(1) {
+                        return resp["result"]["cookies"]
+                            .as_array()
+                            .map(|arr| arr.iter().cloned().collect())
+                            .unwrap_or_default();
+                    }
+                }
+            }
+            vec![]
+        }
+    }
+}
+
+async fn inject_cookies_cdp(client: &Client, cookies: &[serde_json::Value]) {
+    let mut count = 0;
+    for cookie in cookies {
+        let name = cookie.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let value = cookie.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        let domain = cookie.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+
+        if name.is_empty() || domain.is_empty() {
+            continue;
+        }
+        if !domain.contains("rutracker") {
+            continue;
+        }
+
+        let mut builder = fantoccini::cookies::Cookie::build((name.to_string(), value.to_string()));
+        builder = builder.domain(domain.to_string());
+
+        if let Some(p) = cookie.get("path").and_then(|v| v.as_str()) {
+            builder = builder.path(p.to_string());
+        }
+        if let Some(s) = cookie.get("secure").and_then(|v| v.as_bool()) {
+            builder = builder.secure(s);
+        }
+        if let Some(h) = cookie.get("httpOnly").and_then(|v| v.as_bool()) {
+            builder = builder.http_only(h);
+        }
+
+        match client.add_cookie(builder.build()).await {
+            Ok(()) => count += 1,
+            Err(e) => eprintln!("[browser]   failed to set {}: {}", name, e),
+        }
+    }
+    eprintln!("[browser] injected {} rutracker cookies via fantoccini", count);
 }
 
 fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
@@ -408,21 +584,6 @@ fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
         ];
         for config_dir in &dirs_to_check {
             if config_dir.join("Default").exists() {
-                let lock = config_dir.join("SingletonLock");
-                let has_lock = lock.symlink_metadata().is_ok();
-                eprintln!("[browser] profile dir: {}, lock exists: {}", config_dir.display(), has_lock);
-                if has_lock {
-                    let cache_dir = dirs::cache_dir()
-                        .unwrap_or_else(|| PathBuf::from("/tmp"))
-                        .join("t-hunter")
-                        .join("profile-copy");
-                    if cache_dir.exists() {
-                        let _ = std::fs::remove_dir_all(&cache_dir);
-                    }
-                    copy_essential_profile(config_dir, &cache_dir);
-                    eprintln!("[browser] browser running, using profile copy: {}", cache_dir.display());
-                    return Some(cache_dir);
-                }
                 eprintln!("[browser] using user profile: {}", config_dir.display());
                 return Some(config_dir.clone());
             }
@@ -430,143 +591,6 @@ fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
     }
 
     None
-}
-
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let file_type = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        let name = entry.file_name().to_string_lossy().to_string();
-        if file_type.is_dir() {
-            if name == "SingletonLock" || name == "SingletonSocket" || name == "SingletonCookie"
-                || name == "lockfile" || name == "Lock" || name == "LOCK"
-                || name.starts_with("DevToolsActivePort")
-                || name == "GPUPersistentCache" || name == "BrowserMetrics"
-                || name == "ShaderCache" || name == "Crashpad"
-                || name == "Code Cache" {
-                continue;
-            }
-            if let Err(e) = copy_dir_recursive(&src_path, &dst_path) {
-                eprintln!("[browser] skip dir {}: {}", name, e);
-            }
-        } else {
-            if name == "LOCK" || name == "lockfile" || name == "LOG" || name == "LOG.old"
-                || name.starts_with("DevToolsActivePort") || name == "chrome_debug.log"
-                || name == "BrowserMetrics-spare.pma" {
-                continue;
-            }
-            if let Err(e) = std::fs::copy(&src_path, &dst_path) {
-                eprintln!("[browser] skip file {}: {}", name, e);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn copy_cookies_sqlite(src_default: &Path, dst_default: &Path) {
-    let _ = std::fs::create_dir_all(dst_default);
-    let src_db = src_default.join("Cookies");
-    if !src_db.exists() {
-        return;
-    }
-    let dst_db = dst_default.join("Cookies");
-    let backup_cmd = format!(".backup \"{}\"", dst_db.display());
-    match std::process::Command::new("sqlite3")
-        .args([src_db.to_str().unwrap(), &backup_cmd])
-        .output()
-    {
-        Ok(out) if out.status.success() => eprintln!("[browser] backed up Cookies via sqlite3"),
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            eprintln!("[browser] sqlite3 backup failed: {}", stderr.trim());
-            let _ = std::fs::copy(&src_db, &dst_db);
-        }
-        Err(e) => {
-            eprintln!("[browser] sqlite3 not found: {}, copying raw", e);
-            let _ = std::fs::copy(&src_db, &dst_db);
-        }
-    }
-}
-
-fn copy_essential_profile(src: &Path, dst: &Path) {
-    let _ = std::fs::create_dir_all(dst);
-
-    // Copy top-level files
-    for entry in &["Local State", "First Run", "Preferences", "Secure Preferences"] {
-        let s = src.join(entry);
-        if s.exists() {
-            let _ = std::fs::copy(&s, &dst.join(entry));
-        }
-    }
-
-    let src_default = src.join("Default");
-    let dst_default = dst.join("Default");
-    if src_default.exists() {
-        let _ = std::fs::create_dir_all(&dst_default);
-
-        // Cookies via sqlite3 backup (handles locked DB from running browser)
-        for _attempt in 0..3 {
-            copy_cookies_sqlite(&src_default, &dst_default);
-            if dst_default.join("Cookies").exists() {
-                if let Ok(m) = std::fs::metadata(dst_default.join("Cookies")) {
-                    if m.len() > 0 {
-                        break;
-                    }
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-
-        // Copy essential profile files
-        for entry in &["Preferences", "Secure Preferences", "Web Data", "Login Data",
-                        "History", "Bookmarks", "Favicons", "Top Sites"] {
-            let s = src_default.join(entry);
-            if s.exists() {
-                let _ = std::fs::copy(&s, &dst_default.join(entry));
-            }
-        }
-
-        // Copy Extensions (includes all installed extensions)
-        let src_ext = src_default.join("Extensions");
-        let dst_ext = dst_default.join("Extensions");
-        if src_ext.exists() {
-            if let Err(e) = copy_dir_recursive(&src_ext, &dst_ext) {
-                eprintln!("[browser] extensions copy error: {}", e);
-            } else {
-                eprintln!("[browser] copied extensions");
-            }
-        }
-
-        // Copy Local Storage & Session Storage (contains site login state)
-        for storage_dir in &["Local Storage", "Session Storage", "IndexedDB"] {
-            let src_s = src_default.join(storage_dir);
-            let dst_s = dst_default.join(storage_dir);
-            if src_s.exists() {
-                let _ = copy_dir_recursive(&src_s, &dst_s);
-            }
-        }
-    }
-
-    // Clean up stale state files
-    for name in &["DevToolsActivePort", "chrome_debug.log"] {
-        let _ = std::fs::remove_file(dst.join(name));
-    }
-    let dst_def = dst.join("Default");
-    for name in &["LOCK", "LOCK-journal", "LOG", "LOG.old", "LOG-journal"] {
-        let _ = std::fs::remove_file(dst_def.join(name));
-    }
-    let _ = std::fs::remove_file(dst.join("SingletonLock"));
-    let _ = std::fs::remove_file(dst.join("SingletonSocket"));
-    let _ = std::fs::remove_file(dst.join("SingletonCookie"));
 }
 
 fn detect_browser_major_version(binary: &Path) -> Result<u32> {
@@ -596,11 +620,4 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
     )
 }
 
-#[allow(dead_code)]
-pub type SharedBrowser = Arc<Mutex<Browser>>;
 
-#[allow(dead_code)]
-pub async fn create_browser(binary: &Path, mode: BrowserMode) -> Result<SharedBrowser> {
-    let browser = Browser::launch(binary, mode).await?;
-    Ok(Arc::new(Mutex::new(browser)))
-}

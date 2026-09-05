@@ -134,7 +134,22 @@ impl RutrackerSearcher {
         })()
         "#;
 
-        browser.eval_js(script).await.ok().and_then(|v| v.as_bool()).unwrap_or(false)
+        if browser.eval_js(script).await.ok().and_then(|v| v.as_bool()).unwrap_or(false) {
+            return true;
+        }
+
+        if let Ok(cookies) = browser.get_cookies().await {
+            let has_session = cookies.iter().any(|c| {
+                let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+                name == "bb_session" && domain.contains("rutracker")
+            });
+            if has_session {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
@@ -182,11 +197,17 @@ impl RutrackerSearcher {
             const sizeCell = row.querySelector('td.tor-size');
             const seedsEl = row.querySelector('b.seedmed');
             const dlLink = row.querySelector('a.dl-stub');
+            const dateCells = row.querySelectorAll('td[data-ts_text]');
+            let date = '';
+            for (const dc of dateCells) {
+                const p = dc.querySelector('p');
+                if (p) { date = p.textContent.trim(); break; }
+            }
             return {
                 title,
                 size: dlLink ? dlLink.textContent.trim() : (sizeCell ? sizeCell.getAttribute('data-ts_text') || '' : ''),
                 seeds: seedsEl ? seedsEl.textContent.trim() : '',
-                date: '',
+                date,
                 download_url: dlLink ? dlLink.getAttribute('href') || downloadUrl : downloadUrl,
                 page_url: href,
             };
