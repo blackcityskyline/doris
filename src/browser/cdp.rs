@@ -31,8 +31,6 @@ impl std::str::FromStr for BrowserMode {
     }
 }
 
-const CDC_MARKER: &[u8] = b"cdc_";
-
 pub struct Browser {
     client: Client,
     #[allow(dead_code)]
@@ -42,20 +40,18 @@ pub struct Browser {
 impl Browser {
     pub async fn launch(binary: &Path, mode: BrowserMode) -> Result<Self> {
         let browser_major = detect_browser_major_version(binary)?;
-        let chromedriver_path = get_or_patch_chromedriver(browser_major)?;
+        let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
         let port = find_free_port()?;
 
         let mut cmd = std::process::Command::new(&chromedriver_path);
-        cmd.arg("--port")
-            .arg(port.to_string())
+        cmd.arg(format!("--port={}", port))
             .arg("--silent")
-            .arg("--hide-scrollbars")
             .stderr(Stdio::piped())
             .stdout(Stdio::null());
 
         let child = cmd.spawn()?;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         let mut chrome_args: Vec<String> = vec![
             "--no-sandbox".into(),
@@ -110,7 +106,14 @@ impl Browser {
     }
 
     pub async fn eval_js(&self, script: &str) -> Result<serde_json::Value> {
-        Ok(self.client.execute(script, vec![]).await?)
+        let wrapped = if script.trim_start().starts_with("return ") || script.trim_start().starts_with("throw ") {
+            script.to_string()
+        } else if script.contains("=>") || script.starts_with('(') {
+            script.to_string()
+        } else {
+            format!("return {};", script.trim_end_matches(';'))
+        };
+        Ok(self.client.execute(&wrapped, vec![]).await?)
     }
 
     pub async fn get_cookies(&self) -> Result<Vec<serde_json::Value>> {
@@ -179,7 +182,7 @@ fn find_free_port() -> Result<u16> {
     Ok(port)
 }
 
-fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
+async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("t-hunter");
@@ -191,24 +194,10 @@ fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
         return Ok(patched_path);
     }
 
-    let chromedriver_path = find_or_download_chromedriver(browser_major)?;
+    let chromedriver_path = find_or_download_chromedriver(browser_major).await?;
     let original = std::fs::read(&chromedriver_path)?;
 
-    if !original.windows(4).any(|w| w == CDC_MARKER) {
-        std::fs::copy(&chromedriver_path, &patched_path)?;
-        return Ok(patched_path);
-    }
-
-    let mut patched = original;
-    let mut i = 0;
-    while i + 4 <= patched.len() {
-        if &patched[i..i + 4] == CDC_MARKER {
-            for j in i..i + 4 {
-                patched[j] = b'_';
-            }
-        }
-        i += 1;
-    }
+    let patched = patch_chromedriver_binary(&original);
 
     std::fs::write(&patched_path, &patched)?;
 
@@ -222,7 +211,71 @@ fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
     Ok(patched_path)
 }
 
-fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
+fn patch_chromedriver_binary(content: &[u8]) -> Vec<u8> {
+    let replacement = b"{console.log(\"undetected chromedriver 1337!\")}";
+    let mut result = content.to_vec();
+
+    let mut search_start = 0;
+    while search_start < result.len() {
+        if let Some(pos) = find_window_cdc_block(&result[search_start..]) {
+            let abs_pos = search_start + pos;
+            let block_len = measure_cdc_block(&result[abs_pos..]);
+            if block_len > 0 {
+                let end = (abs_pos + block_len).min(result.len());
+                let actual_len = end - abs_pos;
+                let patch: Vec<u8> = replacement
+                    .iter()
+                    .chain(std::iter::repeat(&b' ').take(actual_len.saturating_sub(replacement.len())))
+                    .take(actual_len)
+                    .copied()
+                    .collect();
+                result[abs_pos..end].copy_from_slice(&patch);
+                search_start = abs_pos + actual_len;
+                eprintln!("[browser] Patched cdc block at offset {}, length {}", abs_pos, actual_len);
+            } else {
+                search_start += pos + 1;
+            }
+        } else {
+            break;
+        }
+    }
+
+    result
+}
+
+fn find_window_cdc_block(data: &[u8]) -> Option<usize> {
+    let marker = b"{window.cdc";
+    let mut i = 0;
+    while i + marker.len() <= data.len() {
+        if &data[i..i + marker.len()] == marker {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn measure_cdc_block(data: &[u8]) -> usize {
+    if !data.starts_with(b"{window.cdc") {
+        return 0;
+    }
+    let mut depth = 0;
+    for (i, &b) in data.iter().enumerate() {
+        match b {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return i + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    0
+}
+
+async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
     if let Ok(path) = which::which("chromedriver") {
         return Ok(path);
     }
@@ -243,7 +296,7 @@ fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
         .join("chromedriver");
     std::fs::create_dir_all(&data_dir)?;
 
-    let downloaded = data_dir.join(format!("chromedriver-linux64/chromedriver"));
+    let downloaded = data_dir.join("chromedriver-linux64/chromedriver");
 
     if downloaded.exists() {
         return Ok(downloaded);
@@ -251,35 +304,39 @@ fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
 
     eprintln!("[browser] chromedriver not found, downloading for Chromium {}...", browser_major);
 
-    let rt = tokio::runtime::Handle::current();
-    let url = rt.block_on(download_chromedriver_url(browser_major))?;
+    let url = download_chromedriver_url(browser_major).await?;
 
-    std::process::Command::new("curl")
+    let status = std::process::Command::new("curl")
         .args(["-sL", "-o", "/tmp/chromedriver.zip", &url])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .map_err(|e| anyhow::anyhow!("curl failed: {}", e))?;
+    if !status.success() {
+        anyhow::bail!("curl failed with status {}", status);
+    }
 
-    std::process::Command::new("unzip")
+    let status = std::process::Command::new("unzip")
         .args(["-o", "/tmp/chromedriver.zip", "-d", data_dir.to_str().unwrap()])
         .stdout(std::process::Stdio::null())
         .status()
         .map_err(|e| anyhow::anyhow!("unzip failed: {}", e))?;
+    if !status.success() {
+        anyhow::bail!("unzip failed with status {}", status);
+    }
 
-    let chromedriver_bin = data_dir.join("chromedriver-linux64/chromedriver");
-    if !chromedriver_bin.exists() {
+    if !downloaded.exists() {
         anyhow::bail!("chromedriver download failed: binary not found after extraction");
     }
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&chromedriver_bin, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&downloaded, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    eprintln!("[browser] chromedriver downloaded -> {}", chromedriver_bin.display());
-    Ok(chromedriver_bin)
+    eprintln!("[browser] chromedriver downloaded -> {}", downloaded.display());
+    Ok(downloaded)
 }
 
 async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
