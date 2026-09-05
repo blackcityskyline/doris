@@ -150,37 +150,38 @@ impl RutrackerSearcher {
         // Check if tor-tbl exists
         let has_table = browser.eval_js("!!document.querySelector('#tor-tbl')").await;
         eprintln!("[debug] has #tor-tbl: {:?}", has_table);
+        let tr_count = browser.eval_js("document.querySelectorAll('#tor-tbl tr').length").await;
+        eprintln!("[debug] #tor-tbl tr count: {:?}", tr_count);
+        let tr_count2 = browser.eval_js("document.querySelectorAll('#tor-tbl tbody tr').length").await;
+        eprintln!("[debug] #tor-tbl tbody tr count: {:?}", tr_count2);
+        let all_tlinks = browser.eval_js("document.querySelectorAll('#tor-tbl tbody tr a.tLink').length").await;
+        eprintln!("[debug] tbody tr a.tLink count: {:?}", all_tlinks);
+        let first_text = browser.eval_js("document.querySelector('#tor-tbl tbody tr a.tLink')?.textContent").await;
+        eprintln!("[debug] first tLink text: {:?}", first_text);
         // Check page title
         let title = browser.eval_js("document.title").await;
         eprintln!("[debug] page title: {:?}", title);
 
         let parse_script = r#"
-        (() => {
-            const results = [];
-            const rows = document.querySelectorAll('#tor-tbl tr');
-            for (const row of rows) {
-                const titleLink = row.querySelector('a.tLink');
-                if (!titleLink) continue;
-                const title = titleLink.textContent.trim();
-                const href = titleLink.getAttribute('href');
-                if (!href) continue;
-                const downloadUrl = href.replace('viewtopic.php', 'dl.php');
-
-                const sizeCell = row.querySelector('td.tor-size');
-                const seedsCell = row.querySelector('td.seedmed');
-                const dateCell = row.querySelector('td.t-date');
-
-                results.push({
-                    title,
-                    size: sizeCell ? sizeCell.textContent.trim() : '',
-                    seeds: seedsCell ? seedsCell.textContent.trim() : '',
-                    date: dateCell ? dateCell.textContent.trim() : '',
-                    download_url: downloadUrl,
-                    page_url: href,
-                });
-            }
-            return JSON.stringify(results);
-        })()
+        return JSON.stringify(Array.from(document.querySelectorAll('#tor-tbl tbody tr')).map(row => {
+            const titleLink = row.querySelector('a.tLink');
+            if (!titleLink) return null;
+            const title = titleLink.textContent.trim();
+            const href = titleLink.getAttribute('href');
+            if (!href) return null;
+            const downloadUrl = href.replace('viewtopic.php', 'dl.php');
+            const sizeCell = row.querySelector('td.tor-size');
+            const seedsEl = row.querySelector('b.seedmed');
+            const dlLink = row.querySelector('a.dl-stub');
+            return {
+                title,
+                size: dlLink ? dlLink.textContent.trim() : (sizeCell ? sizeCell.getAttribute('data-ts_text') || '' : ''),
+                seeds: seedsEl ? seedsEl.textContent.trim() : '',
+                date: '',
+                download_url: dlLink ? dlLink.getAttribute('href') || downloadUrl : downloadUrl,
+                page_url: href,
+            };
+        }).filter(x => x !== null));
         "#;
 
         let result = browser.eval_js(parse_script).await?;
@@ -249,7 +250,7 @@ impl RutrackerSearcher {
             if let Ok(serde_json::Value::String(s)) = &title {
                 if !s.is_empty() && s != "Just a moment..." {
                     eprintln!("[debug] Cloudflare passed after {}s, title: {}", i, s);
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                     return;
                 }
             }

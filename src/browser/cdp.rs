@@ -485,7 +485,18 @@ fn copy_essential_profile(src: &Path, dst: &Path) {
     let dst_default = dst.join("Default");
     if src_default.exists() {
         let _ = std::fs::create_dir_all(&dst_default);
-        copy_cookies_sqlite(&src_default, &dst_default);
+        for _attempt in 0..3 {
+            copy_cookies_sqlite(&src_default, &dst_default);
+            if dst_default.join("Cookies").exists() {
+                let meta = std::fs::metadata(dst_default.join("Cookies"));
+                if let Ok(m) = meta {
+                    if m.len() > 0 {
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
         for entry in &["Preferences", "Secure Preferences", "Web Data", "Login Data",
                         "History", "Bookmarks", "Favicons", "Top Sites"] {
             let s = src_default.join(entry);
@@ -494,6 +505,18 @@ fn copy_essential_profile(src: &Path, dst: &Path) {
             }
         }
     }
+
+    for name in &["DevToolsActivePort", "chrome_debug.log"] {
+        let _ = std::fs::remove_file(dst.join(name));
+    }
+    for name in &["LOCK", "LOCK-journal", "LOG", "LOG.old", "LOG-journal"] {
+        let _ = std::fs::remove_file(dst_default.join(name));
+    }
+    let _ = std::fs::remove_file(dst.join("SingletonLock"));
+    let _ = std::fs::remove_file(dst.join("SingletonSocket"));
+    let _ = std::fs::remove_file(dst.join("SingletonCookie"));
+    let _ = std::fs::remove_file(dst.join("BrowserMetrics-spare.pma"));
+    let _ = std::fs::remove_dir_all(dst.join("BrowserMetrics"));
 }
 
 fn detect_browser_major_version(binary: &Path) -> Result<u32> {
