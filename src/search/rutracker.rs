@@ -33,6 +33,10 @@ impl RutrackerSearcher {
             let loaded_cookies = cookies::load_from_file(cookie_file)?;
             if !loaded_cookies.is_empty() {
                 let browser = self.browser.lock().await;
+
+                // Apply Cloudflare bypass BEFORE navigation
+                crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+
                 browser.navigate("https://rutracker.org/forum/index.php").await?;
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
@@ -72,6 +76,10 @@ impl RutrackerSearcher {
 
     async fn login(&self, username: &str, password: &str) -> Result<bool> {
         let browser = self.browser.lock().await;
+
+        // Apply Cloudflare bypass BEFORE navigation
+        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+
         browser.navigate("https://rutracker.org/forum/index.php").await?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
@@ -129,13 +137,41 @@ impl RutrackerSearcher {
             encoded_query
         );
 
-        browser.navigate(&search_url).await?;
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        // Apply Cloudflare bypass BEFORE navigation
+        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
 
-        let current_url = browser.get_page_source().await.unwrap_or_default();
-        if current_url.contains("login.php") {
+        browser.navigate(&search_url).await?;
+        // Wait for Cloudflare Turnstile to auto-solve (up to 30s)
+        for i in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let title = browser.eval_js("document.title").await;
+            if let Ok(t) = title {
+                if let Some(s) = t.as_str() {
+                    if s != "Just a moment..." {
+                        eprintln!("[debug] Cloudflare passed after {}s, title: {}", i, s);
+                        break;
+                    }
+                }
+            }
+            eprintln!("[debug] waiting for Cloudflare... ({}/30)", i + 1);
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        let page_source = browser.get_page_source().await.unwrap_or_default();
+        eprintln!("[debug] page source length: {}", page_source.len());
+        if page_source.contains("login.php") {
+            eprintln!("[debug] redirect to login detected");
             return Ok(Vec::new());
         }
+        // Save page source for debugging
+        let _ = std::fs::write("/tmp/t-hunter-debug.html", &page_source);
+        eprintln!("[debug] saved page source to /tmp/t-hunter-debug.html");
+        // Check if tor-tbl exists
+        let has_table = browser.eval_js("!!document.querySelector('#tor-tbl')").await;
+        eprintln!("[debug] has #tor-tbl: {:?}", has_table);
+        // Check page title
+        let title = browser.eval_js("document.title").await;
+        eprintln!("[debug] page title: {:?}", title);
 
         let parse_script = r#"
         (() => {
@@ -168,6 +204,10 @@ impl RutrackerSearcher {
 
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
+        eprintln!("[debug] parsed json length: {}", json_str.len());
+        if json_str.len() < 200 {
+            eprintln!("[debug] parsed: {}", json_str);
+        }
         let items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
         Ok(items)
     }

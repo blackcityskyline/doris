@@ -5,6 +5,8 @@ use std::path::Path;
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     pub browser: Option<String>,
+    #[serde(default = "default_browser_mode")]
+    pub browser_mode: String,
     #[serde(default = "default_torrserver_url")]
     pub torrserver_url: String,
     #[serde(default = "default_bridge_port")]
@@ -25,6 +27,10 @@ pub struct Keybindings {
 
 fn default_torrserver_url() -> String {
     "http://127.0.0.1:8090".to_string()
+}
+
+fn default_browser_mode() -> String {
+    "gui".to_string()
 }
 
 fn default_bridge_port() -> u16 {

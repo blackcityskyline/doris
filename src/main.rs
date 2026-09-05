@@ -32,9 +32,10 @@ async fn run_cli(args: cli::Args, config: config::Config) -> Result<()> {
 
     let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
     let (kind, path) = browser::detect::detect_browser(browser_choice)?;
-    println!("Using browser: {} ({})", kind, path.display());
+    let mode: browser::cdp::BrowserMode = args.browser_mode.parse()?;
+    println!("Using browser: {} [{}] ({})", kind, mode, path.display());
 
-    let browser = browser::cdp::Browser::launch(&path, true).await?;
+    let browser = browser::cdp::Browser::launch(&path, mode).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
     let mut searcher = search::rutracker::RutrackerSearcher::new(browser);
