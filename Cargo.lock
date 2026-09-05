@@ -279,7 +279,7 @@ dependencies = [
  "log",
  "pin-project-lite",
  "tokio",
- "tungstenite 0.23.0",
+ "tungstenite",
 ]
 
 [[package]]
@@ -2790,14 +2790,12 @@ dependencies = [
  "encoding_rs",
  "fantoccini",
  "futures-lite",
- "futures-util",
  "ratatui",
  "reqwest",
  "scraper",
  "serde",
  "serde_json",
  "tokio",
- "tokio-tungstenite",
  "toml",
  "tracing",
  "tracing-subscriber",
@@ -2954,20 +2952,6 @@ checksum = "b0c85f2c3ef0b1cd58b36682f4b17aaa995f0e5db534d85692b4903abce21f67"
 dependencies = [
  "rustls",
  "tokio",
-]
-
-[[package]]
-name = "tokio-tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
-dependencies = [
- "futures-util",
- "log",
- "native-tls",
- "tokio",
- "tokio-native-tls",
- "tungstenite 0.24.0",
 ]
 
 [[package]]
@@ -3147,25 +3131,6 @@ dependencies = [
  "http 1.5.0",
  "httparse",
  "log",
- "rand",
- "sha1",
- "thiserror",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.5.0",
- "httparse",
- "log",
- "native-tls",
  "rand",
  "sha1",
  "thiserror",

@@ -134,22 +134,7 @@ impl RutrackerSearcher {
         })()
         "#;
 
-        if browser.eval_js(script).await.ok().and_then(|v| v.as_bool()).unwrap_or(false) {
-            return true;
-        }
-
-        if let Ok(cookies) = browser.get_cookies().await {
-            let has_session = cookies.iter().any(|c| {
-                let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-                name == "bb_session" && domain.contains("rutracker")
-            });
-            if has_session {
-                return true;
-            }
-        }
-
-        false
+        browser.eval_js(script).await.ok().and_then(|v| v.as_bool()).unwrap_or(false)
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use fantoccini::{ClientBuilder, Client};
-use futures_util::{SinkExt, StreamExt};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -8,11 +7,6 @@ use std::process::Stdio;
 pub enum BrowserMode {
     Gui,
     Headless,
-}
-
-pub struct ExtractedCookies {
-    pub profile_dir: PathBuf,
-    pub cookies: Vec<serde_json::Value>,
 }
 
 impl std::fmt::Display for BrowserMode {
@@ -37,7 +31,6 @@ impl std::str::FromStr for BrowserMode {
 
 pub struct Browser {
     client: Client,
-    #[allow(dead_code)]
     child: Option<std::process::Child>,
 }
 
@@ -46,7 +39,10 @@ impl Browser {
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
-        let extracted = extract_cookies_if_running(binary).await;
+        let profile_dir = detect_user_data_dir(binary);
+        if let Some(ref dir) = profile_dir {
+            graceful_shutdown_if_running(dir);
+        }
 
         let port = find_free_port()?;
 
@@ -78,11 +74,7 @@ impl Browser {
             chrome_args.push("--window-size=1920,1080".into());
         }
 
-        let user_data_dir = extracted.as_ref()
-            .map(|e| e.profile_dir.clone())
-            .or_else(|| detect_user_data_dir(binary));
-
-        if let Some(ref dir) = user_data_dir {
+        if let Some(ref dir) = profile_dir {
             chrome_args.push(format!("--user-data-dir={}", dir.display()));
         }
 
@@ -101,17 +93,6 @@ impl Browser {
             .capabilities(capabilities)
             .connect(&webdriver_url)
             .await?;
-
-        if let Some(ref ext) = extracted {
-            if !ext.cookies.is_empty() {
-                eprintln!("[browser] navigating to domain before injecting {} cookies", ext.cookies.len());
-                let _ = client.goto("https://rutracker.org/forum/index.php").await;
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                inject_cookies_cdp(&client, &ext.cookies).await;
-                let _ = client.goto("https://rutracker.org/forum/index.php").await;
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        }
 
         eprintln!("[browser] {} via patched chromedriver on port {}", mode, port);
 
@@ -196,6 +177,89 @@ fn find_free_port() -> Result<u16> {
     let port = listener.local_addr()?.port();
     drop(listener);
     Ok(port)
+}
+
+fn graceful_shutdown_if_running(profile_dir: &Path) {
+    let lock = profile_dir.join("SingletonLock");
+    if !lock.symlink_metadata().is_ok() {
+        return;
+    }
+
+    eprintln!("[browser] browser running with profile, shutting down gracefully...");
+
+    let pids = find_pids_by_profile(profile_dir);
+    if pids.is_empty() {
+        let _ = std::fs::remove_file(&lock);
+        return;
+    }
+
+    for pid in &pids {
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .output();
+    }
+    eprintln!("[browser] sent SIGTERM to {} processes", pids.len());
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if !lock.symlink_metadata().is_ok() {
+            eprintln!("[browser] browser exited cleanly");
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            eprintln!("[browser] timeout, sending SIGKILL");
+            for pid in &pids {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let _ = std::fs::remove_file(&lock);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
+fn find_pids_by_profile(profile_dir: &Path) -> Vec<u32> {
+    let profile_str = profile_dir.to_string_lossy();
+    let output = match std::process::Command::new("pgrep")
+        .args(["-f", &format!("user-data-dir={}", profile_str)])
+        .output() {
+            Ok(o) => o,
+            Err(_) => return vec![],
+        };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect()
+}
+
+fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
+    let bin_name = binary.file_name()?.to_str()?;
+    let home = dirs::home_dir()?;
+
+    let profile_names = ["helium", "brave", "chromium", "google-chrome", "google-chrome-stable"];
+
+    for profile_name in &profile_names {
+        if !bin_name.contains(profile_name) {
+            continue;
+        }
+        let dirs_to_check = [
+            home.join(".config").join(format!("net.imput.{}", profile_name)),
+            home.join(".config").join(*profile_name),
+            home.join(".config").join(format!("{}-browser", profile_name)),
+        ];
+        for config_dir in &dirs_to_check {
+            if config_dir.join("Default").exists() {
+                eprintln!("[browser] using user profile: {}", config_dir.display());
+                return Some(config_dir.clone());
+            }
+        }
+    }
+
+    None
 }
 
 async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
@@ -389,210 +453,6 @@ async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
     )
 }
 
-fn read_devtools_port(profile_dir: &Path) -> Option<(u16, String)> {
-    let port_file = profile_dir.join("DevToolsActivePort");
-    let content = std::fs::read_to_string(&port_file).ok()?;
-    let mut lines = content.lines();
-    let port: u16 = lines.next()?.trim().parse().ok()?;
-    let ws_path = lines.next()?.trim().to_string();
-    Some((port, ws_path))
-}
-
-async fn extract_cookies_if_running(binary: &Path) -> Option<ExtractedCookies> {
-    let home = dirs::home_dir()?;
-    let bin_name = binary.file_name()?.to_str()?;
-    let profile_names = ["helium", "brave", "chromium", "google-chrome"];
-
-    for profile_name in &profile_names {
-        if !bin_name.contains(profile_name) {
-            continue;
-        }
-        let dirs_to_check = [
-            home.join(".config").join(format!("net.imput.{}", profile_name)),
-            home.join(".config").join(*profile_name),
-            home.join(".config").join(format!("{}-browser", profile_name)),
-        ];
-        for config_dir in &dirs_to_check {
-            if !config_dir.join("Default").exists() {
-                continue;
-            }
-            let lock = config_dir.join("SingletonLock");
-            if !lock.symlink_metadata().is_ok() {
-                continue;
-            }
-            let (cdp_port, ws_path) = match read_devtools_port(&config_dir) {
-                Some(v) => v,
-                None => {
-                    eprintln!("[browser] browser running but no DevToolsActivePort, can't extract cookies");
-                    return None;
-                }
-            };
-            eprintln!("[browser] found running browser: {} (cdp port={}, ws={})", config_dir.display(), cdp_port, &ws_path[..ws_path.len().min(40)]);
-
-            let cookies = extract_cookies_via_cdp(cdp_port, &ws_path).await;
-            if cookies.is_empty() {
-                eprintln!("[browser] no cookies extracted, using native profile directly");
-                return None;
-            }
-
-            eprintln!("[browser] extracted {} cookies via CDP", cookies.len());
-
-            kill_browser_by_profile(&config_dir);
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            let _ = std::fs::remove_file(&lock);
-
-            return Some(ExtractedCookies {
-                profile_dir: config_dir.clone(),
-                cookies,
-            });
-        }
-    }
-    None
-}
-
-fn kill_browser_by_profile(profile_dir: &Path) {
-    let profile_str = profile_dir.to_string_lossy();
-    let output = std::process::Command::new("pgrep")
-        .args(["-f", &format!("user-data-dir={}", profile_str)])
-        .output();
-    if let Ok(o) = output {
-        for pid_str in String::from_utf8_lossy(&o.stdout).lines() {
-            if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
-                eprintln!("[browser] killed browser pid {}", pid);
-            }
-        }
-    }
-}
-
-async fn extract_cookies_via_cdp(cdp_port: u16, _ws_path: &str) -> Vec<serde_json::Value> {
-    let tabs_url = format!("http://127.0.0.1:{}/json", cdp_port);
-    let tabs: serde_json::Value = match reqwest::get(&tabs_url).await {
-        Ok(resp) => match resp.json().await {
-            Ok(v) => v,
-            Err(_) => return vec![],
-        },
-        Err(_) => return vec![],
-    };
-
-    let mut page_ws_url = String::new();
-    if let Some(arr) = tabs.as_array() {
-        for tab in arr {
-            let tab_type = tab["type"].as_str().unwrap_or("");
-            if tab_type == "page" {
-                if let Some(ws) = tab["webSocketDebuggerUrl"].as_str() {
-                    page_ws_url = ws.to_string();
-                    break;
-                }
-            }
-        }
-    }
-    if page_ws_url.is_empty() {
-        eprintln!("[browser] no page tab found in CDP");
-        return vec![];
-    }
-
-    eprintln!("[browser] connecting to page CDP: {}", &page_ws_url[page_ws_url.len()-40..]);
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio_tungstenite::connect_async(&page_ws_url)
-    ).await {
-        Err(_) => {
-            eprintln!("[browser] CDP connect timeout");
-            vec![]
-        }
-        Ok(Err(e)) => {
-            eprintln!("[browser] CDP websocket connect failed: {}", e);
-            vec![]
-        }
-        Ok(Ok((mut ws, _))) => {
-            let enable_msg = serde_json::json!({"id": 0, "method": "Network.enable", "params": {}});
-            let _ = ws.send(tokio_tungstenite::tungstenite::Message::Text(enable_msg.to_string())).await;
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            while let Ok(Some(_)) = tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await {}
-
-            let msg = serde_json::json!({"id": 1, "method": "Network.getAllCookies", "params": {}});
-            if ws.send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string())).await.is_err() {
-                return vec![];
-            }
-            while let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) = ws.next().await {
-                if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if resp["id"] == serde_json::json!(1) {
-                        return resp["result"]["cookies"]
-                            .as_array()
-                            .map(|arr| arr.iter().cloned().collect())
-                            .unwrap_or_default();
-                    }
-                }
-            }
-            vec![]
-        }
-    }
-}
-
-async fn inject_cookies_cdp(client: &Client, cookies: &[serde_json::Value]) {
-    let mut count = 0;
-    for cookie in cookies {
-        let name = cookie.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let value = cookie.get("value").and_then(|v| v.as_str()).unwrap_or("");
-        let domain = cookie.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-
-        if name.is_empty() || domain.is_empty() {
-            continue;
-        }
-        if !domain.contains("rutracker") {
-            continue;
-        }
-
-        let mut builder = fantoccini::cookies::Cookie::build((name.to_string(), value.to_string()));
-        builder = builder.domain(domain.to_string());
-
-        if let Some(p) = cookie.get("path").and_then(|v| v.as_str()) {
-            builder = builder.path(p.to_string());
-        }
-        if let Some(s) = cookie.get("secure").and_then(|v| v.as_bool()) {
-            builder = builder.secure(s);
-        }
-        if let Some(h) = cookie.get("httpOnly").and_then(|v| v.as_bool()) {
-            builder = builder.http_only(h);
-        }
-
-        match client.add_cookie(builder.build()).await {
-            Ok(()) => count += 1,
-            Err(e) => eprintln!("[browser]   failed to set {}: {}", name, e),
-        }
-    }
-    eprintln!("[browser] injected {} rutracker cookies via fantoccini", count);
-}
-
-fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
-    let bin_name = binary.file_name()?.to_str()?;
-    let home = dirs::home_dir()?;
-
-    let profile_names = ["helium", "brave", "chromium", "google-chrome", "google-chrome-stable"];
-
-    for profile_name in &profile_names {
-        if !bin_name.contains(profile_name) {
-            continue;
-        }
-        let dirs_to_check = [
-            home.join(".config").join(format!("net.imput.{}", profile_name)),
-            home.join(".config").join(*profile_name),
-            home.join(".config").join(format!("{}-browser", profile_name)),
-        ];
-        for config_dir in &dirs_to_check {
-            if config_dir.join("Default").exists() {
-                eprintln!("[browser] using user profile: {}", config_dir.display());
-                return Some(config_dir.clone());
-            }
-        }
-    }
-
-    None
-}
-
 fn detect_browser_major_version(binary: &Path) -> Result<u32> {
     let output = std::process::Command::new(binary)
         .arg("--version")
@@ -619,5 +479,3 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
         version_str
     )
 }
-
-
