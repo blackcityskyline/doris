@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
-use crate::browser::cdp::Browser;
+use crate::browser::cdp::{Browser, BrowserMode};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
 use crate::search::rutracker::RutrackerSearcher;
@@ -23,6 +23,7 @@ pub struct App {
     searcher: Option<RutrackerSearcher>,
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
+    browser_mode: BrowserMode,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
@@ -37,9 +38,16 @@ impl App {
             args.torrserver.clone()
         };
 
+        let browser_mode_str = if args.browser_mode != "gui" {
+            args.browser_mode.clone()
+        } else {
+            config.browser_mode.clone()
+        };
+        let browser_mode: BrowserMode = browser_mode_str.parse()?;
+
         let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
         let browser_info = detect::detect_browser(browser_choice)
-            .map(|(kind, path)| format!("{} ({})", kind, path.display()))
+            .map(|(kind, path)| format!("{} [{}] ({})", kind, browser_mode, path.display()))
             .unwrap_or_else(|e| format!("Error: {}", e));
 
         let (search_tx, search_rx) = mpsc::unbounded_channel();
@@ -62,6 +70,7 @@ impl App {
             searcher: None,
             torrserver: TorrServer::new(&torrserver_url),
             browser: None,
+            browser_mode,
             search_tx,
             search_rx,
             bridge,
@@ -285,9 +294,9 @@ impl App {
 
         let browser_choice = self.args.browser.as_deref().or(self.config.browser.as_deref());
         let (kind, path) = detect::detect_browser(browser_choice)?;
-        self.ui.add_log(&format!("Launching {}...", kind));
+        self.ui.add_log(&format!("Launching {} in {} mode...", kind, self.browser_mode));
 
-        let browser = Browser::launch(&path, false).await?;
+        let browser = Browser::launch(&path, self.browser_mode).await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 
