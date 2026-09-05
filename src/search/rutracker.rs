@@ -33,12 +33,9 @@ impl RutrackerSearcher {
             let loaded_cookies = cookies::load_from_file(cookie_file)?;
             if !loaded_cookies.is_empty() {
                 let browser = self.browser.lock().await;
-
-                // Apply Cloudflare bypass BEFORE navigation
-                crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-
                 browser.navigate("https://rutracker.org/forum/index.php").await?;
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+                Self::wait_cloudflare(&browser).await;
 
                 for cookie in &loaded_cookies {
                     let cookie_json = serde_json::json!({
@@ -52,7 +49,7 @@ impl RutrackerSearcher {
                 }
 
                 browser.navigate("https://rutracker.org/forum/index.php").await?;
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                Self::wait_cloudflare(&browser).await;
 
                 if self.verify_login(&browser).await {
                     self.logged_in = true;
@@ -76,12 +73,9 @@ impl RutrackerSearcher {
 
     async fn login(&self, username: &str, password: &str) -> Result<bool> {
         let browser = self.browser.lock().await;
-
-        // Apply Cloudflare bypass BEFORE navigation
-        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-
         browser.navigate("https://rutracker.org/forum/index.php").await?;
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        Self::wait_cloudflare(&browser).await;
 
         let login_script = format!(
             r#"
@@ -137,25 +131,11 @@ impl RutrackerSearcher {
             encoded_query
         );
 
-        // Apply Cloudflare bypass BEFORE navigation
-        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-
         browser.navigate(&search_url).await?;
-        // Wait for Cloudflare Turnstile to auto-solve (up to 30s)
-        for i in 0..30 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let title = browser.eval_js("document.title").await;
-            if let Ok(t) = title {
-                if let Some(s) = t.as_str() {
-                    if s != "Just a moment..." {
-                        eprintln!("[debug] Cloudflare passed after {}s, title: {}", i, s);
-                        break;
-                    }
-                }
-            }
-            eprintln!("[debug] waiting for Cloudflare... ({}/30)", i + 1);
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Inject anti-detection patches into the new page
+        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        // Wait for Cloudflare to pass and page to load (up to 30s)
+        Self::wait_cloudflare(&browser).await;
 
         let page_source = browser.get_page_source().await.unwrap_or_default();
         eprintln!("[debug] page source length: {}", page_source.len());
@@ -259,5 +239,20 @@ impl RutrackerSearcher {
             });
         }
         Ok(result)
+    }
+
+    async fn wait_cloudflare(browser: &Browser) {
+        for i in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let title = browser.eval_js("document.title").await;
+            if let Ok(serde_json::Value::String(s)) = &title {
+                if !s.is_empty() && s != "Just a moment..." {
+                    eprintln!("[debug] Cloudflare passed after {}s, title: {}", i, s);
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    return;
+                }
+            }
+            eprintln!("[debug] waiting for Cloudflare... ({}/30)", i + 1);
+        }
     }
 }
