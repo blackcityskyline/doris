@@ -43,7 +43,7 @@ async fn run_cli(args: cli::Args, config: config::Config) -> Result<()> {
     println!("Searching for '{}'...", query);
     println!("{}", "-".repeat(60));
 
-    let cookie_file = &args.cookie_file;
+    let cookie_file = args.cookie_file.as_deref();
     let username = args.username.as_deref();
     let password = args.password.as_deref();
 

@@ -214,7 +214,7 @@ impl App {
             let username = self.args.username.clone();
             let password = self.args.password.clone();
 
-            match s.ensure_logged_in(&cookie_file, username.as_deref(), password.as_deref()).await {
+            match s.ensure_logged_in(cookie_file.as_deref(), username.as_deref(), password.as_deref()).await {
                 Ok(true) => self.ui.add_log("Logged in successfully"),
                 Ok(false) => self.ui.add_log("Login failed - continuing anyway"),
                 Err(e) => self.ui.add_log(&format!("Login error: {}", e)),

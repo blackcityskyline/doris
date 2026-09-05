@@ -379,6 +379,18 @@ async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
     )
 }
 
+fn kill_browser_by_name(name: &str) {
+    let output = std::process::Command::new("pkill")
+        .args(["-9", "-f", name])
+        .output();
+    if let Ok(o) = output {
+        if o.status.success() {
+            eprintln!("[browser] killed {} processes", name);
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    }
+}
+
 fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
     let bin_name = binary.file_name()?.to_str()?;
     let home = dirs::home_dir()?;
@@ -423,24 +435,38 @@ fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
+        let name = entry.file_name().to_string_lossy().to_string();
         if file_type.is_dir() {
-            let name = entry.file_name().to_string_lossy().to_string();
             if name == "SingletonLock" || name == "SingletonSocket" || name == "SingletonCookie"
                 || name == "lockfile" || name == "Lock" || name == "LOCK"
-                || name.starts_with("DevToolsActivePort") {
+                || name.starts_with("DevToolsActivePort")
+                || name == "GPUPersistentCache" || name == "BrowserMetrics"
+                || name == "ShaderCache" || name == "Crashpad"
+                || name == "Code Cache" {
                 continue;
             }
-            copy_dir_recursive(&src_path, &dst_path)?;
+            if let Err(e) = copy_dir_recursive(&src_path, &dst_path) {
+                eprintln!("[browser] skip dir {}: {}", name, e);
+            }
         } else {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name == "LOCK" || name == "lockfile" || name == "LOG" || name == "LOG.old" {
+            if name == "LOCK" || name == "lockfile" || name == "LOG" || name == "LOG.old"
+                || name.starts_with("DevToolsActivePort") || name == "chrome_debug.log"
+                || name == "BrowserMetrics-spare.pma" {
                 continue;
             }
-            std::fs::copy(&src_path, &dst_path)?;
+            if let Err(e) = std::fs::copy(&src_path, &dst_path) {
+                eprintln!("[browser] skip file {}: {}", name, e);
+            }
         }
     }
     Ok(())
@@ -474,6 +500,7 @@ fn copy_cookies_sqlite(src_default: &Path, dst_default: &Path) {
 fn copy_essential_profile(src: &Path, dst: &Path) {
     let _ = std::fs::create_dir_all(dst);
 
+    // Copy top-level files
     for entry in &["Local State", "First Run", "Preferences", "Secure Preferences"] {
         let s = src.join(entry);
         if s.exists() {
@@ -485,11 +512,12 @@ fn copy_essential_profile(src: &Path, dst: &Path) {
     let dst_default = dst.join("Default");
     if src_default.exists() {
         let _ = std::fs::create_dir_all(&dst_default);
+
+        // Cookies via sqlite3 backup (handles locked DB from running browser)
         for _attempt in 0..3 {
             copy_cookies_sqlite(&src_default, &dst_default);
             if dst_default.join("Cookies").exists() {
-                let meta = std::fs::metadata(dst_default.join("Cookies"));
-                if let Ok(m) = meta {
+                if let Ok(m) = std::fs::metadata(dst_default.join("Cookies")) {
                     if m.len() > 0 {
                         break;
                     }
@@ -497,6 +525,8 @@ fn copy_essential_profile(src: &Path, dst: &Path) {
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+
+        // Copy essential profile files
         for entry in &["Preferences", "Secure Preferences", "Web Data", "Login Data",
                         "History", "Bookmarks", "Favicons", "Top Sites"] {
             let s = src_default.join(entry);
@@ -504,19 +534,39 @@ fn copy_essential_profile(src: &Path, dst: &Path) {
                 let _ = std::fs::copy(&s, &dst_default.join(entry));
             }
         }
+
+        // Copy Extensions (includes all installed extensions)
+        let src_ext = src_default.join("Extensions");
+        let dst_ext = dst_default.join("Extensions");
+        if src_ext.exists() {
+            if let Err(e) = copy_dir_recursive(&src_ext, &dst_ext) {
+                eprintln!("[browser] extensions copy error: {}", e);
+            } else {
+                eprintln!("[browser] copied extensions");
+            }
+        }
+
+        // Copy Local Storage & Session Storage (contains site login state)
+        for storage_dir in &["Local Storage", "Session Storage", "IndexedDB"] {
+            let src_s = src_default.join(storage_dir);
+            let dst_s = dst_default.join(storage_dir);
+            if src_s.exists() {
+                let _ = copy_dir_recursive(&src_s, &dst_s);
+            }
+        }
     }
 
+    // Clean up stale state files
     for name in &["DevToolsActivePort", "chrome_debug.log"] {
         let _ = std::fs::remove_file(dst.join(name));
     }
+    let dst_def = dst.join("Default");
     for name in &["LOCK", "LOCK-journal", "LOG", "LOG.old", "LOG-journal"] {
-        let _ = std::fs::remove_file(dst_default.join(name));
+        let _ = std::fs::remove_file(dst_def.join(name));
     }
     let _ = std::fs::remove_file(dst.join("SingletonLock"));
     let _ = std::fs::remove_file(dst.join("SingletonSocket"));
     let _ = std::fs::remove_file(dst.join("SingletonCookie"));
-    let _ = std::fs::remove_file(dst.join("BrowserMetrics-spare.pma"));
-    let _ = std::fs::remove_dir_all(dst.join("BrowserMetrics"));
 }
 
 fn detect_browser_major_version(binary: &Path) -> Result<u32> {

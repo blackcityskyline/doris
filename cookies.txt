@@ -1,8 +1,0 @@
-# Netscape HTTP Cookie File
-# https://curl.haxx.se/rfc/cookie_spec.html
-# This is a generated file! Do not edit.
-
-.rutracker.org	TRUE	/	TRUE	1819827993	cf_clearance	hQqu9vGUgh1VlQzPxu0Ccawq1dKRBb9eh2QjlX4.8TQ-1788291993-1.2.1.1-trod5JdDSzwHAUCLoILQLfEa5q.5kD3jbS8ciXkECUf6O2d8cN5QiZmfK87MP6CakHiY1dJ1z3Co2.H0mV961i6XPyQUiLdMQyEs8dF2ZDE_fijlpA.sucbgW3KOIDADPFTh3_PLFCInLpLe90GhLU.IWSGtjUlLWsgRTQsnN75d.hpAo_v_uOytbrVG9vt1DFqW0Y5UDMMNVpbucu8PZbDQLNVOqxPj6lrZQXtQzHu2y8.G7f9VfXoM2kiL9jyZSmENGz4P6VcDdOLoSNeQ843bazen3stfqVj3S2Hoh7yoPUMpNy.uZMvfS9AdCMvlhE1T8lde9O1mnctQRoaqXjl2_yRIIDTlXMUd1Khs6uq4TXoCw40udnF5WHgpd1vC8IhSbqwmsf43B1Cyde8.AKHp0QDOqG038he5M2o8Mmln_F2g_35Lq4bcv02yksbvsNvjfwgZ5_K8JS8LK1XFs9pNKBt.iQPTmZQh8ZXjrZePgNECnZGjCdDlUaaVlkEY30_SIDVxBxn.IOxS1WAW8A
-.rutracker.org	TRUE	/forum/	FALSE	1822851993	bb_ssl	1
-.rutracker.org	TRUE	/forum/	FALSE	1822851986	bb_guid	2WGaMto31kJr
-.rutracker.org	TRUE	/forum/	TRUE	1822851993	bb_session	0-54338979-N1LZOzpiTL0nJblpvnIr
