@@ -27,7 +27,7 @@ pub struct Args {
     #[arg(long)]
     pub cli: bool,
 
-    #[arg(short, long)]
+    #[arg(long)]
     pub config: Option<PathBuf>,
 }
 
