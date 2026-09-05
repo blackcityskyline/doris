@@ -41,7 +41,8 @@ pub struct Browser {
 
 impl Browser {
     pub async fn launch(binary: &Path, mode: BrowserMode) -> Result<Self> {
-        let chromedriver_path = get_or_patch_chromedriver()?;
+        let browser_major = detect_browser_major_version(binary)?;
+        let chromedriver_path = get_or_patch_chromedriver(browser_major)?;
 
         let port = find_free_port()?;
 
@@ -178,7 +179,7 @@ fn find_free_port() -> Result<u16> {
     Ok(port)
 }
 
-fn get_or_patch_chromedriver() -> Result<PathBuf> {
+fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("t-hunter");
@@ -190,7 +191,7 @@ fn get_or_patch_chromedriver() -> Result<PathBuf> {
         return Ok(patched_path);
     }
 
-    let chromedriver_path = find_chromedriver()?;
+    let chromedriver_path = find_or_download_chromedriver(browser_major)?;
     let original = std::fs::read(&chromedriver_path)?;
 
     if !original.windows(4).any(|w| w == CDC_MARKER) {
@@ -221,7 +222,7 @@ fn get_or_patch_chromedriver() -> Result<PathBuf> {
     Ok(patched_path)
 }
 
-fn find_chromedriver() -> Result<PathBuf> {
+fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
     if let Ok(path) = which::which("chromedriver") {
         return Ok(path);
     }
@@ -236,7 +237,110 @@ fn find_chromedriver() -> Result<PathBuf> {
         }
     }
 
-    anyhow::bail!("chromedriver not found. Install: pacman -S chromedriver")
+    let data_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("t-hunter")
+        .join("chromedriver");
+    std::fs::create_dir_all(&data_dir)?;
+
+    let downloaded = data_dir.join(format!("chromedriver-linux64/chromedriver"));
+
+    if downloaded.exists() {
+        return Ok(downloaded);
+    }
+
+    eprintln!("[browser] chromedriver not found, downloading for Chromium {}...", browser_major);
+
+    let rt = tokio::runtime::Handle::current();
+    let url = rt.block_on(download_chromedriver_url(browser_major))?;
+
+    std::process::Command::new("curl")
+        .args(["-sL", "-o", "/tmp/chromedriver.zip", &url])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| anyhow::anyhow!("curl failed: {}", e))?;
+
+    std::process::Command::new("unzip")
+        .args(["-o", "/tmp/chromedriver.zip", "-d", data_dir.to_str().unwrap()])
+        .stdout(std::process::Stdio::null())
+        .status()
+        .map_err(|e| anyhow::anyhow!("unzip failed: {}", e))?;
+
+    let chromedriver_bin = data_dir.join("chromedriver-linux64/chromedriver");
+    if !chromedriver_bin.exists() {
+        anyhow::bail!("chromedriver download failed: binary not found after extraction");
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&chromedriver_bin, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    eprintln!("[browser] chromedriver downloaded -> {}", chromedriver_bin.display());
+    Ok(chromedriver_bin)
+}
+
+async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
+    let client = reqwest::Client::new();
+    let versions_url = "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json";
+    let resp: serde_json::Value = client.get(versions_url).send().await?.json().await?;
+
+    let versions = resp["versions"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("Invalid Chrome for Testing response"))?;
+
+    for v in versions.iter().rev() {
+        let version_str = v["version"].as_str().unwrap_or("");
+        let major = version_str.split('.').next().and_then(|s| s.parse::<u32>().ok());
+        if major != Some(browser_major) {
+            continue;
+        }
+
+        if let Some(downloads) = v["downloads"]["chromedriver"].as_array() {
+            for dl in downloads {
+                if dl["platform"].as_str() == Some("linux64") {
+                    let url = dl["url"].as_str().unwrap_or("");
+                    if !url.is_empty() {
+                        return Ok(url.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "No chromedriver found for Chromium {}. Download manually from https://googlechromelabs.github.io/chrome-for-testing/",
+        browser_major
+    )
+}
+
+fn detect_browser_major_version(binary: &Path) -> Result<u32> {
+    let output = std::process::Command::new(binary)
+        .arg("--version")
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to run {}: {}", binary.display(), e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let version_str = if !stdout.trim().is_empty() { stdout } else { stderr };
+
+    let version_str = version_str.trim();
+
+    for part in version_str.split_whitespace().rev() {
+        if let Some(major) = part.split('.').next().and_then(|s| s.parse::<u32>().ok()) {
+            if major > 10 {
+                return Ok(major);
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "Could not detect browser version from '{}' ({})",
+        binary.display(),
+        version_str
+    )
 }
 
 pub type SharedBrowser = Arc<Mutex<Browser>>;
