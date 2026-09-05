@@ -19,9 +19,9 @@ impl std::fmt::Display for BrowserKind {
 }
 
 const BROWSER_BINARIES: &[(&str, &[&str])] = &[
-    ("chrome", &["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]),
-    ("brave", &["brave", "brave-browser"]),
     ("helium", &["helium-browser", "helium"]),
+    ("brave", &["brave", "brave-browser"]),
+    ("chrome", &["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]),
 ];
 
 pub fn detect_browser(requested: Option<&str>) -> Result<(BrowserKind, PathBuf)> {

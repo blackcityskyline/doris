@@ -139,8 +139,9 @@ impl RutrackerSearcher {
 
         let page_source = browser.get_page_source().await.unwrap_or_default();
         eprintln!("[debug] page source length: {}", page_source.len());
-        if page_source.contains("login.php") {
-            eprintln!("[debug] redirect to login detected");
+        let is_guest = browser.eval_js("window.BB && BB.IS_GUEST").await;
+        if let Ok(serde_json::Value::Bool(true)) = is_guest {
+            eprintln!("[debug] not logged in (IS_GUEST=true), need login first");
             return Ok(Vec::new());
         }
         // Save page source for debugging
