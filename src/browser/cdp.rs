@@ -72,6 +72,10 @@ impl Browser {
             chrome_args.push("--window-size=1920,1080".into());
         }
 
+        if let Some(user_data_dir) = detect_user_data_dir(binary) {
+            chrome_args.push(format!("--user-data-dir={}", user_data_dir.display()));
+        }
+
         let mut capabilities = serde_json::Map::new();
         let chrome_opts = serde_json::json!({
             "binary": binary.to_str().unwrap_or_default(),
@@ -106,12 +110,12 @@ impl Browser {
     }
 
     pub async fn eval_js(&self, script: &str) -> Result<serde_json::Value> {
-        let wrapped = if script.trim_start().starts_with("return ") || script.trim_start().starts_with("throw ") {
-            script.to_string()
-        } else if script.contains("=>") || script.starts_with('(') {
+        let trimmed = script.trim_start();
+        let wrapped = if trimmed.starts_with("return ") || trimmed.starts_with("throw ") || trimmed.starts_with("async ") {
             script.to_string()
         } else {
-            format!("return {};", script.trim_end_matches(';'))
+            let s = script.trim_end().trim_end_matches(';');
+            format!("return {};", s)
         };
         Ok(self.client.execute(&wrapped, vec![]).await?)
     }
@@ -373,6 +377,123 @@ async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
         "No chromedriver found for Chromium {}. Download manually from https://googlechromelabs.github.io/chrome-for-testing/",
         browser_major
     )
+}
+
+fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
+    let bin_name = binary.file_name()?.to_str()?;
+    let home = dirs::home_dir()?;
+
+    let profile_names = ["helium", "brave", "chromium", "google-chrome", "google-chrome-stable"];
+
+    for profile_name in &profile_names {
+        if !bin_name.contains(profile_name) {
+            continue;
+        }
+        let dirs_to_check = [
+            home.join(".config").join(format!("net.imput.{}", profile_name)),
+            home.join(".config").join(*profile_name),
+            home.join(".config").join(format!("{}-browser", profile_name)),
+        ];
+        for config_dir in &dirs_to_check {
+            if config_dir.join("Default").exists() {
+                let lock = config_dir.join("SingletonLock");
+                let has_lock = lock.symlink_metadata().is_ok();
+                eprintln!("[browser] profile dir: {}, lock exists: {}", config_dir.display(), has_lock);
+                if has_lock {
+                    let cache_dir = dirs::cache_dir()
+                        .unwrap_or_else(|| PathBuf::from("/tmp"))
+                        .join("t-hunter")
+                        .join("profile-copy");
+                    if cache_dir.exists() {
+                        let _ = std::fs::remove_dir_all(&cache_dir);
+                    }
+                    copy_essential_profile(config_dir, &cache_dir);
+                    eprintln!("[browser] browser running, using profile copy: {}", cache_dir.display());
+                    return Some(cache_dir);
+                }
+                eprintln!("[browser] using user profile: {}", config_dir.display());
+                return Some(config_dir.clone());
+            }
+        }
+    }
+
+    None
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "SingletonLock" || name == "SingletonSocket" || name == "SingletonCookie"
+                || name == "lockfile" || name == "Lock" || name == "LOCK"
+                || name.starts_with("DevToolsActivePort") {
+                continue;
+            }
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "LOCK" || name == "lockfile" || name == "LOG" || name == "LOG.old" {
+                continue;
+            }
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_cookies_sqlite(src_default: &Path, dst_default: &Path) {
+    let _ = std::fs::create_dir_all(dst_default);
+    let src_db = src_default.join("Cookies");
+    if !src_db.exists() {
+        return;
+    }
+    let dst_db = dst_default.join("Cookies");
+    let backup_cmd = format!(".backup \"{}\"", dst_db.display());
+    match std::process::Command::new("sqlite3")
+        .args([src_db.to_str().unwrap(), &backup_cmd])
+        .output()
+    {
+        Ok(out) if out.status.success() => eprintln!("[browser] backed up Cookies via sqlite3"),
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!("[browser] sqlite3 backup failed: {}", stderr.trim());
+            let _ = std::fs::copy(&src_db, &dst_db);
+        }
+        Err(e) => {
+            eprintln!("[browser] sqlite3 not found: {}, copying raw", e);
+            let _ = std::fs::copy(&src_db, &dst_db);
+        }
+    }
+}
+
+fn copy_essential_profile(src: &Path, dst: &Path) {
+    let _ = std::fs::create_dir_all(dst);
+
+    for entry in &["Local State", "First Run", "Preferences", "Secure Preferences"] {
+        let s = src.join(entry);
+        if s.exists() {
+            let _ = std::fs::copy(&s, &dst.join(entry));
+        }
+    }
+
+    let src_default = src.join("Default");
+    let dst_default = dst.join("Default");
+    if src_default.exists() {
+        let _ = std::fs::create_dir_all(&dst_default);
+        copy_cookies_sqlite(&src_default, &dst_default);
+        for entry in &["Preferences", "Secure Preferences", "Web Data", "Login Data",
+                        "History", "Bookmarks", "Favicons", "Top Sites"] {
+            let s = src_default.join(entry);
+            if s.exists() {
+                let _ = std::fs::copy(&s, &dst_default.join(entry));
+            }
+        }
+    }
 }
 
 fn detect_browser_major_version(binary: &Path) -> Result<u32> {
