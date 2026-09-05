@@ -3,6 +3,7 @@ use serde::Deserialize;
 use std::path::Path;
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct Config {
     pub browser: Option<String>,
     #[serde(default = "default_browser_mode")]
@@ -17,6 +18,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct Keybindings {
     pub quit: Option<String>,
     pub focus_search: Option<String>,
