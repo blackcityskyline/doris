@@ -134,6 +134,7 @@ impl Browser {
         Ok(values)
     }
 
+    #[allow(dead_code)]
     pub async fn add_cookie(&self, cookie: fantoccini::cookies::Cookie<'static>) -> Result<()> {
         self.client.add_cookie(cookie).await?;
         Ok(())
@@ -162,6 +163,7 @@ impl Browser {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn client(&self) -> &Client {
         &self.client
     }
@@ -400,8 +402,10 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
     )
 }
 
+#[allow(dead_code)]
 pub type SharedBrowser = Arc<Mutex<Browser>>;
 
+#[allow(dead_code)]
 pub async fn create_browser(binary: &Path, mode: BrowserMode) -> Result<SharedBrowser> {
     let browser = Browser::launch(binary, mode).await?;
     Ok(Arc::new(Mutex::new(browser)))

@@ -4,6 +4,7 @@ use anyhow::Result;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Event {
     Tick,
     Key(crossterm::event::KeyEvent),
