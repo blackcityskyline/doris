@@ -187,11 +187,17 @@ impl RutrackerSearcher {
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let cookies = self.get_cookies().await?;
 
+        let full_url = if url.starts_with("http") {
+            url.to_string()
+        } else {
+            format!("https://rutracker.org{}", url)
+        };
+
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
             .build()?;
 
-        let mut req = client.get(url);
+        let mut req = client.get(&full_url);
         let mut cookie_header = String::new();
         for c in &cookies {
             if !cookie_header.is_empty() {
