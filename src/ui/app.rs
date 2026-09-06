@@ -16,6 +16,7 @@ pub struct App {
     pub results: Vec<TorrentItem>,
     pub selected: usize,
     pub logs: VecDeque<String>,
+    pub log_scroll: usize,
     pub state: AppState,
     pub browser_info: String,
     pub torrserver_url: String,
@@ -30,6 +31,7 @@ impl App {
             results: Vec::new(),
             selected: 0,
             logs: VecDeque::new(),
+            log_scroll: 0,
             state: AppState::Idle,
             browser_info,
             torrserver_url,
@@ -40,9 +42,18 @@ impl App {
 
     pub fn add_log(&mut self, msg: &str) {
         self.logs.push_back(format!("[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg));
-        if self.logs.len() > 100 {
+        if self.logs.len() > 500 {
             self.logs.pop_front();
         }
+        self.log_scroll = self.logs.len();
+    }
+
+    pub fn scroll_logs_up(&mut self) {
+        self.log_scroll = self.log_scroll.saturating_sub(1);
+    }
+
+    pub fn scroll_logs_down(&mut self) {
+        self.log_scroll = (self.log_scroll + 1).min(self.logs.len());
     }
 
     pub fn render(&self, frame: &mut Frame) {
@@ -51,7 +62,7 @@ impl App {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(5),
-                Constraint::Length(8),
+                Constraint::Min(5),
             ])
             .split(frame.area());
 
@@ -127,14 +138,25 @@ impl App {
     }
 
     fn render_logs(&self, frame: &mut Frame, area: Rect) {
-        let logs: Vec<Line> = self
-            .logs
+        let total = self.logs.len();
+        let visible = (area.height as usize).saturating_sub(2);
+        let offset = self.log_scroll.saturating_sub(visible);
+
+        let visible_logs: Vec<Line> = self.logs
             .iter()
+            .skip(offset)
+            .take(visible)
             .map(|l| Line::from(l.as_str()))
             .collect();
 
-        let log_panel = Paragraph::new(logs)
-            .block(Block::default().borders(Borders::ALL).title("Logs"));
+        let scroll_title = if total > 0 {
+            format!("Logs ({}/{})", offset + visible.min(total), total)
+        } else {
+            "Logs".to_string()
+        };
+
+        let log_panel = Paragraph::new(visible_logs)
+            .block(Block::default().borders(Borders::ALL).title(scroll_title));
 
         frame.render_widget(log_panel, area);
     }
