@@ -1,48 +1,37 @@
-mod cli;
-mod config;
-mod app;
-mod event;
-mod tui;
-mod browser;
-mod search;
-mod torrserver;
-mod bridge;
-mod ui;
-
 use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let args = cli::parse();
-    let config = config::load(args.config.as_deref())?;
+    let args = t_hunter::cli::parse();
+    let config = t_hunter::config::load(args.config.as_deref())?;
 
     if args.cli {
         run_cli(args, config).await
     } else {
-        let mut app = app::App::new(args, config).await?;
+        let mut app = t_hunter::app::App::new(args, config).await?;
         app.run().await
     }
 }
 
-async fn run_cli(args: cli::Args, config: config::Config) -> Result<()> {
+async fn run_cli(args: t_hunter::cli::Args, config: t_hunter::config::Config) -> Result<()> {
     let query = args.query.as_deref().unwrap_or("");
     if query.is_empty() {
         anyhow::bail!("Search query required in CLI mode.");
     }
 
     let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
-    let (kind, path) = browser::detect::detect_browser(browser_choice)?;
+    let (kind, path) = t_hunter::browser::detect::detect_browser(browser_choice)?;
     let mode_str = args.browser_mode
         .clone()
         .unwrap_or_else(|| config.browser_mode.clone());
-    let mode: browser::cdp::BrowserMode = mode_str.parse()?;
+    let mode: t_hunter::browser::cdp::BrowserMode = mode_str.parse()?;
     println!("Using browser: {} [{}] ({})", kind, mode, path.display());
 
-    let browser = browser::cdp::Browser::launch(&path, mode).await?;
+    let browser = t_hunter::browser::cdp::Browser::launch(&path, mode).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
-    let mut searcher = search::rutracker::RutrackerSearcher::new(browser);
+    let mut searcher = t_hunter::search::rutracker::RutrackerSearcher::new(browser);
 
     println!("Searching for '{}'...", query);
     println!("{}", "-".repeat(60));
