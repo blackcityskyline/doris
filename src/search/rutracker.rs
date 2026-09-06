@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crate::browser::cdp::Browser;
-use crate::search::models::TorrentItem;
+use crate::search::models::{TorrentItem, resolve_url};
 use crate::search::cookies::{self, Cookie};
 use std::path::Path;
 use std::sync::Arc;
@@ -198,13 +198,7 @@ impl RutrackerSearcher {
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let cookies = self.get_cookies().await?;
 
-        let full_url = if url.starts_with("http") {
-            url.to_string()
-        } else if url.starts_with('/') {
-            format!("https://rutracker.org{}", url)
-        } else {
-            format!("https://rutracker.org/forum/{}", url)
-        };
+        let full_url = resolve_url(url);
 
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
