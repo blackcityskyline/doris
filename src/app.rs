@@ -20,11 +20,9 @@ pub struct App {
     config: Config,
     ui: UiApp,
     event_handler: EventHandler,
-    searcher: Option<RutrackerSearcher>,
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
     browser_mode: BrowserMode,
-    #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
     bridge: Option<BridgeServer>,
@@ -64,7 +62,6 @@ impl App {
         Ok(Self {
             ui: UiApp::new(torrserver_url.clone(), browser_info),
             event_handler: EventHandler::new(std::time::Duration::from_millis(100)),
-            searcher: None,
             torrserver: TorrServer::new(&torrserver_url),
             browser: None,
             browser_mode,
@@ -105,7 +102,7 @@ impl App {
                             self.ui.add_log(&format!("Found {} results", results.len()));
                         }
                         Event::SearchError(err) => {
-                            self.ui.state = AppState::Error(err.clone());
+                            self.ui.state = AppState::Idle;
                             self.ui.add_log(&format!("Search error: {}", err));
                         }
                         Event::StreamComplete(url) => {
@@ -178,8 +175,8 @@ impl App {
                         'u' => self.ui.search_input.clear(),
                         'w' => {
                             let words: Vec<&str> = self.ui.search_input.split_whitespace().collect();
-                            if let Some(first_word) = words.last() {
-                                let cut_pos = self.ui.search_input.len() - first_word.len();
+                            if let Some(last) = words.last() {
+                                let cut_pos = self.ui.search_input.len() - last.len();
                                 self.ui.search_input.truncate(cut_pos);
                             }
                         }
@@ -192,8 +189,6 @@ impl App {
             KeyCode::Backspace if self.ui.input_mode => {
                 self.ui.search_input.pop();
             }
-            KeyCode::PageUp => self.ui.scroll_logs_up(),
-            KeyCode::PageDown => self.ui.scroll_logs_down(),
             _ => {}
         }
         Ok(())
@@ -212,34 +207,31 @@ impl App {
             }
         };
 
-        let searcher = RutrackerSearcher::new(browser);
-        self.searcher = Some(searcher);
+        let cookie_file = self.args.cookie_file.clone();
+        let username = self.args.username.clone();
+        let password = self.args.password.clone();
+        let event_tx = self.event_handler.sender();
 
-        if let Some(ref mut s) = self.searcher {
-            let cookie_file = self.args.cookie_file.clone();
-            let username = self.args.username.clone();
-            let password = self.args.password.clone();
+        tokio::spawn(async move {
+            let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
 
-            match s.ensure_logged_in(cookie_file.as_deref(), username.as_deref(), password.as_deref()).await {
-                Ok(true) => self.ui.add_log("Logged in successfully"),
-                Ok(false) => self.ui.add_log("Login failed - continuing anyway"),
-                Err(e) => self.ui.add_log(&format!("Login error: {}", e)),
+            let mut searcher = RutrackerSearcher::new(browser);
+
+            match searcher.ensure_logged_in(cookie_file.as_deref(), username.as_deref(), password.as_deref()).await {
+                Ok(true) => log("Logged in successfully"),
+                Ok(false) => log("Login failed - continuing anyway"),
+                Err(e) => log(&format!("Login error: {}", e)),
             }
 
-            let search_result = s.search(&query).await;
-            match search_result {
+            match searcher.search(&query).await {
                 Ok(results) => {
-                    self.ui.results = results.clone();
-                    self.ui.selected = 0;
-                    self.ui.state = AppState::Idle;
-                    self.ui.add_log(&format!("Found {} results", results.len()));
+                    let _ = event_tx.send(Event::SearchComplete(results));
                 }
                 Err(e) => {
-                    self.ui.state = AppState::Error(e.to_string());
-                    self.ui.add_log(&format!("Search failed: {}", e));
+                    let _ = event_tx.send(Event::SearchError(e.to_string()));
                 }
             }
-        }
+        });
     }
 
     async fn spawn_stream(&mut self) {
@@ -250,8 +242,15 @@ impl App {
         let item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
 
+        let browser = match &self.browser {
+            Some(b) => Arc::clone(b),
+            None => {
+                self.ui.add_log("No browser session - search first");
+                return;
+            }
+        };
+
         let torrserver = self.torrserver.clone();
-        let searcher = self.searcher.clone();
         let event_tx = self.event_handler.sender();
 
         tokio::spawn(async move {
@@ -265,14 +264,7 @@ impl App {
                 return;
             }
 
-            let searcher = match searcher {
-                Some(s) => s,
-                None => {
-                    log("No browser session - search first");
-                    let _ = event_tx.send(Event::StreamError("No browser".into()));
-                    return;
-                }
-            };
+            let searcher = RutrackerSearcher::new(browser);
 
             match searcher.download_torrent(&item.download_url).await {
                 Ok(bytes) => {
