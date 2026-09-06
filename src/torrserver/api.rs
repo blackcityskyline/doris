@@ -1,6 +1,7 @@
 use anyhow::Result;
 use reqwest::Client;
 
+#[derive(Clone)]
 pub struct TorrServer {
     client: Client,
     base_url: String,

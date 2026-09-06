@@ -112,6 +112,13 @@ impl App {
                             self.ui.state = AppState::Idle;
                             self.ui.add_log(&format!("Stream launched: {}", url));
                         }
+                        Event::StreamError(err) => {
+                            self.ui.state = AppState::Idle;
+                            self.ui.add_log(&format!("Stream error: {}", err));
+                        }
+                        Event::StreamLog(msg) => {
+                            self.ui.add_log(&msg);
+                        }
                         Event::ExtensionQuery(query) => {
                             self.ui.search_input = query.clone();
                             self.start_search(query).await;
@@ -158,7 +165,7 @@ impl App {
             }
             KeyCode::Enter => {
                 if !self.ui.input_mode {
-                    self.stream_selected().await;
+                    self.spawn_stream().await;
                 } else {
                     let query = self.ui.search_input.clone();
                     self.ui.input_mode = false;
@@ -233,55 +240,65 @@ impl App {
         }
     }
 
-    async fn stream_selected(&mut self) {
+    async fn spawn_stream(&mut self) {
         if self.ui.selected >= self.ui.results.len() {
             return;
         }
-
         let item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
-        self.ui.add_log(&format!("Downloading torrent: {}", item.title));
 
-        if !self.torrserver.is_reachable().await {
-            self.ui.add_log("TorrServer is not reachable!");
-            self.ui.state = AppState::Idle;
-            return;
-        }
+        let torrserver = self.torrserver.clone();
+        let searcher = self.searcher.clone();
+        let event_tx = self.event_handler.sender();
 
-        if let Some(ref searcher) = self.searcher {
+        tokio::spawn(async move {
+            let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
+
+            log(&format!("Downloading torrent: {}", item.title));
+
+            if !torrserver.is_reachable().await {
+                log("TorrServer is not reachable! Start TorrServer on localhost:8090");
+                let _ = event_tx.send(Event::StreamError("TorrServer unreachable".into()));
+                return;
+            }
+
+            let searcher = match searcher {
+                Some(s) => s,
+                None => {
+                    log("No browser session - search first");
+                    let _ = event_tx.send(Event::StreamError("No browser".into()));
+                    return;
+                }
+            };
+
             match searcher.download_torrent(&item.download_url).await {
-                Ok(torrent_bytes) => {
-                    self.ui.add_log(&format!("Downloaded {} bytes", torrent_bytes.len()));
-
-                    match self.torrserver.upload_torrent(&torrent_bytes, &item.title).await {
+                Ok(bytes) => {
+                    log(&format!("Downloaded {} bytes", bytes.len()));
+                    match torrserver.upload_torrent(&bytes, &item.title).await {
                         Ok(hash) => {
-                            self.ui.add_log(&format!("Uploaded, hash: {}", hash));
-
-                            match self.torrserver.play(&hash, &item.title, None).await {
+                            log(&format!("Uploaded, hash: {}", hash));
+                            match torrserver.play(&hash, &item.title, None).await {
                                 Ok(url) => {
-                                    self.ui.state = AppState::Idle;
-                                    self.ui.add_log(&format!("Stream launched: {}", url));
+                                    let _ = event_tx.send(Event::StreamComplete(url));
                                 }
                                 Err(e) => {
-                                    self.ui.state = AppState::Error(e.to_string());
-                                    self.ui.add_log(&format!("Player error: {}", e));
+                                    log(&format!("Player error: {}", e));
+                                    let _ = event_tx.send(Event::StreamError(e.to_string()));
                                 }
                             }
                         }
                         Err(e) => {
-                            self.ui.state = AppState::Error(e.to_string());
-                            self.ui.add_log(&format!("Upload error: {}", e));
+                            log(&format!("Upload error: {}", e));
+                            let _ = event_tx.send(Event::StreamError(e.to_string()));
                         }
                     }
                 }
                 Err(e) => {
-                    self.ui.state = AppState::Error(e.to_string());
-                    self.ui.add_log(&format!("Download error: {}", e));
+                    log(&format!("Download error: {}", e));
+                    let _ = event_tx.send(Event::StreamError(e.to_string()));
                 }
             }
-        }
-
-        self.ui.state = AppState::Idle;
+        });
     }
 
     async fn get_browser(&mut self) -> Result<Arc<Mutex<Browser>>> {
