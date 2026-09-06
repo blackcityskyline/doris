@@ -143,6 +143,7 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        self.ui.add_log(&format!("[key] code={:?} mod={:?} input_mode={}", key.code, key.modifiers, self.ui.input_mode));
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.running = false;
@@ -241,7 +242,10 @@ impl App {
     }
 
     async fn spawn_stream(&mut self) {
+        self.ui.add_log(&format!("Enter pressed: selected={}, results={}, input_mode={}",
+            self.ui.selected, self.ui.results.len(), self.ui.input_mode));
         if self.ui.selected >= self.ui.results.len() {
+            self.ui.add_log("No result selected");
             return;
         }
         let item = self.ui.results[self.ui.selected].clone();
