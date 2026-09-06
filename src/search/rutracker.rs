@@ -30,22 +30,21 @@ impl RutrackerSearcher {
             return Ok(true);
         }
 
-        // Check if the browser session is already authenticated (profile copy with cookies)
         {
             let browser = self.browser.lock().await;
-            if !self.verify_login(&browser).await {
-                // Try navigating to index.php first
-                browser.navigate("https://rutracker.org/forum/index.php").await?;
-                crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-                Self::wait_cloudflare(&browser).await;
+            if self.verify_login(&browser).await {
+                self.logged_in = true;
+                return Ok(true);
             }
+            browser.navigate("https://rutracker.org/forum/index.php").await?;
+            crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+            Self::wait_cloudflare(&browser).await;
             if self.verify_login(&browser).await {
                 self.logged_in = true;
                 return Ok(true);
             }
         }
 
-        // Try loading from cookie file (only if explicitly provided)
         if let Some(cf) = cookie_file {
             if cf.exists() {
                 let loaded_cookies = cookies::load_from_file(cf)?;
@@ -61,10 +60,8 @@ impl RutrackerSearcher {
                         });
                         browser.add_cookies(&[cookie_json]).await?;
                     }
-
                     browser.navigate("https://rutracker.org/forum/index.php").await?;
                     Self::wait_cloudflare(&browser).await;
-
                     if self.verify_login(&browser).await {
                         self.logged_in = true;
                         return Ok(true);
@@ -73,7 +70,6 @@ impl RutrackerSearcher {
             }
         }
 
-        // Try username/password login
         if let (Some(user), Some(pass)) = (username, password) {
             if self.login(user, pass).await? {
                 self.logged_in = true;
@@ -97,7 +93,7 @@ impl RutrackerSearcher {
 
         let login_script = format!(
             r#"
-            (async () => {{
+            (() => {{
                 const userInput = document.querySelector("input[name='login_username'], #top_username");
                 const passInput = document.querySelector("input[name='login_password'], #top_password");
                 const loginBtn = document.querySelector("input[name='login'], #top_login-btn");
@@ -116,21 +112,36 @@ impl RutrackerSearcher {
         );
 
         let result = browser.eval_js(&login_script).await?;
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-        Ok(result.as_bool().unwrap_or(false))
+        if result.as_bool().unwrap_or(false) {
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     async fn verify_login(&self, browser: &Browser) -> bool {
         let script = r#"
         (() => {
+            const cookies = document.cookie.split(';').reduce((acc, c) => {
+                const [k, ...v] = c.trim().split('=');
+                acc[k] = v.join('=');
+                return acc;
+            }, {});
+
+            if (cookies['bb_data']) return true;
+            if (cookies['bb_session'] && !cookies['bb_session'].startsWith('0-')) return true;
+
             const logout = document.querySelector("a[href*='logout']");
             if (logout) return true;
+
             const profileLink = document.querySelector("a[href*='profile.php']");
             if (profileLink) return true;
+
             const topUsername = document.querySelector("[id='top-username'], .top_menu_username");
             if (topUsername && topUsername.textContent.trim().length > 0) return true;
-            if (window.BB && !BB.IS_GUEST) return true;
+
             return false;
         })()
         "#;
@@ -189,15 +200,16 @@ impl RutrackerSearcher {
 
         let full_url = if url.starts_with("http") {
             url.to_string()
-        } else {
+        } else if url.starts_with('/') {
             format!("https://rutracker.org{}", url)
+        } else {
+            format!("https://rutracker.org/forum/{}", url)
         };
 
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
             .build()?;
 
-        let mut req = client.get(&full_url);
         let mut cookie_header = String::new();
         for c in &cookies {
             if !cookie_header.is_empty() {
@@ -205,6 +217,10 @@ impl RutrackerSearcher {
             }
             cookie_header.push_str(&format!("{}={}", c.name, c.value));
         }
+
+        let mut req = client.get(&full_url)
+            .header("Referer", "https://rutracker.org/forum/index.php");
+
         if !cookie_header.is_empty() {
             req = req.header("Cookie", cookie_header);
         }
@@ -242,7 +258,7 @@ impl RutrackerSearcher {
     }
 
     async fn wait_cloudflare(browser: &Browser) {
-        for i in 0..30 {
+        for _ in 0..30 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let title = browser.eval_js("document.title").await;
             if let Ok(serde_json::Value::String(s)) = &title {
