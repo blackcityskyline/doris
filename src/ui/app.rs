@@ -11,6 +11,14 @@ pub enum AppState {
     Error(String),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum KeyAction {
+    None,
+    StartSearch(String),
+    StartStream(usize),
+    Quit,
+}
+
 pub struct App {
     pub search_input: String,
     pub results: Vec<TorrentItem>,
@@ -54,6 +62,92 @@ impl App {
 
     pub fn scroll_logs_down(&mut self) {
         self.log_scroll = (self.log_scroll + 1).min(self.logs.len());
+    }
+
+    pub fn enter_input_mode(&mut self) {
+        self.input_mode = true;
+    }
+
+    pub fn exit_input_mode(&mut self) {
+        self.input_mode = false;
+    }
+
+    pub fn type_char(&mut self, c: char) {
+        if self.input_mode {
+            self.search_input.push(c);
+        }
+    }
+
+    pub fn backspace(&mut self) {
+        if self.input_mode {
+            self.search_input.pop();
+        }
+    }
+
+    pub fn clear_input(&mut self) {
+        self.search_input.clear();
+    }
+
+    pub fn delete_word(&mut self) {
+        let words: Vec<&str> = self.search_input.split_whitespace().collect();
+        if let Some(last) = words.last() {
+            let cut_pos = self.search_input.len() - last.len();
+            self.search_input.truncate(cut_pos);
+        }
+    }
+
+    pub fn navigate_down(&mut self) -> bool {
+        if !self.results.is_empty() && !self.input_mode {
+            self.selected = (self.selected + 1).min(self.results.len() - 1);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn navigate_up(&mut self) -> bool {
+        if !self.input_mode {
+            self.selected = self.selected.saturating_sub(1);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn navigate_first(&mut self) {
+        self.selected = 0;
+    }
+
+    pub fn navigate_last(&mut self) {
+        if !self.results.is_empty() {
+            self.selected = self.results.len() - 1;
+        }
+    }
+
+    pub fn quit(&mut self) {
+        self.running = false;
+    }
+
+    pub fn submit_search(&mut self) -> Option<String> {
+        if self.input_mode {
+            let query = self.search_input.clone();
+            self.input_mode = false;
+            if !query.is_empty() {
+                Some(query)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn submit_selection(&self) -> Option<usize> {
+        if !self.input_mode && self.selected < self.results.len() {
+            Some(self.selected)
+        } else {
+            None
+        }
     }
 
     pub fn render(&self, frame: &mut Frame) {
@@ -159,5 +253,357 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title(scroll_title));
 
         frame.render_widget(log_panel, area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_app() -> App {
+        App::new("http://127.0.0.1:8090".into(), "helium".into())
+    }
+
+    fn app_with_results(n: usize) -> App {
+        let mut app = test_app();
+        app.results = (0..n)
+            .map(|i| TorrentItem {
+                title: format!("Torrent {}", i),
+                size: "1 GB".into(),
+                seeds: format!("{}", i),
+                date: "".into(),
+                download_url: format!("/dl.php?t={}", i),
+                page_url: "".into(),
+                query: "".into(),
+            })
+            .collect();
+        app
+    }
+
+    // === Input mode ===
+
+    #[test]
+    fn test_enter_input_mode() {
+        let mut app = test_app();
+        assert!(!app.input_mode);
+        app.enter_input_mode();
+        assert!(app.input_mode);
+    }
+
+    #[test]
+    fn test_exit_input_mode() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        assert!(app.input_mode);
+        app.exit_input_mode();
+        assert!(!app.input_mode);
+    }
+
+    // === Typing ===
+
+    #[test]
+    fn test_type_char_in_input_mode() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        app.type_char('h');
+        app.type_char('e');
+        app.type_char('l');
+        app.type_char('l');
+        app.type_char('o');
+        assert_eq!(app.search_input, "hello");
+    }
+
+    #[test]
+    fn test_type_char_not_in_input_mode_ignored() {
+        let mut app = test_app();
+        app.type_char('h');
+        assert!(app.search_input.is_empty());
+    }
+
+    #[test]
+    fn test_backspace() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        app.type_char('a');
+        app.type_char('b');
+        app.type_char('c');
+        app.backspace();
+        assert_eq!(app.search_input, "ab");
+        app.backspace();
+        assert_eq!(app.search_input, "a");
+        app.backspace();
+        assert_eq!(app.search_input, "");
+        app.backspace();
+        assert_eq!(app.search_input, "");
+    }
+
+    #[test]
+    fn test_backspace_not_in_input_mode_ignored() {
+        let mut app = test_app();
+        app.search_input = "test".into();
+        app.backspace();
+        assert_eq!(app.search_input, "test");
+    }
+
+    #[test]
+    fn test_clear_input() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        app.type_char('x');
+        app.type_char('y');
+        app.clear_input();
+        assert!(app.search_input.is_empty());
+    }
+
+    #[test]
+    fn test_delete_word() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        for c in "hello world".chars() {
+            app.type_char(c);
+        }
+        app.delete_word();
+        assert_eq!(app.search_input, "hello ");
+    }
+
+    #[test]
+    fn test_delete_word_single() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        for c in "test".chars() {
+            app.type_char(c);
+        }
+        app.delete_word();
+        assert_eq!(app.search_input, "");
+    }
+
+    #[test]
+    fn test_delete_word_empty() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        app.delete_word();
+        assert!(app.search_input.is_empty());
+    }
+
+    // === Navigation ===
+
+    #[test]
+    fn test_navigate_down() {
+        let mut app = app_with_results(5);
+        assert_eq!(app.selected, 0);
+        assert!(app.navigate_down());
+        assert_eq!(app.selected, 1);
+        assert!(app.navigate_down());
+        assert_eq!(app.selected, 2);
+    }
+
+    #[test]
+    fn test_navigate_down_clamps() {
+        let mut app = app_with_results(3);
+        app.selected = 2;
+        assert!(app.navigate_down());
+        assert_eq!(app.selected, 2);
+    }
+
+    #[test]
+    fn test_navigate_down_empty() {
+        let mut app = test_app();
+        assert!(!app.navigate_down());
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn test_navigate_down_in_input_mode_ignored() {
+        let mut app = app_with_results(5);
+        app.enter_input_mode();
+        assert!(!app.navigate_down());
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn test_navigate_up() {
+        let mut app = app_with_results(5);
+        app.selected = 3;
+        assert!(app.navigate_up());
+        assert_eq!(app.selected, 2);
+        assert!(app.navigate_up());
+        assert_eq!(app.selected, 1);
+    }
+
+    #[test]
+    fn test_navigate_up_clamps_at_zero() {
+        let mut app = app_with_results(5);
+        app.selected = 0;
+        assert!(app.navigate_up());
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn test_navigate_up_in_input_mode_ignored() {
+        let mut app = app_with_results(5);
+        app.selected = 3;
+        app.enter_input_mode();
+        assert!(!app.navigate_up());
+        assert_eq!(app.selected, 3);
+    }
+
+    #[test]
+    fn test_navigate_first() {
+        let mut app = app_with_results(5);
+        app.selected = 4;
+        app.navigate_first();
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn test_navigate_last() {
+        let mut app = app_with_results(5);
+        app.navigate_last();
+        assert_eq!(app.selected, 4);
+    }
+
+    #[test]
+    fn test_navigate_last_empty() {
+        let mut app = test_app();
+        app.navigate_last();
+        assert_eq!(app.selected, 0);
+    }
+
+    // === Submit ===
+
+    #[test]
+    fn test_submit_search_in_input_mode() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        app.type_char('u');
+        app.type_char('b');
+        app.type_char('u');
+        app.type_char('n');
+        app.type_char('t');
+        app.type_char('u');
+        let result = app.submit_search();
+        assert_eq!(result, Some("ubuntu".into()));
+        assert!(!app.input_mode);
+    }
+
+    #[test]
+    fn test_submit_search_empty_query() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        let result = app.submit_search();
+        assert_eq!(result, None);
+        assert!(!app.input_mode);
+    }
+
+    #[test]
+    fn test_submit_search_not_in_input_mode() {
+        let mut app = test_app();
+        app.search_input = "test".into();
+        let result = app.submit_search();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_submit_selection_valid() {
+        let mut app = app_with_results(5);
+        app.selected = 2;
+        assert_eq!(app.submit_selection(), Some(2));
+    }
+
+    #[test]
+    fn test_submit_selection_empty() {
+        let mut app = test_app();
+        assert_eq!(app.submit_selection(), None);
+    }
+
+    #[test]
+    fn test_submit_selection_in_input_mode() {
+        let mut app = app_with_results(5);
+        app.selected = 2;
+        app.enter_input_mode();
+        assert_eq!(app.submit_selection(), None);
+    }
+
+    #[test]
+    fn test_submit_selection_out_of_bounds() {
+        let mut app = app_with_results(3);
+        app.selected = 5;
+        assert_eq!(app.submit_selection(), None);
+    }
+
+    // === Quit ===
+
+    #[test]
+    fn test_quit() {
+        let mut app = test_app();
+        assert!(app.running);
+        app.quit();
+        assert!(!app.running);
+    }
+
+    // === Full flow ===
+
+    #[test]
+    fn test_full_search_flow() {
+        let mut app = test_app();
+
+        app.enter_input_mode();
+        assert!(app.input_mode);
+
+        for c in "world war".chars() {
+            app.type_char(c);
+        }
+        assert_eq!(app.search_input, "world war");
+
+        let query = app.submit_search().unwrap();
+        assert_eq!(query, "world war");
+        assert!(!app.input_mode);
+
+        app.results = (0..50)
+            .map(|i| TorrentItem {
+                title: format!("Result {}", i),
+                size: "1 GB".into(),
+                seeds: format!("{}", i),
+                date: "".into(),
+                download_url: format!("/dl.php?t={}", i),
+                page_url: "".into(),
+                query: "world war".into(),
+            })
+            .collect();
+
+        assert_eq!(app.selected, 0);
+        for _ in 0..10 {
+            app.navigate_down();
+        }
+        assert_eq!(app.selected, 10);
+
+        let idx = app.submit_selection().unwrap();
+        assert_eq!(idx, 10);
+    }
+
+    #[test]
+    fn test_esc_exits_input_mid_typing() {
+        let mut app = test_app();
+        app.enter_input_mode();
+        app.type_char('h');
+        app.type_char('e');
+        app.exit_input_mode();
+        assert!(!app.input_mode);
+        assert_eq!(app.search_input, "he");
+    }
+
+    #[test]
+    fn test_j_k_navigation_full_cycle() {
+        let mut app = app_with_results(10);
+
+        for _ in 0..9 {
+            app.navigate_down();
+        }
+        assert_eq!(app.selected, 9);
+
+        for _ in 0..9 {
+            app.navigate_up();
+        }
+        assert_eq!(app.selected, 0);
     }
 }

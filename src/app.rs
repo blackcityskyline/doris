@@ -142,52 +142,40 @@ impl App {
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.ui.running = false;
+                self.ui.quit();
             }
-            KeyCode::Char('j') | KeyCode::Down if !self.ui.input_mode => {
-                if !self.ui.results.is_empty() {
-                    self.ui.selected = (self.ui.selected + 1).min(self.ui.results.len() - 1);
-                }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.ui.navigate_down();
             }
-            KeyCode::Char('k') | KeyCode::Up if !self.ui.input_mode => {
-                self.ui.selected = self.ui.selected.saturating_sub(1);
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.ui.navigate_up();
             }
             KeyCode::PageUp if !self.ui.input_mode => self.ui.scroll_logs_up(),
             KeyCode::PageDown if !self.ui.input_mode => self.ui.scroll_logs_down(),
             KeyCode::Char('s') if !self.ui.input_mode => {
-                self.ui.input_mode = true;
+                self.ui.enter_input_mode();
             }
             KeyCode::Esc => {
-                self.ui.input_mode = false;
+                self.ui.exit_input_mode();
             }
             KeyCode::Enter => {
-                if !self.ui.input_mode {
-                    self.spawn_stream().await;
-                } else {
-                    let query = self.ui.search_input.clone();
-                    self.ui.input_mode = false;
+                if let Some(query) = self.ui.submit_search() {
                     self.start_search(query).await;
+                } else if let Some(_idx) = self.ui.submit_selection() {
+                    self.spawn_stream().await;
                 }
             }
-            KeyCode::Char(c) if self.ui.input_mode => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    match c {
-                        'u' => self.ui.search_input.clear(),
-                        'w' => {
-                            let words: Vec<&str> = self.ui.search_input.split_whitespace().collect();
-                            if let Some(last) = words.last() {
-                                let cut_pos = self.ui.search_input.len() - last.len();
-                                self.ui.search_input.truncate(cut_pos);
-                            }
-                        }
-                        _ => {}
-                    }
-                } else {
-                    self.ui.search_input.push(c);
-                }
+            KeyCode::Char('u') if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.ui.clear_input();
+            }
+            KeyCode::Char('w') if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.ui.delete_word();
+            }
+            KeyCode::Char(c) if self.ui.input_mode && !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.ui.type_char(c);
             }
             KeyCode::Backspace if self.ui.input_mode => {
-                self.ui.search_input.pop();
+                self.ui.backspace();
             }
             _ => {}
         }
