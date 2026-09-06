@@ -213,21 +213,18 @@ impl RutrackerSearcher {
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let browser = self.browser.lock().await;
         let js_code = format!(
-            r#"
-            (async () => {{
-                const response = await fetch('{}');
-                if (!response.ok) {{
-                    throw new Error('HTTP ' + response.status);
-                }}
-                const buffer = await response.arrayBuffer();
-                const bytes = new Uint8Array(buffer);
-                let binary = '';
-                for (let i = 0; i < bytes.byteLength; i++) {{
+            r#"(() => {{
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', '{}', false);
+                xhr.responseType = 'arraybuffer';
+                xhr.send();
+                var bytes = new Uint8Array(xhr.response);
+                var binary = '';
+                for (var i = 0; i < bytes.byteLength; i++) {{
                     binary += String.fromCharCode(bytes[i]);
                 }}
                 return btoa(binary);
-            }})()
-            "#,
+            }})()"#,
             url.replace('\'', "\\'")
         );
 
