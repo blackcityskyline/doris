@@ -18,8 +18,8 @@ pub struct Args {
     #[arg(short, long)]
     pub browser: Option<String>,
 
-    #[arg(long, default_value = "gui")]
-    pub browser_mode: String,
+    #[arg(long)]
+    pub browser_mode: Option<String>,
 
     #[arg(long, default_value = "http://127.0.0.1:8090")]
     pub torrserver: String,

@@ -38,11 +38,8 @@ impl App {
             args.torrserver.clone()
         };
 
-        let browser_mode_str = if args.browser_mode != "gui" {
-            args.browser_mode.clone()
-        } else {
-            config.browser_mode.clone()
-        };
+        let browser_mode_str = args.browser_mode.clone()
+            .unwrap_or_else(|| config.browser_mode.clone());
         let browser_mode: BrowserMode = browser_mode_str.parse()?;
 
         let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
