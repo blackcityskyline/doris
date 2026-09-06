@@ -211,26 +211,31 @@ impl RutrackerSearcher {
     }
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
-        let browser = self.browser.lock().await;
-        let js_code = format!(
-            r#"(() => {{
-                var xhr = new XMLHttpRequest();
-                xhr.open('GET', '{}', false);
-                xhr.responseType = 'arraybuffer';
-                xhr.send();
-                var bytes = new Uint8Array(xhr.response);
-                var binary = '';
-                for (var i = 0; i < bytes.byteLength; i++) {{
-                    binary += String.fromCharCode(bytes[i]);
-                }}
-                return btoa(binary);
-            }})()"#,
-            url.replace('\'', "\\'")
-        );
+        let cookies = self.get_cookies().await?;
 
-        let result = browser.eval_js(&js_code).await?;
-        let b64 = result.as_str().ok_or_else(|| anyhow::anyhow!("No data returned"))?;
-        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)?;
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
+            .build()?;
+
+        let mut req = client.get(url);
+        let mut cookie_header = String::new();
+        for c in &cookies {
+            if !cookie_header.is_empty() {
+                cookie_header.push_str("; ");
+            }
+            cookie_header.push_str(&format!("{}={}", c.name, c.value));
+        }
+        if !cookie_header.is_empty() {
+            req = req.header("Cookie", cookie_header);
+        }
+
+        let resp = req.send().await?;
+        let status = resp.status();
+        let bytes = resp.bytes().await?.to_vec();
+
+        if !status.is_success() {
+            anyhow::bail!("HTTP {} downloading torrent", status);
+        }
 
         let lower = bytes[..200.min(bytes.len())].to_ascii_lowercase();
         if bytes.starts_with(b"<!DOCTYPE") || lower.windows(5).any(|w| w == b"html") {
