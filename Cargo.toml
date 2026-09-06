@@ -27,3 +27,4 @@ which = "6"
 serde_json = "1"
 futures-lite = "2"
 fantoccini = "0.22.1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }

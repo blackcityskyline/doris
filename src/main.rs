@@ -13,6 +13,7 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let args = cli::parse();
     let config = config::load(args.config.as_deref())?;
 

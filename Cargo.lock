@@ -2863,6 +2863,7 @@ dependencies = [
  "futures-lite",
  "ratatui",
  "reqwest",
+ "rustls",
  "scraper",
  "serde",
  "serde_json",
