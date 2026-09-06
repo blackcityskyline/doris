@@ -1,13 +1,12 @@
-use crossterm::event::{Event as CrosstermEvent, EventStream};
+use crossterm::event::{Event as CrosstermEvent, EventStream, KeyEvent, read};
 use futures_lite::StreamExt;
 use anyhow::Result;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Event {
     Tick,
-    Key(crossterm::event::KeyEvent),
+    Key(KeyEvent),
     Resize(u16, u16),
     SearchComplete(Vec<crate::search::models::TorrentItem>),
     SearchError(String),
@@ -27,33 +26,24 @@ impl EventHandler {
         let (tx, rx) = mpsc::unbounded_channel();
         let event_tx = tx.clone();
 
-        tokio::spawn(async move {
-            let mut reader = EventStream::new();
-            let mut tick_interval = tokio::time::interval(tick_rate);
-
+        std::thread::spawn(move || {
             loop {
-                tokio::select! {
-                    _ = tick_interval.tick() => {
-                        if event_tx.send(Event::Tick).is_err() {
-                            break;
-                        }
-                    }
-                    Some(Ok(event)) = reader.next() => {
-                        match event {
-                            CrosstermEvent::Key(key) => {
-                                if event_tx.send(Event::Key(key)).is_err() {
-                                    break;
-                                }
+                if crossterm::event::poll(tick_rate).unwrap_or(false) {
+                    match crossterm::event::read() {
+                        Ok(CrosstermEvent::Key(key)) => {
+                            if event_tx.send(Event::Key(key)).is_err() {
+                                break;
                             }
-                            CrosstermEvent::Resize(w, h) => {
-                                if event_tx.send(Event::Resize(w, h)).is_err() {
-                                    break;
-                                }
-                            }
-                            _ => {}
                         }
+                        Ok(CrosstermEvent::Resize(w, h)) => {
+                            let _ = event_tx.send(Event::Resize(w, h));
+                        }
+                        _ => {}
                     }
-                    else => break,
+                } else {
+                    if event_tx.send(Event::Tick).is_err() {
+                        break;
+                    }
                 }
             }
         });
