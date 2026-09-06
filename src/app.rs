@@ -143,22 +143,21 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
-        self.ui.add_log(&format!("[key] code={:?} mod={:?} input_mode={}", key.code, key.modifiers, self.ui.input_mode));
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.running = false;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                if !self.ui.input_mode && !self.ui.results.is_empty() {
+            KeyCode::Char('j') | KeyCode::Down if !self.ui.input_mode => {
+                if !self.ui.results.is_empty() {
                     self.ui.selected = (self.ui.selected + 1).min(self.ui.results.len() - 1);
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if !self.ui.input_mode {
-                    self.ui.selected = self.ui.selected.saturating_sub(1);
-                }
+            KeyCode::Char('k') | KeyCode::Up if !self.ui.input_mode => {
+                self.ui.selected = self.ui.selected.saturating_sub(1);
             }
-            KeyCode::Char('s') => {
+            KeyCode::PageUp if !self.ui.input_mode => self.ui.scroll_logs_up(),
+            KeyCode::PageDown if !self.ui.input_mode => self.ui.scroll_logs_down(),
+            KeyCode::Char('s') if !self.ui.input_mode => {
                 self.ui.input_mode = true;
             }
             KeyCode::Esc => {
@@ -193,6 +192,8 @@ impl App {
             KeyCode::Backspace if self.ui.input_mode => {
                 self.ui.search_input.pop();
             }
+            KeyCode::PageUp => self.ui.scroll_logs_up(),
+            KeyCode::PageDown => self.ui.scroll_logs_down(),
             _ => {}
         }
         Ok(())
@@ -242,8 +243,6 @@ impl App {
     }
 
     async fn spawn_stream(&mut self) {
-        self.ui.add_log(&format!("Enter pressed: selected={}, results={}, input_mode={}",
-            self.ui.selected, self.ui.results.len(), self.ui.input_mode));
         if self.ui.selected >= self.ui.results.len() {
             self.ui.add_log("No result selected");
             return;
