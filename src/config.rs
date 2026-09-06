@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct Config {
     pub browser: Option<String>,
@@ -15,6 +15,19 @@ pub struct Config {
     #[serde(default = "default_cookie_file")]
     pub cookie_file: String,
     pub keybindings: Option<Keybindings>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            browser: None,
+            browser_mode: default_browser_mode(),
+            torrserver_url: default_torrserver_url(),
+            bridge_port: default_bridge_port(),
+            cookie_file: default_cookie_file(),
+            keybindings: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]

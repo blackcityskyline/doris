@@ -32,7 +32,9 @@ async fn run_cli(args: cli::Args, config: config::Config) -> Result<()> {
 
     let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
     let (kind, path) = browser::detect::detect_browser(browser_choice)?;
-    let mode: browser::cdp::BrowserMode = args.browser_mode.parse()?;
+    let mode_str = args.browser_mode
+        .unwrap_or_else(|| config.browser_mode.clone());
+    let mode: browser::cdp::BrowserMode = mode_str.parse()?;
     println!("Using browser: {} [{}] ({})", kind, mode, path.display());
 
     let browser = browser::cdp::Browser::launch(&path, mode).await?;
