@@ -147,30 +147,8 @@ impl RutrackerSearcher {
         );
 
         browser.navigate(&search_url).await?;
-        // Inject anti-detection patches into the new page
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-        // Wait for Cloudflare to pass and page to load (up to 30s)
         Self::wait_cloudflare(&browser).await;
-
-        let page_source = browser.get_page_source().await.unwrap_or_default();
-        eprintln!("[debug] page source length: {}", page_source.len());
-        // Save page source for debugging
-        let _ = std::fs::write("/tmp/t-hunter-debug.html", &page_source);
-        eprintln!("[debug] saved page source to /tmp/t-hunter-debug.html");
-        // Check if tor-tbl exists
-        let has_table = browser.eval_js("!!document.querySelector('#tor-tbl')").await;
-        eprintln!("[debug] has #tor-tbl: {:?}", has_table);
-        let tr_count = browser.eval_js("document.querySelectorAll('#tor-tbl tr').length").await;
-        eprintln!("[debug] #tor-tbl tr count: {:?}", tr_count);
-        let tr_count2 = browser.eval_js("document.querySelectorAll('#tor-tbl tbody tr').length").await;
-        eprintln!("[debug] #tor-tbl tbody tr count: {:?}", tr_count2);
-        let all_tlinks = browser.eval_js("document.querySelectorAll('#tor-tbl tbody tr a.tLink').length").await;
-        eprintln!("[debug] tbody tr a.tLink count: {:?}", all_tlinks);
-        let first_text = browser.eval_js("document.querySelector('#tor-tbl tbody tr a.tLink')?.textContent").await;
-        eprintln!("[debug] first tLink text: {:?}", first_text);
-        // Check page title
-        let title = browser.eval_js("document.title").await;
-        eprintln!("[debug] page title: {:?}", title);
 
         let parse_script = r#"
         return JSON.stringify(Array.from(document.querySelectorAll('#tor-tbl tbody tr')).map(row => {
@@ -202,10 +180,6 @@ impl RutrackerSearcher {
 
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
-        eprintln!("[debug] parsed json length: {}", json_str.len());
-        if json_str.len() < 200 {
-            eprintln!("[debug] parsed: {}", json_str);
-        }
         let items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
         Ok(items)
     }
@@ -267,12 +241,10 @@ impl RutrackerSearcher {
             let title = browser.eval_js("document.title").await;
             if let Ok(serde_json::Value::String(s)) = &title {
                 if !s.is_empty() && s != "Just a moment..." {
-                    eprintln!("[debug] Cloudflare passed after {}s, title: {}", i, s);
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                     return;
                 }
             }
-            eprintln!("[debug] waiting for Cloudflare... ({}/30)", i + 1);
         }
     }
 }
