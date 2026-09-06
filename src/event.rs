@@ -1,4 +1,4 @@
-use crossterm::event::{Event as CrosstermEvent, KeyEvent};
+use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent, MouseButton};
 use anyhow::Result;
 use tokio::sync::mpsc;
 
@@ -6,12 +6,14 @@ use tokio::sync::mpsc;
 pub enum Event {
     Tick,
     Key(KeyEvent),
+    Mouse(MouseEvent),
     Resize(u16, u16),
     SearchComplete(Vec<crate::search::models::TorrentItem>),
     SearchError(String),
     StreamComplete(String),
     StreamError(String),
     StreamLog(String),
+    LoginResult(bool),
     ExtensionQuery(String),
 }
 
@@ -33,6 +35,9 @@ impl EventHandler {
                             if event_tx.send(Event::Key(key)).is_err() {
                                 break;
                             }
+                        }
+                        Ok(CrosstermEvent::Mouse(mouse)) => {
+                            let _ = event_tx.send(Event::Mouse(mouse));
                         }
                         Ok(CrosstermEvent::Resize(w, h)) => {
                             let _ = event_tx.send(Event::Resize(w, h));

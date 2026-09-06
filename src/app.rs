@@ -1,5 +1,6 @@
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseButton, MouseEventKind};
+use ratatui::prelude::Rect;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
@@ -10,7 +11,7 @@ use crate::search::rutracker::RutrackerSearcher;
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState};
+use crate::ui::app::{App as UiApp, AppState, Modal};
 use crate::cli::Args;
 use crate::config::Config;
 
@@ -26,6 +27,7 @@ pub struct App {
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
     bridge: Option<BridgeServer>,
+    terminal_size: (u16, u16),
 }
 
 impl App {
@@ -70,31 +72,39 @@ impl App {
             bridge,
             args,
             config,
+            terminal_size: (0, 0),
         })
     }
 
     pub async fn run(&mut self) -> Result<()> {
         let mut terminal = tui::init()?;
+        self.terminal_size = terminal.size().map(|s| (s.width, s.height)).unwrap_or((80, 24));
 
         if let Some(query) = self.args.query.clone() {
             self.ui.search_input = query.clone();
             self.start_search(query).await;
         } else {
-            self.ui.add_log("T-Hunter started. Press 's' to focus search, Enter to search.");
+            self.ui.add_log("T-Hunter started. Press 's' or 'i' to search, 'l' for login, Enter to play.");
             if self.bridge.is_some() {
                 self.ui.add_log(&format!("Extension Bridge listening on port {}", self.config.bridge_port));
             }
         }
 
         loop {
-            terminal.draw(|frame| self.ui.render(frame))?;
+            terminal.draw(|frame| {
+                self.terminal_size = (frame.area().width, frame.area().height);
+                self.ui.render(frame);
+            })?;
 
             tokio::select! {
                 event = self.event_handler.next() => {
                     match event? {
                         Event::Key(key) => self.handle_key(key).await?,
+                        Event::Mouse(mouse) => self.handle_mouse(mouse),
                         Event::Tick => {},
-                        Event::Resize(_, _) => {},
+                        Event::Resize(w, h) => {
+                            self.terminal_size = (w, h);
+                        },
                         Event::SearchComplete(results) => {
                             self.ui.results = results.clone();
                             self.ui.selected = 0;
@@ -115,6 +125,13 @@ impl App {
                         }
                         Event::StreamLog(msg) => {
                             self.ui.add_log(&msg);
+                        }
+                        Event::LoginResult(success) => {
+                            if success {
+                                self.ui.add_log("Login successful!");
+                            } else {
+                                self.ui.add_log("Login failed.");
+                            }
                         }
                         Event::ExtensionQuery(query) => {
                             self.ui.search_input = query.clone();
@@ -139,7 +156,36 @@ impl App {
         Ok(())
     }
 
+    fn handle_mouse(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                if self.ui.modal == Modal::None {
+                    self.ui.scroll_logs_up();
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                if self.ui.modal == Modal::None {
+                    self.ui.scroll_logs_down();
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if self.ui.modal == Modal::None {
+                    let area = Rect::new(0, 0, self.terminal_size.0, self.terminal_size.1);
+                    self.ui.click_results_at(mouse.row, area);
+                }
+            }
+            _ => {}
+        }
+    }
+
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.ui.modal != Modal::None {
+            if let Some((username, password)) = self.ui.login_modal_key(key) {
+                self.do_login(&username, &password).await;
+            }
+            return Ok(());
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.quit();
@@ -150,10 +196,13 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.ui.navigate_up();
             }
-            KeyCode::PageUp if !self.ui.input_mode => self.ui.scroll_logs_up(),
-            KeyCode::PageDown if !self.ui.input_mode => self.ui.scroll_logs_down(),
-            KeyCode::Char('s') if !self.ui.input_mode => {
+            KeyCode::PageUp if !self.ui.input_mode => self.ui.scroll_logs_page_up(),
+            KeyCode::PageDown if !self.ui.input_mode => self.ui.scroll_logs_page_down(),
+            KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();
+            }
+            KeyCode::Char('l') if !self.ui.input_mode => {
+                self.ui.open_login_modal();
             }
             KeyCode::Esc => {
                 self.ui.exit_input_mode();
@@ -180,6 +229,44 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+
+    async fn do_login(&mut self, username: &str, password: &str) {
+        self.ui.add_log(&format!("Logging in as '{}'...", username));
+
+        let browser = match self.get_browser().await {
+            Ok(b) => b,
+            Err(e) => {
+                self.ui.add_log(&format!("Browser error: {}", e));
+                return;
+            }
+        };
+
+        let username = username.to_string();
+        let password = password.to_string();
+        let cookie_file = self.args.cookie_file.clone();
+        let event_tx = self.event_handler.sender();
+
+        tokio::spawn(async move {
+            let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
+
+            let mut searcher = RutrackerSearcher::new(browser);
+
+            match searcher.ensure_logged_in(cookie_file.as_deref(), Some(&username), Some(&password)).await {
+                Ok(true) => {
+                    log("Login successful!");
+                    let _ = event_tx.send(Event::LoginResult(true));
+                }
+                Ok(false) => {
+                    log("Login failed - invalid credentials or verification failed");
+                    let _ = event_tx.send(Event::LoginResult(false));
+                }
+                Err(e) => {
+                    log(&format!("Login error: {}", e));
+                    let _ = event_tx.send(Event::LoginResult(false));
+                }
+            }
+        });
     }
 
     async fn start_search(&mut self, query: String) {
