@@ -1,5 +1,4 @@
-use crossterm::event::{Event as CrosstermEvent, EventStream, KeyEvent, read};
-use futures_lite::StreamExt;
+use crossterm::event::{Event as CrosstermEvent, KeyEvent};
 use anyhow::Result;
 use tokio::sync::mpsc;
 
