@@ -12,10 +12,13 @@ pub enum Event {
     SearchComplete(Vec<crate::search::models::TorrentItem>),
     SearchError(String),
     StreamComplete(String),
+    StreamError(String),
+    StreamLog(String),
     ExtensionQuery(String),
 }
 
 pub struct EventHandler {
+    tx: tokio::sync::mpsc::UnboundedSender<Event>,
     rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
 }
 
@@ -55,7 +58,11 @@ impl EventHandler {
             }
         });
 
-        Self { rx }
+        Self { tx, rx }
+    }
+
+    pub fn sender(&self) -> tokio::sync::mpsc::UnboundedSender<Event> {
+        self.tx.clone()
     }
 
     pub async fn next(&mut self) -> Result<Event> {

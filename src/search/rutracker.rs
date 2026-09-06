@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+#[derive(Clone)]
 pub struct RutrackerSearcher {
     browser: Arc<Mutex<Browser>>,
     logged_in: bool,
