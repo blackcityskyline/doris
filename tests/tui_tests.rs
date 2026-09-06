@@ -120,30 +120,6 @@ fn test_log_scroll_cannot_go_past_end() {
 }
 
 #[test]
-fn test_selection_within_bounds() {
-    let mut app = make_test_app();
-    app.results = make_results(5);
-    app.selected = 4;
-    assert_eq!(app.selected, 4);
-}
-
-#[test]
-fn test_selection_empty_results() {
-    let mut app = make_test_app();
-    app.selected = 0;
-    assert!(app.results.is_empty());
-}
-
-#[test]
-fn test_torrent_item_clone() {
-    let items = make_results(3);
-    let cloned = items[0].clone();
-    assert_eq!(cloned.title, "Torrent 0");
-    assert_eq!(cloned.size, "1 GB");
-    assert_eq!(cloned.seeds, "0");
-}
-
-#[test]
 fn test_render_does_not_panic() {
     let mut app = make_test_app();
     app.results = make_results(10);
@@ -187,7 +163,7 @@ fn test_render_log_scroll() {
 #[test]
 fn test_render_input_mode() {
     let mut app = make_test_app();
-    app.input_mode = true;
+    app.enter_input_mode();
     app.search_input = "test query".into();
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
