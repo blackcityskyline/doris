@@ -214,12 +214,11 @@ impl RutrackerSearcher {
                 fillField(p, '{}');
 
                 const form = u.closest('form');
-                const btn = document.querySelector("input[name='login'], #top_login-btn, input.login_btn, input[type='submit']");
                 if (form) {{
-                    if (form.requestSubmit && btn) form.requestSubmit(btn);
-                    else form.submit();
-                }} else if (btn) {{
-                    btn.click();
+                    form.submit();
+                }} else {{
+                    const btn = document.querySelector("input[type='submit']");
+                    if (btn) btn.click();
                 }}
 
                 return JSON.stringify({{ok:true, uVal:u.value.substring(0,3), pLen:p.value.length, formAction: form ? form.action : 'none'}});
