@@ -14,10 +14,7 @@ pub struct RutrackerSearcher {
 
 impl RutrackerSearcher {
     pub fn new(browser: Arc<Mutex<Browser>>) -> Self {
-        Self {
-            browser,
-            logged_in: false,
-        }
+        Self { browser, logged_in: false }
     }
 
     pub async fn ensure_logged_in(
@@ -30,62 +27,72 @@ impl RutrackerSearcher {
             return Ok(true);
         }
 
-        {
-            let browser = self.browser.lock().await;
-            if self.verify_login(&browser).await {
-                self.logged_in = true;
-                return Ok(true);
-            }
-            browser.navigate("https://rutracker.org/forum/index.php").await?;
-            crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-            Self::wait_cloudflare(&browser).await;
-            if self.verify_login(&browser).await {
-                self.logged_in = true;
-                return Ok(true);
-            }
-        }
+        let browser = self.browser.lock().await;
 
+        // Step 1: Load cookies from file and inject them
         if let Some(cf) = cookie_file {
             if cf.exists() {
-                let loaded_cookies = cookies::load_from_file(cf)?;
-                if !loaded_cookies.is_empty() {
-                    let browser = self.browser.lock().await;
-                    for cookie in &loaded_cookies {
-                        let cookie_json = serde_json::json!({
-                            "name": cookie.name,
-                            "value": cookie.value,
-                            "domain": cookie.domain,
-                            "path": cookie.path,
-                            "secure": cookie.secure,
-                        });
-                        browser.add_cookies(&[cookie_json]).await?;
+                match cookies::load_from_file(cf) {
+                    Ok(loaded) if !loaded.is_empty() => {
+                        crate::log::log("auth", &format!("loaded {} cookies from {}", loaded.len(), cf.display()));
+                        let json_cookies: Vec<serde_json::Value> = loaded.iter().map(|c| {
+                            serde_json::json!({
+                                "name": c.name,
+                                "value": c.value,
+                                "domain": c.domain,
+                                "path": c.path,
+                                "secure": c.secure,
+                            })
+                        }).collect();
+                        browser.add_cookies(&json_cookies).await?;
                     }
-                    browser.navigate("https://rutracker.org/forum/index.php").await?;
-                    Self::wait_cloudflare(&browser).await;
-                    if self.verify_login(&browser).await {
-                        self.logged_in = true;
-                        return Ok(true);
-                    }
+                    _ => {}
                 }
             }
         }
+
+        // Step 2: Navigate to rutracker and pass Cloudflare
+        browser.navigate("https://rutracker.org/forum/index.php").await?;
+        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        Self::wait_cloudflare(&browser).await;
+
+        // Step 3: Check if cookies were enough
+        if self.verify_login(&browser).await {
+            self.logged_in = true;
+            crate::log::log("auth", "logged in via cookies");
+            return Ok(true);
+        }
+
+        // Step 4: Not logged in - need to login with credentials
+        crate::log::log("auth", "cookies didn't work, need login");
+        drop(browser);
 
         if let (Some(user), Some(pass)) = (username, password) {
             if !user.is_empty() && !pass.is_empty() {
-                crate::log::log("search", &format!("attempting login as '{}'", user));
-                if self.login(user, pass).await? {
-                    self.logged_in = true;
-                    if let Some(cf) = cookie_file {
-                        if let Ok(new_cookies) = self.get_cookies().await {
-                            let _ = cookies::save_to_file(cf, &new_cookies);
+                crate::log::log("auth", &format!("attempting login as '{}'", user));
+                let result = self.login(user, pass).await;
+                match result {
+                    Ok(true) => {
+                        self.logged_in = true;
+                        // Save cookies after successful login
+                        if let Some(cf) = cookie_file {
+                            match self.get_cookies().await {
+                                Ok(c) => {
+                                    let _ = cookies::save_to_file(cf, &c);
+                                    crate::log::log("auth", &format!("saved {} cookies to {}", c.len(), cf.display()));
+                                }
+                                Err(e) => crate::log::log("auth", &format!("failed to save cookies: {}", e)),
+                            }
                         }
+                        return Ok(true);
                     }
-                    return Ok(true);
-                } else {
-                    crate::log::log("search", "login returned false");
+                    Ok(false) => {
+                        crate::log::log("auth", "login failed - wrong credentials or form not found");
+                    }
+                    Err(e) => {
+                        crate::log::log("auth", &format!("login error: {}", e));
+                    }
                 }
-            } else {
-                crate::log::log("search", "credentials provided but empty, skipping login");
             }
         }
 
@@ -94,131 +101,94 @@ impl RutrackerSearcher {
 
     async fn login(&self, username: &str, password: &str) -> Result<bool> {
         let browser = self.browser.lock().await;
-        browser.navigate("https://rutracker.org/forum/index.php").await?;
+
+        // Navigate to login page
+        browser.navigate("https://rutracker.org/forum/login.php").await?;
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
         Self::wait_cloudflare(&browser).await;
 
         let username_escaped = username.replace('\\', "\\\\").replace('\'', "\\'");
         let password_escaped = password.replace('\\', "\\\\").replace('\'', "\\'");
 
+        // Synchronous JS - no IIFE, no async. eval_js will wrap in "return ..."
         let login_script = format!(
-            r#"
-            (() => {{
-                const userInput = document.querySelector(
-                    "input[name='login_username'], input[name='username'], #top_username, #login-username"
-                );
-                const passInput = document.querySelector(
-                    "input[name='login_password'], input[name='password'], #top_password, #login-password"
-                );
-                const loginBtn = document.querySelector(
-                    "input[name='login'], #top_login-btn, input.login_btn, input[type='submit'][value='Вход'], button[type='submit']"
-                );
-
-                if (!userInput || !passInput) {{
-                    return JSON.stringify({{
-                        status: 'no_form',
-                        inputs: document.querySelectorAll('input[type=text], input[type=password], input[type=submit]').length,
-                        url: location.href,
-                        title: document.title
-                    }});
-                }}
-
-                function setVal(el, val) {{
-                    el.focus();
-                    el.value = val;
-                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                }}
-
-                setVal(userInput, '{}');
-                setVal(passInput, '{}');
-
-                if (loginBtn) {{
-                    loginBtn.click();
-                }} else {{
-                    const form = userInput.closest('form');
-                    if (form) form.submit();
-                }}
-
-                return JSON.stringify({{
-                    status: 'ok',
-                    userInput: userInput.name || userInput.id,
-                    passInput: passInput.name || passInput.id,
-                    btnFound: !!loginBtn,
-                    url: location.href
-                }});
-            }})()
-            "#,
+            r#"(() => {{
+                const u = document.querySelector("input[name='login_username'], input[name='username'], #top_username, #login-username");
+                const p = document.querySelector("input[name='login_password'], input[name='password'], #top_password, #login-password");
+                const b = document.querySelector("input[name='login'], #top_login-btn, input.login_btn, input[type='submit']");
+                if (!u || !p) return JSON.stringify({{ok:false, error:'no_form', url:location.href}});
+                u.focus(); u.value='{}'; u.dispatchEvent(new Event('input',{{bubbles:true}})); u.dispatchEvent(new Event('change',{{bubbles:true}}));
+                p.focus(); p.value='{}'; p.dispatchEvent(new Event('input',{{bubbles:true}})); p.dispatchEvent(new Event('change',{{bubbles:true}}));
+                if (b) b.click(); else {{ const f = u.closest('form'); if (f) f.submit(); }}
+                return JSON.stringify({{ok:true, user:u.name||u.id, pass:p.name||p.id, hasBtn:!!b}});
+            }})()"#,
             username_escaped, password_escaped
         );
 
         let result = browser.eval_js(&login_script).await?;
         let result_str = result.as_str().unwrap_or("{}");
-        crate::log::log("search", &format!("login result: {}", result_str));
+        crate::log::log("auth", &format!("login script: {}", result_str));
 
         if result_str.contains("no_form") {
-            crate::log::log("search", "login form not found on page");
             return Ok(false);
         }
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        // Wait for page to load after form submit
+        for _ in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let cookies = browser.get_cookies().await.unwrap_or_default();
+            let has_session = cookies.iter().any(|c| {
+                let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+                domain.contains("rutracker") && (name == "bb_data" || name == "bb_session") && !value.is_empty()
+            });
+            if has_session {
+                crate::log::log("auth", "session cookies found after login");
+                return Ok(true);
+            }
 
-        let cookies = browser.get_cookies().await?;
-        let has_session = cookies.iter().any(|c| {
-            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-            (name == "bb_data" || name == "bb_session") && domain.contains("rutracker")
-        });
-        crate::log::log("search", &format!("post-login CDP cookies contain session: {}", has_session));
+            // Check if we're on the forum (login succeeded and redirected)
+            let url = browser.eval_js("location.href").await
+                .map(|v| v.as_str().unwrap_or("").to_string())
+                .unwrap_or_default();
+            if url.contains("index.php") || url.contains("tracker.php") || url.contains("viewtopic.php") {
+                // We're on a forum page - check for logout link
+                let html = browser.get_page_source().await.unwrap_or_default();
+                if html.contains("logout.php") {
+                    crate::log::log("auth", "login succeeded (redirected to forum, logout link found)");
+                    return Ok(true);
+                }
+            }
+        }
 
-        Ok(has_session)
+        Ok(false)
     }
 
     async fn verify_login(&self, browser: &Browser) -> bool {
-        let cookies = match browser.get_cookies().await {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-
-        let has_session = cookies.iter().any(|c| {
-            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
-            let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-            if !domain.contains("rutracker") {
-                return false;
-            }
-            if name == "bb_data" && !value.is_empty() {
+        // Check CDP cookies for session
+        if let Ok(cookies) = browser.get_cookies().await {
+            let has_session = cookies.iter().any(|c| {
+                let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+                domain.contains("rutracker") && (name == "bb_data" || name == "bb_session") && !value.is_empty()
+            });
+            if has_session {
+                crate::log::log("auth", "verify: session cookies present");
                 return true;
             }
-            if name == "bb_session" && !value.starts_with("0-") && !value.is_empty() {
+        }
+
+        // Check HTML for logout link (definitive logged-in indicator)
+        if let Ok(html) = browser.get_page_source().await {
+            if html.contains("logout.php") {
+                crate::log::log("auth", "verify: logout.php link found in HTML");
                 return true;
             }
-            false
-        });
-
-        if has_session {
-            crate::log::log("search", "verify_login: session cookies found");
-            return true;
         }
 
-        let html = browser.get_page_source().await.unwrap_or_default();
-
-        let has_logout_link = html.contains("logout.php") || html.contains("login.php?logout");
-        let has_login_form = html.contains("login_username") || html.contains("login_password")
-            || html.contains("top_username") || html.contains("Вход")
-            || html.contains("Введите ваше имя");
-
-        if has_login_form && !has_logout_link {
-            crate::log::log("search", "verify_login: login form detected, not logged in");
-            return false;
-        }
-
-        if has_logout_link {
-            crate::log::log("search", "verify_login: logout link found, logged in");
-            return true;
-        }
-
-        crate::log::log("search", "verify_login: no indicators, assuming not logged in");
+        crate::log::log("auth", "verify: not logged in");
         false
     }
 
@@ -234,31 +204,13 @@ impl RutrackerSearcher {
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
         Self::wait_cloudflare(&browser).await;
 
-        let title = browser.eval_js("document.title").await
+        let url = browser.eval_js("location.href").await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
-        crate::log::log("search", &format!("page title: '{}'", title));
 
-        let table_check = browser.eval_js("document.querySelector('#tor-tbl') ? 'found' : 'missing'")
-            .await
-            .map(|v| v.as_str().unwrap_or("").to_string())
-            .unwrap_or_default();
-        crate::log::log("search", &format!("#tor-tbl: {}", table_check));
-
-        if table_check == "missing" {
-            let body_snippet = browser.eval_js("document.body ? document.body.innerText.substring(0, 500) : 'no body'")
-                .await
-                .map(|v| v.as_str().unwrap_or("").to_string())
-                .unwrap_or_default();
-            crate::log::log("search", &format!("body snippet: {}", body_snippet));
-
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-            let table_check2 = browser.eval_js("document.querySelector('#tor-tbl') ? 'found' : 'missing'")
-                .await
-                .map(|v| v.as_str().unwrap_or("").to_string())
-                .unwrap_or_default();
-            crate::log::log("search", &format!("#tor-tbl after extra wait: {}", table_check2));
+        if url.contains("login.php") {
+            crate::log::log("search", "redirected to login page - not authenticated");
+            return Ok(vec![]);
         }
 
         let parse_script = r#"
@@ -292,13 +244,12 @@ impl RutrackerSearcher {
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
         let items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
-        crate::log::log("search", &format!("parsed {} results for query '{}'", items.len(), query));
+        crate::log::log("search", &format!("found {} results for '{}'", items.len(), query));
         Ok(items)
     }
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let cookies = self.get_cookies().await?;
-
         let full_url = resolve_url(url);
 
         let client = reqwest::Client::builder()
@@ -330,7 +281,7 @@ impl RutrackerSearcher {
 
         let lower = bytes[..200.min(bytes.len())].to_ascii_lowercase();
         if bytes.starts_with(b"<!DOCTYPE") || lower.windows(5).any(|w| w == b"html") {
-            anyhow::bail!("Downloaded file is HTML page instead of .torrent. Session may not be logged in.");
+            anyhow::bail!("Downloaded HTML instead of .torrent. Session may not be logged in.");
         }
 
         Ok(bytes)
