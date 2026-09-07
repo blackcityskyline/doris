@@ -127,6 +127,9 @@ impl Browser {
         };
 
         if !injected_cookies.is_empty() {
+            eprintln!("[browser] navigating to domain before cookie injection...");
+            browser.navigate("https://rutracker.org/forum/index.php").await.ok();
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             eprintln!("[browser] injecting {} cookies into headless session", injected_cookies.len());
             browser.add_cookies(&injected_cookies).await?;
         }
@@ -553,7 +556,7 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
         let final_value = if !value.is_empty() {
             value
         } else if !encrypted_value.is_empty() {
-            String::new()
+            continue;
         } else {
             continue;
         };
