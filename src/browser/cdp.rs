@@ -67,9 +67,22 @@ impl Browser {
             native_profile.clone()
         };
 
+        let use_xvfb = mode == BrowserMode::Headless && has_xvfb();
+        if use_xvfb {
+            eprintln!("[browser] using xvfb virtual display for headless mode");
+        }
+
         let port = find_free_port()?;
 
-        let mut cmd = std::process::Command::new(&chromedriver_path);
+        let mut cmd = if use_xvfb {
+            let mut c = std::process::Command::new("xvfb-run");
+            c.args(["--auto-servernum", "--server-args=-screen 0 1920x1080x24"]);
+            c.arg(&chromedriver_path);
+            c
+        } else {
+            std::process::Command::new(&chromedriver_path)
+        };
+
         cmd.arg(format!("--port={}", port))
             .arg("--silent")
             .stderr(Stdio::piped())
@@ -91,12 +104,11 @@ impl Browser {
             "--lang=ru-RU".into(),
         ];
 
-        if mode == BrowserMode::Headless {
+        if mode == BrowserMode::Headless && !use_xvfb {
             chrome_args.push("--headless=new".into());
-            chrome_args.push("--window-size=1920,1080".into());
-        } else {
-            chrome_args.push("--window-size=1920,1080".into());
         }
+
+        chrome_args.push("--window-size=1920,1080".into());
 
         if let Some(ref dir) = temp_profile {
             chrome_args.push(format!("--user-data-dir={}", dir.display()));
@@ -216,6 +228,16 @@ fn find_free_port() -> Result<u16> {
     let port = listener.local_addr()?.port();
     drop(listener);
     Ok(port)
+}
+
+fn has_xvfb() -> bool {
+    std::process::Command::new("which")
+        .arg("xvfb-run")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 fn graceful_shutdown_if_running(profile_dir: &Path) {
