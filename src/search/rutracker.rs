@@ -71,14 +71,21 @@ impl RutrackerSearcher {
         }
 
         if let (Some(user), Some(pass)) = (username, password) {
-            if self.login(user, pass).await? {
-                self.logged_in = true;
-                if let Some(cf) = cookie_file {
-                    if let Ok(new_cookies) = self.get_cookies().await {
-                        let _ = cookies::save_to_file(cf, &new_cookies);
+            if !user.is_empty() && !pass.is_empty() {
+                eprintln!("[search] attempting login as '{}'", user);
+                if self.login(user, pass).await? {
+                    self.logged_in = true;
+                    if let Some(cf) = cookie_file {
+                        if let Ok(new_cookies) = self.get_cookies().await {
+                            let _ = cookies::save_to_file(cf, &new_cookies);
+                        }
                     }
+                    return Ok(true);
+                } else {
+                    eprintln!("[search] login returned false");
                 }
-                return Ok(true);
+            } else {
+                eprintln!("[search] credentials provided but empty, skipping login");
             }
         }
 
@@ -91,62 +98,93 @@ impl RutrackerSearcher {
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
         Self::wait_cloudflare(&browser).await;
 
+        let username_escaped = username.replace('\\', "\\\\").replace('\'', "\\'");
+        let password_escaped = password.replace('\\', "\\\\").replace('\'', "\\'");
+
         let login_script = format!(
             r#"
             (() => {{
                 const userInput = document.querySelector("input[name='login_username'], #top_username");
                 const passInput = document.querySelector("input[name='login_password'], #top_password");
-                const loginBtn = document.querySelector("input[name='login'], #top_login-btn");
+                const loginBtn = document.querySelector("input[name='login'], #top_login-btn, input.login_btn");
 
-                if (userInput && passInput && loginBtn) {{
-                    userInput.value = '{}';
-                    passInput.value = '{}';
-                    loginBtn.click();
-                    return true;
+                if (!userInput || !passInput) {{
+                    return 'no_form';
                 }}
-                return false;
+
+                function setVal(el, val) {{
+                    el.focus();
+                    el.value = val;
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+
+                setVal(userInput, '{}');
+                setVal(passInput, '{}');
+
+                if (loginBtn) {{
+                    loginBtn.click();
+                }} else {{
+                    const form = userInput.closest('form');
+                    if (form) form.submit();
+                }}
+
+                return 'ok';
             }})()
             "#,
-            username.replace('\'', "\\'"),
-            password.replace('\'', "\\'")
+            username_escaped, password_escaped
         );
 
         let result = browser.eval_js(&login_script).await?;
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let status = result.as_str().unwrap_or("unknown");
+        eprintln!("[search] login form fill result: {}", status);
 
-        if result.as_bool().unwrap_or(false) {
-            return Ok(true);
+        if status == "no_form" {
+            eprintln!("[search] login form not found on page");
+            return Ok(false);
         }
 
-        Ok(false)
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        let cookies = browser.get_cookies().await?;
+        let has_session = cookies.iter().any(|c| {
+            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+            (name == "bb_data" || name == "bb_session") && domain.contains("rutracker")
+        });
+        eprintln!("[search] post-login CDP cookies contain session: {}", has_session);
+
+        Ok(has_session)
     }
 
     async fn verify_login(&self, browser: &Browser) -> bool {
-        let script = r#"
-        (() => {
-            const cookies = document.cookie.split(';').reduce((acc, c) => {
-                const [k, ...v] = c.trim().split('=');
-                acc[k] = v.join('=');
-                return acc;
-            }, {});
+        let cookies = match browser.get_cookies().await {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
 
-            if (cookies['bb_data']) return true;
-            if (cookies['bb_session'] && !cookies['bb_session'].startsWith('0-')) return true;
+        let has_session = cookies.iter().any(|c| {
+            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+            if !domain.contains("rutracker") {
+                return false;
+            }
+            if name == "bb_data" && !value.is_empty() {
+                return true;
+            }
+            if name == "bb_session" && !value.starts_with("0-") && !value.is_empty() {
+                return true;
+            }
+            false
+        });
 
-            const logout = document.querySelector("a[href*='logout']");
-            if (logout) return true;
+        if has_session {
+            return true;
+        }
 
-            const profileLink = document.querySelector("a[href*='profile.php']");
-            if (profileLink) return true;
-
-            const topUsername = document.querySelector("[id='top-username'], .top_menu_username");
-            if (topUsername && topUsername.textContent.trim().length > 0) return true;
-
-            return false;
-        })()
-        "#;
-
-        browser.eval_js(script).await.ok().and_then(|v| v.as_bool()).unwrap_or(false)
+        let html = browser.get_page_source().await.unwrap_or_default();
+        html.contains("logout") || html.contains("profile.php")
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
