@@ -1,4 +1,4 @@
-use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent, MouseButton};
+use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
 use anyhow::Result;
 use tokio::sync::mpsc;
 

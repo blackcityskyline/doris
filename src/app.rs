@@ -24,6 +24,7 @@ pub struct App {
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
     browser_mode: BrowserMode,
+    #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
     bridge: Option<BridgeServer>,
@@ -87,6 +88,9 @@ impl App {
             self.ui.add_log("T-Hunter started. Press 's' or 'i' to search, 'l' for login, Enter to play.");
             if self.bridge.is_some() {
                 self.ui.add_log(&format!("Extension Bridge listening on port {}", self.config.bridge_port));
+            }
+            if crate::credentials::load_credentials().is_some() {
+                self.ui.add_log("Saved credentials found (will use if cookies fail)");
             }
         }
 
@@ -234,6 +238,8 @@ impl App {
     async fn do_login(&mut self, username: &str, password: &str) {
         self.ui.add_log(&format!("Logging in as '{}'...", username));
 
+        let _ = crate::credentials::save_credentials(username, password);
+
         let browser = match self.get_browser().await {
             Ok(b) => b,
             Err(e) => {
@@ -285,6 +291,7 @@ impl App {
         let cookie_file = self.args.cookie_file.clone();
         let username = self.args.username.clone();
         let password = self.args.password.clone();
+        let saved_creds = crate::credentials::load_credentials();
         let event_tx = self.event_handler.sender();
 
         tokio::spawn(async move {
@@ -292,7 +299,18 @@ impl App {
 
             let mut searcher = RutrackerSearcher::new(browser);
 
-            match searcher.ensure_logged_in(cookie_file.as_deref(), username.as_deref(), password.as_deref()).await {
+            let (cred_user, cred_pass) = match (username, password) {
+                (Some(u), Some(p)) => (Some(u), Some(p)),
+                _ => match saved_creds {
+                    Some((u, p)) => {
+                        log("Using saved credentials");
+                        (Some(u), Some(p))
+                    }
+                    None => (None, None),
+                },
+            };
+
+            match searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref()).await {
                 Ok(true) => log("Logged in successfully"),
                 Ok(false) => log("Login failed - continuing anyway"),
                 Err(e) => log(&format!("Login error: {}", e)),
