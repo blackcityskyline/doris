@@ -111,10 +111,20 @@ impl App {
                             self.terminal_size = (w, h);
                         },
                         Event::SearchComplete(results) => {
-                            self.ui.results = results.clone();
-                            self.ui.selected = 0;
+                            let count = results.len();
+                            if self.ui.search_offset > 0 {
+                                self.ui.results.extend(results);
+                                self.ui.add_log(&format!("Loaded {} more results (total: {})", count, self.ui.results.len()));
+                            } else {
+                                self.ui.results = results;
+                                self.ui.selected = 0;
+                                self.ui.add_log(&format!("Found {} results", count));
+                            }
+                            if count < 50 {
+                                self.ui.all_loaded = true;
+                            }
+                            self.ui.search_offset = self.ui.results.len();
                             self.ui.state = AppState::Idle;
-                            self.ui.add_log(&format!("Found {} results", results.len()));
                         }
                         Event::SearchError(err) => {
                             self.ui.state = AppState::Idle;
@@ -145,6 +155,9 @@ impl App {
                             self.ui.search_input = query.clone();
                             self.start_search(query).await;
                         }
+                        Event::LoadMore(query, offset) => {
+                            self.load_more(query, offset).await;
+                        }
                     }
                 }
                 query = self.search_rx.recv() => {
@@ -167,17 +180,23 @@ impl App {
     fn handle_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                if self.ui.modal == Modal::None {
+                if self.ui.detail_log_mode {
+                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(3);
+                } else if self.ui.modal == Modal::None {
                     self.ui.scroll_logs_up();
                 }
             }
             MouseEventKind::ScrollDown => {
-                if self.ui.modal == Modal::None {
+                if self.ui.detail_log_mode {
+                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
+                } else if self.ui.modal == Modal::None {
                     self.ui.scroll_logs_down();
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if self.ui.modal == Modal::None {
+                if self.ui.detail_log_mode {
+                    self.ui.detail_log_scroll = self.ui.detail_logs.len();
+                } else if self.ui.modal == Modal::None {
                     let area = Rect::new(0, 0, self.terminal_size.0, self.terminal_size.1);
                     self.ui.click_results_at(mouse.row, area);
                 }
@@ -222,6 +241,12 @@ impl App {
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.ui.navigate_down();
+                if self.ui.needs_more() {
+                    if let Some(q) = self.ui.search_query.clone() {
+                        let offset = self.ui.search_offset;
+                        self.load_more(q, offset).await;
+                    }
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.ui.navigate_up();
@@ -308,6 +333,9 @@ impl App {
 
     async fn start_search(&mut self, query: String) {
         self.ui.state = AppState::Searching;
+        self.ui.search_query = Some(query.clone());
+        self.ui.search_offset = 0;
+        self.ui.all_loaded = false;
         self.ui.add_log(&format!("Searching for '{}'...", query));
 
         let browser = match self.get_browser().await {
@@ -397,8 +425,60 @@ impl App {
                         Ok(hash) => {
                             log(&format!("Uploaded, hash: {}", hash));
                             match torrserver.play(&hash, &item.title, None).await {
-                                Ok(url) => {
-                                    let _ = event_tx.send(Event::StreamComplete(url));
+                                Ok(mut child) => {
+                                    let stream_url = format!("http://127.0.0.1:8090/stream/{}", hash);
+                                    let _ = event_tx.send(Event::StreamComplete(stream_url));
+
+                                    if let Some(stderr) = child.stderr.take() {
+                                        use tokio::io::{AsyncBufReadExt, BufReader};
+                                        let mut reader = BufReader::new(stderr).lines();
+                                        while let Ok(Some(line)) = reader.next_line().await {
+                                            let l = line.trim();
+                                            if l.is_empty() { continue; }
+                                            let low = l.to_lowercase();
+                                            if low.contains("vo:")
+                                                || low.contains("ao:")
+                                                || low.contains("av:")
+                                                || low.contains("video:")
+                                                || low.contains("audio:")
+                                                || low.contains("cache")
+                                                || low.contains("hwdec")
+                                                || low.contains("vaapi")
+                                                || low.contains("vdpau")
+                                                || low.contains("nvdec")
+                                                || low.contains("cuda")
+                                                || low.contains("drm")
+                                                || low.contains("duration:")
+                                                || low.contains("playing:")
+                                                || low.contains("exiting")
+                                                || low.contains("resume")
+                                                || low.contains("track")
+                                                || low.contains("tag:")
+                                                || low.contains("kbps")
+                                                || low.contains("fps")
+                                                || low.contains("h264")
+                                                || low.contains("h265")
+                                                || low.contains("hevc")
+                                                || low.contains("av1")
+                                                || low.contains("vp9")
+                                                || low.contains("aac")
+                                                || low.contains("ac3")
+                                                || low.contains("opus")
+                                                || low.contains("flac")
+                                                || low.contains("passthrough")
+                                                || low.contains("format")
+                                                || low.contains("video output")
+                                                || low.contains("audio output")
+                                                || low.contains("pix_fmt")
+                                                || low.contains("backend")
+                                                || low.contains("1056")
+                                                || low.contains("1920")
+                                                || low.contains("1280")
+                                            {
+                                                log(&format!("MPV: {}", l));
+                                            }
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     log(&format!("Player error: {}", e));
@@ -434,5 +514,49 @@ impl App {
         self.browser = Some(Arc::clone(&browser));
 
         Ok(browser)
+    }
+
+    async fn load_more(&mut self, query: String, offset: usize) {
+        self.ui.state = AppState::Searching;
+
+        let browser = match self.get_browser().await {
+            Ok(b) => b,
+            Err(e) => {
+                self.ui.add_log(&format!("Browser error: {}", e));
+                self.ui.state = AppState::Idle;
+                return;
+            }
+        };
+
+        let event_tx_log = self.event_handler.sender();
+        let event_tx_result = self.event_handler.sender();
+        let cookie_file = self.args.cookie_file.clone();
+        let username = self.args.username.clone();
+        let password = self.args.password.clone();
+        let saved_creds = crate::credentials::load_credentials();
+        let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
+
+        tokio::spawn(async move {
+            let mut searcher = RutrackerSearcher::new(browser);
+
+            let (cred_user, cred_pass) = match (username, password) {
+                (Some(u), Some(p)) => (Some(u), Some(p)),
+                _ => match saved_creds {
+                    Some((u, p)) => (Some(u), Some(p)),
+                    None => (None, None),
+                },
+            };
+
+            let _ = searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref(), log.clone()).await;
+
+            match searcher.search_page(&query, offset).await {
+                Ok(results) => {
+                    let _ = event_tx_result.send(Event::SearchComplete(results));
+                }
+                Err(e) => {
+                    let _ = event_tx_result.send(Event::SearchError(e.to_string()));
+                }
+            }
+        });
     }
 }

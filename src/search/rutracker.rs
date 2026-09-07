@@ -367,12 +367,23 @@ impl RutrackerSearcher {
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
+        self.search_page(query, 0).await
+    }
+
+    pub async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
         let browser = self.browser.lock().await;
         let encoded_query = urlencoding::encode(query);
-        let search_url = format!(
-            "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2",
-            encoded_query
-        );
+        let search_url = if start == 0 {
+            format!(
+                "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2",
+                encoded_query
+            )
+        } else {
+            format!(
+                "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2&start={}",
+                encoded_query, start
+            )
+        };
 
         browser.navigate(&search_url).await?;
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
