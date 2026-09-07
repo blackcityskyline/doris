@@ -104,12 +104,23 @@ impl RutrackerSearcher {
         let login_script = format!(
             r#"
             (() => {{
-                const userInput = document.querySelector("input[name='login_username'], #top_username");
-                const passInput = document.querySelector("input[name='login_password'], #top_password");
-                const loginBtn = document.querySelector("input[name='login'], #top_login-btn, input.login_btn");
+                const userInput = document.querySelector(
+                    "input[name='login_username'], input[name='username'], #top_username, #login-username"
+                );
+                const passInput = document.querySelector(
+                    "input[name='login_password'], input[name='password'], #top_password, #login-password"
+                );
+                const loginBtn = document.querySelector(
+                    "input[name='login'], #top_login-btn, input.login_btn, input[type='submit'][value='Вход'], button[type='submit']"
+                );
 
                 if (!userInput || !passInput) {{
-                    return 'no_form';
+                    return JSON.stringify({{
+                        status: 'no_form',
+                        inputs: document.querySelectorAll('input[type=text], input[type=password], input[type=submit]').length,
+                        url: location.href,
+                        title: document.title
+                    }});
                 }}
 
                 function setVal(el, val) {{
@@ -129,17 +140,23 @@ impl RutrackerSearcher {
                     if (form) form.submit();
                 }}
 
-                return 'ok';
+                return JSON.stringify({{
+                    status: 'ok',
+                    userInput: userInput.name || userInput.id,
+                    passInput: passInput.name || passInput.id,
+                    btnFound: !!loginBtn,
+                    url: location.href
+                }});
             }})()
             "#,
             username_escaped, password_escaped
         );
 
         let result = browser.eval_js(&login_script).await?;
-        let status = result.as_str().unwrap_or("unknown");
-        eprintln!("[search] login form fill result: {}", status);
+        let result_str = result.as_str().unwrap_or("{}");
+        eprintln!("[search] login result: {}", result_str);
 
-        if status == "no_form" {
+        if result_str.contains("no_form") {
             eprintln!("[search] login form not found on page");
             return Ok(false);
         }
@@ -180,11 +197,29 @@ impl RutrackerSearcher {
         });
 
         if has_session {
+            eprintln!("[search] verify_login: session cookies found");
             return true;
         }
 
         let html = browser.get_page_source().await.unwrap_or_default();
-        html.contains("logout") || html.contains("profile.php")
+
+        let has_logout_link = html.contains("logout.php") || html.contains("login.php?logout");
+        let has_login_form = html.contains("login_username") || html.contains("login_password")
+            || html.contains("top_username") || html.contains("Вход")
+            || html.contains("Введите ваше имя");
+
+        if has_login_form && !has_logout_link {
+            eprintln!("[search] verify_login: login form detected, not logged in");
+            return false;
+        }
+
+        if has_logout_link {
+            eprintln!("[search] verify_login: logout link found, logged in");
+            return true;
+        }
+
+        eprintln!("[search] verify_login: no indicators, assuming not logged in");
+        false
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
