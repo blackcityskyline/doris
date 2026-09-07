@@ -199,6 +199,33 @@ impl RutrackerSearcher {
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
         Self::wait_cloudflare(&browser).await;
 
+        let title = browser.eval_js("document.title").await
+            .map(|v| v.as_str().unwrap_or("").to_string())
+            .unwrap_or_default();
+        eprintln!("[search] page title: '{}'", title);
+
+        let table_check = browser.eval_js("document.querySelector('#tor-tbl') ? 'found' : 'missing'")
+            .await
+            .map(|v| v.as_str().unwrap_or("").to_string())
+            .unwrap_or_default();
+        eprintln!("[search] #tor-tbl: {}", table_check);
+
+        if table_check == "missing" {
+            let body_snippet = browser.eval_js("document.body ? document.body.innerText.substring(0, 500) : 'no body'")
+                .await
+                .map(|v| v.as_str().unwrap_or("").to_string())
+                .unwrap_or_default();
+            eprintln!("[search] body snippet: {}", body_snippet);
+
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+            let table_check2 = browser.eval_js("document.querySelector('#tor-tbl') ? 'found' : 'missing'")
+                .await
+                .map(|v| v.as_str().unwrap_or("").to_string())
+                .unwrap_or_default();
+            eprintln!("[search] #tor-tbl after extra wait: {}", table_check2);
+        }
+
         let parse_script = r#"
         return JSON.stringify(Array.from(document.querySelectorAll('#tor-tbl tbody tr')).map(row => {
             const titleLink = row.querySelector('a.tLink');
@@ -230,6 +257,7 @@ impl RutrackerSearcher {
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
         let items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
+        eprintln!("[search] parsed {} results for query '{}'", items.len(), query);
         Ok(items)
     }
 
