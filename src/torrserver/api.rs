@@ -60,7 +60,7 @@ impl TorrServer {
         Ok(hash.to_string())
     }
 
-    pub async fn play(&self, hash: &str, title: &str, player: Option<&str>) -> Result<String> {
+    pub async fn play(&self, hash: &str, title: &str, player: Option<&str>) -> Result<tokio::process::Child> {
         let safe_title = title
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
@@ -75,10 +75,14 @@ impl TorrServer {
         );
 
         let player_name = player.unwrap_or("mpv");
-        let _ = tokio::process::Command::new(player_name)
+        let child = tokio::process::Command::new(player_name)
             .arg(&stream_url)
-            .spawn();
+            .arg("--no-terminal")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to launch {}: {}", player_name, e))?;
 
-        Ok(stream_url)
+        Ok(child)
     }
 }

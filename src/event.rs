@@ -15,6 +15,7 @@ pub enum Event {
     StreamLog(String),
     LoginResult(bool),
     ExtensionQuery(String),
+    LoadMore(String, usize),
 }
 
 pub struct EventHandler {

@@ -57,6 +57,9 @@ pub struct App {
     pub running: bool,
     pub input_mode: bool,
     pub modal: Modal,
+    pub search_query: Option<String>,
+    pub search_offset: usize,
+    pub all_loaded: bool,
 }
 
 impl App {
@@ -76,6 +79,9 @@ impl App {
             running: true,
             input_mode: false,
             modal: Modal::None,
+            search_query: None,
+            search_offset: 0,
+            all_loaded: false,
         }
     }
 
@@ -233,11 +239,23 @@ impl App {
 
     pub fn navigate_down(&mut self) -> bool {
         if !self.results.is_empty() && !self.input_mode && self.modal == Modal::None {
-            self.selected = (self.selected + 1).min(self.results.len() - 1);
+            if self.selected < self.results.len() - 1 {
+                self.selected += 1;
+            } else if !self.all_loaded && self.state == AppState::Idle {
+                return true;
+            }
             true
         } else {
             false
         }
+    }
+
+    pub fn needs_more(&self) -> bool {
+        self.search_query.is_some()
+            && !self.all_loaded
+            && self.state == AppState::Idle
+            && self.selected >= self.results.len().saturating_sub(3)
+            && !self.results.is_empty()
     }
 
     pub fn navigate_up(&mut self) -> bool {
