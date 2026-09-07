@@ -47,16 +47,16 @@ impl Browser {
         let temp_profile = if mode == BrowserMode::Headless {
             let tmp = std::env::temp_dir().join(format!("t-hunter-headless-{}", std::process::id()));
             std::fs::create_dir_all(&tmp)?;
-            eprintln!("[browser] headless mode: using temp profile {}", tmp.display());
+            crate::log::log("browser", &format!("headless: temp profile {}", tmp.display()));
 
             if let Some(ref native) = native_profile {
                 match extract_cookies_from_native_profile(native) {
                     Ok(cookies) => {
-                        eprintln!("[browser] extracted {} cookies from native profile", cookies.len());
+                        crate::log::log("browser", &format!("extracted {} cookies from native profile", cookies.len()));
                         injected_cookies = cookies;
                     }
                     Err(e) => {
-                        eprintln!("[browser] could not extract native cookies: {}", e);
+                        crate::log::log("browser", &format!("could not extract native cookies: {}", e));
                     }
                 }
             }
@@ -71,7 +71,7 @@ impl Browser {
         let use_xvfb = mode == BrowserMode::Headless && has_xvfb();
         let mut xvfb_child = None;
         if use_xvfb {
-            eprintln!("[browser] using xvfb virtual display for headless mode");
+            crate::log::log("browser", "using xvfb virtual display");
         }
 
         let port = find_free_port()?;
@@ -132,7 +132,7 @@ impl Browser {
             .connect(&webdriver_url)
             .await?;
 
-        eprintln!("[browser] {} via patched chromedriver on port {}", mode, port);
+        crate::log::log("browser", &format!("{} via patched chromedriver on port {}", mode, port));
 
         let browser = Self {
             client,
@@ -142,10 +142,10 @@ impl Browser {
         };
 
         if !injected_cookies.is_empty() {
-            eprintln!("[browser] navigating to domain before cookie injection...");
+            crate::log::log("browser", "navigating to domain for cookie injection...");
             browser.navigate("https://rutracker.org/forum/index.php").await.ok();
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            eprintln!("[browser] injecting {} cookies into headless session", injected_cookies.len());
+            crate::log::log("browser", &format!("injecting {} cookies into headless session", injected_cookies.len()));
             browser.add_cookies(&injected_cookies).await?;
         }
 
@@ -223,7 +223,7 @@ impl Drop for Browser {
             let _ = xvfb.kill();
         }
         if let Some(ref path) = self.temp_profile {
-            eprintln!("[browser] cleaning up headless profile {}", path.display());
+            crate::log::log("browser", &format!("cleanup temp profile {}", path.display()));
             let _ = std::fs::remove_dir_all(path);
         }
     }
@@ -268,7 +268,7 @@ fn start_xvfb(display_num: u32) -> Option<std::process::Child> {
         .spawn()
         .ok()?;
     std::thread::sleep(std::time::Duration::from_secs(1));
-    eprintln!("[browser] started Xvfb on :{}", display_num);
+    crate::log::log("browser", &format!("started Xvfb on :{}", display_num));
     Some(child)
 }
 
@@ -278,7 +278,7 @@ fn graceful_shutdown_if_running(profile_dir: &Path) {
         return;
     }
 
-    eprintln!("[browser] browser running with profile, shutting down gracefully...");
+    crate::log::log("browser", "shutting down browser...");
 
     let pids = find_pids_by_profile(profile_dir);
     if pids.is_empty() {
@@ -291,16 +291,16 @@ fn graceful_shutdown_if_running(profile_dir: &Path) {
             .arg(pid.to_string())
             .output();
     }
-    eprintln!("[browser] sent SIGTERM to {} processes", pids.len());
+    crate::log::log("browser", &format!("sent SIGTERM to {} processes", pids.len()));
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         if !lock.symlink_metadata().is_ok() {
-            eprintln!("[browser] browser exited cleanly");
+            crate::log::log("browser", "browser exited cleanly");
             return;
         }
         if std::time::Instant::now() >= deadline {
-            eprintln!("[browser] timeout, sending SIGKILL");
+            crate::log::log("browser", "timeout, sending SIGKILL");
             for pid in &pids {
                 let _ = std::process::Command::new("kill")
                     .args(["-9", &pid.to_string()])
@@ -346,7 +346,7 @@ fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
         ];
         for config_dir in &dirs_to_check {
             if config_dir.join("Default").exists() {
-                eprintln!("[browser] using user profile: {}", config_dir.display());
+                crate::log::log("browser", &format!("profile: {}", config_dir.display()));
                 return Some(config_dir.clone());
             }
         }
@@ -380,7 +380,7 @@ async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
         std::fs::set_permissions(&patched_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    eprintln!("[browser] Patched chromedriver -> {}", patched_path.display());
+    crate::log::log("browser", &format!("patched chromedriver -> {}", patched_path.display()));
     Ok(patched_path)
 }
 
@@ -404,7 +404,7 @@ fn patch_chromedriver_binary(content: &[u8]) -> Vec<u8> {
                     .collect();
                 result[abs_pos..end].copy_from_slice(&patch);
                 search_start = abs_pos + actual_len;
-                eprintln!("[browser] Patched cdc block at offset {}, length {}", abs_pos, actual_len);
+                crate::log::log("browser", &format!("patched cdc block at offset {}, length {}", abs_pos, actual_len));
             } else {
                 search_start += pos + 1;
             }
@@ -475,7 +475,7 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
         return Ok(downloaded);
     }
 
-    eprintln!("[browser] chromedriver not found, downloading for Chromium {}...", browser_major);
+    crate::log::log("browser", &format!("downloading chromedriver for Chromium {}...", browser_major));
 
     let url = download_chromedriver_url(browser_major).await?;
 
@@ -508,7 +508,7 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
         std::fs::set_permissions(&downloaded, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    eprintln!("[browser] chromedriver downloaded -> {}", downloaded.display());
+    crate::log::log("browser", &format!("chromedriver downloaded -> {}", downloaded.display()));
     Ok(downloaded)
 }
 

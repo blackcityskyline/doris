@@ -72,7 +72,7 @@ impl RutrackerSearcher {
 
         if let (Some(user), Some(pass)) = (username, password) {
             if !user.is_empty() && !pass.is_empty() {
-                eprintln!("[search] attempting login as '{}'", user);
+                crate::log::log("search", &format!("attempting login as '{}'", user));
                 if self.login(user, pass).await? {
                     self.logged_in = true;
                     if let Some(cf) = cookie_file {
@@ -82,10 +82,10 @@ impl RutrackerSearcher {
                     }
                     return Ok(true);
                 } else {
-                    eprintln!("[search] login returned false");
+                    crate::log::log("search", "login returned false");
                 }
             } else {
-                eprintln!("[search] credentials provided but empty, skipping login");
+                crate::log::log("search", "credentials provided but empty, skipping login");
             }
         }
 
@@ -154,10 +154,10 @@ impl RutrackerSearcher {
 
         let result = browser.eval_js(&login_script).await?;
         let result_str = result.as_str().unwrap_or("{}");
-        eprintln!("[search] login result: {}", result_str);
+        crate::log::log("search", &format!("login result: {}", result_str));
 
         if result_str.contains("no_form") {
-            eprintln!("[search] login form not found on page");
+            crate::log::log("search", "login form not found on page");
             return Ok(false);
         }
 
@@ -169,7 +169,7 @@ impl RutrackerSearcher {
             let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
             (name == "bb_data" || name == "bb_session") && domain.contains("rutracker")
         });
-        eprintln!("[search] post-login CDP cookies contain session: {}", has_session);
+        crate::log::log("search", &format!("post-login CDP cookies contain session: {}", has_session));
 
         Ok(has_session)
     }
@@ -197,7 +197,7 @@ impl RutrackerSearcher {
         });
 
         if has_session {
-            eprintln!("[search] verify_login: session cookies found");
+            crate::log::log("search", "verify_login: session cookies found");
             return true;
         }
 
@@ -209,16 +209,16 @@ impl RutrackerSearcher {
             || html.contains("Введите ваше имя");
 
         if has_login_form && !has_logout_link {
-            eprintln!("[search] verify_login: login form detected, not logged in");
+            crate::log::log("search", "verify_login: login form detected, not logged in");
             return false;
         }
 
         if has_logout_link {
-            eprintln!("[search] verify_login: logout link found, logged in");
+            crate::log::log("search", "verify_login: logout link found, logged in");
             return true;
         }
 
-        eprintln!("[search] verify_login: no indicators, assuming not logged in");
+        crate::log::log("search", "verify_login: no indicators, assuming not logged in");
         false
     }
 
@@ -237,20 +237,20 @@ impl RutrackerSearcher {
         let title = browser.eval_js("document.title").await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
-        eprintln!("[search] page title: '{}'", title);
+        crate::log::log("search", &format!("page title: '{}'", title));
 
         let table_check = browser.eval_js("document.querySelector('#tor-tbl') ? 'found' : 'missing'")
             .await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
-        eprintln!("[search] #tor-tbl: {}", table_check);
+        crate::log::log("search", &format!("#tor-tbl: {}", table_check));
 
         if table_check == "missing" {
             let body_snippet = browser.eval_js("document.body ? document.body.innerText.substring(0, 500) : 'no body'")
                 .await
                 .map(|v| v.as_str().unwrap_or("").to_string())
                 .unwrap_or_default();
-            eprintln!("[search] body snippet: {}", body_snippet);
+            crate::log::log("search", &format!("body snippet: {}", body_snippet));
 
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
@@ -258,7 +258,7 @@ impl RutrackerSearcher {
                 .await
                 .map(|v| v.as_str().unwrap_or("").to_string())
                 .unwrap_or_default();
-            eprintln!("[search] #tor-tbl after extra wait: {}", table_check2);
+            crate::log::log("search", &format!("#tor-tbl after extra wait: {}", table_check2));
         }
 
         let parse_script = r#"
@@ -292,7 +292,7 @@ impl RutrackerSearcher {
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
         let items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
-        eprintln!("[search] parsed {} results for query '{}'", items.len(), query);
+        crate::log::log("search", &format!("parsed {} results for query '{}'", items.len(), query));
         Ok(items)
     }
 
