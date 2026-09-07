@@ -77,7 +77,6 @@ impl TorrServer {
         let player_name = player.unwrap_or("mpv");
         let child = tokio::process::Command::new(player_name)
             .arg(&stream_url)
-            .arg("--no-terminal")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()

@@ -11,7 +11,7 @@ use crate::search::rutracker::RutrackerSearcher;
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal};
+use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction};
 use crate::cli::Args;
 use crate::config::Config;
 
@@ -85,7 +85,7 @@ impl App {
             self.ui.search_input = query.clone();
             self.start_search(query).await;
         } else {
-            self.ui.add_log("T-Hunter started. Press 's' or 'i' to search, 'a' for login, Enter to play.");
+            self.ui.add_log("T-Hunter started. Press 's'/'i' to search, 'a' for login, 'S' for settings, Enter to play.");
             self.ui.add_log("Press 'L' for detailed log view");
             if self.bridge.is_some() {
                 self.ui.add_log(&format!("Extension Bridge listening on port {}", self.config.bridge_port));
@@ -228,6 +228,42 @@ impl App {
             return Ok(());
         }
 
+        if let Modal::HealthCheck(_) = self.ui.modal {
+            if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                self.ui.modal = Modal::None;
+            }
+            return Ok(());
+        }
+
+        if let Modal::Settings(_) = self.ui.modal {
+            if let Some(action) = self.ui.settings_key(key) {
+                match action {
+                    SettingsAction::ToggleHeadless => {
+                        self.ui.headless = !self.ui.headless;
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleMode => {
+                        self.ui.stream_mode = !self.ui.stream_mode;
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::SetDownloadDir => {
+                        self.ui.add_log(&format!("Download dir: {}", self.ui.download_dir));
+                        self.ui.modal = Modal::None;
+                    }
+                    SettingsAction::OpenLog => {
+                        self.ui.modal = Modal::None;
+                        self.ui.detail_log_mode = true;
+                    }
+                    SettingsAction::RunHealthCheck => {
+                        let results = self.ui.health_check();
+                        self.ui.modal = Modal::HealthCheck(results);
+                    }
+                    SettingsAction::Close => {}
+                }
+            }
+            return Ok(());
+        }
+
         if self.ui.modal != Modal::None {
             if let Some((username, password)) = self.ui.login_modal_key(key) {
                 self.do_login(&username, &password).await;
@@ -261,6 +297,9 @@ impl App {
             }
             KeyCode::Char('L') if !self.ui.input_mode => {
                 self.ui.toggle_detail_log();
+            }
+            KeyCode::Char('S') if !self.ui.input_mode => {
+                self.ui.open_settings();
             }
             KeyCode::Esc => {
                 if self.ui.detail_log_mode {
@@ -408,7 +447,7 @@ impl App {
         tokio::spawn(async move {
             let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
 
-            log(&format!("Downloading torrent: {}", item.title));
+            log(&format!("Fetching .torrent file: {}", item.title));
 
             if !torrserver.is_reachable().await {
                 log("TorrServer is not reachable! Start TorrServer on localhost:8090");
