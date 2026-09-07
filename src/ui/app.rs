@@ -15,6 +15,31 @@ pub enum AppState {
 pub enum Modal {
     None,
     Login(LoginState),
+    Settings(SettingsState),
+    HealthCheck(Vec<String>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingsState {
+    pub selected: usize,
+    pub items: Vec<SettingsItem>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingsItem {
+    pub label: String,
+    pub value: String,
+    pub action: SettingsAction,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SettingsAction {
+    ToggleHeadless,
+    ToggleMode,
+    SetDownloadDir,
+    RunHealthCheck,
+    OpenLog,
+    Close,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +85,9 @@ pub struct App {
     pub search_query: Option<String>,
     pub search_offset: usize,
     pub all_loaded: bool,
+    pub headless: bool,
+    pub stream_mode: bool,
+    pub download_dir: String,
 }
 
 impl App {
@@ -82,6 +110,11 @@ impl App {
             search_query: None,
             search_offset: 0,
             all_loaded: false,
+            headless: true,
+            stream_mode: true,
+            download_dir: dirs::download_dir()
+                .map(|d| d.display().to_string())
+                .unwrap_or_else(|| "/tmp".to_string()),
         }
     }
 
@@ -161,6 +194,106 @@ impl App {
 
     pub fn open_login_modal(&mut self) {
         self.modal = Modal::Login(LoginState::new());
+    }
+
+    pub fn open_settings(&mut self) {
+        let headless_str = if self.headless { "Headless (hidden)" } else { "GUI (visible)" };
+        let mode_str = if self.stream_mode { "Streaming (TorrServer)" } else { "Download (.torrent file)" };
+        self.modal = Modal::Settings(SettingsState {
+            selected: 0,
+            items: vec![
+                SettingsItem { label: "Browser mode".into(), value: headless_str.into(), action: SettingsAction::ToggleHeadless },
+                SettingsItem { label: "Play mode".into(), value: mode_str.into(), action: SettingsAction::ToggleMode },
+                SettingsItem { label: "Download folder".into(), value: self.download_dir.clone(), action: SettingsAction::SetDownloadDir },
+                SettingsItem { label: "Open detailed log".into(), value: "L".into(), action: SettingsAction::OpenLog },
+                SettingsItem { label: "Health check".into(), value: "press Enter".into(), action: SettingsAction::RunHealthCheck },
+                SettingsItem { label: "Close".into(), value: "Esc".into(), action: SettingsAction::Close },
+            ],
+        });
+    }
+
+    pub fn settings_key(&mut self, key: crossterm::event::KeyEvent) -> Option<SettingsAction> {
+        if let Modal::Settings(ref mut state) = self.modal {
+            match key.code {
+                crossterm::event::KeyCode::Esc => {
+                    self.modal = Modal::None;
+                    return Some(SettingsAction::Close);
+                }
+                crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
+                    state.selected = (state.selected + 1).min(state.items.len() - 1);
+                }
+                crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up => {
+                    state.selected = state.selected.saturating_sub(1);
+                }
+                crossterm::event::KeyCode::Enter => {
+                    if let Some(item) = state.items.get(state.selected) {
+                        return Some(item.action.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    pub fn health_check(&self) -> Vec<String> {
+        let mut results = Vec::new();
+
+        results.push("=== HEALTH CHECK ===".into());
+
+        match crate::browser::detect::detect_browser(None) {
+            Ok((kind, path)) => results.push(format!("{} Browser: {} [{}]", "\u{2714}", kind, path.display())),
+            Err(e) => results.push(format!("{} Browser: NOT FOUND ({})", "\u{2718}", e)),
+        }
+
+        let has_xvfb = std::process::Command::new("which")
+            .arg("Xvfb")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if has_xvfb { results.push(format!("{} Xvfb: available", "\u{2714}")); }
+        else { results.push(format!("{} Xvfb: not found (needed for headless)", "\u{2718}")); }
+
+        let has_chromedriver = std::path::Path::new(&dirs::data_local_dir()
+            .unwrap_or_default().join("t-hunter").join("chromedriver_patched")).exists()
+            || std::process::Command::new("which").arg("chromedriver")
+                .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+                .status().map(|s| s.success()).unwrap_or(false);
+        if has_chromedriver { results.push(format!("{} Chromedriver: patched/available", "\u{2714}")); }
+        else { results.push(format!("{} Chromedriver: will be downloaded on first run", "\u{26a0}")); }
+
+        let ts_url = self.torrserver_url.clone();
+        let ts_reachable = {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(async {
+                let client = reqwest::Client::new();
+                client.get(&ts_url).timeout(std::time::Duration::from_secs(2)).send().await
+                    .map(|r| r.status().is_success()).unwrap_or(false)
+            })
+        };
+        if ts_reachable { results.push(format!("{} TorrServer: reachable ({})", "\u{2714}", ts_url)); }
+        else { results.push(format!("{} TorrServer: NOT reachable ({})", "\u{2718}", ts_url)); }
+
+        match crate::credentials::load_credentials() {
+            Some((user, _)) => results.push(format!("{} Saved credentials: user='{}'", "\u{2714}", user)),
+            None => results.push(format!("{} Saved credentials: none", "\u{2718}")),
+        }
+
+        let cookie_path = std::path::Path::new("cookies.txt");
+        if cookie_path.exists() {
+            match crate::search::cookies::load_from_file(cookie_path) {
+                Ok(c) if !c.is_empty() => results.push(format!("{} Cookie file: {} cookies", "\u{2714}", c.len())),
+                _ => results.push(format!("{} Cookie file: empty/invalid", "\u{26a0}")),
+            }
+        } else {
+            results.push(format!("{} Cookie file: not found", "\u{26a0}"));
+        }
+
+        results.push("".into());
+        results.push("Press Esc to close".into());
+        results
     }
 
     pub fn close_login_modal(&mut self) {
@@ -334,7 +467,7 @@ impl App {
             "[{}] {} | {}",
             self.browser_info,
             self.torrserver_url,
-            if self.input_mode { "INPUT MODE (s/i)" } else { "s: search | a: login | L: log" }
+            if self.input_mode { "INPUT MODE (s/i)" } else { "s: search | a: login | S: settings | L: log" }
         );
 
         let input_border = Block::default()
@@ -531,6 +664,79 @@ impl App {
                 )),
                 rows[3],
             );
+        } else if let Modal::Settings(ref state) = self.modal {
+            let popup = centered_rect(60, 60, area);
+
+            let overlay_block = Block::default()
+                .style(Style::default().bg(Color::Black));
+            frame.render_widget(overlay_block, popup);
+
+            let block = Block::default()
+                .title(" Settings ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .style(Style::default().bg(Color::DarkGray));
+
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+
+            let mut lines: Vec<Line> = Vec::new();
+            for (i, item) in state.items.iter().enumerate() {
+                let marker = if i == state.selected { "> " } else { "  " };
+                let style = if i == state.selected {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(marker, style),
+                    Span::styled(&item.label, style),
+                    Span::raw("  "),
+                    Span::styled(&item.value, Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+
+            let help = Line::from(vec![
+                Span::styled("[j/k] navigate  [Enter] select  [Esc] close", Style::default().fg(Color::DarkGray)),
+            ]);
+            lines.push(help);
+
+            let list = Paragraph::new(lines)
+                .style(Style::default().bg(Color::DarkGray));
+            frame.render_widget(list, inner);
+        } else if let Modal::HealthCheck(ref lines) = self.modal {
+            let popup = centered_rect(70, 80, area);
+
+            let overlay_block = Block::default()
+                .style(Style::default().bg(Color::Black));
+            frame.render_widget(overlay_block, popup);
+
+            let block = Block::default()
+                .title(" Health Check ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green))
+                .style(Style::default().bg(Color::DarkGray));
+
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+
+            let display_lines: Vec<Line> = lines.iter().map(|l| {
+                if l.contains("\u{2714}") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Green)))
+                } else if l.contains("\u{2718}") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Red)))
+                } else if l.contains("\u{26a0}") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Yellow)))
+                } else if l.starts_with("===") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                } else {
+                    Line::from(l.as_str())
+                }
+            }).collect();
+
+            let list = Paragraph::new(display_lines)
+                .style(Style::default().bg(Color::DarkGray));
+            frame.render_widget(list, inner);
         }
     }
 }
