@@ -34,3 +34,4 @@ whoami = "1"
 getrandom = "0.2"
 base64 = "0.22"
 serial_test = "3"
+rusqlite = { version = "0.31", features = ["bundled"] }

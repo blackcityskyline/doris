@@ -32,6 +32,7 @@ impl std::str::FromStr for BrowserMode {
 pub struct Browser {
     client: Client,
     child: Option<std::process::Child>,
+    temp_profile: Option<PathBuf>,
 }
 
 impl Browser {
@@ -39,10 +40,32 @@ impl Browser {
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
-        let profile_dir = detect_user_data_dir(binary);
-        if let Some(ref dir) = profile_dir {
-            graceful_shutdown_if_running(dir);
-        }
+        let native_profile = detect_user_data_dir(binary);
+        let mut injected_cookies: Vec<serde_json::Value> = Vec::new();
+
+        let temp_profile = if mode == BrowserMode::Headless {
+            let tmp = std::env::temp_dir().join(format!("t-hunter-headless-{}", std::process::id()));
+            std::fs::create_dir_all(&tmp)?;
+            eprintln!("[browser] headless mode: using temp profile {}", tmp.display());
+
+            if let Some(ref native) = native_profile {
+                match extract_cookies_from_native_profile(native) {
+                    Ok(cookies) => {
+                        eprintln!("[browser] extracted {} cookies from native profile", cookies.len());
+                        injected_cookies = cookies;
+                    }
+                    Err(e) => {
+                        eprintln!("[browser] could not extract native cookies: {}", e);
+                    }
+                }
+            }
+            Some(tmp)
+        } else {
+            if let Some(ref dir) = native_profile {
+                graceful_shutdown_if_running(dir);
+            }
+            native_profile.clone()
+        };
 
         let port = find_free_port()?;
 
@@ -70,11 +93,12 @@ impl Browser {
 
         if mode == BrowserMode::Headless {
             chrome_args.push("--headless=new".into());
+            chrome_args.push("--window-size=1920,1080".into());
         } else {
             chrome_args.push("--window-size=1920,1080".into());
         }
 
-        if let Some(ref dir) = profile_dir {
+        if let Some(ref dir) = temp_profile {
             chrome_args.push(format!("--user-data-dir={}", dir.display()));
         }
 
@@ -96,10 +120,18 @@ impl Browser {
 
         eprintln!("[browser] {} via patched chromedriver on port {}", mode, port);
 
-        Ok(Self {
+        let browser = Self {
             client,
             child: Some(child),
-        })
+            temp_profile: if mode == BrowserMode::Headless { temp_profile } else { None },
+        };
+
+        if !injected_cookies.is_empty() {
+            eprintln!("[browser] injecting {} cookies into headless session", injected_cookies.len());
+            browser.add_cookies(&injected_cookies).await?;
+        }
+
+        Ok(browser)
     }
 
     pub async fn navigate(&self, url: &str) -> Result<()> {
@@ -168,6 +200,10 @@ impl Drop for Browser {
     fn drop(&mut self) {
         if let Some(ref mut child) = self.child {
             let _ = child.kill();
+        }
+        if let Some(ref path) = self.temp_profile {
+            eprintln!("[browser] cleaning up headless profile {}", path.display());
+            let _ = std::fs::remove_dir_all(path);
         }
     }
 }
@@ -478,4 +514,66 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
         binary.display(),
         version_str
     )
+}
+
+fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_json::Value>> {
+    let cookie_paths = [
+        profile_dir.join("Default/Cookies"),
+        profile_dir.join("Default/Network/Cookies"),
+        profile_dir.join("Default/Cookies-journal"),
+        profile_dir.join("Default/Network/Cookies-journal"),
+    ];
+
+    let cookie_db = cookie_paths.iter().find(|p| p.exists() && p.file_name().map(|n| n == "Cookies").unwrap_or(false))
+        .ok_or_else(|| anyhow::anyhow!("No Cookies database found in profile"))?;
+
+    let tmp_copy = std::env::temp_dir().join(format!("t-hunter-cookies-{}.sqlite", std::process::id()));
+    std::fs::copy(cookie_db, &tmp_copy)?;
+
+    let conn = rusqlite::Connection::open(&tmp_copy)?;
+    let mut stmt = conn.prepare(
+        "SELECT host_key, name, value, path, is_secure, is_httponly, encrypted_value FROM cookies WHERE host_key LIKE '%rutracker%'"
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let host: String = row.get(0)?;
+        let name: String = row.get(1)?;
+        let value: String = row.get(2)?;
+        let path: String = row.get(3)?;
+        let secure: bool = row.get(4)?;
+        let http_only: bool = row.get(5)?;
+        let encrypted: Vec<u8> = row.get(6)?;
+        Ok((host, name, value, path, secure, http_only, encrypted))
+    })?;
+
+    let mut cookies = Vec::new();
+    for row in rows {
+        let (host, name, value, path, secure, http_only, encrypted_value) = row?;
+
+        let final_value = if !value.is_empty() {
+            value
+        } else if !encrypted_value.is_empty() {
+            String::new()
+        } else {
+            continue;
+        };
+
+        let domain = if host.starts_with('.') {
+            host.clone()
+        } else {
+            format!(".{}", host)
+        };
+
+        cookies.push(serde_json::json!({
+            "name": name,
+            "value": final_value,
+            "domain": domain,
+            "path": path,
+            "secure": secure,
+            "httpOnly": http_only,
+        }));
+    }
+
+    let _ = std::fs::remove_file(&tmp_copy);
+    Ok(cookies)
 }
