@@ -85,7 +85,8 @@ impl App {
             self.ui.search_input = query.clone();
             self.start_search(query).await;
         } else {
-            self.ui.add_log("T-Hunter started. Press 's' or 'i' to search, 'l' for login, Enter to play.");
+            self.ui.add_log("T-Hunter started. Press 's' or 'i' to search, 'a' for login, Enter to play.");
+            self.ui.add_log("Press 'L' for detailed log view");
             if self.bridge.is_some() {
                 self.ui.add_log(&format!("Extension Bridge listening on port {}", self.config.bridge_port));
             }
@@ -129,12 +130,15 @@ impl App {
                         }
                         Event::StreamLog(msg) => {
                             self.ui.add_log(&msg);
+                            self.ui.add_detail(&msg);
                         }
                         Event::LoginResult(success) => {
                             if success {
                                 self.ui.add_log("Login successful!");
+                                self.ui.add_detail("LOGIN: SUCCESS");
                             } else {
                                 self.ui.add_log("Login failed.");
+                                self.ui.add_detail("LOGIN: FAILED");
                             }
                         }
                         Event::ExtensionQuery(query) => {
@@ -183,6 +187,28 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.ui.detail_log_mode {
+            match key.code {
+                KeyCode::Char('L') | KeyCode::Esc => {
+                    self.ui.detail_log_mode = false;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
+                }
+                KeyCode::PageUp => {
+                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(20);
+                }
+                KeyCode::PageDown => {
+                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 20).min(self.ui.detail_logs.len());
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         if self.ui.modal != Modal::None {
             if let Some((username, password)) = self.ui.login_modal_key(key) {
                 self.do_login(&username, &password).await;
@@ -205,11 +231,18 @@ impl App {
             KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();
             }
-            KeyCode::Char('l') if !self.ui.input_mode => {
+            KeyCode::Char('a') if !self.ui.input_mode => {
                 self.ui.open_login_modal();
             }
+            KeyCode::Char('L') if !self.ui.input_mode => {
+                self.ui.toggle_detail_log();
+            }
             KeyCode::Esc => {
-                self.ui.exit_input_mode();
+                if self.ui.detail_log_mode {
+                    self.ui.detail_log_mode = false;
+                } else {
+                    self.ui.exit_input_mode();
+                }
             }
             KeyCode::Enter => {
                 if let Some(query) = self.ui.submit_search() {
@@ -251,25 +284,23 @@ impl App {
         let username = username.to_string();
         let password = password.to_string();
         let cookie_file = self.args.cookie_file.clone();
-        let event_tx = self.event_handler.sender();
+        let event_tx_login = self.event_handler.sender();
+        let event_tx_result = self.event_handler.sender();
+        let log = Arc::new(move |msg: &str| { let _ = event_tx_login.send(Event::StreamLog(msg.to_string())); });
 
         tokio::spawn(async move {
-            let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
-
             let mut searcher = RutrackerSearcher::new(browser);
 
-            match searcher.ensure_logged_in(cookie_file.as_deref(), Some(&username), Some(&password)).await {
+            match searcher.ensure_logged_in(cookie_file.as_deref(), Some(&username), Some(&password), log.clone()).await {
                 Ok(true) => {
-                    log("Login successful!");
-                    let _ = event_tx.send(Event::LoginResult(true));
+                    let _ = event_tx_result.send(Event::LoginResult(true));
                 }
                 Ok(false) => {
-                    log("Login failed - invalid credentials or verification failed");
-                    let _ = event_tx.send(Event::LoginResult(false));
+                    let _ = event_tx_result.send(Event::LoginResult(false));
                 }
                 Err(e) => {
-                    log(&format!("Login error: {}", e));
-                    let _ = event_tx.send(Event::LoginResult(false));
+                    log(&format!("LOGIN ERROR: {}", e));
+                    let _ = event_tx_result.send(Event::LoginResult(false));
                 }
             }
         });
@@ -292,11 +323,11 @@ impl App {
         let username = self.args.username.clone();
         let password = self.args.password.clone();
         let saved_creds = crate::credentials::load_credentials();
-        let event_tx = self.event_handler.sender();
+        let event_tx_log = self.event_handler.sender();
+        let event_tx_result = self.event_handler.sender();
+        let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
 
         tokio::spawn(async move {
-            let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
-
             let mut searcher = RutrackerSearcher::new(browser);
 
             let (cred_user, cred_pass) = match (username, password) {
@@ -310,18 +341,18 @@ impl App {
                 },
             };
 
-            match searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref()).await {
-                Ok(true) => log("Logged in successfully"),
-                Ok(false) => log("Login failed - continuing anyway"),
-                Err(e) => log(&format!("Login error: {}", e)),
+            match searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref(), log.clone()).await {
+                Ok(true) => log("SEARCH: logged in, proceeding with search"),
+                Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
+                Err(e) => log(&format!("SEARCH: login error: {}", e)),
             }
 
             match searcher.search(&query).await {
                 Ok(results) => {
-                    let _ = event_tx.send(Event::SearchComplete(results));
+                    let _ = event_tx_result.send(Event::SearchComplete(results));
                 }
                 Err(e) => {
-                    let _ = event_tx.send(Event::SearchError(e.to_string()));
+                    let _ = event_tx_result.send(Event::SearchError(e.to_string()));
                 }
             }
         });
