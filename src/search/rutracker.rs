@@ -183,6 +183,12 @@ impl RutrackerSearcher {
         ).await?;
         log(&format!("AUTH LOGIN: form check: {}", form_check.as_str().unwrap_or("?")));
 
+        // Check all forms and their actions
+        let forms_info = browser.eval_js(
+            "JSON.stringify(Array.from(document.querySelectorAll('form')).map((f,i)=>({idx:i,action:f.action,method:f.method,inputNames:Array.from(f.querySelectorAll('input')).map(i=>i.name).join(',')})))"
+        ).await?;
+        log(&format!("AUTH LOGIN: forms detail: {}", forms_info.as_str().unwrap_or("?")));
+
         if form_check.as_str().unwrap_or("").contains("loginUser\":false") {
             log("AUTH LOGIN: ERROR - username input NOT FOUND on page");
             let snippet = browser.eval_js("document.body ? document.body.innerText.substring(0, 500) : 'no body'")
@@ -216,12 +222,10 @@ impl RutrackerSearcher {
                 const form = u.closest('form');
                 if (form) {{
                     form.submit();
-                }} else {{
-                    const btn = document.querySelector("input[type='submit']");
-                    if (btn) btn.click();
+                    return JSON.stringify({{ok:true, method:'form.submit', action:form.action, uVal:u.value.substring(0,3), pLen:p.value.length}});
                 }}
 
-                return JSON.stringify({{ok:true, uVal:u.value.substring(0,3), pLen:p.value.length, formAction: form ? form.action : 'none'}});
+                return JSON.stringify({{ok:false, error:'no_form_parent', uVal:u.value.substring(0,3), pLen:p.value.length}});
             }})()"#,
             username_escaped, password_escaped
         );
@@ -242,6 +246,56 @@ impl RutrackerSearcher {
         if let Some(p_len) = result_str.split("\"pLen\":").nth(1) {
             let p_len: &str = p_len.split(',').next().unwrap_or("?");
             log(&format!("AUTH LOGIN: password field length: {}", p_len));
+        }
+
+        // If still on login.php after form.submit(), try direct POST
+        let still_on_login = browser.eval_js("location.href").await
+            .map(|v| v.as_str().unwrap_or("").contains("login.php"))
+            .unwrap_or(false);
+
+        if still_on_login {
+            log("AUTH LOGIN: form.submit() didn't navigate, trying direct POST...");
+            let post_script = format!(
+                r#"(() => {{
+                    const fd = new FormData();
+                    fd.append('login_username', '{}');
+                    fd.append('login_password', '{}');
+                    fd.append('login', 'Вход');
+                    fetch('https://rutracker.org/forum/login.php', {{
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'same-origin',
+                        redirect: 'follow'
+                    }}).then(r => r.text()).then(html => {{
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    }});
+                    return 'posting...';
+                }})()"#,
+                username_escaped, password_escaped
+            );
+            let post_result = browser.eval_js(&post_script).await?;
+            log(&format!("AUTH LOGIN: direct POST result: {}", post_result.as_str().unwrap_or("?")));
+
+            for i in 0..10 {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let url = browser.eval_js("location.href").await
+                    .map(|v| v.as_str().unwrap_or("").to_string())
+                    .unwrap_or_default();
+                let cookies = browser.get_cookies().await.unwrap_or_default();
+                let has_session = cookies.iter().any(|c| {
+                    let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                    let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+                    domain.contains("rutracker") && (name == "bb_data" || name == "bb_session") && !value.is_empty()
+                });
+                log(&format!("AUTH LOGIN POST: [{}s] URL={} session={}", i+1, &url[..url.len().min(80)], has_session));
+                if has_session {
+                    log("AUTH LOGIN: SESSION FOUND via direct POST!");
+                    return Ok(true);
+                }
+            }
         }
 
         // Wait for navigation and session
