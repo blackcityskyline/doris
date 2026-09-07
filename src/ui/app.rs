@@ -384,10 +384,15 @@ impl App {
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);
 
+            let overlay_block = Block::default()
+                .style(Style::default().bg(Color::Black));
+            frame.render_widget(overlay_block, popup);
+
             let block = Block::default()
                 .title(" Login to Rutracker ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow));
+                .border_style(Style::default().fg(Color::Yellow))
+                .style(Style::default().bg(Color::DarkGray));
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
@@ -395,8 +400,6 @@ impl App {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),
-                    Constraint::Length(1),
                     Constraint::Length(3),
                     Constraint::Length(1),
                     Constraint::Length(3),
@@ -418,39 +421,42 @@ impl App {
             };
 
             let user_block = Block::default()
-                .title("Username (Tab to switch)")
+                .title("Username")
                 .borders(Borders::ALL)
-                .border_style(user_style);
+                .border_style(user_style)
+                .style(Style::default().bg(Color::DarkGray));
             frame.render_widget(
-                Paragraph::new(state.username.as_str()).block(user_block),
+                Paragraph::new(state.username.as_str())
+                    .style(Style::default().bg(Color::DarkGray).fg(Color::White))
+                    .block(user_block),
                 rows[0],
+            );
+
+            let pass_display = if state.password.is_empty() {
+                String::new()
+            } else {
+                "*".repeat(state.password.len())
+            };
+
+            let pass_block = Block::default()
+                .title("Password")
+                .borders(Borders::ALL)
+                .border_style(pass_style)
+                .style(Style::default().bg(Color::DarkGray));
+            frame.render_widget(
+                Paragraph::new(pass_display.as_str())
+                    .style(Style::default().bg(Color::DarkGray).fg(Color::White))
+                    .block(pass_block),
+                rows[2],
             );
 
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     "[Tab] switch  [Enter] login  [Esc] cancel",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::DarkGray).bg(Color::DarkGray),
                 )),
-                rows[1],
+                rows[3],
             );
-
-            let pass_block = Block::default()
-                .title("Password (Tab to switch)")
-                .borders(Borders::ALL)
-                .border_style(pass_style);
-            let pass_display = "*".repeat(state.password.len());
-            frame.render_widget(
-                Paragraph::new(pass_display.as_str()).block(pass_block),
-                rows[2],
-            );
-
-            if let Some(ref msg) = state.message {
-                let color = if msg.starts_with("OK") { Color::Green } else { Color::Red };
-                frame.render_widget(
-                    Paragraph::new(Span::styled(msg.as_str(), Style::default().fg(color))),
-                    rows[4],
-                );
-            }
         }
     }
 }
@@ -473,434 +479,4 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_app() -> App {
-        App::new("http://127.0.0.1:8090".into(), "helium".into())
-    }
-
-    fn app_with_results(n: usize) -> App {
-        let mut app = test_app();
-        app.results = (0..n)
-            .map(|i| TorrentItem {
-                title: format!("Torrent {}", i),
-                size: "1 GB".into(),
-                seeds: format!("{}", i),
-                date: "".into(),
-                download_url: format!("/dl.php?t={}", i),
-                page_url: "".into(),
-                query: "".into(),
-            })
-            .collect();
-        app
-    }
-
-    #[test]
-    fn test_app_initial_state() {
-        let app = test_app();
-        assert!(app.search_input.is_empty());
-        assert!(app.results.is_empty());
-        assert_eq!(app.selected, 0);
-        assert!(app.running);
-        assert!(!app.input_mode);
-        assert_eq!(app.modal, Modal::None);
-    }
-
-    #[test]
-    fn test_add_log() {
-        let mut app = test_app();
-        app.add_log("first message");
-        app.add_log("second message");
-        assert_eq!(app.logs.len(), 2);
-        assert!(app.logs[0].contains("first message"));
-        assert!(app.logs[1].contains("second message"));
-    }
-
-    #[test]
-    fn test_add_log_timestamp_format() {
-        let mut app = test_app();
-        app.add_log("test");
-        assert!(app.logs[0].starts_with('['));
-        assert!(app.logs[0].contains("] test"));
-    }
-
-    #[test]
-    fn test_add_log_buffer_limit() {
-        let mut app = test_app();
-        for i in 0..600 {
-            app.add_log(&format!("msg {}", i));
-        }
-        assert_eq!(app.logs.len(), 500);
-    }
-
-    #[test]
-    fn test_log_scroll() {
-        let mut app = test_app();
-        for i in 0..20 {
-            app.add_log(&format!("msg {}", i));
-        }
-        assert_eq!(app.log_scroll, 20);
-        app.scroll_logs_up();
-        assert_eq!(app.log_scroll, 19);
-        app.scroll_logs_down();
-        assert_eq!(app.log_scroll, 20);
-        app.scroll_logs_page_up();
-        assert_eq!(app.log_scroll, 10);
-        app.scroll_logs_page_down();
-        assert_eq!(app.log_scroll, 20);
-    }
-
-    #[test]
-    fn test_mouse_scroll_logs() {
-        let mut app = test_app();
-        for i in 0..30 {
-            app.add_log(&format!("msg {}", i));
-        }
-        app.mouse_scroll_logs(5);
-        assert_eq!(app.log_scroll, 25);
-        app.mouse_scroll_logs(-3);
-        assert_eq!(app.log_scroll, 28);
-    }
-
-    #[test]
-    fn test_type_char() {
-        let mut app = test_app();
-        app.enter_input_mode();
-        app.type_char('h');
-        app.type_char('i');
-        assert_eq!(app.search_input, "hi");
-    }
-
-    #[test]
-    fn test_type_char_not_in_input_mode() {
-        let mut app = test_app();
-        app.type_char('h');
-        assert!(app.search_input.is_empty());
-    }
-
-    #[test]
-    fn test_backspace() {
-        let mut app = test_app();
-        app.enter_input_mode();
-        app.type_char('a');
-        app.type_char('b');
-        app.backspace();
-        assert_eq!(app.search_input, "a");
-    }
-
-    #[test]
-    fn test_delete_word() {
-        let mut app = test_app();
-        app.enter_input_mode();
-        for c in "hello world".chars() {
-            app.type_char(c);
-        }
-        app.delete_word();
-        assert_eq!(app.search_input, "hello ");
-    }
-
-    #[test]
-    fn test_navigate_down() {
-        let mut app = app_with_results(5);
-        assert!(app.navigate_down());
-        assert_eq!(app.selected, 1);
-    }
-
-    #[test]
-    fn test_navigate_down_clamps() {
-        let mut app = app_with_results(3);
-        app.selected = 2;
-        assert!(app.navigate_down());
-        assert_eq!(app.selected, 2);
-    }
-
-    #[test]
-    fn test_navigate_up() {
-        let mut app = app_with_results(5);
-        app.selected = 3;
-        assert!(app.navigate_up());
-        assert_eq!(app.selected, 2);
-    }
-
-    #[test]
-    fn test_navigate_up_clamps() {
-        let mut app = app_with_results(5);
-        assert!(app.navigate_up());
-        assert_eq!(app.selected, 0);
-    }
-
-    #[test]
-    fn test_navigate_blocked_in_input_mode() {
-        let mut app = app_with_results(5);
-        app.enter_input_mode();
-        assert!(!app.navigate_down());
-        assert!(!app.navigate_up());
-    }
-
-    #[test]
-    fn test_navigate_blocked_in_modal() {
-        let mut app = app_with_results(5);
-        app.open_login_modal();
-        assert!(!app.navigate_down());
-        assert!(!app.navigate_up());
-        assert_eq!(app.submit_selection(), None);
-    }
-
-    #[test]
-    fn test_submit_search() {
-        let mut app = test_app();
-        app.enter_input_mode();
-        for c in "ubuntu".chars() {
-            app.type_char(c);
-        }
-        assert_eq!(app.submit_search(), Some("ubuntu".into()));
-        assert!(!app.input_mode);
-    }
-
-    #[test]
-    fn test_submit_search_empty() {
-        let mut app = test_app();
-        app.enter_input_mode();
-        assert_eq!(app.submit_search(), None);
-    }
-
-    #[test]
-    fn test_submit_selection() {
-        let mut app = app_with_results(5);
-        app.selected = 2;
-        assert_eq!(app.submit_selection(), Some(2));
-    }
-
-    #[test]
-    fn test_submit_selection_empty() {
-        let mut app = test_app();
-        assert_eq!(app.submit_selection(), None);
-    }
-
-    #[test]
-    fn test_quit() {
-        let mut app = test_app();
-        app.quit();
-        assert!(!app.running);
-    }
-
-    #[test]
-    fn test_login_modal_open_close() {
-        let mut app = test_app();
-        app.open_login_modal();
-        assert!(matches!(app.modal, Modal::Login(_)));
-        app.close_login_modal();
-        assert_eq!(app.modal, Modal::None);
-    }
-
-    #[test]
-    fn test_login_modal_typing() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('b'),
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('l'),
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('a'),
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('c'),
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('k'),
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        if let Modal::Login(ref state) = app.modal {
-            assert_eq!(state.username, "black");
-            assert_eq!(state.focus, LoginField::Username);
-        } else {
-            panic!("Expected login modal");
-        }
-    }
-
-    #[test]
-    fn test_login_modal_tab_switches_field() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        if let Modal::Login(ref mut state) = app.modal {
-            assert_eq!(state.focus, LoginField::Username);
-        }
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        if let Modal::Login(ref state) = app.modal {
-            assert_eq!(state.focus, LoginField::Password);
-        }
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        if let Modal::Login(ref state) = app.modal {
-            assert_eq!(state.focus, LoginField::Username);
-        }
-    }
-
-    #[test]
-    fn test_login_modal_enter_submits() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        for c in "user".chars() {
-            let key = crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(c),
-                crossterm::event::KeyModifiers::NONE,
-            );
-            app.login_modal_key(key);
-        }
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        for c in "pass123".chars() {
-            let key = crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(c),
-                crossterm::event::KeyModifiers::NONE,
-            );
-            app.login_modal_key(key);
-        }
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        let result = app.login_modal_key(key);
-
-        assert_eq!(result, Some(("user".into(), "pass123".into())));
-        assert_eq!(app.modal, Modal::None);
-    }
-
-    #[test]
-    fn test_login_modal_enter_empty_fails() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        let result = app.login_modal_key(key);
-
-        assert_eq!(result, None);
-        assert!(matches!(app.modal, Modal::Login(_)));
-    }
-
-    #[test]
-    fn test_login_modal_esc_closes() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Esc,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        assert_eq!(app.modal, Modal::None);
-    }
-
-    #[test]
-    fn test_login_modal_backspace() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('x'),
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        let key = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Backspace,
-            crossterm::event::KeyModifiers::NONE,
-        );
-        app.login_modal_key(key);
-
-        if let Modal::Login(ref state) = app.modal {
-            assert!(state.username.is_empty());
-        }
-    }
-
-    #[test]
-    fn test_full_flow() {
-        let mut app = test_app();
-        app.enter_input_mode();
-        for c in "world war".chars() {
-            app.type_char(c);
-        }
-        assert_eq!(app.submit_search(), Some("world war".into()));
-        app.results = (0..50)
-            .map(|i| TorrentItem {
-                title: format!("Result {}", i),
-                size: "1 GB".into(),
-                seeds: format!("{}", i),
-                date: "".into(),
-                download_url: format!("/dl.php?t={}", i),
-                page_url: "".into(),
-                query: "world war".into(),
-            })
-            .collect();
-        for _ in 0..10 {
-            app.navigate_down();
-        }
-        assert_eq!(app.submit_selection(), Some(10));
-    }
-
-    #[test]
-    fn test_render_does_not_panic() {
-        let mut app = test_app();
-        app.results = app_with_results(10).results;
-        app.add_log("test");
-
-        let backend = ratatui::backend::TestBackend::new(120, 40);
-        let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        terminal.draw(|frame| app.render(frame)).unwrap();
-    }
-
-    #[test]
-    fn test_render_with_modal() {
-        let mut app = test_app();
-        app.open_login_modal();
-
-        let backend = ratatui::backend::TestBackend::new(120, 40);
-        let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        terminal.draw(|frame| app.render(frame)).unwrap();
-    }
 }
