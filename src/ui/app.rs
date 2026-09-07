@@ -48,6 +48,9 @@ pub struct App {
     pub selected: usize,
     pub logs: VecDeque<String>,
     pub log_scroll: usize,
+    pub detail_logs: Vec<String>,
+    pub detail_log_mode: bool,
+    pub detail_log_scroll: usize,
     pub state: AppState,
     pub browser_info: String,
     pub torrserver_url: String,
@@ -64,6 +67,9 @@ impl App {
             selected: 0,
             logs: VecDeque::new(),
             log_scroll: 0,
+            detail_logs: Vec::new(),
+            detail_log_mode: false,
+            detail_log_scroll: 0,
             state: AppState::Idle,
             browser_info,
             torrserver_url,
@@ -74,11 +80,22 @@ impl App {
     }
 
     pub fn add_log(&mut self, msg: &str) {
-        self.logs.push_back(format!("[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg));
+        let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+        self.logs.push_back(format!("[{}] {}", ts, msg));
         if self.logs.len() > 500 {
             self.logs.pop_front();
         }
         self.log_scroll = self.logs.len();
+    }
+
+    pub fn add_detail(&mut self, msg: &str) {
+        let ts = chrono::Local::now().format("%H:%M:%S%.3f").to_string();
+        self.detail_logs.push(format!("[{}] {}", ts, msg));
+        self.detail_log_scroll = self.detail_logs.len();
+    }
+
+    pub fn toggle_detail_log(&mut self) {
+        self.detail_log_mode = !self.detail_log_mode;
     }
 
     pub fn scroll_logs_up(&mut self) {
@@ -271,6 +288,11 @@ impl App {
     pub fn render(&self, frame: &mut Frame) {
         let area = frame.area();
 
+        if self.detail_log_mode {
+            self.render_full_log(frame, area);
+            return;
+        }
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -294,7 +316,7 @@ impl App {
             "[{}] {} | {}",
             self.browser_info,
             self.torrserver_url,
-            if self.input_mode { "INPUT MODE (s/i)" } else { "s: search | l: login" }
+            if self.input_mode { "INPUT MODE (s/i)" } else { "s: search | a: login | L: log" }
         );
 
         let input_border = Block::default()
@@ -376,6 +398,40 @@ impl App {
         let log_panel = Paragraph::new(visible_logs)
             .block(Block::default().borders(Borders::ALL).title(scroll_title))
             .scroll((0, 0));
+
+        frame.render_widget(log_panel, area);
+    }
+
+    fn render_full_log(&self, frame: &mut Frame, area: Rect) {
+        let total = self.detail_logs.len();
+        let visible = (area.height as usize).saturating_sub(2);
+        let scroll = self.detail_log_scroll.saturating_sub(visible);
+
+        let lines: Vec<Line> = self.detail_logs
+            .iter()
+            .skip(scroll)
+            .take(visible)
+            .map(|l| {
+                if l.contains("ERROR") || l.contains("FAIL") || l.contains("error:") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Red)))
+                } else if l.contains("OK") || l.contains("SUCCESS") || l.contains("logged in") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Green)))
+                } else if l.contains("WARN") {
+                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Yellow)))
+                } else {
+                    Line::from(l.as_str())
+                }
+            })
+            .collect();
+
+        let title = format!(" Detailed Log ({}/{}) [L/Esc] close [j/k] scroll ", 
+            scroll + visible.min(total), total);
+
+        let log_panel = Paragraph::new(lines)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(Style::default().fg(Color::Cyan)));
 
         frame.render_widget(log_panel, area);
     }

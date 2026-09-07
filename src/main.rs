@@ -41,7 +41,9 @@ async fn run_cli(args: t_hunter::cli::Args, config: t_hunter::config::Config) ->
     let username = args.username.as_deref();
     let password = args.password.as_deref();
 
-    match searcher.ensure_logged_in(cookie_file, username, password).await {
+    let log = std::sync::Arc::new(|msg: &str| println!("[log] {}", msg));
+
+    match searcher.ensure_logged_in(cookie_file, username, password, log).await {
         Ok(true) => println!("Logged in successfully."),
         Ok(false) => println!("Not logged in."),
         Err(e) => println!("Login error: {}", e),
