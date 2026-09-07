@@ -33,6 +33,7 @@ pub struct Browser {
     client: Client,
     child: Option<std::process::Child>,
     temp_profile: Option<PathBuf>,
+    xvfb_child: Option<std::process::Child>,
 }
 
 impl Browser {
@@ -68,6 +69,7 @@ impl Browser {
         };
 
         let use_xvfb = mode == BrowserMode::Headless && has_xvfb();
+        let mut xvfb_child = None;
         if use_xvfb {
             eprintln!("[browser] using xvfb virtual display for headless mode");
         }
@@ -75,16 +77,16 @@ impl Browser {
         let port = find_free_port()?;
 
         let mut cmd = if use_xvfb {
-            let mut c = std::process::Command::new("xvfb-run");
-            c.args(["--auto-servernum", "--server-args=-screen 0 1920x1080x24"]);
-            c.arg(&chromedriver_path);
+            let display_num = find_free_display();
+            xvfb_child = start_xvfb(display_num);
+            let mut c = std::process::Command::new(&chromedriver_path);
+            c.env("DISPLAY", format!(":{}", display_num));
             c
         } else {
             std::process::Command::new(&chromedriver_path)
         };
 
         cmd.arg(format!("--port={}", port))
-            .arg("--silent")
             .stderr(Stdio::piped())
             .stdout(Stdio::null());
 
@@ -136,6 +138,7 @@ impl Browser {
             client,
             child: Some(child),
             temp_profile: if mode == BrowserMode::Headless { temp_profile } else { None },
+            xvfb_child,
         };
 
         if !injected_cookies.is_empty() {
@@ -216,6 +219,9 @@ impl Drop for Browser {
         if let Some(ref mut child) = self.child {
             let _ = child.kill();
         }
+        if let Some(ref mut xvfb) = self.xvfb_child {
+            let _ = xvfb.kill();
+        }
         if let Some(ref path) = self.temp_profile {
             eprintln!("[browser] cleaning up headless profile {}", path.display());
             let _ = std::fs::remove_dir_all(path);
@@ -232,12 +238,38 @@ fn find_free_port() -> Result<u16> {
 
 fn has_xvfb() -> bool {
     std::process::Command::new("which")
-        .arg("xvfb-run")
+        .arg("Xvfb")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn find_free_display() -> u32 {
+    for num in 99..200 {
+        let sock = std::path::PathBuf::from(format!("/tmp/.X11-unix/X{}", num));
+        if !sock.exists() {
+            return num;
+        }
+    }
+    99
+}
+
+fn start_xvfb(display_num: u32) -> Option<std::process::Child> {
+    let child = std::process::Command::new("Xvfb")
+        .args(&[
+            &format!(":{}", display_num),
+            "-screen", "0", "1920x1080x24",
+            "-nolisten", "tcp",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    eprintln!("[browser] started Xvfb on :{}", display_num);
+    Some(child)
 }
 
 fn graceful_shutdown_if_running(profile_dir: &Path) {
