@@ -110,6 +110,10 @@ impl Browser {
             chrome_args.push("--headless=new".into());
         }
 
+        if use_xvfb {
+            chrome_args.push("--ozone-platform=x11".into());
+        }
+
         chrome_args.push("--window-size=1920,1080".into());
 
         if let Some(ref dir) = temp_profile {

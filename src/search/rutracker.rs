@@ -115,12 +115,31 @@ impl RutrackerSearcher {
             r#"(() => {{
                 const u = document.querySelector("input[name='login_username'], input[name='username'], #top_username, #login-username");
                 const p = document.querySelector("input[name='login_password'], input[name='password'], #top_password, #login-password");
-                const b = document.querySelector("input[name='login'], #top_login-btn, input.login_btn, input[type='submit']");
                 if (!u || !p) return JSON.stringify({{ok:false, error:'no_form', url:location.href}});
-                u.focus(); u.value='{}'; u.dispatchEvent(new Event('input',{{bubbles:true}})); u.dispatchEvent(new Event('change',{{bubbles:true}}));
-                p.focus(); p.value='{}'; p.dispatchEvent(new Event('input',{{bubbles:true}})); p.dispatchEvent(new Event('change',{{bubbles:true}}));
-                if (b) b.click(); else {{ const f = u.closest('form'); if (f) f.submit(); }}
-                return JSON.stringify({{ok:true, user:u.name||u.id, pass:p.name||p.id, hasBtn:!!b}});
+
+                const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                function fillField(el, val) {{
+                    el.focus();
+                    if (nativeSetter) nativeSetter.call(el, val);
+                    else el.value = val;
+                    el.dispatchEvent(new Event('input', {{bubbles:true}}));
+                    el.dispatchEvent(new Event('change', {{bubbles:true}}));
+                    el.dispatchEvent(new KeyboardEvent('keyup', {{bubbles:true, key:'a'}}));
+                }}
+
+                fillField(u, '{}');
+                fillField(p, '{}');
+
+                const form = u.closest('form');
+                const btn = document.querySelector("input[name='login'], #top_login-btn, input.login_btn, input[type='submit']");
+                if (form) {{
+                    if (form.requestSubmit && btn) form.requestSubmit(btn);
+                    else form.submit();
+                }} else if (btn) {{
+                    btn.click();
+                }}
+
+                return JSON.stringify({{ok:true, uVal:u.value.substring(0,3), pLen:p.value.length, formAction: form ? form.action : 'none'}});
             }})()"#,
             username_escaped, password_escaped
         );
