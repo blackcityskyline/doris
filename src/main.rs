@@ -26,7 +26,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     let mode_str = args.browser_mode
         .clone()
         .unwrap_or_else(|| config.browser_mode.clone());
-    let mode: doris::browser::cdp::BrowserMode = mode_str.parse()?;
+    let mode: doris::browser::cdp::BrowserVisibility = mode_str.parse()?;
     println!("Using browser: {} [{}] ({})", kind, mode, path.display());
 
     let browser = doris::browser::cdp::Browser::launch(&path, mode).await?;

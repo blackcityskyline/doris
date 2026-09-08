@@ -1,8 +1,11 @@
 # Doris Configuration
 # Place this file at ~/.config/doris/config.toml
 
-# Browser to use (chrome, brave, helium) - auto-detect if empty
+# Browser to use (chrome, chromium, brave, helium) - auto-detect if empty
 browser = ""
+
+# Browser window visibility: "visible" or "hidden" (default: hidden)
+browser_visibility = "hidden"
 
 # TorrServer URL
 torrserver_url = "http://127.0.0.1:8090"

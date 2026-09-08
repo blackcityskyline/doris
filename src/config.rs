@@ -6,8 +6,10 @@ use std::path::Path;
 #[allow(dead_code)]
 pub struct Config {
     pub browser: Option<String>,
-    #[serde(default = "default_browser_mode")]
-    pub browser_mode: String,
+    /// Browser window visibility: "visible" or "hidden". Defaults to hidden
+    /// (background) so a first run never pops a browser window.
+    #[serde(default = "default_browser_visibility", alias = "browser_mode")]
+    pub browser_visibility: String,
     #[serde(default = "default_torrserver_url")]
     pub torrserver_url: String,
     #[serde(default = "default_bridge_port")]
@@ -21,7 +23,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             browser: None,
-            browser_mode: default_browser_mode(),
+            browser_visibility: default_browser_visibility(),
             torrserver_url: default_torrserver_url(),
             bridge_port: default_bridge_port(),
             cookie_file: default_cookie_file(),
@@ -44,8 +46,8 @@ fn default_torrserver_url() -> String {
     "http://127.0.0.1:8090".to_string()
 }
 
-fn default_browser_mode() -> String {
-    "gui".to_string()
+fn default_browser_visibility() -> String {
+    "hidden".to_string()
 }
 
 fn default_bridge_port() -> u16 {

@@ -3,7 +3,7 @@ use doris::config::*;
 #[test]
 fn test_config_default() {
     let config = Config::default();
-    assert_eq!(config.browser_mode, "gui");
+    assert_eq!(config.browser_visibility, "hidden");
     assert_eq!(config.torrserver_url, "http://127.0.0.1:8090");
     assert_eq!(config.bridge_port, 14141);
     assert_eq!(config.cookie_file, "cookies.txt");
@@ -14,14 +14,14 @@ fn test_config_default() {
 fn test_config_parse_toml() {
     let toml_str = r#"
         browser = "helium"
-        browser_mode = "headless"
+        browser_visibility = "hidden"
         torrserver_url = "http://192.168.1.100:8090"
         bridge_port = 14142
         cookie_file = "/tmp/cookies.txt"
     "#;
     let config: Config = toml::from_str(toml_str).unwrap();
     assert_eq!(config.browser.as_deref(), Some("helium"));
-    assert_eq!(config.browser_mode, "headless");
+    assert_eq!(config.browser_visibility, "hidden");
     assert_eq!(config.torrserver_url, "http://192.168.1.100:8090");
     assert_eq!(config.bridge_port, 14142);
     assert_eq!(config.cookie_file, "/tmp/cookies.txt");
@@ -34,7 +34,7 @@ fn test_config_parse_partial_toml() {
     "#;
     let config: Config = toml::from_str(toml_str).unwrap();
     assert_eq!(config.browser.as_deref(), Some("brave"));
-    assert_eq!(config.browser_mode, "gui");
+    assert_eq!(config.browser_visibility, "hidden");
     assert_eq!(config.torrserver_url, "http://127.0.0.1:8090");
 }
 
@@ -42,7 +42,18 @@ fn test_config_parse_partial_toml() {
 fn test_config_parse_empty() {
     let config: Config = toml::from_str("").unwrap();
     assert!(config.browser.is_none());
-    assert_eq!(config.browser_mode, "gui");
+    assert_eq!(config.browser_visibility, "hidden");
+}
+
+#[test]
+fn test_config_legacy_browser_mode_alias_still_works() {
+    // Old configs written before the headless/gui -> hidden/visible rename
+    // must keep loading without an error.
+    let toml_str = r#"
+        browser_mode = "gui"
+    "#;
+    let config: Config = toml::from_str(toml_str).unwrap();
+    assert_eq!(config.browser_visibility, "gui");
 }
 
 #[test]
