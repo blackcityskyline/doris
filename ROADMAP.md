@@ -11,6 +11,14 @@ by hand and kept small and mechanical where possible, but **build with your own
 toolchain and run `cargo test` before merging each phase.** If something doesn't
 compile, that's expected feedback, not a surprise — report it back and it'll get fixed.
 
+**First thing to check if `cargo check` fails on this branch:** the `Source: Send +
+Sync` bound added in Phase 3 (`src/search/source.rs`). `RutrackerSearcher` holds
+`Arc<Mutex<Browser>>`, and `Browser` (`src/browser/cdp.rs`) holds a `fantoccini::Client`
+plus a couple of `std::process::Child`s — these should all be `Send`, but it's the one
+bound in this branch that wasn't hand-traced field-by-field with total confidence.
+If the compiler disagrees, dropping the `Send + Sync` supertrait bound on `Source` (or
+narrowing it to just `Send`) is a safe, local fix that doesn't ripple anywhere else.
+
 ---
 
 ## 1. Audit findings
@@ -185,7 +193,7 @@ Key design decisions:
 | 0 | Audit (this document) | ✅ done |
 | 1 | Rename headless/gui → hidden/visible everywhere (enum, config key + legacy alias, CLI flag, App field, UI strings, tests). Default flipped to hidden. | ✅ done — commit `ca2bf4e` |
 | 2 | Browser abstraction: add `BrowserKind::Chromium`, configurable priority list, extract `BrowserDriver` trait, remove hardcoded rutracker URL from `cdp.rs` | ✅ done — commit `b3bb94e` (Note: `BrowserDriver` *trait* extraction itself deferred to Phase 3, since it's cleanest to do alongside the `Source` trait — see below) |
-| 3 | `Source` trait + `search/` → `sources/` rename, Rutracker as first impl, registry wired into orchestrator | ⏳ planned |
+| 3 | `Source` trait + `search/` → `sources/` rename, Rutracker as first impl, registry wired into orchestrator | 🔶 part 1 done — commit `fc03190`: trait + `impl Source for RutrackerSearcher` + `KNOWN_SOURCES` list wired into health check. **Not yet done:** the `search/` → `sources/` directory rename, and rewiring `app.rs`/`main.rs` to call through `dyn Source` instead of `RutrackerSearcher` directly (deferred deliberately — see commit message — until part 1 is confirmed to actually compile, since `async-trait` + `Send + Sync` bounds on a struct holding `fantoccini::Client` is the one part of this phase genuinely worth a compiler's opinion before building further on top). |
 | 4 | Credentials: keyed store + JSON payload (fixes B4), multi-resource aware | ⏳ planned |
 | 5 | Settings rewrite: typed descriptor table, dynamic pagination (fixes B1/B2/B5), general/streaming/download categories per spec, config save-on-exit actually implemented | ⏳ planned |
 | 6 | Login modal restyle: tabs per resource, Save button + saved-indicator, moved behind Options | ⏳ planned |
