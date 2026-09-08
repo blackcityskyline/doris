@@ -1,5 +1,5 @@
-# T-Hunter Configuration
-# Place this file at ~/.config/t-hunter/config.toml
+# Doris Configuration
+# Place this file at ~/.config/doris/config.toml
 
 # Browser to use (chrome, brave, helium) - auto-detect if empty
 browser = ""
