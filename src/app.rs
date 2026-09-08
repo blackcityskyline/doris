@@ -12,6 +12,9 @@ use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
 use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction};
+use crate::ui::zones::ZoneId;
+use crate::ui::menu::MenuItem;
+use crate::ui::theme::Theme;
 use crate::cli::Args;
 use crate::config::Config;
 
@@ -83,16 +86,10 @@ impl App {
 
         if let Some(query) = self.args.query.clone() {
             self.ui.search_input = query.clone();
+            self.ui.show_menu = false;
             self.start_search(query).await;
         } else {
-            self.ui.add_log("T-Hunter started. Press 's'/'i' to search, 'a' for login, 'S' for settings, Enter to play.");
-            self.ui.add_log("Press 'L' for detailed log view");
-            if self.bridge.is_some() {
-                self.ui.add_log(&format!("Extension Bridge listening on port {}", self.config.bridge_port));
-            }
-            if crate::credentials::load_credentials().is_some() {
-                self.ui.add_log("Saved credentials found (will use if cookies fail)");
-            }
+            self.ui.show_menu = false;
         }
 
         loop {
@@ -125,6 +122,7 @@ impl App {
                             }
                             self.ui.search_offset = self.ui.results.len();
                             self.ui.state = AppState::Idle;
+                            self.ui.update_filter();
                         }
                         Event::SearchError(err) => {
                             self.ui.state = AppState::Idle;
@@ -153,6 +151,7 @@ impl App {
                         }
                         Event::ExtensionQuery(query) => {
                             self.ui.search_input = query.clone();
+                            self.ui.show_menu = false;
                             self.start_search(query).await;
                         }
                         Event::LoadMore(query, offset) => {
@@ -163,6 +162,7 @@ impl App {
                 query = self.search_rx.recv() => {
                     if let Some(query) = query {
                         self.ui.search_input = query.clone();
+                        self.ui.show_menu = false;
                         self.start_search(query).await;
                     }
                 }
@@ -178,19 +178,35 @@ impl App {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        if self.ui.show_menu {
+            return;
+        }
+
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(3);
                 } else if self.ui.modal == Modal::None {
-                    self.ui.scroll_logs_up();
+                    match self.ui.zones.focused {
+                        ZoneId::Log => self.ui.scroll_logs_up(),
+                        ZoneId::Results => {
+                            self.ui.navigate_up();
+                        }
+                        _ => {}
+                    }
                 }
             }
             MouseEventKind::ScrollDown => {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
                 } else if self.ui.modal == Modal::None {
-                    self.ui.scroll_logs_down();
+                    match self.ui.zones.focused {
+                        ZoneId::Log => self.ui.scroll_logs_down(),
+                        ZoneId::Results => {
+                            self.ui.navigate_down();
+                        }
+                        _ => {}
+                    }
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
@@ -206,6 +222,10 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.ui.show_menu {
+            return self.handle_menu_key(key).await;
+        }
+
         if self.ui.detail_log_mode {
             match key.code {
                 KeyCode::Char('L') | KeyCode::Esc => {
@@ -258,6 +278,43 @@ impl App {
                         let results = self.ui.health_check();
                         self.ui.modal = Modal::HealthCheck(results);
                     }
+                    SettingsAction::CycleTheme => {
+                        let themes = Theme::load_themes();
+                        if let Some(pos) = themes.iter().position(|t| t.name == self.ui.theme.name) {
+                            let next = (pos + 1) % themes.len();
+                            self.ui.theme = themes[next].clone();
+                        } else if !themes.is_empty() {
+                            self.ui.theme = themes[0].clone();
+                        }
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleThemeBackground => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleTruecolor => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleVimKeys => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleMouse => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::SetUpdateMs => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleRoundedCorners => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleTerminalSync => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::SetLogLevel => {
+                        self.ui.open_settings();
+                    }
+                    SettingsAction::ToggleSaveOnExit => {
+                        self.ui.open_settings();
+                    }
                     SettingsAction::Close => {}
                 }
             }
@@ -271,24 +328,99 @@ impl App {
             return Ok(());
         }
 
+        if self.ui.zones.filter_mode {
+            match key.code {
+                KeyCode::Esc => {
+                    self.ui.zones.filter_mode = false;
+                    self.ui.zones.filter_input.clear();
+                    self.ui.update_filter();
+                }
+                KeyCode::Enter => {
+                    self.ui.zones.filter_mode = false;
+                    self.ui.update_filter();
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.ui.zones.filter_input.push(c);
+                    self.ui.update_filter();
+                }
+                KeyCode::Backspace => {
+                    self.ui.zones.filter_input.pop();
+                    self.ui.update_filter();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.quit();
             }
+            KeyCode::Char('m') if !self.ui.input_mode => {
+                self.ui.show_menu = !self.ui.show_menu;
+            }
+            KeyCode::Char('F') if !self.ui.input_mode => {
+                self.ui.zones.filter_mode = true;
+            }
+            KeyCode::Char('f') if !self.ui.input_mode => {
+                if self.ui.zones.fullscreen.is_some() {
+                    self.ui.zones.set_fullscreen(None);
+                } else {
+                    self.ui.zones.set_fullscreen(Some(self.ui.zones.focused));
+                }
+            }
+            KeyCode::Char('1') if !self.ui.input_mode => {
+                self.ui.zones.toggle(ZoneId::Results);
+            }
+            KeyCode::Char('2') if !self.ui.input_mode => {
+                self.ui.zones.toggle(ZoneId::Torrent);
+            }
+            KeyCode::Char('3') if !self.ui.input_mode => {
+                self.ui.zones.toggle(ZoneId::Log);
+            }
+            KeyCode::Char('4') if !self.ui.input_mode => {
+                self.ui.zones.toggle(ZoneId::Extra);
+            }
             KeyCode::Char('j') | KeyCode::Down => {
-                self.ui.navigate_down();
-                if self.ui.needs_more() {
-                    if let Some(q) = self.ui.search_query.clone() {
-                        let offset = self.ui.search_offset;
-                        self.load_more(q, offset).await;
+                match self.ui.zones.focused {
+                    ZoneId::Results => {
+                        self.ui.navigate_down();
+                        if self.ui.needs_more() {
+                            if let Some(q) = self.ui.search_query.clone() {
+                                let offset = self.ui.search_offset;
+                                self.load_more(q, offset).await;
+                            }
+                        }
                     }
+                    ZoneId::Log => self.ui.scroll_logs_down(),
+                    _ => {}
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.ui.navigate_up();
+                match self.ui.zones.focused {
+                    ZoneId::Results => { self.ui.navigate_up(); }
+                    ZoneId::Log => self.ui.scroll_logs_up(),
+                    _ => {}
+                }
             }
-            KeyCode::PageUp if !self.ui.input_mode => self.ui.scroll_logs_page_up(),
-            KeyCode::PageDown if !self.ui.input_mode => self.ui.scroll_logs_page_down(),
+            KeyCode::Tab if !self.ui.input_mode => {
+                self.ui.zones.focus_next();
+            }
+            KeyCode::BackTab if !self.ui.input_mode => {
+                self.ui.zones.focus_prev();
+            }
+            KeyCode::PageUp if !self.ui.input_mode => {
+                match self.ui.zones.focused {
+                    ZoneId::Log => self.ui.scroll_logs_page_up(),
+                    _ => {}
+                }
+            }
+            KeyCode::PageDown if !self.ui.input_mode => {
+                match self.ui.zones.focused {
+                    ZoneId::Log => self.ui.scroll_logs_page_down(),
+                    _ => {}
+                }
+            }
             KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();
             }
@@ -304,8 +436,10 @@ impl App {
             KeyCode::Esc => {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_mode = false;
-                } else {
+                } else if self.ui.input_mode {
                     self.ui.exit_input_mode();
+                } else {
+                    self.ui.show_menu = !self.ui.show_menu;
                 }
             }
             KeyCode::Enter => {
@@ -326,6 +460,46 @@ impl App {
             }
             KeyCode::Backspace if self.ui.input_mode => {
                 self.ui.backspace();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_menu_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.ui.quit();
+            }
+            KeyCode::Char('m') | KeyCode::Esc => {
+                self.ui.show_menu = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.ui.menu.next();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.ui.menu.prev();
+            }
+            KeyCode::Tab => {
+                self.ui.menu.next();
+            }
+            KeyCode::BackTab => {
+                self.ui.menu.prev();
+            }
+            KeyCode::Enter => {
+                let item = self.ui.menu.select();
+                match item {
+                    MenuItem::Options => {
+                        self.ui.show_menu = false;
+                        self.ui.open_settings();
+                    }
+                    MenuItem::Help => {
+                        self.ui.menu.show_help = !self.ui.menu.show_help;
+                    }
+                    MenuItem::Quit => {
+                        self.ui.quit();
+                    }
+                }
             }
             _ => {}
         }
