@@ -6,9 +6,9 @@ static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 
 pub fn init() {
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let log_dir = home.join(".local").join("share").join("t-hunter");
+    let log_dir = home.join(".local").join("share").join("doris");
     let _ = std::fs::create_dir_all(&log_dir);
-    let log_path = log_dir.join("t-hunter.log");
+    let log_path = log_dir.join("doris.log");
     if let Ok(file) = OpenOptions::new()
         .create(true)
         .truncate(true)
