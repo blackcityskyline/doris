@@ -1,4 +1,4 @@
-use t_hunter::credentials::*;
+use doris::credentials::*;
 use serial_test::serial;
 
 #[test]

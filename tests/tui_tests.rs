@@ -1,10 +1,10 @@
 use ratatui::prelude::*;
 use ratatui::backend::TestBackend;
 use ratatui::widgets::*;
-use t_hunter::ui::app::App as UiApp;
-use t_hunter::ui::app::Modal;
-use t_hunter::ui::app::LoginField;
-use t_hunter::search::models::TorrentItem;
+use doris::ui::app::App as UiApp;
+use doris::ui::app::Modal;
+use doris::ui::app::LoginField;
+use doris::search::models::TorrentItem;
 
 fn make_test_app() -> UiApp {
     UiApp::new(
@@ -175,6 +175,7 @@ fn test_delete_word() {
 fn test_navigate_down() {
     let mut app = make_test_app();
     app.results = make_results(5);
+    app.update_filter();
     assert!(app.navigate_down());
     assert_eq!(app.selected, 1);
 }
@@ -183,8 +184,10 @@ fn test_navigate_down() {
 fn test_navigate_down_clamps() {
     let mut app = make_test_app();
     app.results = make_results(3);
+    app.update_filter();
     app.selected = 2;
-    assert!(app.navigate_down());
+    app.all_loaded = true;
+    assert!(!app.navigate_down());
     assert_eq!(app.selected, 2);
 }
 
@@ -192,6 +195,7 @@ fn test_navigate_down_clamps() {
 fn test_navigate_up() {
     let mut app = make_test_app();
     app.results = make_results(5);
+    app.update_filter();
     app.selected = 3;
     assert!(app.navigate_up());
     assert_eq!(app.selected, 2);
@@ -246,6 +250,7 @@ fn test_submit_search_empty() {
 fn test_submit_selection() {
     let mut app = make_test_app();
     app.results = make_results(5);
+    app.update_filter();
     app.selected = 2;
     assert_eq!(app.submit_selection(), Some(2));
 }
@@ -456,6 +461,7 @@ fn test_full_flow() {
             query: "world war".into(),
         })
         .collect();
+    app.update_filter();
     for _ in 0..10 {
         app.navigate_down();
     }
@@ -466,6 +472,7 @@ fn test_full_flow() {
 fn test_render_does_not_panic() {
     let mut app = make_test_app();
     app.results = make_results(10);
+    app.update_filter();
     app.add_log("test log");
 
     let backend = TestBackend::new(120, 40);
@@ -475,7 +482,7 @@ fn test_render_does_not_panic() {
 
 #[test]
 fn test_render_empty_state() {
-    let app = make_test_app();
+    let mut app = make_test_app();
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
@@ -485,6 +492,7 @@ fn test_render_empty_state() {
 fn test_render_with_many_results() {
     let mut app = make_test_app();
     app.results = make_results(100);
+    app.update_filter();
     app.selected = 50;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -526,7 +534,7 @@ fn test_render_with_modal() {
 #[test]
 fn test_state_searching() {
     let mut app = make_test_app();
-    app.state = t_hunter::ui::app::AppState::Searching;
+    app.state = doris::ui::app::AppState::Searching;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
@@ -535,8 +543,9 @@ fn test_state_searching() {
 #[test]
 fn test_state_streaming() {
     let mut app = make_test_app();
-    app.state = t_hunter::ui::app::AppState::Streaming;
+    app.state = doris::ui::app::AppState::Streaming;
     app.results = make_results(3);
+    app.update_filter();
     app.selected = 1;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();

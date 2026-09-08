@@ -1,4 +1,4 @@
-use t_hunter::config::*;
+use doris::config::*;
 
 #[test]
 fn test_config_default() {

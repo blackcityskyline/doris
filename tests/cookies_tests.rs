@@ -1,4 +1,4 @@
-use t_hunter::search::cookies::*;
+use doris::search::cookies::*;
 use serial_test::serial;
 
 #[test]
@@ -60,7 +60,7 @@ fn test_parse_netscape_empty() {
 #[test]
 #[serial]
 fn test_save_and_reload() {
-    let dir = std::env::temp_dir().join("t-hunter-test");
+    let dir = std::env::temp_dir().join("doris-test");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("test_cookies.txt");
 

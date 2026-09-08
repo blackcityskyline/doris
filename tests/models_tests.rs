@@ -1,4 +1,4 @@
-use t_hunter::search::models::*;
+use doris::search::models::*;
 
 #[test]
 fn test_torrent_item_full_json() {
