@@ -2,7 +2,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "t-hunter", about = "Rutracker TUI search & TorrServer stream")]
+#[command(name = "doris", about = "Rutracker TUI search & TorrServer stream")]
 pub struct Args {
     pub query: Option<String>,
 

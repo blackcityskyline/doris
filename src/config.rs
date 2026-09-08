@@ -61,7 +61,7 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
         Some(p) => Some(p.to_path_buf()),
         None => {
             let home = dirs::home_dir().unwrap_or_default();
-            let config_dir = home.join(".config").join("t-hunter");
+            let config_dir = home.join(".config").join("doris");
             let candidate = config_dir.join("config.toml");
             if candidate.exists() {
                 Some(candidate)
