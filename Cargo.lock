@@ -857,6 +857,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "doris"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "chromiumoxide",
+ "chromiumoxide_cdp",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs",
+ "encoding_rs",
+ "fantoccini",
+ "futures-lite",
+ "getrandom 0.2.17",
+ "hostname",
+ "ratatui",
+ "reqwest",
+ "ring",
+ "rusqlite",
+ "rustls",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width 0.2.0",
+ "url",
+ "urlencoding",
+ "which",
+ "whoami",
+]
+
+[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2953,43 +2991,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "t-hunter"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "chromiumoxide",
- "chromiumoxide_cdp",
- "chrono",
- "clap",
- "crossterm",
- "dirs",
- "encoding_rs",
- "fantoccini",
- "futures-lite",
- "getrandom 0.2.17",
- "hostname",
- "ratatui",
- "reqwest",
- "ring",
- "rusqlite",
- "rustls",
- "scraper",
- "serde",
- "serde_json",
- "serial_test",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "which",
- "whoami",
 ]
 
 [[package]]
