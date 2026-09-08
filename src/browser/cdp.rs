@@ -43,7 +43,12 @@ pub struct Browser {
 }
 
 impl Browser {
-    pub async fn launch(binary: &Path, mode: BrowserVisibility) -> Result<Self> {
+    /// `cookie_injection_url` is where a hidden-mode session navigates to
+    /// before injecting cookies extracted from the browser's native (real)
+    /// profile — it must be a page on the same domain those cookies belong
+    /// to. Callers pass the active search source's home page; this module
+    /// stays source-agnostic on purpose (see ROADMAP.md Phase 3).
+    pub async fn launch(binary: &Path, mode: BrowserVisibility, cookie_injection_url: &str) -> Result<Self> {
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
@@ -153,7 +158,7 @@ impl Browser {
 
         if !injected_cookies.is_empty() {
             crate::log::log("browser", "navigating to domain for cookie injection...");
-            browser.navigate("https://rutracker.org/forum/index.php").await.ok();
+            browser.navigate(cookie_injection_url).await.ok();
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             crate::log::log("browser", &format!("injecting {} cookies into hidden session", injected_cookies.len()));
             browser.add_cookies(&injected_cookies).await?;

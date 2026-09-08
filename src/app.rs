@@ -47,7 +47,8 @@ impl App {
         let browser_visibility: BrowserVisibility = browser_visibility_str.parse()?;
 
         let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
-        let browser_info = detect::detect_browser(browser_choice)
+        let browser_priority = detect::parse_priority(&config.browser_priority);
+        let browser_info = detect::detect_browser_with_priority(browser_choice, &browser_priority)
             .map(|(kind, path)| format!("{} [{}] ({})", kind, browser_visibility, path.display()))
             .unwrap_or_else(|e| format!("Error: {}", e));
 
@@ -719,10 +720,14 @@ impl App {
         }
 
         let browser_choice = self.args.browser.as_deref().or(self.config.browser.as_deref());
-        let (kind, path) = detect::detect_browser(browser_choice)?;
+        let browser_priority = detect::parse_priority(&self.config.browser_priority);
+        let (kind, path) = detect::detect_browser_with_priority(browser_choice, &browser_priority)?;
         self.ui.add_log(&format!("Launching {} ({})...", kind, self.browser_visibility));
 
-        let browser = Browser::launch(&path, self.browser_visibility).await?;
+        // TODO(Phase 3): this should come from the active Source
+        // (`Source::home_url()`) once the Source trait lands, instead of
+        // being rutracker-specific here.
+        let browser = Browser::launch(&path, self.browser_visibility, RutrackerSearcher::HOME_URL).await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 

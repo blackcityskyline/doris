@@ -22,14 +22,19 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     }
 
     let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
-    let (kind, path) = doris::browser::detect::detect_browser(browser_choice)?;
-    let mode_str = args.browser_mode
+    let browser_priority = doris::browser::detect::parse_priority(&config.browser_priority);
+    let (kind, path) = doris::browser::detect::detect_browser_with_priority(browser_choice, &browser_priority)?;
+    let visibility_str = args.browser_visibility
         .clone()
-        .unwrap_or_else(|| config.browser_mode.clone());
-    let mode: doris::browser::cdp::BrowserVisibility = mode_str.parse()?;
-    println!("Using browser: {} [{}] ({})", kind, mode, path.display());
+        .unwrap_or_else(|| config.browser_visibility.clone());
+    let visibility: doris::browser::cdp::BrowserVisibility = visibility_str.parse()?;
+    println!("Using browser: {} [{}] ({})", kind, visibility, path.display());
 
-    let browser = doris::browser::cdp::Browser::launch(&path, mode).await?;
+    let browser = doris::browser::cdp::Browser::launch(
+        &path,
+        visibility,
+        doris::search::rutracker::RutrackerSearcher::HOME_URL,
+    ).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
     let mut searcher = doris::search::rutracker::RutrackerSearcher::new(browser);

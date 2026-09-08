@@ -13,6 +13,13 @@ pub struct RutrackerSearcher {
 }
 
 impl RutrackerSearcher {
+    /// Rutracker's forum index — used as the generic "domain home page" a
+    /// hidden-mode browser session navigates to before cookie injection.
+    /// Once the `Source` trait lands (ROADMAP.md Phase 3) this becomes
+    /// `Source::home_url()` and callers stop reaching into this searcher
+    /// just to get a URL constant.
+    pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";
+
     pub fn new(browser: Arc<Mutex<Browser>>) -> Self {
         Self { browser, logged_in: false }
     }
@@ -68,7 +75,7 @@ impl RutrackerSearcher {
 
         // Step 2: Navigate and pass Cloudflare
         log("AUTH: navigating to rutracker.org...");
-        if let Err(e) = browser.navigate("https://rutracker.org/forum/index.php").await {
+        if let Err(e) = browser.navigate(Self::HOME_URL).await {
             log(&format!("AUTH: failed to navigate: {}", e));
             return Err(e);
         }
@@ -448,7 +455,7 @@ impl RutrackerSearcher {
         }
 
         let mut req = client.get(&full_url)
-            .header("Referer", "https://rutracker.org/forum/index.php");
+            .header("Referer", Self::HOME_URL);
 
         if !cookie_header.is_empty() {
             req = req.header("Cookie", cookie_header);
