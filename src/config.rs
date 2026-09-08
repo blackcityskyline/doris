@@ -10,6 +10,10 @@ pub struct Config {
     /// (background) so a first run never pops a browser window.
     #[serde(default = "default_browser_visibility", alias = "browser_mode")]
     pub browser_visibility: String,
+    /// Order to probe installed browsers in when `browser` isn't set to a
+    /// specific one. Any of "chrome", "chromium", "brave", "helium".
+    #[serde(default = "default_browser_priority")]
+    pub browser_priority: Vec<String>,
     #[serde(default = "default_torrserver_url")]
     pub torrserver_url: String,
     #[serde(default = "default_bridge_port")]
@@ -24,6 +28,7 @@ impl Default for Config {
         Self {
             browser: None,
             browser_visibility: default_browser_visibility(),
+            browser_priority: default_browser_priority(),
             torrserver_url: default_torrserver_url(),
             bridge_port: default_bridge_port(),
             cookie_file: default_cookie_file(),
@@ -48,6 +53,18 @@ fn default_torrserver_url() -> String {
 
 fn default_browser_visibility() -> String {
     "hidden".to_string()
+}
+
+fn default_browser_priority() -> Vec<String> {
+    // Mirrors browser::detect::DEFAULT_PRIORITY. Kept as plain strings here
+    // so config.rs doesn't need to depend on the browser module just for
+    // this default; browser::detect::parse_priority() re-derives the
+    // BrowserKind order from these strings and falls back to its own
+    // DEFAULT_PRIORITY if the list is ever empty or unparsable.
+    ["helium", "brave", "chrome", "chromium"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn default_bridge_port() -> u16 {
