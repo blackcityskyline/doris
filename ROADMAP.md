@@ -184,7 +184,7 @@ Key design decisions:
 |-------|-------|--------|
 | 0 | Audit (this document) | ✅ done |
 | 1 | Rename headless/gui → hidden/visible everywhere (enum, config key + legacy alias, CLI flag, App field, UI strings, tests). Default flipped to hidden. | ✅ done — commit `ca2bf4e` |
-| 2 | Browser abstraction: add `BrowserKind::Chromium`, configurable priority list, extract `BrowserDriver` trait, remove hardcoded rutracker URL from `cdp.rs` | ⏳ next |
+| 2 | Browser abstraction: add `BrowserKind::Chromium`, configurable priority list, extract `BrowserDriver` trait, remove hardcoded rutracker URL from `cdp.rs` | ✅ done — commit `b3bb94e` (Note: `BrowserDriver` *trait* extraction itself deferred to Phase 3, since it's cleanest to do alongside the `Source` trait — see below) |
 | 3 | `Source` trait + `search/` → `sources/` rename, Rutracker as first impl, registry wired into orchestrator | ⏳ planned |
 | 4 | Credentials: keyed store + JSON payload (fixes B4), multi-resource aware | ⏳ planned |
 | 5 | Settings rewrite: typed descriptor table, dynamic pagination (fixes B1/B2/B5), general/streaming/download categories per spec, config save-on-exit actually implemented | ⏳ planned |

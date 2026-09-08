@@ -575,6 +575,16 @@ impl App {
             results.push(format!("{} Cookie file: not found", "\u{26a0}"));
         }
 
+        let sources_line = crate::search::source::KNOWN_SOURCES.iter()
+            .map(|s| if s.implemented {
+                format!("{}{}", "\u{2714} ", s.display_name)
+            } else {
+                format!("{}{} (planned)", "\u{26a0} ", s.display_name)
+            })
+            .collect::<Vec<_>>()
+            .join("   ");
+        results.push(format!("Sources: {}", sources_line));
+
         results.push("".into());
         results.push("Press Esc to close".into());
         results

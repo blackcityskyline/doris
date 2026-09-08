@@ -36,3 +36,8 @@ base64 = "0.22"
 serial_test = "3"
 rusqlite = { version = "0.31", features = ["bundled"] }
 unicode-width = "0.2"
+# Needed so `Source` (src/search/source.rs) can be used as `Box<dyn Source>`
+# in a registry: native async-fn-in-traits (stable since Rust 1.75) is not
+# object-safe on its own, this crate boxes the futures so it is. Small,
+# widely-used, proc-macro only (no extra runtime dependencies pulled in).
+async-trait = "0.1"
