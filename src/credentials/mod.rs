@@ -6,7 +6,7 @@ const KEY_LEN: usize = 16;
 
 pub fn credentials_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".config").join("t-hunter").join("credentials.enc")
+    home.join(".config").join("doris").join("credentials.enc")
 }
 
 fn derive_key() -> Result<[u8; KEY_LEN]> {
@@ -18,7 +18,7 @@ fn derive_key() -> Result<[u8; KEY_LEN]> {
     let mut input = Vec::new();
     input.extend_from_slice(hostname.as_bytes());
     input.extend_from_slice(username.as_bytes());
-    input.extend_from_slice(b"t-hunter-cred-salt-v1");
+    input.extend_from_slice(b"doris-cred-salt-v1");
 
     let hash = ring::digest::digest(&ring::digest::SHA256, &input);
     let mut key = [0u8; KEY_LEN];
