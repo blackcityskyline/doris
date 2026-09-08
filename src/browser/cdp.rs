@@ -45,7 +45,7 @@ impl Browser {
         let mut injected_cookies: Vec<serde_json::Value> = Vec::new();
 
         let temp_profile = if mode == BrowserMode::Headless {
-            let tmp = std::env::temp_dir().join(format!("t-hunter-headless-{}", std::process::id()));
+            let tmp = std::env::temp_dir().join(format!("doris-headless-{}", std::process::id()));
             std::fs::create_dir_all(&tmp)?;
             crate::log::log("browser", &format!("headless: temp profile {}", tmp.display()));
 
@@ -362,7 +362,7 @@ fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
 async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("t-hunter");
+        .join("doris");
     std::fs::create_dir_all(&data_dir)?;
 
     let patched_path = data_dir.join("chromedriver_patched");
@@ -469,7 +469,7 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
 
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("t-hunter")
+        .join("doris")
         .join("chromedriver");
     std::fs::create_dir_all(&data_dir)?;
 
@@ -588,7 +588,7 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
     let cookie_db = cookie_paths.iter().find(|p| p.exists() && p.file_name().map(|n| n == "Cookies").unwrap_or(false))
         .ok_or_else(|| anyhow::anyhow!("No Cookies database found in profile"))?;
 
-    let tmp_copy = std::env::temp_dir().join(format!("t-hunter-cookies-{}.sqlite", std::process::id()));
+    let tmp_copy = std::env::temp_dir().join(format!("doris-cookies-{}.sqlite", std::process::id()));
     std::fs::copy(cookie_db, &tmp_copy)?;
 
     let conn = rusqlite::Connection::open(&tmp_copy)?;
