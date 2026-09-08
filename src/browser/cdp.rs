@@ -3,28 +3,34 @@ use fantoccini::{ClientBuilder, Client};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BrowserMode {
-    Gui,
-    Headless,
+/// Browser window visibility. Renamed from the old "headless/gui" naming:
+/// `Visible` shows the real browser window, `Hidden` runs it off-screen
+/// (still a real, non-headless-flagged Chromium session when Xvfb is
+/// available, falling back to `--headless=new` otherwise).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BrowserVisibility {
+    Visible,
+    #[default]
+    Hidden,
 }
 
-impl std::fmt::Display for BrowserMode {
+impl std::fmt::Display for BrowserVisibility {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BrowserMode::Gui => write!(f, "gui"),
-            BrowserMode::Headless => write!(f, "headless"),
+            BrowserVisibility::Visible => write!(f, "visible"),
+            BrowserVisibility::Hidden => write!(f, "hidden"),
         }
     }
 }
 
-impl std::str::FromStr for BrowserMode {
+impl std::str::FromStr for BrowserVisibility {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "gui" | "window" | "visible" => Ok(BrowserMode::Gui),
-            "headless" | "hidden" | "bg" => Ok(BrowserMode::Headless),
-            _ => anyhow::bail!("Unknown browser mode '{}'. Use 'gui' or 'headless'", s),
+            // Legacy aliases kept so old configs/CLI flags keep working.
+            "visible" | "gui" | "window" => Ok(BrowserVisibility::Visible),
+            "hidden" | "headless" | "bg" => Ok(BrowserVisibility::Hidden),
+            _ => anyhow::bail!("Unknown browser visibility '{}'. Use 'visible' or 'hidden'", s),
         }
     }
 }
@@ -37,17 +43,17 @@ pub struct Browser {
 }
 
 impl Browser {
-    pub async fn launch(binary: &Path, mode: BrowserMode) -> Result<Self> {
+    pub async fn launch(binary: &Path, mode: BrowserVisibility) -> Result<Self> {
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
         let native_profile = detect_user_data_dir(binary);
         let mut injected_cookies: Vec<serde_json::Value> = Vec::new();
 
-        let temp_profile = if mode == BrowserMode::Headless {
-            let tmp = std::env::temp_dir().join(format!("doris-headless-{}", std::process::id()));
+        let temp_profile = if mode == BrowserVisibility::Hidden {
+            let tmp = std::env::temp_dir().join(format!("doris-hidden-{}", std::process::id()));
             std::fs::create_dir_all(&tmp)?;
-            crate::log::log("browser", &format!("headless: temp profile {}", tmp.display()));
+            crate::log::log("browser", &format!("hidden mode: temp profile {}", tmp.display()));
 
             if let Some(ref native) = native_profile {
                 match extract_cookies_from_native_profile(native) {
@@ -68,7 +74,7 @@ impl Browser {
             native_profile.clone()
         };
 
-        let use_xvfb = mode == BrowserMode::Headless && has_xvfb();
+        let use_xvfb = mode == BrowserVisibility::Hidden && has_xvfb();
         let mut xvfb_child = None;
         if use_xvfb {
             crate::log::log("browser", "using xvfb virtual display");
@@ -106,7 +112,7 @@ impl Browser {
             "--lang=ru-RU".into(),
         ];
 
-        if mode == BrowserMode::Headless && !use_xvfb {
+        if mode == BrowserVisibility::Hidden && !use_xvfb {
             chrome_args.push("--headless=new".into());
         }
 
@@ -141,7 +147,7 @@ impl Browser {
         let browser = Self {
             client,
             child: Some(child),
-            temp_profile: if mode == BrowserMode::Headless { temp_profile } else { None },
+            temp_profile: if mode == BrowserVisibility::Hidden { temp_profile } else { None },
             xvfb_child,
         };
 
@@ -149,7 +155,7 @@ impl Browser {
             crate::log::log("browser", "navigating to domain for cookie injection...");
             browser.navigate("https://rutracker.org/forum/index.php").await.ok();
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            crate::log::log("browser", &format!("injecting {} cookies into headless session", injected_cookies.len()));
+            crate::log::log("browser", &format!("injecting {} cookies into hidden session", injected_cookies.len()));
             browser.add_cookies(&injected_cookies).await?;
         }
 

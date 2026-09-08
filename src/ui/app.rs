@@ -46,7 +46,7 @@ pub struct SettingsItem {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SettingsAction {
-    ToggleHeadless,
+    ToggleBrowserVisibility,
     ToggleMode,
     SetDownloadDir,
     RunHealthCheck,
@@ -121,7 +121,8 @@ pub struct App {
     pub search_query: Option<String>,
     pub search_offset: usize,
     pub all_loaded: bool,
-    pub headless: bool,
+    /// True = browser runs hidden (background). False = visible window.
+    pub browser_hidden: bool,
     pub stream_mode: bool,
     pub download_dir: String,
     pub theme: Theme,
@@ -152,7 +153,7 @@ impl App {
             search_query: None,
             search_offset: 0,
             all_loaded: false,
-            headless: true,
+            browser_hidden: true,
             stream_mode: true,
             download_dir: dirs::download_dir()
                 .map(|d| d.display().to_string())
@@ -231,7 +232,7 @@ impl App {
     }
 
     pub fn open_settings(&mut self) {
-        let headless_str = if self.headless { "Headless (hidden)".to_string() } else { "GUI (visible)".to_string() };
+        let visibility_str = if self.browser_hidden { "Hidden".to_string() } else { "Visible".to_string() };
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
         let theme_name = self.theme.name.clone();
         let themes = Theme::load_themes();
@@ -354,15 +355,18 @@ impl App {
                     name: "app".into(),
                     items: vec![
                         SettingsItem {
-                            label: "Browser mode".into(),
-                            value: headless_str,
+                            label: "Browser visible".into(),
+                            value: visibility_str,
                             description: vec![
-                                "Set browser visibility mode.".into(),
+                                "Show or hide the automated".into(),
+                                "browser window.".into(),
                                 "".into(),
-                                "\"Headless\" runs browser hidden,".into(),
-                                "\"GUI\" shows browser window.".into(),
+                                "\"Hidden\" (default) runs it in".into(),
+                                "the background.".into(),
+                                "\"Visible\" shows the real".into(),
+                                "browser window.".into(),
                             ],
-                            action: SettingsAction::ToggleHeadless,
+                            action: SettingsAction::ToggleBrowserVisibility,
                         },
                         SettingsItem {
                             label: "Play mode".into(),
@@ -534,7 +538,7 @@ impl App {
             .map(|s| s.success())
             .unwrap_or(false);
         if has_xvfb { results.push(format!("{} Xvfb: available", "\u{2714}")); }
-        else { results.push(format!("{} Xvfb: not found (needed for headless)", "\u{2718}")); }
+        else { results.push(format!("{} Xvfb: not found (needed to run browser hidden)", "\u{2718}")); }
 
         let has_chromedriver = std::path::Path::new(&dirs::data_local_dir()
             .unwrap_or_default().join("doris").join("chromedriver_patched")).exists()

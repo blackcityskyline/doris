@@ -4,7 +4,7 @@ use ratatui::prelude::Rect;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
-use crate::browser::cdp::{Browser, BrowserMode};
+use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
 use crate::search::rutracker::RutrackerSearcher;
@@ -26,7 +26,7 @@ pub struct App {
     event_handler: EventHandler,
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
-    browser_mode: BrowserMode,
+    browser_visibility: BrowserVisibility,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
@@ -42,13 +42,13 @@ impl App {
             args.torrserver.clone()
         };
 
-        let browser_mode_str = args.browser_mode.clone()
-            .unwrap_or_else(|| config.browser_mode.clone());
-        let browser_mode: BrowserMode = browser_mode_str.parse()?;
+        let browser_visibility_str = args.browser_visibility.clone()
+            .unwrap_or_else(|| config.browser_visibility.clone());
+        let browser_visibility: BrowserVisibility = browser_visibility_str.parse()?;
 
         let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
         let browser_info = detect::detect_browser(browser_choice)
-            .map(|(kind, path)| format!("{} [{}] ({})", kind, browser_mode, path.display()))
+            .map(|(kind, path)| format!("{} [{}] ({})", kind, browser_visibility, path.display()))
             .unwrap_or_else(|e| format!("Error: {}", e));
 
         let (search_tx, search_rx) = mpsc::unbounded_channel();
@@ -70,7 +70,7 @@ impl App {
             event_handler: EventHandler::new(std::time::Duration::from_millis(100)),
             torrserver: TorrServer::new(&torrserver_url),
             browser: None,
-            browser_mode,
+            browser_visibility,
             search_tx,
             search_rx,
             bridge,
@@ -258,8 +258,8 @@ impl App {
         if let Modal::Settings(_) = self.ui.modal {
             if let Some(action) = self.ui.settings_key(key) {
                 match action {
-                    SettingsAction::ToggleHeadless => {
-                        self.ui.headless = !self.ui.headless;
+                    SettingsAction::ToggleBrowserVisibility => {
+                        self.ui.browser_hidden = !self.ui.browser_hidden;
                         self.ui.open_settings();
                     }
                     SettingsAction::ToggleMode => {
@@ -720,9 +720,9 @@ impl App {
 
         let browser_choice = self.args.browser.as_deref().or(self.config.browser.as_deref());
         let (kind, path) = detect::detect_browser(browser_choice)?;
-        self.ui.add_log(&format!("Launching {} in {} mode...", kind, self.browser_mode));
+        self.ui.add_log(&format!("Launching {} ({})...", kind, self.browser_visibility));
 
-        let browser = Browser::launch(&path, self.browser_mode.clone()).await?;
+        let browser = Browser::launch(&path, self.browser_visibility).await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 

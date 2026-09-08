@@ -18,8 +18,9 @@ pub struct Args {
     #[arg(short, long)]
     pub browser: Option<String>,
 
+    /// Browser window visibility: "visible" or "hidden" (default: hidden)
     #[arg(long)]
-    pub browser_mode: Option<String>,
+    pub browser_visibility: Option<String>,
 
     #[arg(long, default_value = "http://127.0.0.1:8090")]
     pub torrserver: String,
