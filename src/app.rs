@@ -18,6 +18,26 @@ use crate::ui::theme::Theme;
 use crate::cli::Args;
 use crate::config::Config;
 
+/// Resolve the effective download directory from `download_dir_mode` and
+/// the three custom slots (Options -> download), falling back to the OS
+/// Downloads folder for "default" or an unset/empty custom slot. A free
+/// function (rather than only an `App` method) so it can also be called
+/// during `App::new()`, before `self` exists.
+fn resolve_download_dir(config: &Config) -> String {
+    let custom = match config.download_dir_mode.as_str() {
+        "custom1" => Some(&config.download_dir_custom_1),
+        "custom2" => Some(&config.download_dir_custom_2),
+        "custom3" => Some(&config.download_dir_custom_3),
+        _ => None,
+    };
+    match custom {
+        Some(path) if !path.is_empty() => path.clone(),
+        _ => dirs::download_dir()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "/tmp".to_string()),
+    }
+}
+
 pub struct App {
     args: Args,
     #[allow(dead_code)]
@@ -72,6 +92,7 @@ impl App {
                 browser_info,
                 browser_visibility == BrowserVisibility::Hidden,
                 config.theme_name.as_deref(),
+                resolve_download_dir(&config),
             ),
             event_handler: EventHandler::new(std::time::Duration::from_millis(100)),
             torrserver: TorrServer::new(&torrserver_url),
@@ -237,6 +258,12 @@ impl App {
         }
     }
 
+    /// See the free function of the same name for the resolution logic;
+    /// this just supplies `&self.config`.
+    fn resolve_download_dir(&self) -> String {
+        resolve_download_dir(&self.config)
+    }
+
     /// Move the selection down in the focused zone, loading the next page
     /// of results if the Results zone just scrolled near its end. Shared
     /// by the Down arrow (always active) and the vim-style 'j' (only when
@@ -327,9 +354,56 @@ impl App {
                         self.ui.stream_mode = !self.ui.stream_mode;
                         self.ui.open_settings(&self.config);
                     }
-                    SettingsAction::SetDownloadDir => {
-                        self.ui.add_log(&format!("Download dir: {}", self.ui.download_dir));
-                        self.ui.modal = Modal::None;
+                    SettingsAction::CyclePrioritizeBrowser => {
+                        const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
+                        let current = self.config.browser_priority.first().cloned().unwrap_or_default();
+                        let next_first = match ORDER.iter().position(|&k| k == current) {
+                            Some(i) => ORDER[(i + 1) % ORDER.len()],
+                            None => ORDER[0],
+                        };
+                        // Move next_first to the front, keep the rest in
+                        // their existing relative order.
+                        let mut rest: Vec<String> = self.config.browser_priority.iter()
+                            .filter(|k| k.as_str() != next_first)
+                            .cloned()
+                            .collect();
+                        let mut new_priority = vec![next_first.to_string()];
+                        new_priority.append(&mut rest);
+                        self.config.browser_priority = new_priority;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleCloseBrowserOnExit => {
+                        self.config.close_browser_on_exit = !self.config.close_browser_on_exit;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleSaveCookies => {
+                        self.config.save_cookies = !self.config.save_cookies;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleSaveCredentials => {
+                        self.config.save_credentials = !self.config.save_credentials;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::EditCredentials => {
+                        self.ui.open_login_modal();
+                    }
+                    SettingsAction::CheckTorrserverStatus => {
+                        let reachable = self.torrserver.is_reachable().await;
+                        self.ui.add_log(if reachable {
+                            "TorrServer: reachable"
+                        } else {
+                            "TorrServer: not reachable"
+                        });
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleSourceRutracker => {
+                        let id = "rutracker";
+                        if self.config.enabled_sources.iter().any(|s| s == id) {
+                            self.config.enabled_sources.retain(|s| s != id);
+                        } else {
+                            self.config.enabled_sources.push(id.to_string());
+                        }
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::OpenLog => {
                         self.ui.modal = Modal::None;
@@ -419,12 +493,47 @@ impl App {
                         self.config.graph_symbol = next.to_string();
                         self.ui.open_settings(&self.config);
                     }
-                    SettingsAction::SetLogLevel => {
-                        // Deferred: "app" is being split into "streaming"/
-                        // "download" categories per ROADMAP.md Phase 6, and
-                        // this item doesn't appear in that spec. Revisit
-                        // then rather than half-wiring a log-level concept
-                        // that doesn't exist anywhere else in the app yet.
+                    SettingsAction::ToggleDownloadEnabled => {
+                        self.config.download_enabled = !self.config.download_enabled;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::CycleDownloadDirMode => {
+                        const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
+                        let next = match MODES.iter().position(|&m| m == self.config.download_dir_mode) {
+                            Some(i) => MODES[(i + 1) % MODES.len()],
+                            None => MODES[0],
+                        };
+                        self.config.download_dir_mode = next.to_string();
+                        // Keep the display field ui.download_dir (used
+                        // wherever a "current download directory" is shown)
+                        // in sync with the resolved effective directory.
+                        self.ui.download_dir = self.resolve_download_dir();
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleDownloadSequential => {
+                        self.config.download_sequential = !self.config.download_sequential;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::CycleDownloadSpeedLimit => {
+                        const STEPS: &[u32] = &[0, 128, 256, 512, 1024, 2048, 5120, 10240];
+                        let next = match STEPS.iter().position(|&v| v == self.config.download_speed_limit_kbps) {
+                            Some(i) => STEPS[(i + 1) % STEPS.len()],
+                            None => STEPS[0],
+                        };
+                        self.config.download_speed_limit_kbps = next;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::CycleUploadSpeedLimit => {
+                        const STEPS: &[u32] = &[0, 64, 128, 256, 512, 1024, 2048, 5120];
+                        let next = match STEPS.iter().position(|&v| v == self.config.upload_speed_limit_kbps) {
+                            Some(i) => STEPS[(i + 1) % STEPS.len()],
+                            None => STEPS[0],
+                        };
+                        self.config.upload_speed_limit_kbps = next;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleCloseTorrentCoreOnExit => {
+                        self.config.close_torrent_core_on_exit = !self.config.close_torrent_core_on_exit;
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleSaveOnExit => {
@@ -530,9 +639,6 @@ impl App {
             KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();
             }
-            KeyCode::Char('a') if !self.ui.input_mode => {
-                self.ui.open_login_modal();
-            }
             KeyCode::Char('L') if !self.ui.input_mode => {
                 self.ui.toggle_detail_log();
             }
@@ -621,7 +727,9 @@ impl App {
     async fn do_login(&mut self, username: &str, password: &str) {
         self.ui.add_log(&format!("Logging in as '{}'...", username));
 
-        let _ = crate::credentials::save_credentials(username, password);
+        if self.config.save_credentials {
+            let _ = crate::credentials::save_credentials(username, password);
+        }
 
         let browser = match self.get_browser().await {
             Ok(b) => b,
@@ -633,7 +741,14 @@ impl App {
 
         let username = username.to_string();
         let password = password.to_string();
-        let cookie_file = self.args.cookie_file.clone();
+        // If "Save cookies" is off, don't pass a cookie file path through
+        // at all -- ensure_logged_in only persists cookies to disk when it
+        // has somewhere to write them.
+        let cookie_file = if self.config.save_cookies {
+            self.args.cookie_file.clone()
+        } else {
+            None
+        };
         let event_tx_login = self.event_handler.sender();
         let event_tx_result = self.event_handler.sender();
         let log = Arc::new(move |msg: &str| { let _ = event_tx_login.send(Event::StreamLog(msg.to_string())); });
@@ -657,6 +772,12 @@ impl App {
     }
 
     async fn start_search(&mut self, query: String) {
+        if !self.config.enabled_sources.iter().any(|s| s == "rutracker") {
+            self.ui.add_log("Rutracker is disabled in Options -> streaming -> Sources.");
+            self.ui.state = AppState::Idle;
+            return;
+        }
+
         self.ui.state = AppState::Searching;
         self.ui.search_query = Some(query.clone());
         self.ui.search_offset = 0;
@@ -672,7 +793,9 @@ impl App {
             }
         };
 
-        let cookie_file = self.args.cookie_file.clone();
+        // If "Save cookies" is off, don't pass a cookie file path
+        // through at all -- see do_login for the same gating.
+        let cookie_file = if self.config.save_cookies { self.args.cookie_file.clone() } else { None };
         let username = self.args.username.clone();
         let password = self.args.password.clone();
         let saved_creds = crate::credentials::load_credentials();
@@ -859,7 +982,9 @@ impl App {
 
         let event_tx_log = self.event_handler.sender();
         let event_tx_result = self.event_handler.sender();
-        let cookie_file = self.args.cookie_file.clone();
+        // If "Save cookies" is off, don't pass a cookie file path
+        // through at all -- see do_login for the same gating.
+        let cookie_file = if self.config.save_cookies { self.args.cookie_file.clone() } else { None };
         let username = self.args.username.clone();
         let password = self.args.password.clone();
         let saved_creds = crate::credentials::load_credentials();
