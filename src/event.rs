@@ -16,6 +16,15 @@ pub enum Event {
     LoginResult(bool),
     ExtensionQuery(String),
     LoadMore(String, usize),
+    /// Latest full torrent list from TorrServer's poller
+    /// (`torrent::Manager`), sent on every poll tick regardless of whether
+    /// anything changed -- the receiver decides what (if anything) to
+    /// update.
+    TorrentListUpdate(Vec<crate::torrserver::api::TorrentInfo>),
+    /// A torrent just became the "active" one to show/manage in the
+    /// Torrent panel (e.g. right after it was uploaded to TorrServer for
+    /// streaming).
+    TorrentActive(String),
 }
 
 pub struct EventHandler {

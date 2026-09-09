@@ -8,5 +8,6 @@ pub mod tui;
 pub mod browser;
 pub mod search;
 pub mod torrserver;
+pub mod torrent;
 pub mod bridge;
 pub mod ui;
