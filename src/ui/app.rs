@@ -153,6 +153,18 @@ pub struct App {
     pub menu: MenuState,
     pub show_menu: bool,
     pub torrent_status: TorrentStatus,
+    /// Hash of the torrent the Torrent panel currently shows/manages.
+    /// `None` means "show whatever TorrServer reports first" (see
+    /// app.rs's TorrentListUpdate handler); set once a stream is started
+    /// via spawn_stream so pause/resume/remove act on the right torrent
+    /// even if others are also active.
+    pub active_torrent_hash: Option<String>,
+    /// Client-side pause tracking. TorrServer has no "paused" torrent
+    /// state to read back -- pausing means `drop`ping the torrent, which
+    /// typically removes it from the live list entirely rather than
+    /// reporting it as paused -- so this is the source of truth for what
+    /// the 'p' key should do next, not something derived from polling.
+    pub torrent_paused: bool,
     pub filtered_indices: Vec<usize>,
 }
 
@@ -194,6 +206,8 @@ impl App {
             menu: MenuState::new(),
             show_menu: false,
             torrent_status: TorrentStatus::default(),
+            active_torrent_hash: None,
+            torrent_paused: false,
             filtered_indices: Vec::new(),
         }
     }
@@ -1192,12 +1206,18 @@ impl App {
         let dl_total = format_bytes(s.downloaded);
         let total = format_bytes(s.total_size);
 
+        let status_display = if self.torrent_paused && !s.hash.is_empty() {
+            format!("{} (paused)", s.status)
+        } else {
+            s.status.clone()
+        };
+
         let lines = vec![
             Line::from(vec![
                 Span::styled("Hash: ", Style::default().fg(Color::Yellow)),
                 Span::raw(&s.hash),
                 Span::styled("  Status: ", Style::default().fg(Color::Yellow)),
-                Span::raw(&s.status),
+                Span::raw(status_display),
             ]),
             Line::from(vec![
                 Span::styled("Progress: ", Style::default().fg(Color::Yellow)),
@@ -1222,6 +1242,9 @@ impl App {
                 Span::raw(s.seeds.to_string()),
                 Span::styled("  Peers: ", Style::default().fg(Color::Yellow)),
                 Span::raw(s.peers.to_string()),
+            ]),
+            Line::from(vec![
+                Span::styled("p: pause/resume  d: remove", Style::default().fg(Color::DarkGray)),
             ]),
         ];
 

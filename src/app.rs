@@ -11,7 +11,7 @@ use crate::search::rutracker::RutrackerSearcher;
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction};
+use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction, TorrentStatus};
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
 use crate::ui::theme::Theme;
@@ -86,6 +86,14 @@ impl App {
             None
         };
 
+        let event_handler = EventHandler::new(std::time::Duration::from_millis(100));
+        let torrserver = TorrServer::new(&torrserver_url);
+        crate::torrent::Manager::spawn(
+            torrserver.clone(),
+            config.update_ms,
+            event_handler.sender(),
+        );
+
         Ok(Self {
             ui: UiApp::new(
                 torrserver_url.clone(),
@@ -94,8 +102,8 @@ impl App {
                 config.theme_name.as_deref(),
                 resolve_download_dir(&config),
             ),
-            event_handler: EventHandler::new(std::time::Duration::from_millis(100)),
-            torrserver: TorrServer::new(&torrserver_url),
+            event_handler,
+            torrserver,
             browser: None,
             browser_visibility,
             search_tx,
@@ -184,6 +192,35 @@ impl App {
                         Event::LoadMore(query, offset) => {
                             self.load_more(query, offset).await;
                         }
+                        Event::TorrentListUpdate(list) => {
+                            // Prefer the torrent we're actively
+                            // managing/streaming; fall back to whatever
+                            // TorrServer reports first so the panel shows
+                            // something useful even before a stream has
+                            // been started from this session (e.g. a
+                            // torrent added in a previous run).
+                            let chosen = match &self.ui.active_torrent_hash {
+                                Some(hash) => list.iter().find(|t| &t.hash == hash).or_else(|| list.first()),
+                                None => list.first(),
+                            };
+                            if let Some(t) = chosen {
+                                self.ui.torrent_status = TorrentStatus {
+                                    hash: t.hash.clone(),
+                                    title: if t.name.is_empty() { self.ui.torrent_status.title.clone() } else { t.name.clone() },
+                                    progress: t.progress(),
+                                    download_speed: t.download_speed.max(0.0) as u64,
+                                    upload_speed: t.upload_speed.max(0.0) as u64,
+                                    seeds: t.connected_seeders.max(0) as u32,
+                                    peers: t.active_peers.max(0) as u32,
+                                    downloaded: t.loaded_size.max(0) as u64,
+                                    total_size: t.total_size.max(0) as u64,
+                                    status: t.status_string.clone(),
+                                };
+                            }
+                        }
+                        Event::TorrentActive(hash) => {
+                            self.ui.active_torrent_hash = Some(hash);
+                        }
                     }
                 }
                 query = self.search_rx.recv() => {
@@ -255,6 +292,49 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Pause (drop) or resume (re-get) the torrent the panel is currently
+    /// showing. See the doc comment on `ui::App::torrent_paused` for why
+    /// this is tracked client-side rather than read back from TorrServer.
+    async fn toggle_pause_active_torrent(&mut self) {
+        let Some(hash) = self.ui.active_torrent_hash.clone() else {
+            self.ui.add_log("No active torrent to pause/resume.");
+            return;
+        };
+        if self.ui.torrent_paused {
+            match self.torrserver.resume(&hash).await {
+                Ok(_) => {
+                    self.ui.torrent_paused = false;
+                    self.ui.add_log("Torrent resumed.");
+                }
+                Err(e) => self.ui.add_log(&format!("Resume failed: {}", e)),
+            }
+        } else {
+            match self.torrserver.pause(&hash).await {
+                Ok(_) => {
+                    self.ui.torrent_paused = true;
+                    self.ui.add_log("Torrent paused.");
+                }
+                Err(e) => self.ui.add_log(&format!("Pause failed: {}", e)),
+            }
+        }
+    }
+
+    /// Remove the active torrent from TorrServer entirely.
+    async fn remove_active_torrent(&mut self) {
+        let Some(hash) = self.ui.active_torrent_hash.take() else {
+            self.ui.add_log("No active torrent to remove.");
+            return;
+        };
+        match self.torrserver.remove(&hash).await {
+            Ok(_) => {
+                self.ui.torrent_status = TorrentStatus::default();
+                self.ui.torrent_paused = false;
+                self.ui.add_log("Torrent removed.");
+            }
+            Err(e) => self.ui.add_log(&format!("Remove failed: {}", e)),
         }
     }
 
@@ -606,6 +686,12 @@ impl App {
             KeyCode::Char('4') if !self.ui.input_mode => {
                 self.ui.zones.toggle(ZoneId::Extra);
             }
+            KeyCode::Char('p') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
+                self.toggle_pause_active_torrent().await;
+            }
+            KeyCode::Char('d') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
+                self.remove_active_torrent().await;
+            }
             KeyCode::Char('j') if self.config.vim_keys => {
                 self.handle_nav_down().await;
             }
@@ -872,6 +958,7 @@ impl App {
                     match torrserver.upload_torrent(&bytes, &item.title).await {
                         Ok(hash) => {
                             log(&format!("Uploaded, hash: {}", hash));
+                            let _ = event_tx.send(Event::TorrentActive(hash.clone()));
                             match torrserver.play(&hash, &item.title, None).await {
                                 Ok(mut child) => {
                                     let stream_url = format!("http://127.0.0.1:8090/stream/{}", hash);
