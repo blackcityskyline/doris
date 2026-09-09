@@ -54,8 +54,20 @@ pub struct SettingsItem {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SettingsAction {
     ToggleBrowserVisibility,
+    CyclePrioritizeBrowser,
     ToggleMode,
-    SetDownloadDir,
+    ToggleCloseBrowserOnExit,
+    ToggleSaveCookies,
+    ToggleSaveCredentials,
+    EditCredentials,
+    CheckTorrserverStatus,
+    ToggleSourceRutracker,
+    ToggleDownloadEnabled,
+    CycleDownloadDirMode,
+    ToggleDownloadSequential,
+    CycleDownloadSpeedLimit,
+    CycleUploadSpeedLimit,
+    ToggleCloseTorrentCoreOnExit,
     RunHealthCheck,
     OpenLog,
     CycleTheme,
@@ -71,7 +83,6 @@ pub enum SettingsAction {
     ToggleRoundedCorners,
     ToggleTerminalSync,
     CycleGraphSymbol,
-    SetLogLevel,
     ToggleSaveOnExit,
     Close,
 }
@@ -146,7 +157,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(torrserver_url: String, browser_info: String, browser_hidden: bool, theme_name: Option<&str>) -> Self {
+    pub fn new(
+        torrserver_url: String,
+        browser_info: String,
+        browser_hidden: bool,
+        theme_name: Option<&str>,
+        download_dir: String,
+    ) -> Self {
         let theme = theme_name
             .and_then(|name| Theme::load_themes().into_iter().find(|t| t.name == name))
             .unwrap_or_else(Theme::default);
@@ -171,9 +188,7 @@ impl App {
             all_loaded: false,
             browser_hidden,
             stream_mode: true,
-            download_dir: dirs::download_dir()
-                .map(|d| d.display().to_string())
-                .unwrap_or_else(|| "/tmp".to_string()),
+            download_dir,
             theme,
             zones: ZoneLayout::new(),
             menu: MenuState::new(),
@@ -476,7 +491,7 @@ impl App {
                     ],
                 },
                 SettingsCategory {
-                    name: "app".into(),
+                    name: "streaming".into(),
                     items: vec![
                         SettingsItem {
                             label: "Browser visible".into(),
@@ -496,6 +511,20 @@ impl App {
                             action: SettingsAction::ToggleBrowserVisibility,
                         },
                         SettingsItem {
+                            label: "Prioritize browser".into(),
+                            value: config.browser_priority.first().cloned().unwrap_or_else(|| "auto".into()),
+                            description: vec![
+                                "Which installed browser to".into(),
+                                "try first.".into(),
+                                "".into(),
+                                "Cycles chrome / chromium /".into(),
+                                "brave / helium. Whichever is".into(),
+                                "actually installed wins; this".into(),
+                                "only changes probe order.".into(),
+                            ],
+                            action: SettingsAction::CyclePrioritizeBrowser,
+                        },
+                        SettingsItem {
                             label: "Play mode".into(),
                             value: mode_str,
                             description: vec![
@@ -507,15 +536,173 @@ impl App {
                             action: SettingsAction::ToggleMode,
                         },
                         SettingsItem {
-                            label: "Download folder".into(),
-                            value: self.download_dir.clone(),
+                            label: "Close browser on exit".into(),
+                            value: bool_str(config.close_browser_on_exit),
                             description: vec![
-                                "Set download directory path.".into(),
+                                "Kill the automated browser".into(),
+                                "when Doris exits.".into(),
                                 "".into(),
-                                "Files will be saved here when".into(),
-                                "using Download play mode.".into(),
+                                "Set to False to leave it".into(),
+                                "running after Doris closes.".into(),
                             ],
-                            action: SettingsAction::SetDownloadDir,
+                            action: SettingsAction::ToggleCloseBrowserOnExit,
+                        },
+                        SettingsItem {
+                            label: "Save cookies".into(),
+                            value: bool_str(config.save_cookies),
+                            description: vec![
+                                "Persist session cookies to".into(),
+                                "the cookie file so logins".into(),
+                                "survive a restart.".into(),
+                            ],
+                            action: SettingsAction::ToggleSaveCookies,
+                        },
+                        SettingsItem {
+                            label: "Save credentials".into(),
+                            value: bool_str(config.save_credentials),
+                            description: vec![
+                                "Remember username/password".into(),
+                                "(encrypted) after a login.".into(),
+                            ],
+                            action: SettingsAction::ToggleSaveCredentials,
+                        },
+                        SettingsItem {
+                            label: "Edit credentials".into(),
+                            value: "press Enter".into(),
+                            description: vec![
+                                "Open the login panel to".into(),
+                                "view or change saved logins.".into(),
+                            ],
+                            action: SettingsAction::EditCredentials,
+                        },
+                        SettingsItem {
+                            label: "TorrServer".into(),
+                            value: "press Enter to check".into(),
+                            description: vec![
+                                "Check whether TorrServer is".into(),
+                                "reachable right now.".into(),
+                                "".into(),
+                                "Starting/stopping the service".into(),
+                                "from here is planned but not".into(),
+                                "yet implemented -- see".into(),
+                                "ROADMAP.md Phase 6.".into(),
+                            ],
+                            action: SettingsAction::CheckTorrserverStatus,
+                        },
+                        SettingsItem {
+                            label: "Sources: rutracker".into(),
+                            value: bool_str(config.enabled_sources.iter().any(|s| s == "rutracker")),
+                            description: vec![
+                                "Enable/disable this source.".into(),
+                                "".into(),
+                                "rutor, nnmclub: planned, not".into(),
+                                "yet implemented (see".into(),
+                                "search::source::KNOWN_SOURCES).".into(),
+                            ],
+                            action: SettingsAction::ToggleSourceRutracker,
+                        },
+                    ],
+                },
+                SettingsCategory {
+                    name: "download".into(),
+                    items: vec![
+                        SettingsItem {
+                            label: "Enable downloading".into(),
+                            value: bool_str(config.download_enabled),
+                            description: vec![
+                                "Allow \"Download\" play mode".into(),
+                                "(saving .torrent files)".into(),
+                                "in addition to streaming.".into(),
+                            ],
+                            action: SettingsAction::ToggleDownloadEnabled,
+                        },
+                        SettingsItem {
+                            label: "Downloads directory".into(),
+                            value: config.download_dir_mode.clone(),
+                            description: vec![
+                                "Which directory slot is".into(),
+                                "active: \"default\" (OS".into(),
+                                "Downloads folder) or".into(),
+                                "custom1/2/3 below.".into(),
+                            ],
+                            action: SettingsAction::CycleDownloadDirMode,
+                        },
+                        SettingsItem {
+                            label: "Custom directory 1".into(),
+                            value: if config.download_dir_custom_1.is_empty() { "(not set)".into() } else { config.download_dir_custom_1.clone() },
+                            description: vec![
+                                "Edit `download_dir_custom_1`".into(),
+                                "in config.toml.".into(),
+                                "".into(),
+                                "An in-app path editor is".into(),
+                                "planned; not yet built.".into(),
+                            ],
+                            action: SettingsAction::Close,
+                        },
+                        SettingsItem {
+                            label: "Custom directory 2".into(),
+                            value: if config.download_dir_custom_2.is_empty() { "(not set)".into() } else { config.download_dir_custom_2.clone() },
+                            description: vec![
+                                "Edit `download_dir_custom_2`".into(),
+                                "in config.toml.".into(),
+                            ],
+                            action: SettingsAction::Close,
+                        },
+                        SettingsItem {
+                            label: "Custom directory 3".into(),
+                            value: if config.download_dir_custom_3.is_empty() { "(not set)".into() } else { config.download_dir_custom_3.clone() },
+                            description: vec![
+                                "Edit `download_dir_custom_3`".into(),
+                                "in config.toml.".into(),
+                            ],
+                            action: SettingsAction::Close,
+                        },
+                        SettingsItem {
+                            label: "Sequential download".into(),
+                            value: bool_str(config.download_sequential),
+                            description: vec![
+                                "Download pieces in order".into(),
+                                "instead of rarest-first.".into(),
+                                "".into(),
+                                "Not yet sent to TorrServer --".into(),
+                                "see ROADMAP.md Phase 7.".into(),
+                            ],
+                            action: SettingsAction::ToggleDownloadSequential,
+                        },
+                        SettingsItem {
+                            label: "Download speed limit".into(),
+                            value: if config.download_speed_limit_kbps == 0 { "unlimited".into() } else { format!("{} KB/s", config.download_speed_limit_kbps) },
+                            description: vec![
+                                "0 = unlimited.".into(),
+                                "".into(),
+                                "Not yet sent to TorrServer --".into(),
+                                "see ROADMAP.md Phase 7.".into(),
+                            ],
+                            action: SettingsAction::CycleDownloadSpeedLimit,
+                        },
+                        SettingsItem {
+                            label: "Upload speed limit".into(),
+                            value: if config.upload_speed_limit_kbps == 0 { "unlimited".into() } else { format!("{} KB/s", config.upload_speed_limit_kbps) },
+                            description: vec![
+                                "0 = unlimited.".into(),
+                                "".into(),
+                                "Not yet sent to TorrServer --".into(),
+                                "see ROADMAP.md Phase 7.".into(),
+                            ],
+                            action: SettingsAction::CycleUploadSpeedLimit,
+                        },
+                        SettingsItem {
+                            label: "Close torrent core on exit".into(),
+                            value: bool_str(config.close_torrent_core_on_exit),
+                            description: vec![
+                                "Stop the background torrent".into(),
+                                "engine when Doris exits.".into(),
+                                "".into(),
+                                "No standalone download engine".into(),
+                                "exists yet to close -- see".into(),
+                                "ROADMAP.md Phase 7.".into(),
+                            ],
+                            action: SettingsAction::ToggleCloseTorrentCoreOnExit,
                         },
                         SettingsItem {
                             label: "Open detailed log".into(),
@@ -527,20 +714,6 @@ impl App {
                                 "for debugging purposes.".into(),
                             ],
                             action: SettingsAction::OpenLog,
-                        },
-                        SettingsItem {
-                            label: "Log level".into(),
-                            value: "INFO".into(),
-                            description: vec![
-                                "Set loglevel for error.log".into(),
-                                "".into(),
-                                "\"ERROR\", \"WARNING\", \"INFO\"".into(),
-                                "and \"DEBUG\".".into(),
-                                "".into(),
-                                "The level set includes all".into(),
-                                "lower levels.".into(),
-                            ],
-                            action: SettingsAction::SetLogLevel,
                         },
                     ],
                 },
@@ -934,7 +1107,7 @@ impl App {
             "[{}] {} | {}{}",
             self.browser_info,
             self.torrserver_url,
-            if self.input_mode { "INPUT (s/i)" } else { "s: search | a: login | S: settings | L: log | F: filter" },
+            if self.input_mode { "INPUT (s/i)" } else { "s: search | S: settings | L: log | F: filter" },
             filter_hint
         );
 

@@ -10,6 +10,9 @@ fn make_test_app() -> UiApp {
     UiApp::new(
         "http://127.0.0.1:8090".into(),
         "helium [visible] (/usr/bin/helium)".into(),
+        true,
+        None,
+        "/tmp".into(),
     )
 }
 
