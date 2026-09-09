@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use crate::search::models::TorrentItem;
+use crate::config::Config;
 use std::collections::VecDeque;
 use super::theme::Theme;
 use super::zones::{ZoneId, ZoneLayout};
@@ -27,6 +28,12 @@ pub struct SettingsState {
     pub selected_category: usize,
     pub selected: usize,
     pub page: usize,
+    /// Items shown per page, computed from the real terminal size the last
+    /// time this modal was rendered. `settings_key`'s pagination reads this
+    /// instead of guessing, so paging can never desync from what's on
+    /// screen (see ROADMAP.md bug B2). Starts at 1 (never 0, which would
+    /// divide-by-zero in pagination math) until the first render sets it.
+    pub visible_items: usize,
     pub categories: Vec<SettingsCategory>,
 }
 
@@ -54,11 +61,16 @@ pub enum SettingsAction {
     CycleTheme,
     ToggleThemeBackground,
     ToggleTruecolor,
+    ToggleFalseTty,
     ToggleVimKeys,
     ToggleMouse,
+    ToggleDisablePresets,
+    CyclePreset,
+    ToggleShowBoxes,
     SetUpdateMs,
     ToggleRoundedCorners,
     ToggleTerminalSync,
+    CycleGraphSymbol,
     SetLogLevel,
     ToggleSaveOnExit,
     Close,
@@ -134,7 +146,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(torrserver_url: String, browser_info: String) -> Self {
+    pub fn new(torrserver_url: String, browser_info: String, browser_hidden: bool, theme_name: Option<&str>) -> Self {
+        let theme = theme_name
+            .and_then(|name| Theme::load_themes().into_iter().find(|t| t.name == name))
+            .unwrap_or_else(Theme::default);
+
         Self {
             search_input: String::new(),
             results: Vec::new(),
@@ -153,12 +169,12 @@ impl App {
             search_query: None,
             search_offset: 0,
             all_loaded: false,
-            browser_hidden: true,
+            browser_hidden,
             stream_mode: true,
             download_dir: dirs::download_dir()
                 .map(|d| d.display().to_string())
                 .unwrap_or_else(|| "/tmp".to_string()),
-            theme: Theme::default(),
+            theme,
             zones: ZoneLayout::new(),
             menu: MenuState::new(),
             show_menu: false,
@@ -231,18 +247,47 @@ impl App {
         self.modal = Modal::Login(LoginState::new());
     }
 
-    pub fn open_settings(&mut self) {
+    /// Build the Settings modal from real, current state. Every `value`
+    /// here is computed from `self`/`config`, never a hardcoded literal --
+    /// see ROADMAP.md bug B5, where roughly half of these used to be
+    /// decorative strings with no backing field at all.
+    pub fn open_settings(&mut self, config: &Config) {
         let visibility_str = if self.browser_hidden { "Hidden".to_string() } else { "Visible".to_string() };
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
         let theme_name = self.theme.name.clone();
         let themes = Theme::load_themes();
         let theme_idx = themes.iter().position(|t| t.name == theme_name).unwrap_or(0);
-        let theme_str = format!("{}/{}", theme_idx + 1, themes.len());
-        
+        let theme_str = format!("{}/{}", theme_idx + 1, themes.len().max(1));
+
+        fn bool_str(b: bool) -> String {
+            if b { "True".into() } else { "False".into() }
+        }
+
+        let preset_str = config.presets.get(config.preset_index)
+            .cloned()
+            .unwrap_or_else(|| "none".to_string());
+        let preset_display = format!(
+            "{} ({}/{})",
+            preset_str,
+            config.preset_index + 1,
+            config.presets.len().max(1),
+        );
+
+        // Retain the previously-selected position within the previously-
+        // selected category (if any) so re-rendering after a toggle
+        // doesn't silently reset scroll position back to the top item.
+        let (prev_category, prev_selected, prev_page, prev_visible_items) =
+            if let Modal::Settings(ref prev) = self.modal {
+                (prev.selected_category, prev.selected, prev.page, prev.visible_items)
+            } else {
+                (0, 0, 0, 1)
+            };
+
         self.modal = Modal::Settings(SettingsState {
-            selected_category: 0,
-            selected: 0,
-            page: 0,
+            selected_category: prev_category,
+            selected: prev_selected,
+            page: prev_page,
+            visible_items: prev_visible_items.max(1),
             categories: vec![
                 SettingsCategory {
                     name: "general".into(),
@@ -262,7 +307,7 @@ impl App {
                         },
                         SettingsItem {
                             label: "Theme background".into(),
-                            value: "True".into(),
+                            value: bool_str(config.theme_background),
                             description: vec![
                                 "If the theme set background".into(),
                                 "should be shown.".into(),
@@ -275,7 +320,7 @@ impl App {
                         },
                         SettingsItem {
                             label: "Truecolor".into(),
-                            value: "True".into(),
+                            value: bool_str(config.truecolor),
                             description: vec![
                                 "Sets if 24-bit truecolor".into(),
                                 "should be used.".into(),
@@ -290,33 +335,81 @@ impl App {
                             action: SettingsAction::ToggleTruecolor,
                         },
                         SettingsItem {
+                            label: "False tty".into(),
+                            value: bool_str(config.false_tty),
+                            description: vec![
+                                "Force basic 16-color, no-mouse".into(),
+                                "TTY-compatible rendering.".into(),
+                                "".into(),
+                                "Set to True on a real Linux".into(),
+                                "console (not a terminal".into(),
+                                "emulator) with no 256/true".into(),
+                                "color support.".into(),
+                            ],
+                            action: SettingsAction::ToggleFalseTty,
+                        },
+                        SettingsItem {
                             label: "Vim keys".into(),
-                            value: "True".into(),
+                            value: bool_str(config.vim_keys),
                             description: vec![
                                 "Enable vim keys.".into(),
                                 "".into(),
                                 "Set to True to enable".into(),
-                                "\"h,j,k,l\" keys for".into(),
-                                "directional control in lists.".into(),
+                                "\"j,k\" keys for directional".into(),
+                                "control in lists, in addition".into(),
+                                "to the arrow keys (which".into(),
+                                "always work).".into(),
                             ],
                             action: SettingsAction::ToggleVimKeys,
                         },
                         SettingsItem {
                             label: "Disable mouse".into(),
-                            value: "False".into(),
+                            value: bool_str(config.disable_mouse),
                             description: vec![
                                 "Disable all mouse events.".into(),
                             ],
                             action: SettingsAction::ToggleMouse,
                         },
                         SettingsItem {
-                            label: "Update ms".into(),
-                            value: "1000".into(),
+                            label: "Disable presets".into(),
+                            value: bool_str(config.disable_presets),
                             description: vec![
-                                "Update time in milliseconds.".into(),
+                                "Hide the Presets entry below".into(),
+                                "and disable cycling through".into(),
+                                "saved zone layouts.".into(),
+                            ],
+                            action: SettingsAction::ToggleDisablePresets,
+                        },
+                        SettingsItem {
+                            label: "Presets".into(),
+                            value: if config.disable_presets { "disabled".into() } else { preset_display },
+                            description: vec![
+                                "Cycle through saved zone".into(),
+                                "layouts (which panels are".into(),
+                                "shown).".into(),
                                 "".into(),
-                                "Recommended 2000 ms or above".into(),
-                                "for better sample times.".into(),
+                                "Edit the `presets` list in".into(),
+                                "config.toml to customize.".into(),
+                            ],
+                            action: SettingsAction::CyclePreset,
+                        },
+                        SettingsItem {
+                            label: "Show boxes".into(),
+                            value: bool_str(config.show_boxes),
+                            description: vec![
+                                "Show borders around panels.".into(),
+                                "".into(),
+                                "Set to False for a more".into(),
+                                "minimal look with no borders.".into(),
+                            ],
+                            action: SettingsAction::ToggleShowBoxes,
+                        },
+                        SettingsItem {
+                            label: "Update ms".into(),
+                            value: config.update_ms.to_string(),
+                            description: vec![
+                                "Torrent panel refresh".into(),
+                                "interval, in milliseconds.".into(),
                                 "".into(),
                                 "Min value: 100 ms".into(),
                                 "Max value: 86400000 ms".into(),
@@ -325,20 +418,18 @@ impl App {
                         },
                         SettingsItem {
                             label: "Rounded corners".into(),
-                            value: "True".into(),
+                            value: bool_str(config.rounded_corners),
                             description: vec![
                                 "Rounded corners on boxes.".into(),
                                 "".into(),
-                                "True or False.".into(),
-                                "".into(),
-                                "Is always False if TTY mode".into(),
-                                "is ON.".into(),
+                                "Is always False if False tty".into(),
+                                "is On.".into(),
                             ],
                             action: SettingsAction::ToggleRoundedCorners,
                         },
                         SettingsItem {
                             label: "Terminal sync".into(),
-                            value: "True".into(),
+                            value: bool_str(config.terminal_sync),
                             description: vec![
                                 "Output synchronization.".into(),
                                 "".into(),
@@ -348,6 +439,39 @@ impl App {
                                 "terminals.".into(),
                             ],
                             action: SettingsAction::ToggleTerminalSync,
+                        },
+                        SettingsItem {
+                            label: "Graph symbol".into(),
+                            value: config.graph_symbol.clone(),
+                            description: vec![
+                                "Symbol set used for graphs".into(),
+                                "and sparklines.".into(),
+                                "".into(),
+                                "\"braille\", \"block\" or \"dot\".".into(),
+                            ],
+                            action: SettingsAction::CycleGraphSymbol,
+                        },
+                        SettingsItem {
+                            label: "Health check".into(),
+                            value: "press Enter".into(),
+                            description: vec![
+                                "Run system health check.".into(),
+                                "".into(),
+                                "Verifies browser, TorrServer,".into(),
+                                "saved credentials, cookies,".into(),
+                                "and known sources.".into(),
+                            ],
+                            action: SettingsAction::RunHealthCheck,
+                        },
+                        SettingsItem {
+                            label: "Save config on exit".into(),
+                            value: bool_str(config.save_config_on_exit),
+                            description: vec![
+                                "Automatically save current".into(),
+                                "settings to config.toml on".into(),
+                                "exit.".into(),
+                            ],
+                            action: SettingsAction::ToggleSaveOnExit,
                         },
                     ],
                 },
@@ -365,6 +489,9 @@ impl App {
                                 "the background.".into(),
                                 "\"Visible\" shows the real".into(),
                                 "browser window.".into(),
+                                "".into(),
+                                "Applies the next time a".into(),
+                                "browser is launched.".into(),
                             ],
                             action: SettingsAction::ToggleBrowserVisibility,
                         },
@@ -402,17 +529,6 @@ impl App {
                             action: SettingsAction::OpenLog,
                         },
                         SettingsItem {
-                            label: "Health check".into(),
-                            value: "press Enter".into(),
-                            description: vec![
-                                "Run system health check.".into(),
-                                "".into(),
-                                "Verifies browser, TorrServer,".into(),
-                                "and network connectivity.".into(),
-                            ],
-                            action: SettingsAction::RunHealthCheck,
-                        },
-                        SettingsItem {
                             label: "Log level".into(),
                             value: "INFO".into(),
                             description: vec![
@@ -425,18 +541,6 @@ impl App {
                                 "lower levels.".into(),
                             ],
                             action: SettingsAction::SetLogLevel,
-                        },
-                        SettingsItem {
-                            label: "Save on exit".into(),
-                            value: "True".into(),
-                            description: vec![
-                                "Save config on exit.".into(),
-                                "".into(),
-                                "Automatically save current".into(),
-                                "settings to config file on".into(),
-                                "exit.".into(),
-                            ],
-                            action: SettingsAction::ToggleSaveOnExit,
                         },
                     ],
                 },
@@ -454,16 +558,14 @@ impl App {
                 crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
                     let cat = &state.categories[state.selected_category];
                     state.selected = (state.selected + 1).min(cat.items.len() - 1);
-                    let visible_items = 10;
-                    let page = state.selected / visible_items;
+                    let page = state.selected / state.visible_items.max(1);
                     if page != state.page {
                         state.page = page;
                     }
                 }
                 crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up => {
                     state.selected = state.selected.saturating_sub(1);
-                    let visible_items = 10;
-                    let page = state.selected / visible_items;
+                    let page = state.selected / state.visible_items.max(1);
                     if page != state.page {
                         state.page = page;
                     }
@@ -1027,7 +1129,7 @@ impl App {
         frame.render_widget(log_panel, area);
     }
 
-    fn render_modal(&self, frame: &mut Frame, area: Rect) {
+    fn render_modal(&mut self, frame: &mut Frame, area: Rect) {
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);
 
@@ -1104,7 +1206,7 @@ impl App {
                 )),
                 rows[3],
             );
-        } else if let Modal::Settings(ref state) = self.modal {
+        } else if let Modal::Settings(ref mut state) = self.modal {
             let popup = centered_rect(80, 80, area);
 
             let overlay_block = Block::default()
@@ -1195,8 +1297,11 @@ impl App {
                 );
             }
 
-            let cat = &state.categories[state.selected_category];
             let visible_items = content_h / 2;
+            // Fixes B2: settings_key() reads this exact number back, so
+            // pagination can never desync from what's actually on screen.
+            state.visible_items = visible_items.max(1);
+            let cat = &state.categories[state.selected_category];
             let page = state.page;
             let start_idx = page * visible_items;
 
@@ -1213,7 +1318,9 @@ impl App {
                     let is_sel = item_idx == state.selected;
 
                     let label = if is_sel {
-                        format!("{} 3/{}", item.label, cat.items.len())
+                        // Fixes B1: this used to hardcode "3" regardless of
+                        // the actual selected position.
+                        format!("{} {}/{}", item.label, item_idx + 1, cat.items.len())
                     } else {
                         item.label.clone()
                     };

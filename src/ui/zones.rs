@@ -97,6 +97,37 @@ impl ZoneLayout {
         }
     }
 
+    /// Set a zone's visibility directly, rather than flipping it. Used by
+    /// [`apply_preset`](Self::apply_preset) so a preset can show exactly
+    /// the zones it names instead of toggling from an unknown starting
+    /// state.
+    pub fn set_visible(&mut self, id: ZoneId, visible: bool) {
+        if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+            zone.visible = visible;
+        }
+        if !visible && self.fullscreen == Some(id) {
+            self.fullscreen = None;
+        }
+    }
+
+    /// Apply a preset written as a comma-separated list of zone key
+    /// characters (the same digits the 1/2/3/4 keybinds use), e.g.
+    /// `"1,3"` shows only Results and Log and hides Torrent/Extra. Unknown
+    /// characters are ignored. If focus would land on a now-hidden zone,
+    /// it moves to the first visible one.
+    pub fn apply_preset(&mut self, spec: &str) {
+        let wanted: std::collections::HashSet<char> =
+            spec.chars().filter(|c| c.is_ascii_digit()).collect();
+        for id in ZoneId::all() {
+            self.set_visible(*id, wanted.contains(&id.key_char()));
+        }
+        if !self.is_visible(self.focused) {
+            if let Some(first_visible) = self.zones.iter().find(|z| z.visible).map(|z| z.id) {
+                self.focused = first_visible;
+            }
+        }
+    }
+
     pub fn focus_next(&mut self) {
         let visible: Vec<ZoneId> = self.zones.iter()
             .filter(|z| z.visible)

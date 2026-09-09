@@ -67,7 +67,12 @@ impl App {
         };
 
         Ok(Self {
-            ui: UiApp::new(torrserver_url.clone(), browser_info),
+            ui: UiApp::new(
+                torrserver_url.clone(),
+                browser_info,
+                browser_visibility == BrowserVisibility::Hidden,
+                config.theme_name.as_deref(),
+            ),
             event_handler: EventHandler::new(std::time::Duration::from_millis(100)),
             torrserver: TorrServer::new(&torrserver_url),
             browser: None,
@@ -175,10 +180,20 @@ impl App {
         }
 
         tui::restore(&mut terminal)?;
+
+        if self.config.save_config_on_exit {
+            if let Err(e) = crate::config::save(&self.config, None) {
+                eprintln!("Failed to save config on exit: {}", e);
+            }
+        }
+
         Ok(())
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        if self.config.disable_mouse {
+            return;
+        }
         if self.ui.show_menu {
             return;
         }
@@ -222,6 +237,36 @@ impl App {
         }
     }
 
+    /// Move the selection down in the focused zone, loading the next page
+    /// of results if the Results zone just scrolled near its end. Shared
+    /// by the Down arrow (always active) and the vim-style 'j' (only when
+    /// `config.vim_keys` is on) -- see `handle_key`.
+    async fn handle_nav_down(&mut self) {
+        match self.ui.zones.focused {
+            ZoneId::Results => {
+                self.ui.navigate_down();
+                if self.ui.needs_more() {
+                    if let Some(q) = self.ui.search_query.clone() {
+                        let offset = self.ui.search_offset;
+                        self.load_more(q, offset).await;
+                    }
+                }
+            }
+            ZoneId::Log => self.ui.scroll_logs_down(),
+            _ => {}
+        }
+    }
+
+    /// Counterpart to [`handle_nav_down`](Self::handle_nav_down) for the Up
+    /// arrow / vim-style 'k'.
+    fn handle_nav_up(&mut self) {
+        match self.ui.zones.focused {
+            ZoneId::Results => self.ui.navigate_up(),
+            ZoneId::Log => self.ui.scroll_logs_up(),
+            _ => {}
+        }
+    }
+
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         if self.ui.show_menu {
             return self.handle_menu_key(key).await;
@@ -232,10 +277,16 @@ impl App {
                 KeyCode::Char('L') | KeyCode::Esc => {
                     self.ui.detail_log_mode = false;
                 }
-                KeyCode::Char('j') | KeyCode::Down => {
+                KeyCode::Char('j') if self.config.vim_keys => {
                     self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
                 }
-                KeyCode::Char('k') | KeyCode::Up => {
+                KeyCode::Down => {
+                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
+                }
+                KeyCode::Char('k') if self.config.vim_keys => {
+                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
+                }
+                KeyCode::Up => {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
                 }
                 KeyCode::PageUp => {
@@ -261,11 +312,20 @@ impl App {
                 match action {
                     SettingsAction::ToggleBrowserVisibility => {
                         self.ui.browser_hidden = !self.ui.browser_hidden;
-                        self.ui.open_settings();
+                        // Keep the value actually used to launch the
+                        // browser in sync. Previously this toggle only
+                        // updated the display label and had zero effect on
+                        // the next launch (ROADMAP.md bug B6).
+                        self.browser_visibility = if self.ui.browser_hidden {
+                            BrowserVisibility::Hidden
+                        } else {
+                            BrowserVisibility::Visible
+                        };
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleMode => {
                         self.ui.stream_mode = !self.ui.stream_mode;
-                        self.ui.open_settings();
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::SetDownloadDir => {
                         self.ui.add_log(&format!("Download dir: {}", self.ui.download_dir));
@@ -287,34 +347,89 @@ impl App {
                         } else if !themes.is_empty() {
                             self.ui.theme = themes[0].clone();
                         }
-                        self.ui.open_settings();
+                        self.config.theme_name = Some(self.ui.theme.name.clone());
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleThemeBackground => {
-                        self.ui.open_settings();
+                        self.config.theme_background = !self.config.theme_background;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleTruecolor => {
-                        self.ui.open_settings();
+                        self.config.truecolor = !self.config.truecolor;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleFalseTty => {
+                        self.config.false_tty = !self.config.false_tty;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleVimKeys => {
-                        self.ui.open_settings();
+                        self.config.vim_keys = !self.config.vim_keys;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleMouse => {
-                        self.ui.open_settings();
+                        self.config.disable_mouse = !self.config.disable_mouse;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleDisablePresets => {
+                        self.config.disable_presets = !self.config.disable_presets;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::CyclePreset => {
+                        if !self.config.disable_presets && !self.config.presets.is_empty() {
+                            self.config.preset_index =
+                                (self.config.preset_index + 1) % self.config.presets.len();
+                            let spec = self.config.presets[self.config.preset_index].clone();
+                            self.ui.zones.apply_preset(&spec);
+                        }
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleShowBoxes => {
+                        self.config.show_boxes = !self.config.show_boxes;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::SetUpdateMs => {
-                        self.ui.open_settings();
+                        // No numeric text-entry widget exists in the
+                        // Settings modal yet, so this cycles through a
+                        // fixed set of sensible intervals -- same
+                        // interaction pattern as Color theme/Presets/Graph
+                        // symbol above. A free-form numeric input is a
+                        // reasonable follow-up once the modal supports one.
+                        const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
+                        let next = match STEPS.iter().position(|&v| v == self.config.update_ms) {
+                            Some(i) => STEPS[(i + 1) % STEPS.len()],
+                            None => STEPS[0],
+                        };
+                        self.config.update_ms = next;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleRoundedCorners => {
-                        self.ui.open_settings();
+                        self.config.rounded_corners = !self.config.rounded_corners;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleTerminalSync => {
-                        self.ui.open_settings();
+                        self.config.terminal_sync = !self.config.terminal_sync;
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::CycleGraphSymbol => {
+                        const SYMBOLS: &[&str] = &["braille", "block", "dot"];
+                        let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol) {
+                            Some(i) => SYMBOLS[(i + 1) % SYMBOLS.len()],
+                            None => SYMBOLS[0],
+                        };
+                        self.config.graph_symbol = next.to_string();
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::SetLogLevel => {
-                        self.ui.open_settings();
+                        // Deferred: "app" is being split into "streaming"/
+                        // "download" categories per ROADMAP.md Phase 6, and
+                        // this item doesn't appear in that spec. Revisit
+                        // then rather than half-wiring a log-level concept
+                        // that doesn't exist anywhere else in the app yet.
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleSaveOnExit => {
-                        self.ui.open_settings();
+                        self.config.save_config_on_exit = !self.config.save_config_on_exit;
+                        self.ui.open_settings(&self.config);
                     }
                     SettingsAction::Close => {}
                 }
@@ -382,27 +497,17 @@ impl App {
             KeyCode::Char('4') if !self.ui.input_mode => {
                 self.ui.zones.toggle(ZoneId::Extra);
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                match self.ui.zones.focused {
-                    ZoneId::Results => {
-                        self.ui.navigate_down();
-                        if self.ui.needs_more() {
-                            if let Some(q) = self.ui.search_query.clone() {
-                                let offset = self.ui.search_offset;
-                                self.load_more(q, offset).await;
-                            }
-                        }
-                    }
-                    ZoneId::Log => self.ui.scroll_logs_down(),
-                    _ => {}
-                }
+            KeyCode::Char('j') if self.config.vim_keys => {
+                self.handle_nav_down().await;
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                match self.ui.zones.focused {
-                    ZoneId::Results => { self.ui.navigate_up(); }
-                    ZoneId::Log => self.ui.scroll_logs_up(),
-                    _ => {}
-                }
+            KeyCode::Down => {
+                self.handle_nav_down().await;
+            }
+            KeyCode::Char('k') if self.config.vim_keys => {
+                self.handle_nav_up();
+            }
+            KeyCode::Up => {
+                self.handle_nav_up();
             }
             KeyCode::Tab if !self.ui.input_mode => {
                 self.ui.zones.focus_next();
@@ -432,7 +537,7 @@ impl App {
                 self.ui.toggle_detail_log();
             }
             KeyCode::Char('S') if !self.ui.input_mode => {
-                self.ui.open_settings();
+                self.ui.open_settings(&self.config);
             }
             KeyCode::Esc => {
                 if self.ui.detail_log_mode {
@@ -475,10 +580,16 @@ impl App {
             KeyCode::Char('m') | KeyCode::Esc => {
                 self.ui.show_menu = false;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Char('j') if self.config.vim_keys => {
                 self.ui.menu.next();
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Down => {
+                self.ui.menu.next();
+            }
+            KeyCode::Char('k') if self.config.vim_keys => {
+                self.ui.menu.prev();
+            }
+            KeyCode::Up => {
                 self.ui.menu.prev();
             }
             KeyCode::Tab => {
@@ -492,7 +603,7 @@ impl App {
                 match item {
                     MenuItem::Options => {
                         self.ui.show_menu = false;
-                        self.ui.open_settings();
+                        self.ui.open_settings(&self.config);
                     }
                     MenuItem::Help => {
                         self.ui.menu.show_help = !self.ui.menu.show_help;
