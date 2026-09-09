@@ -65,6 +65,49 @@ pub struct Config {
     pub graph_symbol: String,
     #[serde(default)]
     pub save_config_on_exit: bool,
+
+    // --- Options / "streaming" category (ROADMAP.md Phase 6) ---------------
+    /// Kill the automated browser when Doris exits. Note: this is already
+    /// the default outcome of `Browser`'s `Drop` impl regardless of this
+    /// flag; setting this to `false` intentionally leaks the browser
+    /// handle at exit so the browser process survives past Doris closing.
+    #[serde(default = "default_true")]
+    pub close_browser_on_exit: bool,
+    #[serde(default = "default_true")]
+    pub save_cookies: bool,
+    #[serde(default = "default_true")]
+    pub save_credentials: bool,
+    /// Which entries in `search::source::KNOWN_SOURCES` are active. A
+    /// source id not in this list is treated as disabled even if
+    /// implemented.
+    #[serde(default = "default_enabled_sources")]
+    pub enabled_sources: Vec<String>,
+
+    // --- Options / "download" category (ROADMAP.md Phase 6) ----------------
+    #[serde(default = "default_true")]
+    pub download_enabled: bool,
+    /// "default" (OS Downloads folder) or "custom1"/"custom2"/"custom3"
+    /// (one of the three slots below).
+    #[serde(default = "default_download_dir_mode")]
+    pub download_dir_mode: String,
+    #[serde(default)]
+    pub download_dir_custom_1: String,
+    #[serde(default)]
+    pub download_dir_custom_2: String,
+    #[serde(default)]
+    pub download_dir_custom_3: String,
+    #[serde(default)]
+    pub download_sequential: bool,
+    /// 0 means unlimited. Not yet wired to TorrServer's API -- see
+    /// ROADMAP.md Phase 7 (`torrent::Manager` is meant to own all
+    /// TorrServer interaction instead of piecemeal additions to the thin
+    /// client in `torrserver/api.rs`).
+    #[serde(default)]
+    pub download_speed_limit_kbps: u32,
+    #[serde(default)]
+    pub upload_speed_limit_kbps: u32,
+    #[serde(default = "default_true")]
+    pub close_torrent_core_on_exit: bool,
 }
 
 impl Default for Config {
@@ -92,6 +135,19 @@ impl Default for Config {
             terminal_sync: true,
             graph_symbol: default_graph_symbol(),
             save_config_on_exit: false,
+            close_browser_on_exit: true,
+            save_cookies: true,
+            save_credentials: true,
+            enabled_sources: default_enabled_sources(),
+            download_enabled: true,
+            download_dir_mode: default_download_dir_mode(),
+            download_dir_custom_1: String::new(),
+            download_dir_custom_2: String::new(),
+            download_dir_custom_3: String::new(),
+            download_sequential: false,
+            download_speed_limit_kbps: 0,
+            upload_speed_limit_kbps: 0,
+            close_torrent_core_on_exit: true,
         }
     }
 }
@@ -148,6 +204,16 @@ fn default_graph_symbol() -> String {
 
 fn default_presets() -> Vec<String> {
     vec!["1,2,3,4".to_string(), "1,3".to_string(), "1,2".to_string()]
+}
+
+fn default_enabled_sources() -> Vec<String> {
+    // Only sources that are actually implemented (see
+    // search::source::KNOWN_SOURCES) are enabled by default.
+    vec!["rutracker".to_string()]
+}
+
+fn default_download_dir_mode() -> String {
+    "default".to_string()
 }
 
 fn default_config_path() -> PathBuf {

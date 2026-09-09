@@ -27,6 +27,18 @@ fn test_config_default() {
     assert!(config.terminal_sync);
     assert_eq!(config.graph_symbol, "braille");
     assert!(!config.save_config_on_exit);
+
+    // Phase 6: Options "streaming"/"download" category fields.
+    assert!(config.close_browser_on_exit);
+    assert!(config.save_cookies);
+    assert!(config.save_credentials);
+    assert_eq!(config.enabled_sources, vec!["rutracker".to_string()]);
+    assert!(config.download_enabled);
+    assert_eq!(config.download_dir_mode, "default");
+    assert!(config.download_dir_custom_1.is_empty());
+    assert!(!config.download_sequential);
+    assert_eq!(config.download_speed_limit_kbps, 0);
+    assert!(config.close_torrent_core_on_exit);
 }
 
 #[test]
