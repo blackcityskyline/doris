@@ -44,7 +44,7 @@ pub trait Source: Send + Sync {
         cookie_file: Option<&Path>,
         username: Option<&str>,
         password: Option<&str>,
-        log: Arc<dyn Fn(&str) + Send + Sync>,
+        log: Arc<dyn for<'a> Fn(&'a str) + Send + Sync>,
     ) -> Result<bool>;
 
     async fn search(&self, query: &str) -> Result<Vec<TorrentItem>>;
@@ -71,7 +71,7 @@ impl Source for RutrackerSearcher {
         cookie_file: Option<&Path>,
         username: Option<&str>,
         password: Option<&str>,
-        log: Arc<dyn Fn(&str) + Send + Sync>,
+        log: Arc<dyn for<'a> Fn(&'a str) + Send + Sync>,
     ) -> Result<bool> {
         RutrackerSearcher::ensure_logged_in(self, cookie_file, username, password, log).await
     }
