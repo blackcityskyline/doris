@@ -1,6 +1,5 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseButton, MouseEventKind};
-use ratatui::prelude::Rect;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
@@ -11,7 +10,7 @@ use crate::search::rutracker::RutrackerSearcher;
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction, TorrentStatus};
+use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction, TorrentStatus, HeaderHint};
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
 use crate::ui::theme::Theme;
@@ -138,7 +137,7 @@ impl App {
                 event = self.event_handler.next() => {
                     match event? {
                         Event::Key(key) => self.handle_key(key).await?,
-                        Event::Mouse(mouse) => self.handle_mouse(mouse),
+                        Event::Mouse(mouse) => self.handle_mouse(mouse).await,
                         Event::Tick => {},
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);
@@ -261,7 +260,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_mouse(&mut self, mouse: MouseEvent) {
+    async fn handle_mouse(&mut self, mouse: MouseEvent) {
         if self.config.disable_mouse {
             return;
         }
@@ -274,12 +273,18 @@ impl App {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(3);
                 } else if self.ui.modal == Modal::None {
-                    match self.ui.zones.focused {
-                        ZoneId::Log => self.ui.scroll_logs_up(),
-                        ZoneId::Results => {
-                            self.ui.navigate_up();
+                    if let Some(id) = self.ui.zone_at(mouse.row, mouse.column) {
+                        self.ui.zones.focused = id;
+                        match id {
+                            ZoneId::Log => self.ui.scroll_logs_up(),
+                            ZoneId::Results => self.handle_nav_up(),
+                            // Torrent and Extra have nothing scrollable yet
+                            // (a single status readout, and an unbuilt
+                            // placeholder respectively) -- focusing them on
+                            // hover is still correct, there's just no list
+                            // to move within.
+                            ZoneId::Torrent | ZoneId::Extra => {}
                         }
-                        _ => {}
                     }
                 }
             }
@@ -287,21 +292,33 @@ impl App {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
                 } else if self.ui.modal == Modal::None {
-                    match self.ui.zones.focused {
-                        ZoneId::Log => self.ui.scroll_logs_down(),
-                        ZoneId::Results => {
-                            self.ui.navigate_down();
+                    if let Some(id) = self.ui.zone_at(mouse.row, mouse.column) {
+                        self.ui.zones.focused = id;
+                        match id {
+                            ZoneId::Log => self.ui.scroll_logs_down(),
+                            ZoneId::Results => self.handle_nav_down().await,
+                            ZoneId::Torrent | ZoneId::Extra => {}
                         }
-                        _ => {}
                     }
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
+                } else if mouse.row == 0 && self.ui.modal == Modal::None {
+                    match self.ui.hint_at_column(mouse.column) {
+                        Some(HeaderHint::Search) => self.ui.enter_input_mode(),
+                        Some(HeaderHint::Settings) => self.ui.open_settings(&self.config),
+                        Some(HeaderHint::Log) => self.ui.toggle_detail_log(),
+                        Some(HeaderHint::Filter) => self.ui.zones.filter_mode = true,
+                        None => {}
+                    }
                 } else if self.ui.modal == Modal::None {
-                    let area = Rect::new(0, 0, self.terminal_size.0, self.terminal_size.1);
-                    self.ui.click_results_at(mouse.row, area);
+                    match self.ui.click_at(mouse.row, mouse.column) {
+                        Some(TorrentClickAction::TogglePause) => self.toggle_pause_active_torrent().await,
+                        Some(TorrentClickAction::Remove) => self.remove_active_torrent().await,
+                        None => {}
+                    }
                 }
             }
             _ => {}

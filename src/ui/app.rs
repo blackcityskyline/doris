@@ -15,6 +15,25 @@ pub enum AppState {
     Error(String),
 }
 
+/// One of the clickable hints in the top bar ("s: search | S: settings |
+/// L: log | F: filter"). See `App::hint_at_column`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderHint {
+    Search,
+    Settings,
+    Log,
+    Filter,
+}
+
+/// A Torrent-panel action triggered by clicking its "p: pause/resume  d:
+/// remove" hint line. Returned by `App::click_at` rather than acted on
+/// directly since it needs an async TorrServer call the orchestrator owns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TorrentClickAction {
+    TogglePause,
+    Remove,
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub enum Modal {
     None,
@@ -271,17 +290,74 @@ impl App {
         }
     }
 
-    pub fn click_results_at(&mut self, row: u16, _area: Rect) {
-        let results_area = self.zones.get_area(ZoneId::Results);
-        if row >= results_area.y && row < results_area.y + results_area.height {
-            let table_row = (row - results_area.y) as usize;
-            if table_row == 0 { return; }
-            let data_row = table_row - 1;
-            let idx = data_row;
-            if idx < self.filtered_indices.len() {
-                self.selected = self.filtered_indices[idx];
+    /// Which zone (if any) contains screen position `(row, col)`, honoring
+    /// fullscreen mode (only the fullscreened zone is hit-testable while
+    /// active). Shared by mouse clicks (`click_at`) and scroll-wheel
+    /// hover-targeting in the orchestrator, so "click a panel" and "scroll
+    /// over a panel" agree on which panel that is.
+    pub fn zone_at(&self, row: u16, col: u16) -> Option<ZoneId> {
+        for &id in ZoneId::all() {
+            if let Some(fs) = self.zones.fullscreen {
+                if fs != id {
+                    continue;
+                }
+            }
+            let area = self.zones.get_area(id);
+            if area.width == 0 || area.height == 0 {
+                continue;
+            }
+            let inside = row >= area.y && row < area.y + area.height
+                && col >= area.x && col < area.x + area.width;
+            if inside {
+                return Some(id);
             }
         }
+        None
+    }
+
+    /// Handle a left click anywhere in the main view: focuses whichever
+    /// zone the click landed in (matching btop's click-to-focus), plus a
+    /// couple of zone-specific actions (selecting a Results row, hitting
+    /// the pause/remove hint in the Torrent panel). Actions that need
+    /// the orchestrator (starting an async TorrServer call) are returned
+    /// rather than performed here, since `ui::App` doesn't own that state.
+    pub fn click_at(&mut self, row: u16, col: u16) -> Option<TorrentClickAction> {
+        let id = self.zone_at(row, col)?;
+        let area = self.zones.get_area(id);
+        self.zones.focused = id;
+
+        match id {
+            ZoneId::Results => {
+                let table_row = row.saturating_sub(area.y);
+                if table_row == 0 {
+                    // Header row ("Seeds  Size ..."), not a data row.
+                    return None;
+                }
+                let data_row = (table_row - 1) as usize;
+                if let Some(&idx) = self.filtered_indices.get(data_row) {
+                    self.selected = idx;
+                }
+            }
+            ZoneId::Torrent => {
+                // The pause/remove hint is the 5th content line (index
+                // 4) inside the bordered panel -- see
+                // render_torrent_zone's `lines` vec.
+                let hint_row = area.y + 1 + 4;
+                if row == hint_row {
+                    let hint_col = col.saturating_sub(area.x + 1);
+                    const PAUSE_LABEL: &str = "p: pause/resume";
+                    const GAP: u16 = 2;
+                    let pause_len = PAUSE_LABEL.chars().count() as u16;
+                    if hint_col < pause_len {
+                        return Some(TorrentClickAction::TogglePause);
+                    } else if hint_col >= pause_len + GAP {
+                        return Some(TorrentClickAction::Remove);
+                    }
+                }
+            }
+            ZoneId::Log | ZoneId::Extra => {}
+        }
+        None
     }
 
     pub fn open_login_modal(&mut self) {
@@ -1116,6 +1192,33 @@ impl App {
         if self.modal != Modal::None {
             self.render_modal(frame, area);
         }
+    }
+
+    /// Which top-bar hint (if any) is under `column`, given the exact
+    /// same header text `render_search_bar` builds. Kept in lockstep with
+    /// that function on purpose: both need the identical prefix length
+    /// and hint ordering, so if you change one, change the other.
+    pub fn hint_at_column(&self, column: u16) -> Option<HeaderHint> {
+        if self.input_mode {
+            return None;
+        }
+        let prefix_len = format!("[{}] {} | ", self.browser_info, self.torrserver_url).chars().count() as u16;
+        // Ratatui's default block title starts 1 column after the left
+        // border corner.
+        let mut col = 1 + prefix_len;
+        for (label, hint) in [
+            ("s: search", HeaderHint::Search),
+            ("S: settings", HeaderHint::Settings),
+            ("L: log", HeaderHint::Log),
+            ("F: filter", HeaderHint::Filter),
+        ] {
+            let len = label.chars().count() as u16;
+            if column >= col && column < col + len {
+                return Some(hint);
+            }
+            col += len + 3; // + " | " separator
+        }
+        None
     }
 
     fn render_search_bar(&self, frame: &mut Frame, area: Rect) {
