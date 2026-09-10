@@ -1,4 +1,4 @@
-use doris::ui::graph::render_sparkline;
+use doris::ui::widgets::graph::render_sparkline;
 
 #[test]
 fn test_braille_empty_history_renders_blank_dots() {
