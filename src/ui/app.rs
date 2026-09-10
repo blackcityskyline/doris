@@ -165,6 +165,15 @@ pub struct App {
     /// reporting it as paused -- so this is the source of truth for what
     /// the 'p' key should do next, not something derived from polling.
     pub torrent_paused: bool,
+    /// Rolling progress history feeding the Torrent panel's sparkline
+    /// (ROADMAP.md Phase 8). Oldest first; capped in app.rs's
+    /// TorrentListUpdate handler so a long session doesn't grow this
+    /// unboundedly.
+    pub progress_history: std::collections::VecDeque<f64>,
+    /// Mirrors config.graph_symbol -- see the doc comment on
+    /// `browser_hidden` for why runtime-relevant Options values get a
+    /// local copy here instead of ui::App holding a `&Config`.
+    pub graph_symbol: String,
     pub filtered_indices: Vec<usize>,
 }
 
@@ -175,6 +184,7 @@ impl App {
         browser_hidden: bool,
         theme_name: Option<&str>,
         download_dir: String,
+        graph_symbol: String,
     ) -> Self {
         let theme = theme_name
             .and_then(|name| Theme::load_themes().into_iter().find(|t| t.name == name))
@@ -208,6 +218,8 @@ impl App {
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
             torrent_paused: false,
+            progress_history: std::collections::VecDeque::new(),
+            graph_symbol,
             filtered_indices: Vec::new(),
         }
     }
@@ -1198,8 +1210,6 @@ impl App {
 
         let progress_pct = (s.progress * 100.0) as u32;
         let bar_width = (area.width as usize).saturating_sub(4).min(50);
-        let filled = (progress_pct as usize * bar_width / 100).min(bar_width);
-        let empty = bar_width.saturating_sub(filled);
 
         let dl_speed = format_bytes(s.download_speed);
         let ul_speed = format_bytes(s.upload_speed);
@@ -1212,6 +1222,9 @@ impl App {
             s.status.clone()
         };
 
+        let history: Vec<f64> = self.progress_history.iter().copied().collect();
+        let sparkline = super::graph::render_sparkline(&history, bar_width, &self.graph_symbol);
+
         let lines = vec![
             Line::from(vec![
                 Span::styled("Hash: ", Style::default().fg(Color::Yellow)),
@@ -1222,7 +1235,7 @@ impl App {
             Line::from(vec![
                 Span::styled("Progress: ", Style::default().fg(Color::Yellow)),
                 Span::styled(
-                    format!("[{}{}] {}%", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), progress_pct),
+                    format!("{} {}%", sparkline, progress_pct),
                     Style::default().fg(if progress_pct >= 100 { Color::Green } else { Color::Cyan }),
                 ),
             ]),
