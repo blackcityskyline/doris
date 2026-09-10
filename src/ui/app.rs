@@ -1326,7 +1326,7 @@ impl App {
         };
 
         let history: Vec<f64> = self.progress_history.iter().copied().collect();
-        let sparkline = super::graph::render_sparkline(&history, bar_width, &self.graph_symbol);
+        let sparkline = super::widgets::graph::render_sparkline(&history, bar_width, &self.graph_symbol);
 
         let lines = vec![
             Line::from(vec![

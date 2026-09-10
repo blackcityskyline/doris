@@ -6,12 +6,6 @@
 //! supported, matching Options -> general -> Graph symbol (`braille` /
 //! `block` / `dot`), the same three resolutions btop itself offers
 //! (braille / block / tty-safe ASCII).
-//!
-//! Note: this lives flat under `ui/` for now, consistent with today's
-//! module layout (`ui/draw.rs`, `ui/theme.rs`, etc. are flat too). ROADMAP.md
-//! Phase 10 moves it into `ui/widgets/` when `ui/app.rs` itself gets split
-//! up -- doing that reorganization for one new file in isolation would just
-//! create an inconsistent half-migrated layout.
 
 /// Render one line of a history sparkline, `width` characters wide, from
 /// `history` (values expected in `0.0..=1.0`, oldest first). Fewer samples
