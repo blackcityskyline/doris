@@ -10,7 +10,7 @@ use crate::search::rutracker::RutrackerSearcher;
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction, TorrentStatus, HeaderHint};
+use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction, TorrentStatus, HeaderHint, TorrentClickAction};
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
 use crate::ui::theme::Theme;
@@ -399,7 +399,7 @@ impl App {
     /// arrow / vim-style 'k'.
     fn handle_nav_up(&mut self) {
         match self.ui.zones.focused {
-            ZoneId::Results => self.ui.navigate_up(),
+            ZoneId::Results => { self.ui.navigate_up(); }
             ZoneId::Log => self.ui.scroll_logs_up(),
             _ => {}
         }
