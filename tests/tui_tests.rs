@@ -13,6 +13,7 @@ fn make_test_app() -> UiApp {
         true,
         None,
         "/tmp".into(),
+        "braille".into(),
     )
 }
 

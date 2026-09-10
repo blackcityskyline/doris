@@ -101,6 +101,7 @@ impl App {
                 browser_visibility == BrowserVisibility::Hidden,
                 config.theme_name.as_deref(),
                 resolve_download_dir(&config),
+                config.graph_symbol.clone(),
             ),
             event_handler,
             torrserver,
@@ -216,9 +217,21 @@ impl App {
                                     total_size: t.total_size.max(0) as u64,
                                     status: t.status_string.clone(),
                                 };
+                                // Cap history length -- a very wide terminal
+                                // in braille mode needs at most 2 samples
+                                // per column, so this comfortably covers
+                                // any realistic panel width.
+                                const MAX_HISTORY: usize = 600;
+                                self.ui.progress_history.push_back(self.ui.torrent_status.progress);
+                                while self.ui.progress_history.len() > MAX_HISTORY {
+                                    self.ui.progress_history.pop_front();
+                                }
                             }
                         }
                         Event::TorrentActive(hash) => {
+                            if self.ui.active_torrent_hash.as_deref() != Some(hash.as_str()) {
+                                self.ui.progress_history.clear();
+                            }
                             self.ui.active_torrent_hash = Some(hash);
                         }
                     }
@@ -332,6 +345,7 @@ impl App {
             Ok(_) => {
                 self.ui.torrent_status = TorrentStatus::default();
                 self.ui.torrent_paused = false;
+                self.ui.progress_history.clear();
                 self.ui.add_log("Torrent removed.");
             }
             Err(e) => self.ui.add_log(&format!("Remove failed: {}", e)),
@@ -571,6 +585,7 @@ impl App {
                             None => SYMBOLS[0],
                         };
                         self.config.graph_symbol = next.to_string();
+                        self.ui.graph_symbol = next.to_string();
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleDownloadEnabled => {
