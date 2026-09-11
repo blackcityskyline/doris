@@ -193,6 +193,10 @@ pub struct App {
     /// `browser_hidden` for why runtime-relevant Options values get a
     /// local copy here instead of ui::App holding a `&Config`.
     pub graph_symbol: String,
+    pub rounded_corners: bool,
+    pub theme_background: bool,
+    pub truecolor: bool,
+    pub false_tty: bool,
     pub filtered_indices: Vec<usize>,
 }
 
@@ -204,6 +208,10 @@ impl App {
         theme_name: Option<&str>,
         download_dir: String,
         graph_symbol: String,
+        rounded_corners: bool,
+        theme_background: bool,
+        truecolor: bool,
+        false_tty: bool,
     ) -> Self {
         let theme = theme_name
             .and_then(|name| Theme::load_themes().into_iter().find(|t| t.name == name))
@@ -239,6 +247,10 @@ impl App {
             torrent_paused: false,
             progress_history: std::collections::VecDeque::new(),
             graph_symbol,
+            rounded_corners,
+            theme_background,
+            truecolor,
+            false_tty,
             filtered_indices: Vec::new(),
         }
     }
@@ -358,6 +370,37 @@ impl App {
             ZoneId::Log | ZoneId::Extra => {}
         }
         None
+    }
+
+    /// Border+background styling shared by every panel/modal, respecting
+    /// the "Rounded corners" and "Theme background" Options toggles.
+    /// Centralizes what used to be ~14 separate hand-rolled
+    /// `Block::default()...` call sites, each of which would have needed
+    /// this same two-setting check repeated -- previously these settings
+    /// were persisted in Config but had no rendering effect anywhere.
+    fn themed_block(&self, border_color: Color) -> Block<'static> {
+        let border_color = self.resolve_color(border_color);
+        let border_type = if self.rounded_corners && !self.false_tty { BorderType::Rounded } else { BorderType::Plain };
+        let mut block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(border_type)
+            .border_style(Style::default().fg(border_color));
+        if self.theme_background {
+            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())));
+        }
+        block
+    }
+
+    /// Degrade an RGB color per the "Truecolor"/"False tty" toggles; see
+    /// `theme::degrade_color`. Named/basic colors pass through untouched.
+    fn resolve_color(&self, color: Color) -> Color {
+        if self.false_tty {
+            super::theme::degrade_color(color, false)
+        } else if !self.truecolor {
+            super::theme::degrade_color(color, true)
+        } else {
+            color
+        }
     }
 
     pub fn open_login_modal(&mut self) {
@@ -1240,16 +1283,14 @@ impl App {
             filter_hint
         );
 
-        let input_border = Block::default()
-            .borders(Borders::ALL)
-            .title(header)
-            .border_style(Style::default().fg(if self.input_mode {
+        let input_border = self.themed_block(if self.input_mode {
                 Color::Yellow
             } else if self.zones.filter_mode {
                 Color::Cyan
             } else {
                 self.theme.div_line.to_color()
-            }));
+            })
+            .title(header);
 
         let input = Paragraph::new(self.search_input.as_str())
             .block(input_border)
@@ -1295,10 +1336,7 @@ impl App {
             ],
         )
         .header(header)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title(format!("{}{}", title, filter_info))
-            .border_style(Style::default().fg(border_color)))
+        .block(self.themed_block(border_color).title(format!("{}{}", title, filter_info)))
         .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         let mut state = TableState::default();
@@ -1364,11 +1402,7 @@ impl App {
             ]),
         ];
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(Style::default().fg(border_color));
-
+        let block = self.themed_block(border_color).title(title);
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
     }
@@ -1392,17 +1426,13 @@ impl App {
         };
 
         let log_panel = Paragraph::new(visible_logs)
-            .block(Block::default().borders(Borders::ALL).title(scroll_title).border_style(Style::default().fg(border_color)));
+            .block(self.themed_block(border_color).title(scroll_title));
 
         frame.render_widget(log_panel, area);
     }
 
     fn render_extra_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(Style::default().fg(border_color));
-
+        let block = self.themed_block(border_color).title(title);
         let paragraph = Paragraph::new("Zone 4 — TBD").block(block);
         frame.render_widget(paragraph, area);
     }
@@ -1433,10 +1463,7 @@ impl App {
             scroll + visible.min(total), total);
 
         let log_panel = Paragraph::new(lines)
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(Color::Cyan)));
+            .block(self.themed_block(Color::Cyan).title(title));
 
         frame.render_widget(log_panel, area);
     }
@@ -1449,11 +1476,10 @@ impl App {
                 .style(Style::default().bg(Color::Black));
             frame.render_widget(overlay_block, popup);
 
-            let block = Block::default()
-                .title(" Login to Rutracker ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
-                .style(Style::default().bg(Color::DarkGray));
+            let bg_color = self.theme.main_bg.to_color();
+            let fg_color = self.theme.main_fg.to_color();
+
+            let block = self.themed_block(Color::Yellow).title(" Login to Rutracker ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
@@ -1472,23 +1498,19 @@ impl App {
             let user_style = if state.focus == LoginField::Username {
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(fg_color)
             };
 
             let pass_style = if state.focus == LoginField::Password {
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(fg_color)
             };
 
-            let user_block = Block::default()
-                .title("Username")
-                .borders(Borders::ALL)
-                .border_style(user_style)
-                .style(Style::default().bg(Color::DarkGray));
+            let user_block = self.themed_block(user_style.fg.unwrap_or(fg_color)).title("Username");
             frame.render_widget(
                 Paragraph::new(state.username.as_str())
-                    .style(Style::default().bg(Color::DarkGray).fg(Color::White))
+                    .style(Style::default().bg(bg_color).fg(fg_color))
                     .block(user_block),
                 rows[0],
             );
@@ -1499,14 +1521,10 @@ impl App {
                 "*".repeat(state.password.len())
             };
 
-            let pass_block = Block::default()
-                .title("Password")
-                .borders(Borders::ALL)
-                .border_style(pass_style)
-                .style(Style::default().bg(Color::DarkGray));
+            let pass_block = self.themed_block(pass_style.fg.unwrap_or(fg_color)).title("Password");
             frame.render_widget(
                 Paragraph::new(pass_display.as_str())
-                    .style(Style::default().bg(Color::DarkGray).fg(Color::White))
+                    .style(Style::default().bg(bg_color).fg(fg_color))
                     .block(pass_block),
                 rows[2],
             );
@@ -1514,7 +1532,7 @@ impl App {
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     "[Tab] switch  [Enter] login  [Esc] cancel",
-                    Style::default().fg(Color::DarkGray).bg(Color::DarkGray),
+                    Style::default().fg(self.theme.inactive_fg.to_color()),
                 )),
                 rows[3],
             );
@@ -1525,10 +1543,7 @@ impl App {
                 .style(Style::default().bg(Color::Black));
             frame.render_widget(overlay_block, popup);
 
-            let main_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(self.theme.hi_fg.to_color()))
-                .style(Style::default().bg(self.theme.main_bg.to_color()));
+            let main_block = self.themed_block(self.theme.hi_fg.to_color());
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
 
@@ -1540,22 +1555,39 @@ impl App {
             let content_y = div_y + 1;
             let content_h = inner.height.saturating_sub(4) as usize;
 
+            // Slot width wide enough for every tab's label (works
+            // regardless of how many categories exist or how long their
+            // names are, instead of a hardcoded width that silently
+            // corrupts once a name is long enough to fill it exactly --
+            // see the bug this replaces, below).
+            let slot_width = state.categories.iter()
+                .enumerate()
+                .map(|(i, cat)| if i == state.selected_category {
+                    cat.name.chars().count() + 2 // "[" + "]"
+                } else {
+                    cat.name.chars().count() + 2 // "N:"
+                })
+                .max()
+                .unwrap_or(8)
+                + 2; // breathing room before the next tab
+
             let mut tab_line = String::new();
             let mut tab_styles: Vec<(usize, usize, bool)> = Vec::new();
-            let mut pos = 2;
+            let mut pos = 0;
             for (i, cat) in state.categories.iter().enumerate() {
                 let is_sel = i == state.selected_category;
                 let label = if is_sel {
                     format!("[{}]", cat.name)
                 } else {
-                    format!("{}{}", i + 1, cat.name)
+                    format!("{}:{}", i + 1, cat.name)
                 };
-                tab_styles.push((pos, label.len(), is_sel));
+                let label_len = label.chars().count();
+                tab_styles.push((pos, label_len, is_sel));
                 tab_line.push_str(&label);
-                for _ in label.len()..10 {
+                for _ in label_len..slot_width {
                     tab_line.push(' ');
                 }
-                pos += 10;
+                pos += slot_width;
             }
 
             let hi_color = self.theme.hi_fg.to_color();
@@ -1563,6 +1595,16 @@ impl App {
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
 
+            // Bug fixed here: `pos` used to start at 2 while `ci` (the
+            // actual index into `tab_line`'s characters) starts at 0, a
+            // systematic 2-character offset between where each tab's
+            // styling said it started and where its text actually was.
+            // That caused this loop to both over-consume the previous
+            // tab's trailing characters into the wrong style AND silently
+            // drop the characters it skipped past to "catch up" -- which
+            // is exactly the "[general] 2treaming3download" corruption
+            // (missing the 's', tabs running together) from the bug
+            // report. `pos` and `ci` now share the same coordinate space.
             let mut spans = Vec::new();
             let chars: Vec<char> = tab_line.chars().collect();
             let mut ci = 0;
@@ -1577,7 +1619,7 @@ impl App {
                     spans.push(Span::styled(ch, style));
                     ci += 1;
                 }
-                while ci < chars.len() && ci < *start + 10 {
+                while ci < chars.len() && ci < *start + slot_width {
                     ci += 1;
                 }
             }
@@ -1703,11 +1745,7 @@ impl App {
                 .style(Style::default().bg(Color::Black));
             frame.render_widget(overlay_block, popup);
 
-            let block = Block::default()
-                .title(" Health Check ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green))
-                .style(Style::default().bg(Color::DarkGray));
+            let block = self.themed_block(Color::Green).title(" Health Check ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);

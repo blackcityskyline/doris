@@ -72,6 +72,62 @@ impl Default for Theme {
     }
 }
 
+/// Every theme shipped in the repo's top-level `themes/` directory,
+/// embedded at compile time so they always work regardless of the
+/// current working directory or install location. `load_themes()` used
+/// to *only* look in `~/.config/doris/themes` (or `./themes` relative to
+/// whatever directory the binary happened to be launched from) -- so
+/// running the built binary from anywhere other than a checkout with
+/// that directory manually populated found zero themes and silently
+/// showed "Color theme 1/1". User-added files in
+/// `~/.config/doris/themes/*.toml` are still loaded on top of this list
+/// (and can override a bundled theme of the same name), so the
+/// extensibility that directory was meant to provide isn't lost.
+const BUNDLED_THEMES: &[&str] = &[
+    include_str!("../../themes/HotPurpleTrafficLight.toml"),
+    include_str!("../../themes/adapta.toml"),
+    include_str!("../../themes/adwaita-dark.toml"),
+    include_str!("../../themes/adwaita.toml"),
+    include_str!("../../themes/ayu.toml"),
+    include_str!("../../themes/default.toml"),
+    include_str!("../../themes/dracula.toml"),
+    include_str!("../../themes/dusklight.toml"),
+    include_str!("../../themes/elementarish.toml"),
+    include_str!("../../themes/everforest-dark-hard.toml"),
+    include_str!("../../themes/everforest-dark-medium.toml"),
+    include_str!("../../themes/everforest-light-medium.toml"),
+    include_str!("../../themes/flat-remix-light.toml"),
+    include_str!("../../themes/flat-remix.toml"),
+    include_str!("../../themes/flexoki-dark.toml"),
+    include_str!("../../themes/flexoki-light.toml"),
+    include_str!("../../themes/gotham.toml"),
+    include_str!("../../themes/greyscale.toml"),
+    include_str!("../../themes/gruvbox_dark.toml"),
+    include_str!("../../themes/gruvbox_dark_v2.toml"),
+    include_str!("../../themes/gruvbox_light.toml"),
+    include_str!("../../themes/gruvbox_material_dark.toml"),
+    include_str!("../../themes/horizon.toml"),
+    include_str!("../../themes/kanagawa-dragon.toml"),
+    include_str!("../../themes/kanagawa-lotus.toml"),
+    include_str!("../../themes/kanagawa-wave.toml"),
+    include_str!("../../themes/kyli0x.toml"),
+    include_str!("../../themes/matcha-dark-sea.toml"),
+    include_str!("../../themes/monokai.toml"),
+    include_str!("../../themes/night-owl.toml"),
+    include_str!("../../themes/nord.toml"),
+    include_str!("../../themes/onedark.toml"),
+    include_str!("../../themes/orange.toml"),
+    include_str!("../../themes/paper.toml"),
+    include_str!("../../themes/phoenix-night.toml"),
+    include_str!("../../themes/solarized_dark.toml"),
+    include_str!("../../themes/solarized_light.toml"),
+    include_str!("../../themes/tokyo-night.toml"),
+    include_str!("../../themes/tokyo-storm.toml"),
+    include_str!("../../themes/tomorrow-night.toml"),
+    include_str!("../../themes/twilight.toml"),
+    include_str!("../../themes/whiteout.toml"),
+];
+
 impl Theme {
     pub fn dark() -> Self {
         Self {
@@ -105,27 +161,96 @@ impl Theme {
 
     pub fn from_config(path: &std::path::Path) -> Option<Self> {
         let content = std::fs::read_to_string(path).ok()?;
-        toml::from_str(&content).ok()
+        Self::from_config_str(&content)
+    }
+
+    fn from_config_str(content: &str) -> Option<Self> {
+        toml::from_str(content).ok()
     }
 
     pub fn load_themes() -> Vec<Self> {
-        let mut themes = Vec::new();
-        let themes_dir = dirs::home_dir()
-            .map(|h| h.join(".config").join("doris").join("themes"))
-            .or_else(|| std::env::current_dir().ok().map(|c| c.join("themes")))
-            .unwrap_or_default();
+        let mut themes: Vec<Self> = BUNDLED_THEMES.iter()
+            .filter_map(|content| Self::from_config_str(content))
+            .collect();
 
-        if let Ok(entries) = std::fs::read_dir(&themes_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("toml") {
-                    if let Some(theme) = Self::from_config(&path) {
-                        themes.push(theme);
+        if let Some(user_dir) = dirs::home_dir().map(|h| h.join(".config").join("doris").join("themes")) {
+            if let Ok(entries) = std::fs::read_dir(&user_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+                        if let Some(theme) = Self::from_config(&path) {
+                            match themes.iter_mut().find(|t| t.name == theme.name) {
+                                Some(existing) => *existing = theme,
+                                None => themes.push(theme),
+                            }
+                        }
                     }
                 }
             }
         }
+
         themes.sort_by(|a, b| a.name.cmp(&b.name));
         themes
     }
+}
+
+/// Convert an RGB theme color to the nearest of the 16 basic ANSI colors,
+/// for the "Truecolor"/"False tty" Options toggles -- previously these
+/// just flipped a persisted config value with no rendering effect at all.
+/// Named/basic colors (e.g. `Color::Yellow` used for focus highlights)
+/// pass through unchanged since they're already safe on any terminal.
+///
+/// `allow_bright` controls whether the 8 "bright"/high-intensity ANSI
+/// colors are candidates too: Truecolor=false still allows them (256-ish
+/// color terminals almost always support the bright 8), while False
+/// tty=true restricts to the base 8 (real Linux console / very limited
+/// terminals typically only reliably support those).
+pub fn degrade_color(color: Color, allow_bright: bool) -> Color {
+    let (r, g, b) = match color {
+        Color::Rgb(r, g, b) => (r, g, b),
+        other => return other,
+    };
+
+    const BASIC: [(Color, (u8, u8, u8)); 8] = [
+        (Color::Black, (0, 0, 0)),
+        (Color::Red, (170, 0, 0)),
+        (Color::Green, (0, 170, 0)),
+        (Color::Yellow, (170, 85, 0)),
+        (Color::Blue, (0, 0, 170)),
+        (Color::Magenta, (170, 0, 170)),
+        (Color::Cyan, (0, 170, 170)),
+        (Color::Gray, (170, 170, 170)),
+    ];
+    const BRIGHT: [(Color, (u8, u8, u8)); 8] = [
+        (Color::DarkGray, (85, 85, 85)),
+        (Color::LightRed, (255, 85, 85)),
+        (Color::LightGreen, (85, 255, 85)),
+        (Color::LightYellow, (255, 255, 85)),
+        (Color::LightBlue, (85, 85, 255)),
+        (Color::LightMagenta, (255, 85, 255)),
+        (Color::LightCyan, (85, 255, 255)),
+        (Color::White, (255, 255, 255)),
+    ];
+
+    let mut best = BASIC[0].0;
+    let mut best_dist = i32::MAX;
+    let mut consider = |candidate: Color, (cr, cg, cb): (u8, u8, u8)| {
+        let dr = cr as i32 - r as i32;
+        let dg = cg as i32 - g as i32;
+        let db = cb as i32 - b as i32;
+        let dist = dr * dr + dg * dg + db * db;
+        if dist < best_dist {
+            best_dist = dist;
+            best = candidate;
+        }
+    };
+    for (c, rgb) in BASIC {
+        consider(c, rgb);
+    }
+    if allow_bright {
+        for (c, rgb) in BRIGHT {
+            consider(c, rgb);
+        }
+    }
+    best
 }
