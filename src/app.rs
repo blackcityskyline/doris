@@ -22,7 +22,7 @@ use crate::config::Config;
 /// Downloads folder for "default" or an unset/empty custom slot. A free
 /// function (rather than only an `App` method) so it can also be called
 /// during `App::new()`, before `self` exists.
-fn resolve_download_dir(config: &Config) -> String {
+pub fn resolve_download_dir(config: &Config) -> String {
     let custom = match config.download_dir_mode.as_str() {
         "custom1" => Some(&config.download_dir_custom_1),
         "custom2" => Some(&config.download_dir_custom_2),

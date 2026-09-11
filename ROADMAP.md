@@ -222,3 +222,55 @@ Key design decisions:
 
 Each phase lands as its own commit (or short commit series) on this branch so it's
 reviewable and bisectable. Build/test after every phase before starting the next.
+
+## 5. Real-world bug fixes (post-Phase-10)
+
+Once the refactor above was buildable, running the actual app surfaced six real
+bugs neither the audit nor hand-tracing caught (commit `cb43c6b`):
+
+1. **Crash** cycling Presets: `ZoneLayout::update_areas` gave Results *and* Extra
+   each the full leftover height independently instead of splitting it, which
+   overflowed past the terminal bottom the moment both were visible at once (the
+   default "1,2,3,4" preset does this immediately) and panicked ratatui.
+2. Options tab header rendered as `"[general] 2treaming3download"` -- a
+   2-character coordinate-space offset between the tab-styling loop's position
+   counter and the actual string index, which both mis-colored and silently
+   dropped characters.
+3. No themes ever loaded outside a checkout with `~/.config/doris/themes`
+   manually populated, because `load_themes()` only checked that path plus
+   `./themes` relative to cwd -- meaning the normal `target/release/doris`
+   launch found zero of the 42 bundled themes. Fixed by embedding all 42 via
+   `include_str!`; user files under `~/.config/doris/themes/` still load on
+   top and can override a bundled theme by name.
+4. Rounded corners / Theme background: real settings, zero rendering effect
+   (flagged honestly as a known gap after Phase 5). Fixed via a shared
+   `themed_block()` helper now used at all 14 border-construction sites.
+5. Truecolor / False tty: same story. Fixed via `ui::theme::degrade_color()`
+   (RGB → nearest of the 16 basic ANSI colors), wired into `themed_block()`.
+6. Pagination past the first page requiring a full re-login every time:
+   `start_search`/`load_more`/`do_login`/`spawn_stream` each constructed a
+   fresh `RutrackerSearcher` per call, resetting its `logged_in` flag even
+   though the underlying browser session (and its cookies) was correctly
+   cached and reused. Fixed with `get_searcher()`, mirroring `get_browser()`'s
+   lazy-cache pattern via `Arc<Mutex<RutrackerSearcher>>`.
+
+## 6. Test coverage
+
+Every phase above that introduced a pure-logic function or a real API surface
+now has direct tests for it, not just exercise-through-the-TUI coverage:
+
+| Area | File | What it covers |
+|------|------|-----------------|
+| Config (Phases 5-6) | `tests/config_tests.rs` | Defaults, legacy key alias, save/load round-trip |
+| Credentials (Phase 4) | `tests/credentials_tests.rs` | Keyed store, colon-in-password regression, multi-resource isolation |
+| Browser detection (Phase 2) | `tests/browser_detect_tests.rs` | `BrowserKind` parsing/display, `parse_priority` fallback/ordering |
+| Source registry (Phase 3) | `tests/source_registry_tests.rs` | `KNOWN_SOURCES` invariants (unique ids, implemented flags) |
+| Zone layout (Phase 5, bug fix) | `tests/zones_tests.rs` | Toggle/focus/fullscreen/presets, and a direct regression test for the presets crash across five terminal sizes |
+| Download dir resolution | `tests/download_dir_tests.rs` | default/custom1/2/3 mode resolution, empty-slot fallback |
+| Color degradation (bug fix) | `tests/theme_degrade_tests.rs` | RGB→ANSI16 nearest-match, bright-variant gating, determinism |
+| TorrServer API (Phase 7) | `tests/torrserver_tests.rs` | JSON shape assumptions *and* the real HTTP client methods (list/get/pause/resume/remove/is_reachable) against a hand-rolled mock server over a raw `TcpListener` -- no mocking crate needed since reqwest/tokio/serde_json are already dependencies |
+| Sparkline widget (Phase 8) | `tests/graph_tests.rs` | All three symbol sets, padding, clamping |
+| Mouse hit-testing (Phase 9, bug fix) | `tests/ui_hit_test_tests.rs` | `hint_at_column`/`zone_at`/`click_at`, including the Torrent panel's pause/remove hint click regions |
+| TUI state (pre-existing) | `tests/tui_tests.rs` | Navigation, login modal, render-doesn't-panic |
+
+The TorrServer mock-server pattern in particular is worth reusing: `spawn_mock_server(status_line, body)` binds `127.0.0.1:0` (OS-assigned port), responds to every request with the same canned response, and returns a `JoinHandle` to `.abort()` when the test is done. It was verified end-to-end in an isolated reproduction outside this sandbox's blocked full workspace build before being committed as real test code (same verification approach as the async-trait lifetime bug fix earlier on this branch).
