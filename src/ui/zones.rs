@@ -187,12 +187,33 @@ impl ZoneLayout {
 
         let has_torrent = visible_zones.contains(&ZoneId::Torrent);
         let has_log = visible_zones.contains(&ZoneId::Log);
+        let has_results = visible_zones.contains(&ZoneId::Results);
+        let has_extra = visible_zones.contains(&ZoneId::Extra);
 
         let bottom_height: u16 = if has_log { log_height } else { 0 }
             + if has_torrent { torrent_height } else { 0 };
 
         let remaining = area.height.saturating_sub(search_bar_height + bottom_height);
-        let results_height = remaining.max(5);
+
+        // Results and Extra share whatever vertical space is left after
+        // the fixed-height Torrent/Log panels. This used to give *each*
+        // of them the entire `remaining` height independently instead of
+        // splitting it -- harmless if only one was visible, but the
+        // moment both were on at once (e.g. the default "1,2,3,4" preset)
+        // their combined claimed height ran well past the bottom of the
+        // terminal and crashed ratatui with an out-of-bounds buffer
+        // write. Splitting it 50/50 fixes that; a pathologically short
+        // terminal can still show minor overlap since each half is
+        // floored at 3 rows for usability, but it will no longer crash.
+        let (results_height, extra_height) = match (has_results, has_extra) {
+            (true, true) => {
+                let half = remaining / 2;
+                (half.max(3), remaining.saturating_sub(half).max(3))
+            }
+            (true, false) => (remaining.max(3), 0),
+            (false, true) => (0, remaining.max(3)),
+            (false, false) => (0, 0),
+        };
 
         let mut y = area.y + search_bar_height;
 
@@ -200,23 +221,25 @@ impl ZoneLayout {
             match id {
                 ZoneId::Results => {
                     let h = results_height;
-                    let area = Rect::new(area.x, y, area.width, h);
-                    self.set_area(id, area);
+                    let zone_area = Rect::new(area.x, y, area.width, h);
+                    self.set_area(id, zone_area);
                     y += h;
                 }
                 ZoneId::Torrent => {
-                    let area = Rect::new(area.x, y, area.width, torrent_height);
-                    self.set_area(id, area);
+                    let zone_area = Rect::new(area.x, y, area.width, torrent_height);
+                    self.set_area(id, zone_area);
                     y += torrent_height;
                 }
                 ZoneId::Log => {
-                    let area = Rect::new(area.x, y, area.width, log_height);
-                    self.set_area(id, area);
+                    let zone_area = Rect::new(area.x, y, area.width, log_height);
+                    self.set_area(id, zone_area);
                     y += log_height;
                 }
                 ZoneId::Extra => {
-                    let area = Rect::new(area.x, y, area.width, remaining);
-                    self.set_area(id, area);
+                    let h = extra_height;
+                    let zone_area = Rect::new(area.x, y, area.width, h);
+                    self.set_area(id, zone_area);
+                    y += h;
                 }
             }
         }

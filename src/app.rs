@@ -45,6 +45,16 @@ pub struct App {
     event_handler: EventHandler,
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
+    /// Shared across start_search/load_more/do_login (all run in spawned
+    /// tasks) so RutrackerSearcher's `logged_in` flag actually persists
+    /// between calls. Previously each of those constructed its own fresh
+    /// RutrackerSearcher::new(browser), which reset `logged_in` to false
+    /// every time -- so paginating past the first page of results (or any
+    /// action after the first) went through a full re-login/cookie
+    /// re-injection sequence every single time, which is slow. The
+    /// browser itself was always reused correctly via get_browser(); this
+    /// mirrors that same lazy-cache pattern for the searcher.
+    searcher: Option<Arc<Mutex<RutrackerSearcher>>>,
     browser_visibility: BrowserVisibility,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
@@ -101,10 +111,15 @@ impl App {
                 config.theme_name.as_deref(),
                 resolve_download_dir(&config),
                 config.graph_symbol.clone(),
+                config.rounded_corners,
+                config.theme_background,
+                config.truecolor,
+                config.false_tty,
             ),
             event_handler,
             torrserver,
             browser: None,
+            searcher: None,
             browser_visibility,
             search_tx,
             search_rx,
@@ -537,14 +552,17 @@ impl App {
                     }
                     SettingsAction::ToggleThemeBackground => {
                         self.config.theme_background = !self.config.theme_background;
+                        self.ui.theme_background = self.config.theme_background;
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleTruecolor => {
                         self.config.truecolor = !self.config.truecolor;
+                        self.ui.truecolor = self.config.truecolor;
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleFalseTty => {
                         self.config.false_tty = !self.config.false_tty;
+                        self.ui.false_tty = self.config.false_tty;
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleVimKeys => {
@@ -589,6 +607,7 @@ impl App {
                     }
                     SettingsAction::ToggleRoundedCorners => {
                         self.config.rounded_corners = !self.config.rounded_corners;
+                        self.ui.rounded_corners = self.config.rounded_corners;
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleTerminalSync => {
@@ -849,8 +868,8 @@ impl App {
             let _ = crate::credentials::save_credentials(username, password);
         }
 
-        let browser = match self.get_browser().await {
-            Ok(b) => b,
+        let searcher = match self.get_searcher().await {
+            Ok(s) => s,
             Err(e) => {
                 self.ui.add_log(&format!("Browser error: {}", e));
                 return;
@@ -872,7 +891,7 @@ impl App {
         let log = Arc::new(move |msg: &str| { let _ = event_tx_login.send(Event::StreamLog(msg.to_string())); });
 
         tokio::spawn(async move {
-            let mut searcher = RutrackerSearcher::new(browser);
+            let mut searcher = searcher.lock().await;
 
             match searcher.ensure_logged_in(cookie_file.as_deref(), Some(&username), Some(&password), log.clone()).await {
                 Ok(true) => {
@@ -902,8 +921,8 @@ impl App {
         self.ui.all_loaded = false;
         self.ui.add_log(&format!("Searching for '{}'...", query));
 
-        let browser = match self.get_browser().await {
-            Ok(b) => b,
+        let searcher = match self.get_searcher().await {
+            Ok(s) => s,
             Err(e) => {
                 self.ui.add_log(&format!("Browser error: {}", e));
                 self.ui.state = AppState::Idle;
@@ -922,7 +941,7 @@ impl App {
         let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
 
         tokio::spawn(async move {
-            let mut searcher = RutrackerSearcher::new(browser);
+            let mut searcher = searcher.lock().await;
 
             let (cred_user, cred_pass) = match (username, password) {
                 (Some(u), Some(p)) => (Some(u), Some(p)),
@@ -960,10 +979,15 @@ impl App {
         let item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
 
-        let browser = match &self.browser {
-            Some(b) => Arc::clone(b),
-            None => {
-                self.ui.add_log("No browser session - search first");
+        let browser_present = self.browser.is_some();
+        if !browser_present {
+            self.ui.add_log("No browser session - search first");
+            return;
+        }
+        let searcher = match self.get_searcher().await {
+            Ok(s) => s,
+            Err(e) => {
+                self.ui.add_log(&format!("Browser error: {}", e));
                 return;
             }
         };
@@ -982,7 +1006,7 @@ impl App {
                 return;
             }
 
-            let searcher = RutrackerSearcher::new(browser);
+            let searcher = searcher.lock().await;
 
             match searcher.download_torrent(&item.download_url).await {
                 Ok(bytes) => {
@@ -1087,11 +1111,25 @@ impl App {
         Ok(browser)
     }
 
+    /// Lazily create (once) and reuse the same `RutrackerSearcher` for the
+    /// lifetime of the browser session, so its `logged_in` flag actually
+    /// means something across calls. See the field doc comment on
+    /// `searcher` for why this exists.
+    async fn get_searcher(&mut self) -> Result<Arc<Mutex<RutrackerSearcher>>> {
+        if let Some(ref s) = self.searcher {
+            return Ok(Arc::clone(s));
+        }
+        let browser = self.get_browser().await?;
+        let searcher = Arc::new(Mutex::new(RutrackerSearcher::new(browser)));
+        self.searcher = Some(Arc::clone(&searcher));
+        Ok(searcher)
+    }
+
     async fn load_more(&mut self, query: String, offset: usize) {
         self.ui.state = AppState::Searching;
 
-        let browser = match self.get_browser().await {
-            Ok(b) => b,
+        let searcher = match self.get_searcher().await {
+            Ok(s) => s,
             Err(e) => {
                 self.ui.add_log(&format!("Browser error: {}", e));
                 self.ui.state = AppState::Idle;
@@ -1110,7 +1148,7 @@ impl App {
         let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
 
         tokio::spawn(async move {
-            let mut searcher = RutrackerSearcher::new(browser);
+            let mut searcher = searcher.lock().await;
 
             let (cred_user, cred_pass) = match (username, password) {
                 (Some(u), Some(p)) => (Some(u), Some(p)),
