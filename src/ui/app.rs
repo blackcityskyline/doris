@@ -1536,207 +1536,207 @@ impl App {
                 )),
                 rows[3],
             );
-        } else if let Modal::Settings(ref mut state) = self.modal {
+        } else if matches!(self.modal, Modal::Settings(_)) {
             let popup = centered_rect(80, 80, area);
 
             let overlay_block = Block::default()
                 .style(Style::default().bg(Color::Black));
             frame.render_widget(overlay_block, popup);
 
-            let main_block = self.themed_block(self.theme.hi_fg.to_color());
+            let border_color = self.theme.hi_fg.to_color();
+            let main_block = self.themed_block(border_color);
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
-
-            let bw = inner.width as usize;
-            let divider_col = 30.min(bw.saturating_sub(3));
-
-            let tab_y = inner.y;
-            let div_y = tab_y + 2;
-            let content_y = div_y + 1;
-            let content_h = inner.height.saturating_sub(4) as usize;
-
-            // Slot width wide enough for every tab's label (works
-            // regardless of how many categories exist or how long their
-            // names are, instead of a hardcoded width that silently
-            // corrupts once a name is long enough to fill it exactly --
-            // see the bug this replaces, below).
-            let slot_width = state.categories.iter()
-                .enumerate()
-                .map(|(i, cat)| if i == state.selected_category {
-                    cat.name.chars().count() + 2 // "[" + "]"
-                } else {
-                    cat.name.chars().count() + 2 // "N:"
-                })
-                .max()
-                .unwrap_or(8)
-                + 2; // breathing room before the next tab
-
-            let mut tab_line = String::new();
-            let mut tab_styles: Vec<(usize, usize, bool)> = Vec::new();
-            let mut pos = 0;
-            for (i, cat) in state.categories.iter().enumerate() {
-                let is_sel = i == state.selected_category;
-                let label = if is_sel {
-                    format!("[{}]", cat.name)
-                } else {
-                    format!("{}:{}", i + 1, cat.name)
-                };
-                let label_len = label.chars().count();
-                tab_styles.push((pos, label_len, is_sel));
-                tab_line.push_str(&label);
-                for _ in label_len..slot_width {
-                    tab_line.push(' ');
-                }
-                pos += slot_width;
-            }
 
             let hi_color = self.theme.hi_fg.to_color();
             let title_color = self.theme.title.to_color();
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
+            let bg_color = self.theme.main_bg.to_color();
 
-            // Bug fixed here: `pos` used to start at 2 while `ci` (the
-            // actual index into `tab_line`'s characters) starts at 0, a
-            // systematic 2-character offset between where each tab's
-            // styling said it started and where its text actually was.
-            // That caused this loop to both over-consume the previous
-            // tab's trailing characters into the wrong style AND silently
-            // drop the characters it skipped past to "catch up" -- which
-            // is exactly the "[general] 2treaming3download" corruption
-            // (missing the 's', tabs running together) from the bug
-            // report. `pos` and `ci` now share the same coordinate space.
-            let mut spans = Vec::new();
-            let chars: Vec<char> = tab_line.chars().collect();
-            let mut ci = 0;
-            for (start, len, is_sel) in &tab_styles {
-                while ci < chars.len() && ci < *start + *len {
-                    let ch = chars[ci].to_string();
-                    let style = if *is_sel {
-                        Style::default().fg(hi_color).add_modifier(Modifier::BOLD)
+            if let Modal::Settings(ref mut state) = self.modal {
+                let bw = inner.width as usize;
+                let divider_col = 30.min(bw.saturating_sub(3));
+
+                let tab_y = inner.y;
+                let div_y = tab_y + 2;
+                let content_y = div_y + 1;
+                let content_h = inner.height.saturating_sub(4) as usize;
+
+                // Slot width wide enough for every tab's label (works
+                // regardless of how many categories exist or how long their
+                // names are, instead of a hardcoded width that silently
+                // corrupts once a name is long enough to fill it exactly --
+                // see the bug this replaces, below).
+                let slot_width = state.categories.iter()
+                    .enumerate()
+                    .map(|(i, cat)| if i == state.selected_category {
+                        cat.name.chars().count() + 2 // "[" + "]"
                     } else {
-                        Style::default().fg(title_color)
-                    };
-                    spans.push(Span::styled(ch, style));
-                    ci += 1;
-                }
-                while ci < chars.len() && ci < *start + slot_width {
-                    ci += 1;
-                }
-            }
-            frame.render_widget(
-                Paragraph::new(Line::from(spans)).style(Style::default().bg(self.theme.main_bg.to_color())),
-                Rect::new(inner.x, tab_y, inner.width, 1),
-            );
+                        cat.name.chars().count() + 2 // "N:"
+                    })
+                    .max()
+                    .unwrap_or(8)
+                    + 2; // breathing room before the next tab
 
-            let mut div_spans: Vec<Span> = Vec::new();
-            div_spans.push(Span::styled("├", Style::default().fg(hi_color)));
-            for _ in 1..divider_col {
-                div_spans.push(Span::styled("─", Style::default().fg(div_color)));
-            }
-            div_spans.push(Span::styled("┬", Style::default().fg(hi_color)));
-            for _ in divider_col + 1..bw.saturating_sub(1) {
-                div_spans.push(Span::styled("─", Style::default().fg(div_color)));
-            }
-            div_spans.push(Span::styled("┤", Style::default().fg(hi_color)));
-            frame.render_widget(
-                Paragraph::new(Line::from(div_spans)).style(Style::default().bg(self.theme.main_bg.to_color())),
-                Rect::new(inner.x, div_y, inner.width, 1),
-            );
-
-            for row in 0..content_h {
-                frame.render_widget(
-                    Paragraph::new(Span::styled("│", Style::default().fg(div_color)))
-                        .style(Style::default().bg(self.theme.main_bg.to_color())),
-                    Rect::new(inner.x + divider_col as u16, content_y + row as u16, 1, 1),
-                );
-            }
-
-            let visible_items = content_h / 2;
-            // Fixes B2: settings_key() reads this exact number back, so
-            // pagination can never desync from what's actually on screen.
-            state.visible_items = visible_items.max(1);
-            let cat = &state.categories[state.selected_category];
-            let page = state.page;
-            let start_idx = page * visible_items;
-
-            let left_x = inner.x + 1;
-            let right_x = inner.x + divider_col as u16 + 2;
-            let right_w = bw.saturating_sub(divider_col as usize + 3) as u16;
-
-            for row_idx in 0..visible_items {
-                let item_idx = start_idx + row_idx;
-                let y = content_y + (row_idx * 2) as u16;
-
-                if item_idx < cat.items.len() {
-                    let item = &cat.items[item_idx];
-                    let is_sel = item_idx == state.selected;
-
+                let mut tab_line = String::new();
+                let mut tab_styles: Vec<(usize, usize, bool)> = Vec::new();
+                let mut pos = 0;
+                for (i, cat) in state.categories.iter().enumerate() {
+                    let is_sel = i == state.selected_category;
                     let label = if is_sel {
-                        // Fixes B1: this used to hardcode "3" regardless of
-                        // the actual selected position.
-                        format!("{} {}/{}", item.label, item_idx + 1, cat.items.len())
+                        format!("[{}]", cat.name)
                     } else {
-                        item.label.clone()
+                        format!("{}:{}", i + 1, cat.name)
                     };
-                    let label_style = if is_sel {
-                        Style::default().fg(hi_color).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(title_color)
-                    };
-                    let centered_label = center_str(&label, divider_col as usize - 2);
-                    frame.render_widget(
-                        Paragraph::new(Span::styled(centered_label, label_style))
-                            .style(Style::default().bg(self.theme.main_bg.to_color())),
-                        Rect::new(left_x, y, divider_col as u16 - 1, 1),
-                    );
+                    let label_len = label.chars().count();
+                    tab_styles.push((pos, label_len, is_sel));
+                    tab_line.push_str(&label);
+                    for _ in label_len..slot_width {
+                        tab_line.push(' ');
+                    }
+                    pos += slot_width;
+                }
 
-                    let val_style = if is_sel {
-                        Style::default().fg(fg_color)
-                    } else {
-                        Style::default().fg(fg_color)
-                    };
-                    let val_display = if is_sel {
-                        format!("← {} →", item.value)
-                    } else {
-                        item.value.clone()
-                    };
-                    let centered_val = center_str(&val_display, divider_col as usize - 2);
+                // Bug fixed here: `pos` used to start at 2 while `ci` (the
+                // actual index into `tab_line`'s characters) starts at 0, a
+                // systematic 2-character offset between where each tab's
+                // styling said it started and where its text actually was.
+                // That caused this loop to both over-consume the previous
+                // tab's trailing characters into the wrong style AND silently
+                // drop the characters it skipped past to "catch up" -- which
+                // is exactly the "[general] 2treaming3download" corruption
+                // (missing the 's', tabs running together) from the bug
+                // report. `pos` and `ci` now share the same coordinate space.
+                let mut spans = Vec::new();
+                let chars: Vec<char> = tab_line.chars().collect();
+                let mut ci = 0;
+                for (start, len, is_sel) in &tab_styles {
+                    while ci < chars.len() && ci < *start + *len {
+                        let ch = chars[ci].to_string();
+                        let style = if *is_sel {
+                            Style::default().fg(hi_color).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(title_color)
+                        };
+                        spans.push(Span::styled(ch, style));
+                        ci += 1;
+                    }
+                    while ci < chars.len() && ci < *start + slot_width {
+                        ci += 1;
+                    }
+                }
+                frame.render_widget(
+                    Paragraph::new(Line::from(spans)).style(Style::default().bg(bg_color)),
+                    Rect::new(inner.x, tab_y, inner.width, 1),
+                );
+
+                let mut div_spans: Vec<Span> = Vec::new();
+                div_spans.push(Span::styled("├", Style::default().fg(hi_color)));
+                for _ in 1..divider_col {
+                    div_spans.push(Span::styled("─", Style::default().fg(div_color)));
+                }
+                div_spans.push(Span::styled("┬", Style::default().fg(hi_color)));
+                for _ in divider_col + 1..bw.saturating_sub(1) {
+                    div_spans.push(Span::styled("─", Style::default().fg(div_color)));
+                }
+                div_spans.push(Span::styled("┤", Style::default().fg(hi_color)));
+                frame.render_widget(
+                    Paragraph::new(Line::from(div_spans)).style(Style::default().bg(bg_color)),
+                    Rect::new(inner.x, div_y, inner.width, 1),
+                );
+
+                for row in 0..content_h {
                     frame.render_widget(
-                        Paragraph::new(Span::styled(centered_val, val_style))
-                            .style(Style::default().bg(self.theme.main_bg.to_color())),
-                        Rect::new(left_x, y + 1, divider_col as u16 - 1, 1),
+                        Paragraph::new(Span::styled("│", Style::default().fg(div_color)))
+                            .style(Style::default().bg(bg_color)),
+                        Rect::new(inner.x + divider_col as u16, content_y + row as u16, 1, 1),
                     );
                 }
-            }
 
-            if let Some(item) = cat.items.get(state.selected) {
-                let desc_style = Style::default().fg(fg_color);
-                for (i, line) in item.description.iter().enumerate() {
-                    if (content_y as usize + i) < (content_y as usize + content_h) {
+                let visible_items = content_h / 2;
+                // Fixes B2: settings_key() reads this exact number back, so
+                // pagination can never desync from what's actually on screen.
+                state.visible_items = visible_items.max(1);
+                let cat = &state.categories[state.selected_category];
+                let page = state.page;
+                let start_idx = page * visible_items;
+
+                let left_x = inner.x + 1;
+                let right_x = inner.x + divider_col as u16 + 2;
+                let right_w = bw.saturating_sub(divider_col as usize + 3) as u16;
+
+                for row_idx in 0..visible_items {
+                    let item_idx = start_idx + row_idx;
+                    let y = content_y + (row_idx * 2) as u16;
+
+                    if item_idx < cat.items.len() {
+                        let item = &cat.items[item_idx];
+                        let is_sel = item_idx == state.selected;
+
+                        let label = if is_sel {
+                            // Fixes B1: this used to hardcode "3" regardless of
+                            // the actual selected position.
+                            format!("{} {}/{}", item.label, item_idx + 1, cat.items.len())
+                        } else {
+                            item.label.clone()
+                        };
+                        let label_style = if is_sel {
+                            Style::default().fg(hi_color).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(title_color)
+                        };
+                        let centered_label = center_str(&label, divider_col as usize - 2);
                         frame.render_widget(
-                            Paragraph::new(Span::styled(line.as_str(), desc_style))
-                                .style(Style::default().bg(self.theme.main_bg.to_color())),
-                            Rect::new(right_x, content_y + i as u16, right_w, 1),
+                            Paragraph::new(Span::styled(centered_label, label_style))
+                                .style(Style::default().bg(bg_color)),
+                            Rect::new(left_x, y, divider_col as u16 - 1, 1),
+                        );
+
+                        let val_style = Style::default().fg(fg_color);
+                        let val_display = if is_sel {
+                            format!("← {} →", item.value)
+                        } else {
+                            item.value.clone()
+                        };
+                        let centered_val = center_str(&val_display, divider_col as usize - 2);
+                        frame.render_widget(
+                            Paragraph::new(Span::styled(centered_val, val_style))
+                                .style(Style::default().bg(bg_color)),
+                            Rect::new(left_x, y + 1, divider_col as u16 - 1, 1),
                         );
                     }
                 }
-            }
 
-            let pages = (cat.items.len() + visible_items - 1) / visible_items;
-            if pages > 1 {
-                let page_line = format!("↑ page {}/{} ↓", page + 1, pages);
-                let page_y = content_y + content_h as u16;
-                let page_x = inner.x + (bw / 2).saturating_sub(page_line.len() / 2) as u16;
-                frame.render_widget(
-                    Paragraph::new(Line::from(vec![
-                        Span::styled("┘", Style::default().fg(hi_color)),
-                        Span::styled("↑ ", Style::default().fg(hi_color)),
-                        Span::styled(format!("page {}/{} ", page + 1, pages), Style::default().fg(title_color)),
-                        Span::styled("↓", Style::default().fg(hi_color)),
-                        Span::styled("└", Style::default().fg(hi_color)),
-                    ])).style(Style::default().bg(self.theme.main_bg.to_color())),
-                    Rect::new(page_x.saturating_sub(1), page_y, page_line.len() as u16 + 4, 1),
-                );
+                if let Some(item) = cat.items.get(state.selected) {
+                    let desc_style = Style::default().fg(fg_color);
+                    for (i, line) in item.description.iter().enumerate() {
+                        if (content_y as usize + i) < (content_y as usize + content_h) {
+                            frame.render_widget(
+                                Paragraph::new(Span::styled(line.as_str(), desc_style))
+                                    .style(Style::default().bg(bg_color)),
+                                Rect::new(right_x, content_y + i as u16, right_w, 1),
+                            );
+                        }
+                    }
+                }
+
+                let pages = (cat.items.len() + visible_items - 1) / visible_items;
+                if pages > 1 {
+                    let page_line = format!("↑ page {}/{} ↓", page + 1, pages);
+                    let page_y = content_y + content_h as u16;
+                    let page_x = inner.x + (bw / 2).saturating_sub(page_line.len() / 2) as u16;
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![
+                            Span::styled("┘", Style::default().fg(hi_color)),
+                            Span::styled("↑ ", Style::default().fg(hi_color)),
+                            Span::styled(format!("page {}/{} ", page + 1, pages), Style::default().fg(title_color)),
+                            Span::styled("↓", Style::default().fg(hi_color)),
+                            Span::styled("└", Style::default().fg(hi_color)),
+                        ])).style(Style::default().bg(bg_color)),
+                        Rect::new(page_x.saturating_sub(1), page_y, page_line.len() as u16 + 4, 1),
+                    );
+                }
             }
         } else if let Modal::HealthCheck(ref lines) = self.modal {
             let popup = centered_rect(70, 80, area);

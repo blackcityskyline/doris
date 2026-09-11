@@ -182,17 +182,39 @@ impl ZoneLayout {
         }
 
         let search_bar_height: u16 = 3;
-        let log_height: u16 = 8;
-        let torrent_height: u16 = 8;
+        let desired_log_height: u16 = 8;
+        let desired_torrent_height: u16 = 8;
 
         let has_torrent = visible_zones.contains(&ZoneId::Torrent);
         let has_log = visible_zones.contains(&ZoneId::Log);
         let has_results = visible_zones.contains(&ZoneId::Results);
         let has_extra = visible_zones.contains(&ZoneId::Extra);
 
-        let bottom_height: u16 = if has_log { log_height } else { 0 }
-            + if has_torrent { torrent_height } else { 0 };
+        let fixed_panels: u16 = if has_torrent { desired_torrent_height } else { 0 }
+            + if has_log { desired_log_height } else { 0 };
 
+        let after_search = area.height.saturating_sub(search_bar_height);
+
+        let available_for_fixed = after_search.min(fixed_panels);
+        let scale = if fixed_panels > 0 {
+            available_for_fixed as f64 / fixed_panels as f64
+        } else {
+            1.0
+        };
+
+        let torrent_height = if has_torrent {
+            (desired_torrent_height as f64 * scale).round() as u16
+        } else {
+            0
+        };
+        let log_height = if has_log {
+            let h = (desired_log_height as f64 * scale).round() as u16;
+            available_for_fixed.saturating_sub(torrent_height).min(h)
+        } else {
+            0
+        };
+
+        let bottom_height = torrent_height + log_height;
         let remaining = area.height.saturating_sub(search_bar_height + bottom_height);
 
         // Results and Extra share whatever vertical space is left after
@@ -208,10 +230,10 @@ impl ZoneLayout {
         let (results_height, extra_height) = match (has_results, has_extra) {
             (true, true) => {
                 let half = remaining / 2;
-                (half.max(3), remaining.saturating_sub(half).max(3))
+                (half, remaining.saturating_sub(half))
             }
-            (true, false) => (remaining.max(3), 0),
-            (false, true) => (0, remaining.max(3)),
+            (true, false) => (remaining, 0),
+            (false, true) => (0, remaining),
             (false, false) => (0, 0),
         };
 
