@@ -434,7 +434,10 @@ impl RutrackerSearcher {
 
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
-        let items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
+        let mut items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
+        for item in &mut items {
+            item.source = "rutracker".to_string();
+        }
         Ok(items)
     }
 

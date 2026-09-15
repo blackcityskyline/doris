@@ -7,6 +7,7 @@ use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
 use crate::search::rutracker::RutrackerSearcher;
+use crate::search::rutor::RutorSearcher;
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
@@ -384,6 +385,71 @@ impl App {
         }
     }
 
+    /// Download the selected result's .torrent file to disk (Options ->
+    /// download's resolved directory), dispatching to whichever Source
+    /// actually produced it -- `TorrentItem.source` matters here because
+    /// the "all" Results tab can mix rows from more than one source at
+    /// once, each needing a different download client.
+    async fn download_selected_to_disk(&mut self) {
+        let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
+            self.ui.add_log("No result selected to download.");
+            return;
+        };
+
+        if !self.config.download_enabled {
+            self.ui.add_log("Downloading is disabled in Options -> download -> Enable downloading.");
+            return;
+        }
+
+        self.ui.add_log(&format!("Downloading '{}'...", item.title));
+
+        let bytes_result: Result<Vec<u8>> = if item.source == "rutor" {
+            RutorSearcher::new().download_torrent(&item.download_url).await
+        } else {
+            // Default to rutracker (also covers legacy/empty `source`
+            // values from results fetched before this field existed).
+            match self.get_searcher().await {
+                Ok(searcher) => {
+                    let searcher = searcher.lock().await;
+                    searcher.download_torrent(&item.download_url).await
+                }
+                Err(e) => Err(e),
+            }
+        };
+
+        match bytes_result {
+            Ok(bytes) => {
+                let dir = self.resolve_download_dir();
+                let safe_title: String = item.title.chars()
+                    .map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') { c } else { '_' })
+                    .collect();
+                let path = std::path::Path::new(&dir).join(format!("{}.torrent", safe_title.trim()));
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                match std::fs::write(&path, &bytes) {
+                    Ok(_) => self.ui.add_log(&format!("Saved to {}", path.display())),
+                    Err(e) => self.ui.add_log(&format!("Failed to save file: {}", e)),
+                }
+            }
+            Err(e) => self.ui.add_log(&format!("Download failed: {}", e)),
+        }
+    }
+
+    /// Show the selected result's full details in the log -- the 'v'
+    /// action from the Results panel's bottom action bar.
+    fn show_selected_info(&mut self) {
+        let Some(item) = self.ui.results.get(self.ui.selected) else {
+            self.ui.add_log("No result selected.");
+            return;
+        };
+        let source = if item.source.is_empty() { "rutracker" } else { item.source.as_str() };
+        self.ui.add_log(&format!(
+            "INFO: {}  |  size={}  seeds={}  date={}  source={}  url={}",
+            item.title, item.size, item.seeds, item.date, source, item.page_url,
+        ));
+    }
+
     /// See the free function of the same name for the resolution logic;
     /// this just supplies `&self.config`.
     fn resolve_download_dir(&self) -> String {
@@ -524,6 +590,15 @@ impl App {
                     }
                     SettingsAction::ToggleSourceRutracker => {
                         let id = "rutracker";
+                        if self.config.enabled_sources.iter().any(|s| s == id) {
+                            self.config.enabled_sources.retain(|s| s != id);
+                        } else {
+                            self.config.enabled_sources.push(id.to_string());
+                        }
+                        self.ui.open_settings(&self.config);
+                    }
+                    SettingsAction::ToggleSourceRutor => {
+                        let id = "rutor";
                         if self.config.enabled_sources.iter().any(|s| s == id) {
                             self.config.enabled_sources.retain(|s| s != id);
                         } else {
@@ -673,6 +748,12 @@ impl App {
                     }
                     SettingsAction::Close => {}
                 }
+                // Persist every settings change immediately rather than
+                // only on a clean exit ("Save config on exit" governs a
+                // final flush, not whether changes are remembered at all
+                // -- a crash between now and exit shouldn't lose them,
+                // and it previously did).
+                let _ = crate::config::save(&self.config, None);
             }
             return Ok(());
         }
@@ -742,6 +823,15 @@ impl App {
             }
             KeyCode::Char('d') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
                 self.remove_active_torrent().await;
+            }
+            KeyCode::Char('d') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
+                self.download_selected_to_disk().await;
+            }
+            KeyCode::Char('v') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
+                self.show_selected_info();
+            }
+            KeyCode::Char(']') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
+                self.ui.cycle_source();
             }
             KeyCode::Char('j') if self.config.vim_keys => {
                 self.handle_nav_down().await;
@@ -909,65 +999,114 @@ impl App {
     }
 
     async fn start_search(&mut self, query: String) {
-        if !self.config.enabled_sources.iter().any(|s| s == "rutracker") {
-            self.ui.add_log("Rutracker is disabled in Options -> streaming -> Sources.");
-            self.ui.state = AppState::Idle;
-            return;
-        }
-
         self.ui.state = AppState::Searching;
         self.ui.search_query = Some(query.clone());
         self.ui.search_offset = 0;
         self.ui.all_loaded = false;
-        self.ui.add_log(&format!("Searching for '{}'...", query));
+        self.ui.add_log(&format!("Searching '{}' for '{}'...", self.ui.active_source, query));
+        self.dispatch_search(query, 0).await;
+    }
 
-        let searcher = match self.get_searcher().await {
-            Ok(s) => s,
-            Err(e) => {
-                self.ui.add_log(&format!("Browser error: {}", e));
-                self.ui.state = AppState::Idle;
-                return;
-            }
+    /// Kick off the search(es) for `query` at `offset` against whichever
+    /// source(s) the Results panel's tab bar has selected
+    /// (`ui.active_source`: "rutracker" / "rutor" / "all"), merging into
+    /// one `Event::SearchComplete` so the existing handler (which already
+    /// knows how to replace vs. extend `ui.results` based on `offset`)
+    /// doesn't need to change. Rutor needs no browser/login at all, so it
+    /// runs as a plain standalone task; Rutracker still goes through the
+    /// shared cached searcher exactly as before.
+    async fn dispatch_search(&mut self, query: String, offset: usize) {
+        let active = self.ui.active_source.clone();
+        let want_rutracker = (active == "rutracker" || active == "all")
+            && self.config.enabled_sources.iter().any(|s| s == "rutracker");
+        let want_rutor = (active == "rutor" || active == "all")
+            && self.config.enabled_sources.iter().any(|s| s == "rutor");
+
+        if !want_rutracker && !want_rutor {
+            self.ui.add_log("Selected source is disabled in Options -> streaming -> Sources.");
+            self.ui.state = AppState::Idle;
+            return;
+        }
+
+        let event_tx_result = self.event_handler.sender();
+
+        let rutor_task: Option<tokio::task::JoinHandle<Result<Vec<crate::search::models::TorrentItem>>>> = if want_rutor {
+            let query = query.clone();
+            Some(tokio::spawn(async move {
+                RutorSearcher::new().search_page(&query, offset).await
+            }))
+        } else {
+            None
         };
 
-        // If "Save cookies" is off, don't pass a cookie file path
-        // through at all -- see do_login for the same gating.
-        let cookie_file = if self.config.save_cookies { self.args.cookie_file.clone() } else { None };
-        let username = self.args.username.clone();
-        let password = self.args.password.clone();
-        let saved_creds = crate::credentials::load_credentials();
-        let event_tx_log = self.event_handler.sender();
-        let event_tx_result = self.event_handler.sender();
-        let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
-
-        tokio::spawn(async move {
-            let mut searcher = searcher.lock().await;
-
-            let (cred_user, cred_pass) = match (username, password) {
-                (Some(u), Some(p)) => (Some(u), Some(p)),
-                _ => match saved_creds {
-                    Some((u, p)) => {
-                        log("Using saved credentials");
-                        (Some(u), Some(p))
-                    }
-                    None => (None, None),
-                },
-            };
-
-            match searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref(), log.clone()).await {
-                Ok(true) => log("SEARCH: logged in, proceeding with search"),
-                Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
-                Err(e) => log(&format!("SEARCH: login error: {}", e)),
-            }
-
-            match searcher.search(&query).await {
-                Ok(results) => {
-                    let _ = event_tx_result.send(Event::SearchComplete(results));
+        let rutracker_task: Option<tokio::task::JoinHandle<Result<Vec<crate::search::models::TorrentItem>>>> = if want_rutracker {
+            match self.get_searcher().await {
+                Ok(searcher) => {
+                    let event_tx_log = self.event_handler.sender();
+                    // If "Save cookies" is off, don't pass a cookie file
+                    // path through at all -- see do_login for the same
+                    // gating.
+                    let cookie_file = if self.config.save_cookies { self.args.cookie_file.clone() } else { None };
+                    let username = self.args.username.clone();
+                    let password = self.args.password.clone();
+                    let saved_creds = crate::credentials::load_credentials();
+                    let query = query.clone();
+                    let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
+                    Some(tokio::spawn(async move {
+                        let mut searcher = searcher.lock().await;
+                        let (cred_user, cred_pass) = match (username, password) {
+                            (Some(u), Some(p)) => (Some(u), Some(p)),
+                            _ => match saved_creds {
+                                Some((u, p)) => {
+                                    log("Using saved credentials");
+                                    (Some(u), Some(p))
+                                }
+                                None => (None, None),
+                            },
+                        };
+                        match searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref(), log.clone()).await {
+                            Ok(true) => log("SEARCH: logged in, proceeding with search"),
+                            Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
+                            Err(e) => log(&format!("SEARCH: login error: {}", e)),
+                        }
+                        searcher.search_page(&query, offset).await
+                    }))
                 }
                 Err(e) => {
-                    let _ = event_tx_result.send(Event::SearchError(e.to_string()));
+                    self.ui.add_log(&format!("Browser error: {}", e));
+                    None
                 }
             }
+        } else {
+            None
+        };
+
+        tokio::spawn(async move {
+            let mut combined = Vec::new();
+            let mut last_err: Option<String> = None;
+
+            if let Some(task) = rutor_task {
+                match task.await {
+                    Ok(Ok(mut items)) => combined.append(&mut items),
+                    Ok(Err(e)) => last_err = Some(format!("rutor: {}", e)),
+                    Err(e) => last_err = Some(format!("rutor: {}", e)),
+                }
+            }
+            if let Some(task) = rutracker_task {
+                match task.await {
+                    Ok(Ok(mut items)) => combined.append(&mut items),
+                    Ok(Err(e)) => last_err = Some(format!("rutracker: {}", e)),
+                    Err(e) => last_err = Some(format!("rutracker: {}", e)),
+                }
+            }
+
+            if combined.is_empty() {
+                if let Some(e) = last_err {
+                    let _ = event_tx_result.send(Event::SearchError(e));
+                    return;
+                }
+            }
+            let _ = event_tx_result.send(Event::SearchComplete(combined));
         });
     }
 
@@ -1127,47 +1266,6 @@ impl App {
 
     async fn load_more(&mut self, query: String, offset: usize) {
         self.ui.state = AppState::Searching;
-
-        let searcher = match self.get_searcher().await {
-            Ok(s) => s,
-            Err(e) => {
-                self.ui.add_log(&format!("Browser error: {}", e));
-                self.ui.state = AppState::Idle;
-                return;
-            }
-        };
-
-        let event_tx_log = self.event_handler.sender();
-        let event_tx_result = self.event_handler.sender();
-        // If "Save cookies" is off, don't pass a cookie file path
-        // through at all -- see do_login for the same gating.
-        let cookie_file = if self.config.save_cookies { self.args.cookie_file.clone() } else { None };
-        let username = self.args.username.clone();
-        let password = self.args.password.clone();
-        let saved_creds = crate::credentials::load_credentials();
-        let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
-
-        tokio::spawn(async move {
-            let mut searcher = searcher.lock().await;
-
-            let (cred_user, cred_pass) = match (username, password) {
-                (Some(u), Some(p)) => (Some(u), Some(p)),
-                _ => match saved_creds {
-                    Some((u, p)) => (Some(u), Some(p)),
-                    None => (None, None),
-                },
-            };
-
-            let _ = searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref(), log.clone()).await;
-
-            match searcher.search_page(&query, offset).await {
-                Ok(results) => {
-                    let _ = event_tx_result.send(Event::SearchComplete(results));
-                }
-                Err(e) => {
-                    let _ = event_tx_result.send(Event::SearchError(e.to_string()));
-                }
-            }
-        });
+        self.dispatch_search(query, offset).await;
     }
 }

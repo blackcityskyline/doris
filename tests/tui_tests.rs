@@ -31,6 +31,7 @@ fn make_results(n: usize) -> Vec<TorrentItem> {
             download_url: format!("/forum/dl.php?t={}", 1000 + i),
             page_url: format!("viewtopic.php?t={}", 1000 + i),
             query: "test".into(),
+            ..Default::default()
         })
         .collect()
 }
@@ -467,6 +468,7 @@ fn test_full_flow() {
             download_url: format!("/dl.php?t={}", i),
             page_url: "".into(),
             query: "world war".into(),
+            ..Default::default()
         })
         .collect();
     app.update_filter();
