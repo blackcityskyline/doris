@@ -209,7 +209,7 @@ fn default_presets() -> Vec<String> {
 fn default_enabled_sources() -> Vec<String> {
     // Only sources that are actually implemented (see
     // search::source::KNOWN_SOURCES) are enabled by default.
-    vec!["rutracker".to_string()]
+    vec!["rutracker".to_string(), "rutor".to_string()]
 }
 
 fn default_download_dir_mode() -> String {

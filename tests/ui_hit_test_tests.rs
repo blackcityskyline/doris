@@ -28,6 +28,7 @@ fn make_results(n: usize) -> Vec<TorrentItem> {
             download_url: format!("/forum/dl.php?t={}", 1000 + i),
             page_url: format!("viewtopic.php?t={}", 1000 + i),
             query: "test".into(),
+            ..Default::default()
         })
         .collect()
 }
@@ -130,7 +131,9 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     let before = app.selected;
-    app.click_at(results_area.y, results_area.x); // header row, not a data row
+    // +1 for the border, +1 for the source-tab row above the table's own
+    // header row -- see render_results_zone.
+    app.click_at(results_area.y + 2, results_area.x); // table header row, not a data row
     assert_eq!(app.selected, before);
 }
 
@@ -142,11 +145,11 @@ fn test_click_at_results_data_row_selects_that_item() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    // Row 0 is the header, row 1 is the first data row (index 0).
-    app.click_at(results_area.y + 1, results_area.x);
+    // y+1 = source tabs, y+2 = table header, y+3 = first data row (index 0).
+    app.click_at(results_area.y + 3, results_area.x);
     assert_eq!(app.selected, 0);
 
-    app.click_at(results_area.y + 2, results_area.x);
+    app.click_at(results_area.y + 4, results_area.x);
     assert_eq!(app.selected, 1);
 }
 
@@ -159,8 +162,59 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    app.click_at(results_area.y + 1, results_area.x); // first visible (filtered) row
+    app.click_at(results_area.y + 3, results_area.x); // first visible (filtered) row
     assert_eq!(app.selected, 3);
+}
+
+// --- source tab bar (Results panel, btop proc-tab style) -----------------
+
+#[test]
+fn test_source_tab_at_finds_each_tab_on_the_tab_row() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let results_area = app.zones.get_area(ZoneId::Results);
+    let tab_row = results_area.y + 1;
+
+    // Default active source is "rutracker", shown as "[rutracker]".
+    assert_eq!(app.source_tab_at(tab_row, results_area.x + 1), Some("rutracker"));
+}
+
+#[test]
+fn test_source_tab_at_returns_none_off_the_tab_row() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let results_area = app.zones.get_area(ZoneId::Results);
+    // Table header row, one below the tab row.
+    assert_eq!(app.source_tab_at(results_area.y + 2, results_area.x + 1), None);
+}
+
+#[test]
+fn test_click_at_tab_row_switches_active_source() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let results_area = app.zones.get_area(ZoneId::Results);
+    let tab_row = results_area.y + 1;
+
+    assert_eq!(app.active_source, "rutracker");
+    // "[rutracker]" is 11 chars ("rutracker" + brackets) starting right
+    // after the left border; "rutor" starts right after that plus a
+    // 2-space gap.
+    let rutor_col = results_area.x + 1 + "[rutracker]".chars().count() as u16 + 2;
+    let action = app.click_at(tab_row, rutor_col);
+    assert_eq!(app.active_source, "rutor");
+    assert_eq!(action, None); // switching source isn't a TorrentClickAction
+}
+
+#[test]
+fn test_cycle_source_wraps_through_all_tabs() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    assert_eq!(app.active_source, "rutracker");
+    app.cycle_source();
+    assert_eq!(app.active_source, "rutor");
+    app.cycle_source();
+    assert_eq!(app.active_source, "all");
+    app.cycle_source();
+    assert_eq!(app.active_source, "rutracker"); // wraps
 }
 
 #[test]

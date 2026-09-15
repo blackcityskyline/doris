@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
+use super::rutor::RutorSearcher;
 
 /// One pluggable content source. Everything the orchestrator, the browser
 /// layer, and the Options "Sources" checklist need from a source goes
@@ -89,6 +90,45 @@ impl Source for RutrackerSearcher {
     }
 }
 
+/// Rutor needs no browser, no login, and no cookies -- ensure_logged_in
+/// is a trivial always-true no-op purely to satisfy the trait's shape.
+#[async_trait]
+impl Source for RutorSearcher {
+    fn id(&self) -> &'static str {
+        "rutor"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "Rutor"
+    }
+
+    fn home_url(&self) -> &'static str {
+        Self::HOME_URL
+    }
+
+    async fn ensure_logged_in(
+        &mut self,
+        _cookie_file: Option<&Path>,
+        _username: Option<&str>,
+        _password: Option<&str>,
+        _log: Arc<dyn for<'a> Fn(&'a str) + Send + Sync>,
+    ) -> Result<bool> {
+        Ok(true)
+    }
+
+    async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
+        RutorSearcher::search(self, query).await
+    }
+
+    async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
+        RutorSearcher::search_page(self, query, start).await
+    }
+
+    async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
+        RutorSearcher::download_torrent(self, url).await
+    }
+}
+
 /// Metadata-only description of a source, for listing in the Options
 /// "Sources" checklist without needing a live, logged-in instance (which
 /// requires a running `Browser`). Real `Source` instances are constructed
@@ -108,6 +148,6 @@ pub struct SourceInfo {
 /// `implemented` become `true`.
 pub const KNOWN_SOURCES: &[SourceInfo] = &[
     SourceInfo { id: "rutracker", display_name: "Rutracker", implemented: true },
-    SourceInfo { id: "rutor", display_name: "Rutor", implemented: false },
+    SourceInfo { id: "rutor", display_name: "Rutor", implemented: true },
     SourceInfo { id: "nnmclub", display_name: "NNM-Club", implemented: false },
 ];

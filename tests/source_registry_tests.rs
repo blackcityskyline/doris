@@ -1,15 +1,17 @@
 use doris::search::source::KNOWN_SOURCES;
 
 #[test]
-fn test_rutracker_is_registered_and_implemented() {
-    let rutracker = KNOWN_SOURCES.iter().find(|s| s.id == "rutracker");
-    assert!(rutracker.is_some(), "rutracker must be in KNOWN_SOURCES");
-    assert!(rutracker.unwrap().implemented, "rutracker should be marked implemented");
+fn test_rutracker_and_rutor_are_registered_and_implemented() {
+    for id in ["rutracker", "rutor"] {
+        let source = KNOWN_SOURCES.iter().find(|s| s.id == id);
+        assert!(source.is_some(), "{} must be in KNOWN_SOURCES", id);
+        assert!(source.unwrap().implemented, "{} should be marked implemented", id);
+    }
 }
 
 #[test]
 fn test_future_sources_are_listed_but_not_implemented() {
-    for id in ["rutor", "nnmclub"] {
+    for id in ["nnmclub"] {
         let source = KNOWN_SOURCES.iter().find(|s| s.id == id);
         assert!(source.is_some(), "{} should be listed as a planned source", id);
         assert!(!source.unwrap().implemented, "{} should not be marked implemented yet", id);

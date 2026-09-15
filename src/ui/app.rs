@@ -81,6 +81,7 @@ pub enum SettingsAction {
     EditCredentials,
     CheckTorrserverStatus,
     ToggleSourceRutracker,
+    ToggleSourceRutor,
     ToggleDownloadEnabled,
     CycleDownloadDirMode,
     ToggleDownloadSequential,
@@ -184,6 +185,10 @@ pub struct App {
     /// reporting it as paused -- so this is the source of truth for what
     /// the 'p' key should do next, not something derived from polling.
     pub torrent_paused: bool,
+    /// Which source (or "all") the Results panel's tab bar has selected --
+    /// see `SOURCE_TABS` and `App::cycle_source`. Search dispatch in
+    /// app.rs reads this directly.
+    pub active_source: String,
     /// Rolling progress history feeding the Torrent panel's sparkline
     /// (ROADMAP.md Phase 8). Oldest first; capped in app.rs's
     /// TorrentListUpdate handler so a long session doesn't grow this
@@ -245,6 +250,7 @@ impl App {
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
             torrent_paused: false,
+            active_source: "rutracker".to_string(),
             progress_history: std::collections::VecDeque::new(),
             graph_symbol,
             rounded_corners,
@@ -307,6 +313,44 @@ impl App {
     /// active). Shared by mouse clicks (`click_at`) and scroll-wheel
     /// hover-targeting in the orchestrator, so "click a panel" and "scroll
     /// over a panel" agree on which panel that is.
+    /// Tabs shown at the top of the Results panel, btop-proc-tab style:
+    /// each real source plus "all" (search every enabled+implemented
+    /// source at once and merge). "nnmclub" isn't included since it isn't
+    /// implemented yet -- no point offering a tab that can never return
+    /// anything.
+    pub const SOURCE_TABS: &'static [&'static str] = &["rutracker", "rutor", "all"];
+
+    /// Cycle the Results panel's active source tab forward (wraps).
+    pub fn cycle_source(&mut self) {
+        let pos = Self::SOURCE_TABS.iter().position(|&s| s == self.active_source).unwrap_or(0);
+        self.active_source = Self::SOURCE_TABS[(pos + 1) % Self::SOURCE_TABS.len()].to_string();
+    }
+
+    /// Which source tab (if any) is under `(row, col)`, given the Results
+    /// zone's current area. Kept in lockstep with render_results_zone's
+    /// own tab layout by construction -- both are one row below the top
+    /// border and start one column after the left border, matching
+    /// `hint_at_column`'s approach for the header bar.
+    pub fn source_tab_at(&self, row: u16, col: u16) -> Option<&'static str> {
+        let area = self.zones.get_area(ZoneId::Results);
+        if area.width == 0 || area.height == 0 {
+            return None;
+        }
+        let tab_row = area.y + 1;
+        if row != tab_row {
+            return None;
+        }
+        let mut x = area.x + 1;
+        for &tab in Self::SOURCE_TABS {
+            let label_len = if tab == self.active_source { tab.chars().count() + 2 } else { tab.chars().count() };
+            if col >= x && col < x + label_len as u16 {
+                return Some(tab);
+            }
+            x += label_len as u16 + 2; // + "  " gap
+        }
+        None
+    }
+
     pub fn zone_at(&self, row: u16, col: u16) -> Option<ZoneId> {
         for &id in ZoneId::all() {
             if let Some(fs) = self.zones.fullscreen {
@@ -340,7 +384,13 @@ impl App {
 
         match id {
             ZoneId::Results => {
-                let table_row = row.saturating_sub(area.y);
+                if let Some(tab) = self.source_tab_at(row, col) {
+                    self.active_source = tab.to_string();
+                    return None;
+                }
+                // -1 for the border, -1 for the source-tab row above the
+                // table's own header row.
+                let table_row = row.saturating_sub(area.y).saturating_sub(1);
                 if table_row == 0 {
                     // Header row ("Seeds  Size ..."), not a data row.
                     return None;
@@ -372,12 +422,17 @@ impl App {
         None
     }
 
-    /// Border+background styling shared by every panel/modal, respecting
-    /// the "Rounded corners" and "Theme background" Options toggles.
-    /// Centralizes what used to be ~14 separate hand-rolled
+    /// Border+background styling for the four main zone panels,
+    /// respecting the "Rounded corners" and "Theme background" Options
+    /// toggles. Centralizes what used to be ~14 separate hand-rolled
     /// `Block::default()...` call sites, each of which would have needed
     /// this same two-setting check repeated -- previously these settings
     /// were persisted in Config but had no rendering effect anywhere.
+    ///
+    /// Modal popups use `modal_block` instead, not this: "Theme
+    /// background" is about letting terminal transparency show through
+    /// the regular panels, which is a different concern from whether a
+    /// temporary popup dialog is legible on top of whatever's behind it.
     fn themed_block(&self, border_color: Color) -> Block<'static> {
         let border_color = self.resolve_color(border_color);
         let border_type = if self.rounded_corners && !self.false_tty { BorderType::Rounded } else { BorderType::Plain };
@@ -389,6 +444,21 @@ impl App {
             block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())));
         }
         block
+    }
+
+    /// Border+background styling for modal popups (Settings, Login,
+    /// HealthCheck): always opaque, regardless of "Theme background" --
+    /// see the doc comment on `themed_block` for why that toggle doesn't
+    /// apply here. Still respects rounded corners and truecolor/false_tty
+    /// degradation like every other themed block.
+    fn modal_block(&self, border_color: Color) -> Block<'static> {
+        let border_color = self.resolve_color(border_color);
+        let border_type = if self.rounded_corners && !self.false_tty { BorderType::Rounded } else { BorderType::Plain };
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(border_type)
+            .border_style(Style::default().fg(border_color))
+            .style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())))
     }
 
     /// Degrade an RGB color per the "Truecolor"/"False tty" toggles; see
@@ -415,9 +485,12 @@ impl App {
         let visibility_str = if self.browser_hidden { "Hidden".to_string() } else { "Visible".to_string() };
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
         let theme_name = self.theme.name.clone();
-        let themes = Theme::load_themes();
-        let theme_idx = themes.iter().position(|t| t.name == theme_name).unwrap_or(0);
-        let theme_str = format!("{}/{}", theme_idx + 1, themes.len().max(1));
+        // Value shown between the cycle arrows must be the theme's own
+        // name (matching the reference: "<- noctalia ->"), not a bare
+        // index/total -- that's genuinely useful information but belongs
+        // in the *label* position indicator every settings item already
+        // gets when selected ("Color theme 46/45"), not here.
+        let theme_str = theme_name.clone();
 
         fn bool_str(b: bool) -> String {
             if b { "True".into() } else { "False".into() }
@@ -740,11 +813,29 @@ impl App {
                             description: vec![
                                 "Enable/disable this source.".into(),
                                 "".into(),
-                                "rutor, nnmclub: planned, not".into(),
-                                "yet implemented (see".into(),
-                                "search::source::KNOWN_SOURCES).".into(),
+                                "Requires login; browser-based.".into(),
                             ],
                             action: SettingsAction::ToggleSourceRutracker,
+                        },
+                        SettingsItem {
+                            label: "Sources: rutor".into(),
+                            value: bool_str(config.enabled_sources.iter().any(|s| s == "rutor")),
+                            description: vec![
+                                "Enable/disable this source.".into(),
+                                "".into(),
+                                "No account needed; plain HTTP,".into(),
+                                "no browser required.".into(),
+                            ],
+                            action: SettingsAction::ToggleSourceRutor,
+                        },
+                        SettingsItem {
+                            label: "Sources: nnmclub".into(),
+                            value: "planned".into(),
+                            description: vec![
+                                "Not yet implemented -- see".into(),
+                                "search::source::KNOWN_SOURCES.".into(),
+                            ],
+                            action: SettingsAction::Close,
                         },
                     ],
                 },
@@ -940,7 +1031,7 @@ impl App {
         None
     }
 
-    pub fn health_check(&self) -> Vec<String> {
+    pub async fn health_check(&self) -> Vec<String> {
         let mut results = Vec::new();
 
         results.push("=== HEALTH CHECK ===".into());
@@ -969,14 +1060,20 @@ impl App {
         else { results.push(format!("{} Chromedriver: will be downloaded on first run", "\u{26a0}")); }
 
         let ts_url = self.torrserver_url.clone();
-        let ts_reachable = {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async {
-                let client = reqwest::Client::new();
-                client.get(&ts_url).timeout(std::time::Duration::from_secs(2)).send().await
-                    .map(|r| r.status().is_success()).unwrap_or(false)
-            })
-        };
+        // Was: tokio::runtime::Handle::current().block_on(...), which
+        // panics with "Cannot start a runtime from within a runtime" --
+        // health_check() always runs as part of the already-running
+        // tokio runtime (it's called from the main event loop), so
+        // block_on-ing that same runtime's handle is illegal. Making
+        // this function itself async and .await-ing the request, like
+        // every other network call in the app, is the fix.
+        let ts_reachable = reqwest::Client::new()
+            .get(&ts_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
         if ts_reachable { results.push(format!("{} TorrServer: reachable ({})", "\u{2714}", ts_url)); }
         else { results.push(format!("{} TorrServer: NOT reachable ({})", "\u{2718}", ts_url)); }
 
@@ -1300,6 +1397,43 @@ impl App {
     }
 
     fn render_results_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
+        let filter_info = if !self.zones.filter_input.is_empty() {
+            format!(" [F: {}] ({}/{})", self.zones.filter_input, self.filtered_indices.len(), self.results.len())
+        } else {
+            format!(" ({}/{})", self.filtered_indices.len(), self.results.len())
+        };
+
+        let block = self.themed_block(border_color).title(format!("{}{}", title, filter_info));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // source tabs (btop proc-tab style)
+                Constraint::Min(0),    // results table
+                Constraint::Length(1), // action hints
+            ])
+            .split(inner);
+
+        // --- source tab bar ------------------------------------------------
+        let mut tab_spans = Vec::new();
+        for (i, &tab) in Self::SOURCE_TABS.iter().enumerate() {
+            let is_active = tab == self.active_source;
+            let label = if is_active { format!("[{}]", tab) } else { tab.to_string() };
+            let style = if is_active {
+                Style::default().fg(self.theme.hi_fg.to_color()).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(self.theme.inactive_fg.to_color())
+            };
+            tab_spans.push(Span::styled(label, style));
+            if i < Self::SOURCE_TABS.len() - 1 {
+                tab_spans.push(Span::raw("  "));
+            }
+        }
+        frame.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
+
+        // --- results table ---------------------------------------------------
         let header = Row::new(vec![
             Cell::from("Seeds"),
             Cell::from("Size"),
@@ -1320,12 +1454,6 @@ impl App {
             })
             .collect();
 
-        let filter_info = if !self.zones.filter_input.is_empty() {
-            format!(" [F: {}] ({}/{})", self.zones.filter_input, self.filtered_indices.len(), self.results.len())
-        } else {
-            format!(" ({}/{})", self.filtered_indices.len(), self.results.len())
-        };
-
         let table = Table::new(
             rows,
             [
@@ -1336,14 +1464,29 @@ impl App {
             ],
         )
         .header(header)
-        .block(self.themed_block(border_color).title(format!("{}{}", title, filter_info)))
         .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         let mut state = TableState::default();
         if let Some(local_pos) = self.filtered_indices.iter().position(|&i| i == self.selected) {
             state.select(Some(local_pos));
         }
-        frame.render_stateful_widget(table, area, &mut state);
+        frame.render_stateful_widget(table, chunks[1], &mut state);
+
+        // --- action hint bar -------------------------------------------------
+        let action_spans = vec![
+            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::raw(": play  "),
+            Span::styled("d", Style::default().fg(Color::Yellow)),
+            Span::raw(": download  "),
+            Span::styled("v", Style::default().fg(Color::Yellow)),
+            Span::raw(": info  "),
+            Span::styled("]", Style::default().fg(Color::Yellow)),
+            Span::raw(": switch source (or click tabs above)"),
+        ];
+        frame.render_widget(
+            Paragraph::new(Line::from(action_spans)).style(Style::default().fg(self.theme.inactive_fg.to_color())),
+            chunks[2],
+        );
     }
 
     fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
@@ -1469,17 +1612,27 @@ impl App {
     }
 
     fn render_modal(&mut self, frame: &mut Frame, area: Rect) {
+        if self.modal == Modal::None {
+            return;
+        }
+
+        // Full-screen dim backdrop. Every modal below used to only paint
+        // an overlay sized to its *own* popup rect (50-80% of the
+        // screen), leaving a visible margin around it where the main
+        // view's actual content (Results rows, Torrent status, etc.) kept
+        // showing through underneath -- exactly the "esc-menu still lets
+        // the main window's text bleed through" bug report. One backdrop
+        // covering the whole frame, drawn first, fixes that for every
+        // modal at once instead of needing a per-modal fix.
+        frame.render_widget(Block::default().style(Style::default().bg(Color::Black)), area);
+
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);
-
-            let overlay_block = Block::default()
-                .style(Style::default().bg(Color::Black));
-            frame.render_widget(overlay_block, popup);
 
             let bg_color = self.theme.main_bg.to_color();
             let fg_color = self.theme.main_fg.to_color();
 
-            let block = self.themed_block(Color::Yellow).title(" Login to Rutracker ");
+            let block = self.modal_block(Color::Yellow).title(" Login to Rutracker ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
@@ -1507,7 +1660,7 @@ impl App {
                 Style::default().fg(fg_color)
             };
 
-            let user_block = self.themed_block(user_style.fg.unwrap_or(fg_color)).title("Username");
+            let user_block = self.modal_block(user_style.fg.unwrap_or(fg_color)).title("Username");
             frame.render_widget(
                 Paragraph::new(state.username.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -1521,7 +1674,7 @@ impl App {
                 "*".repeat(state.password.len())
             };
 
-            let pass_block = self.themed_block(pass_style.fg.unwrap_or(fg_color)).title("Password");
+            let pass_block = self.modal_block(pass_style.fg.unwrap_or(fg_color)).title("Password");
             frame.render_widget(
                 Paragraph::new(pass_display.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -1539,12 +1692,8 @@ impl App {
         } else if matches!(self.modal, Modal::Settings(_)) {
             let popup = centered_rect(80, 80, area);
 
-            let overlay_block = Block::default()
-                .style(Style::default().bg(Color::Black));
-            frame.render_widget(overlay_block, popup);
-
             let border_color = self.theme.hi_fg.to_color();
-            let main_block = self.themed_block(border_color);
+            let main_block = self.modal_block(border_color);
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
 
@@ -1741,11 +1890,7 @@ impl App {
         } else if let Modal::HealthCheck(ref lines) = self.modal {
             let popup = centered_rect(70, 80, area);
 
-            let overlay_block = Block::default()
-                .style(Style::default().bg(Color::Black));
-            frame.render_widget(overlay_block, popup);
-
-            let block = self.themed_block(Color::Green).title(" Health Check ");
+            let block = self.modal_block(Color::Green).title(" Health Check ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
