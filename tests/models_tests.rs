@@ -51,6 +51,15 @@ fn test_torrent_item_empty_array() {
 }
 
 #[test]
+fn test_torrent_item_source_field_defaults_to_empty_and_deserializes_when_present() {
+    let without_source: TorrentItem = serde_json::from_str(r#"{"title": "Test"}"#).unwrap();
+    assert_eq!(without_source.source, "");
+
+    let with_source: TorrentItem = serde_json::from_str(r#"{"title": "Test", "source": "rutor"}"#).unwrap();
+    assert_eq!(with_source.source, "rutor");
+}
+
+#[test]
 fn test_resolve_url_absolute() {
     assert_eq!(
         resolve_url("https://rutracker.org/forum/dl.php?t=123"),
