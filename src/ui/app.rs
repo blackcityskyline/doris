@@ -189,6 +189,11 @@ pub struct App {
     /// see `SOURCE_TABS` and `App::cycle_source`. Search dispatch in
     /// app.rs reads this directly.
     pub active_source: String,
+    /// Set whenever the user switches the active source tab (via `]` key or
+    /// mouse click). Cleared on the next Enter press, which uses it to
+    /// decide whether Enter means "re-search with the new source" (true)
+    /// or "play the selected torrent" (false).
+    pub source_changed: bool,
     /// Set by `settings_key` right before it returns a cycle-type
     /// SettingsAction (CycleTheme/CyclePreset/etc): +1 for Right/Enter,
     /// -1 for Left. The orchestrator's handler for that action reads this
@@ -258,6 +263,7 @@ impl App {
             active_torrent_hash: None,
             torrent_paused: false,
             active_source: "rutracker".to_string(),
+            source_changed: false,
             last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),
             graph_symbol,
@@ -332,6 +338,7 @@ impl App {
     pub fn cycle_source(&mut self) {
         let pos = Self::SOURCE_TABS.iter().position(|&s| s == self.active_source).unwrap_or(0);
         self.active_source = Self::SOURCE_TABS[(pos + 1) % Self::SOURCE_TABS.len()].to_string();
+        self.source_changed = true;
     }
 
     /// Which source tab (if any) is under `(row, col)`, given the Results
@@ -394,6 +401,7 @@ impl App {
             ZoneId::Results => {
                 if let Some(tab) = self.source_tab_at(row, col) {
                     self.active_source = tab.to_string();
+                    self.source_changed = true;
                     return None;
                 }
                 // -1 for the border, -1 for the source-tab row above the
