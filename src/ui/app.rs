@@ -189,6 +189,13 @@ pub struct App {
     /// see `SOURCE_TABS` and `App::cycle_source`. Search dispatch in
     /// app.rs reads this directly.
     pub active_source: String,
+    /// Set by `settings_key` right before it returns a cycle-type
+    /// SettingsAction (CycleTheme/CyclePreset/etc): +1 for Right/Enter,
+    /// -1 for Left. The orchestrator's handler for that action reads this
+    /// to decide which direction to step -- SettingsAction itself has no
+    /// payload, so this is how Left and Right stop being identical
+    /// (previously both always cycled forward).
+    pub last_cycle_direction: i8,
     /// Rolling progress history feeding the Torrent panel's sparkline
     /// (ROADMAP.md Phase 8). Oldest first; capped in app.rs's
     /// TorrentListUpdate handler so a long session doesn't grow this
@@ -251,6 +258,7 @@ impl App {
             active_torrent_hash: None,
             torrent_paused: false,
             active_source: "rutracker".to_string(),
+            last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),
             graph_symbol,
             rounded_corners,
@@ -980,12 +988,14 @@ impl App {
                     }
                 }
                 crossterm::event::KeyCode::Left => {
+                    self.last_cycle_direction = -1;
                     let cat = &state.categories[state.selected_category];
                     if let Some(item) = cat.items.get(state.selected) {
                         return Some(item.action.clone());
                     }
                 }
                 crossterm::event::KeyCode::Right => {
+                    self.last_cycle_direction = 1;
                     let cat = &state.categories[state.selected_category];
                     if let Some(item) = cat.items.get(state.selected) {
                         return Some(item.action.clone());
@@ -1005,21 +1015,20 @@ impl App {
                     state.selected = 0;
                     state.page = 0;
                 }
-                crossterm::event::KeyCode::Char('1') => {
-                    if state.categories.len() > 0 {
-                        state.selected_category = 0;
-                        state.selected = 0;
-                        state.page = 0;
-                    }
-                }
-                crossterm::event::KeyCode::Char('2') => {
-                    if state.categories.len() > 1 {
-                        state.selected_category = 1;
+                // Any digit 1-9 jumps to that category by position, not
+                // just '1'/'2' -- this used to hardcode only the first two
+                // categories, silently doing nothing for '3' once a third
+                // ("download") category was added.
+                crossterm::event::KeyCode::Char(c @ '1'..='9') => {
+                    let idx = (c as u8 - b'1') as usize;
+                    if idx < state.categories.len() {
+                        state.selected_category = idx;
                         state.selected = 0;
                         state.page = 0;
                     }
                 }
                 crossterm::event::KeyCode::Enter => {
+                    self.last_cycle_direction = 1;
                     let cat = &state.categories[state.selected_category];
                     if let Some(item) = cat.items.get(state.selected) {
                         return Some(item.action.clone());
@@ -1616,18 +1625,23 @@ impl App {
             return;
         }
 
-        // Full-screen dim backdrop. Every modal below used to only paint
-        // an overlay sized to its *own* popup rect (50-80% of the
-        // screen), leaving a visible margin around it where the main
-        // view's actual content (Results rows, Torrent status, etc.) kept
-        // showing through underneath -- exactly the "esc-menu still lets
-        // the main window's text bleed through" bug report. One backdrop
-        // covering the whole frame, drawn first, fixes that for every
-        // modal at once instead of needing a per-modal fix.
-        frame.render_widget(Block::default().style(Style::default().bg(Color::Black)), area);
-
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);
+            // ratatui's Buffer::set_style *patches* a cell's style (only
+            // overwriting fields the new Style explicitly sets), it
+            // doesn't replace the cell outright -- a plain background
+            // fill here left every character already drawn by the main
+            // view underneath fully intact (same glyph, same foreground
+            // colour), which is exactly the "menu still shows the main
+            // window's text/panel borders through it" bug report, and
+            // also explains the unrelated-looking "areas turn an
+            // unexpected grey" report: patched-in black backgrounds
+            // behind *unpatched* foreground colours/glyphs don't read as
+            // a clean fill. `Clear` actually resets each cell (glyph and
+            // style) before the modal's own opaque block draws on top, so
+            // the popup is genuinely self-contained; nothing outside its
+            // bounds is touched at all.
+            frame.render_widget(Clear, popup);
 
             let bg_color = self.theme.main_bg.to_color();
             let fg_color = self.theme.main_fg.to_color();
@@ -1691,6 +1705,7 @@ impl App {
             );
         } else if matches!(self.modal, Modal::Settings(_)) {
             let popup = centered_rect(80, 80, area);
+            frame.render_widget(Clear, popup);
 
             let border_color = self.theme.hi_fg.to_color();
             let main_block = self.modal_block(border_color);
@@ -1889,6 +1904,7 @@ impl App {
             }
         } else if let Modal::HealthCheck(ref lines) = self.modal {
             let popup = centered_rect(70, 80, area);
+            frame.render_widget(Clear, popup);
 
             let block = self.modal_block(Color::Green).title(" Health Check ");
 
