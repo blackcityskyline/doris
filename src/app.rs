@@ -38,6 +38,34 @@ pub fn resolve_download_dir(config: &Config) -> String {
     }
 }
 
+/// Step `pos` by `direction` (+1/-1) within `0..len`, wrapping around --
+/// shared by every Options cycle-type action so Left and Right actually
+/// go opposite ways instead of both always stepping forward.
+pub fn cycle_index(pos: usize, len: usize, direction: i8) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    if direction >= 0 {
+        (pos + 1) % len
+    } else {
+        (pos + len - 1) % len
+    }
+}
+
+/// Resolve the cookie file path used for Rutracker login, or `None` if
+/// "Save cookies" is off. `cli_override` is `Args.cookie_file` (the
+/// `--cookie-file` flag) which takes priority when given; otherwise falls
+/// back to `Config.cookie_file` (the `config.toml` setting, which used to
+/// be completely dead -- see the instance method that calls this for the
+/// full story).
+pub fn resolve_cookie_file(config: &Config, cli_override: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    if !config.save_cookies {
+        return None;
+    }
+    cli_override.map(|p| p.to_path_buf())
+        .or_else(|| Some(std::path::PathBuf::from(&config.cookie_file)))
+}
+
 pub struct App {
     args: Args,
     #[allow(dead_code)]
@@ -456,6 +484,12 @@ impl App {
         resolve_download_dir(&self.config)
     }
 
+    /// See the free function of the same name for the resolution logic
+    /// and why this exists; this just supplies `&self.config`/`self.args`.
+    fn resolve_cookie_file(&self) -> Option<std::path::PathBuf> {
+        resolve_cookie_file(&self.config, self.args.cookie_file.as_deref())
+    }
+
     /// Move the selection down in the focused zone, loading the next page
     /// of results if the Results zone just scrolled near its end. Shared
     /// by the Down arrow (always active) and the vim-style 'j' (only when
@@ -550,7 +584,7 @@ impl App {
                         const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
                         let current = self.config.browser_priority.first().cloned().unwrap_or_default();
                         let next_first = match ORDER.iter().position(|&k| k == current) {
-                            Some(i) => ORDER[(i + 1) % ORDER.len()],
+                            Some(i) => ORDER[cycle_index(i, ORDER.len(), self.ui.last_cycle_direction)],
                             None => ORDER[0],
                         };
                         // Move next_first to the front, keep the rest in
@@ -617,7 +651,7 @@ impl App {
                     SettingsAction::CycleTheme => {
                         let themes = Theme::load_themes();
                         if let Some(pos) = themes.iter().position(|t| t.name == self.ui.theme.name) {
-                            let next = (pos + 1) % themes.len();
+                            let next = cycle_index(pos, themes.len(), self.ui.last_cycle_direction);
                             self.ui.theme = themes[next].clone();
                         } else if !themes.is_empty() {
                             self.ui.theme = themes[0].clone();
@@ -655,7 +689,7 @@ impl App {
                     SettingsAction::CyclePreset => {
                         if !self.config.disable_presets && !self.config.presets.is_empty() {
                             self.config.preset_index =
-                                (self.config.preset_index + 1) % self.config.presets.len();
+                                cycle_index(self.config.preset_index, self.config.presets.len(), self.ui.last_cycle_direction);
                             let spec = self.config.presets[self.config.preset_index].clone();
                             self.ui.zones.apply_preset(&spec);
                         }
@@ -674,7 +708,7 @@ impl App {
                         // reasonable follow-up once the modal supports one.
                         const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
                         let next = match STEPS.iter().position(|&v| v == self.config.update_ms) {
-                            Some(i) => STEPS[(i + 1) % STEPS.len()],
+                            Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
                             None => STEPS[0],
                         };
                         self.config.update_ms = next;
@@ -692,7 +726,7 @@ impl App {
                     SettingsAction::CycleGraphSymbol => {
                         const SYMBOLS: &[&str] = &["braille", "block", "dot"];
                         let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol) {
-                            Some(i) => SYMBOLS[(i + 1) % SYMBOLS.len()],
+                            Some(i) => SYMBOLS[cycle_index(i, SYMBOLS.len(), self.ui.last_cycle_direction)],
                             None => SYMBOLS[0],
                         };
                         self.config.graph_symbol = next.to_string();
@@ -706,7 +740,7 @@ impl App {
                     SettingsAction::CycleDownloadDirMode => {
                         const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
                         let next = match MODES.iter().position(|&m| m == self.config.download_dir_mode) {
-                            Some(i) => MODES[(i + 1) % MODES.len()],
+                            Some(i) => MODES[cycle_index(i, MODES.len(), self.ui.last_cycle_direction)],
                             None => MODES[0],
                         };
                         self.config.download_dir_mode = next.to_string();
@@ -723,7 +757,7 @@ impl App {
                     SettingsAction::CycleDownloadSpeedLimit => {
                         const STEPS: &[u32] = &[0, 128, 256, 512, 1024, 2048, 5120, 10240];
                         let next = match STEPS.iter().position(|&v| v == self.config.download_speed_limit_kbps) {
-                            Some(i) => STEPS[(i + 1) % STEPS.len()],
+                            Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
                             None => STEPS[0],
                         };
                         self.config.download_speed_limit_kbps = next;
@@ -732,7 +766,7 @@ impl App {
                     SettingsAction::CycleUploadSpeedLimit => {
                         const STEPS: &[u32] = &[0, 64, 128, 256, 512, 1024, 2048, 5120];
                         let next = match STEPS.iter().position(|&v| v == self.config.upload_speed_limit_kbps) {
-                            Some(i) => STEPS[(i + 1) % STEPS.len()],
+                            Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
                             None => STEPS[0],
                         };
                         self.config.upload_speed_limit_kbps = next;
@@ -968,14 +1002,7 @@ impl App {
 
         let username = username.to_string();
         let password = password.to_string();
-        // If "Save cookies" is off, don't pass a cookie file path through
-        // at all -- ensure_logged_in only persists cookies to disk when it
-        // has somewhere to write them.
-        let cookie_file = if self.config.save_cookies {
-            self.args.cookie_file.clone()
-        } else {
-            None
-        };
+        let cookie_file = self.resolve_cookie_file();
         let event_tx_login = self.event_handler.sender();
         let event_tx_result = self.event_handler.sender();
         let log = Arc::new(move |msg: &str| { let _ = event_tx_login.send(Event::StreamLog(msg.to_string())); });
@@ -1046,7 +1073,7 @@ impl App {
                     // If "Save cookies" is off, don't pass a cookie file
                     // path through at all -- see do_login for the same
                     // gating.
-                    let cookie_file = if self.config.save_cookies { self.args.cookie_file.clone() } else { None };
+                    let cookie_file = self.resolve_cookie_file();
                     let username = self.args.username.clone();
                     let password = self.args.password.clone();
                     let saved_creds = crate::credentials::load_credentials();

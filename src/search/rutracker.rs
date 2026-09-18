@@ -262,13 +262,25 @@ impl RutrackerSearcher {
 
         if still_on_login {
             log("AUTH LOGIN: form.submit() didn't navigate, trying direct POST...");
+            // Build FormData FROM the real <form> element rather than from
+            // scratch: a hand-built FormData with only login_username/
+            // login_password/login silently drops any other field the
+            // real form has -- most notably a hidden CSRF/anti-bot token,
+            // which a server-side form-token check would reject with no
+            // visible error, indistinguishable from "wrong credentials".
+            // Grabbing every field the form actually has and only
+            // overriding the two we need to fill in is robust to that
+            // regardless of what the token field happens to be named.
             let post_script = format!(
                 r#"(() => {{
-                    const fd = new FormData();
-                    fd.append('login_username', '{}');
-                    fd.append('login_password', '{}');
-                    fd.append('login', 'Вход');
-                    fetch('https://rutracker.org/forum/login.php', {{
+                    const form = document.querySelector("input[name='login_username']")?.closest('form');
+                    if (!form) return 'no_form_found';
+                    const fd = new FormData(form);
+                    fd.set('login_username', '{}');
+                    fd.set('login_password', '{}');
+                    if (!fd.has('login')) fd.set('login', 'Вход');
+                    const action = form.action || 'https://rutracker.org/forum/login.php';
+                    fetch(action, {{
                         method: 'POST',
                         body: fd,
                         credentials: 'same-origin',
@@ -278,7 +290,7 @@ impl RutrackerSearcher {
                         document.write(html);
                         document.close();
                     }});
-                    return 'posting...';
+                    return 'posting fields=' + Array.from(fd.keys()).join(',');
                 }})()"#,
                 username_escaped, password_escaped
             );
