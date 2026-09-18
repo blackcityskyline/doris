@@ -645,7 +645,7 @@ impl App {
                         self.ui.detail_log_mode = true;
                     }
                     SettingsAction::RunHealthCheck => {
-                        let results = self.ui.health_check();
+                        let results = self.ui.health_check().await;
                         self.ui.modal = Modal::HealthCheck(results);
                     }
                     SettingsAction::CycleTheme => {
@@ -918,6 +918,14 @@ impl App {
             KeyCode::Enter => {
                 if let Some(query) = self.ui.submit_search() {
                     self.start_search(query).await;
+                } else if self.ui.source_changed {
+                    // Source was just switched via `]` or click — re-search
+                    // with the new source instead of playing a torrent.
+                    self.ui.source_changed = false;
+                    if let Some(ref q) = self.ui.search_query.clone() {
+                        let query = q.clone();
+                        self.start_search(query).await;
+                    }
                 } else if let Some(_idx) = self.ui.submit_selection() {
                     self.spawn_stream().await;
                 }
