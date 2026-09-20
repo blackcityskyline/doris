@@ -67,13 +67,63 @@ impl RutorSearcher {
         let encoded = urlencoding::encode(query);
         let url = format!("{}/search/{}/0/000/0/{}", Self::BASE, page, encoded);
 
-        let html = self.client.get(&url).send().await?.text().await?;
+        // Headers beyond User-Agent: some sites gate on Accept/Referer
+        // too, and a request missing everything a real browser always
+        // sends is an easy bot-detection signal. Logged unconditionally
+        // to crate::log (~/.local/share/doris/doris.log) since the
+        // Source trait's search_page has no log-callback parameter to
+        // surface this in the UI's own Detailed Log panel the way
+        // Rutracker's AUTH steps do -- if this ever returns zero results
+        // again, that file is the first thing to check.
+        let response = self.client.get(&url)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Referer", Self::BASE)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let html = response.text().await?;
+        let matched = count_title_links(&html);
+
+        crate::log::log("rutor", &format!(
+            "GET {} -> status={} body_len={} title_links={}",
+            url, status, html.len(), matched,
+        ));
+
+        if !status.is_success() {
+            // Parsing an error/challenge page always finds zero results;
+            // say so explicitly instead of silently returning an empty
+            // Vec indistinguishable from "no matches for this query".
+            anyhow::bail!("rutor returned HTTP {} for {}", status, url);
+        }
+
+        if matched == 0 && html.len() < 2000 {
+            // A real rutor search results page is large (many rows); a
+            // tiny response on a 2xx status is a strong sign of a
+            // challenge/interstitial page rather than genuinely zero
+            // matches. Log a snippet so the actual page content (rather
+            // than just its length) is on hand next time this happens.
+            let snippet: String = html.chars().take(500).collect();
+            crate::log::log("rutor", &format!("suspiciously small body, first 500 chars: {}", snippet));
+        }
+
         Ok(parse_results(&html))
     }
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let bytes = self.client.get(url).send().await?.bytes().await?;
         Ok(bytes.to_vec())
+    }
+}
+
+/// Quick standalone count of title-link matches, used only to log
+/// diagnostics in `search_page` before the full (row-by-row) parse runs.
+pub fn count_title_links(html: &str) -> usize {
+    let document = Html::parse_document(html);
+    match Selector::parse(r#"a[href^="/torrent/"]"#) {
+        Ok(sel) => document.select(&sel).count(),
+        Err(_) => 0,
     }
 }
 
