@@ -1,4 +1,4 @@
-use doris::search::rutor::parse_results;
+use doris::search::rutor::{parse_results, count_title_links};
 
 // A reconstructed snippet matching the row shape confirmed by fetching a
 // live rutor.org search results page while writing the parser (see the
@@ -115,4 +115,19 @@ fn test_duplicate_torrent_link_in_same_row_only_counted_once() {
 fn test_non_numeric_torrent_id_is_ignored() {
     let bad = r#"<table><tr><td><a href="/torrent/abc">Not a real id</a></td></tr></table>"#;
     assert!(parse_results(bad).is_empty());
+}
+
+#[test]
+fn test_count_title_links_matches_parse_results_count_on_valid_rows() {
+    assert_eq!(count_title_links(SAMPLE_ROW), 2);
+    assert_eq!(count_title_links(SAMPLE_ROW), parse_results(SAMPLE_ROW).len());
+}
+
+#[test]
+fn test_count_title_links_zero_on_challenge_or_error_page() {
+    // Simulates what search_page's diagnostic check is looking for: a
+    // non-search-results page (e.g. a block/challenge page) has no
+    // /torrent/ links at all.
+    let challenge_page = "<html><body><h1>Access denied</h1><p>Please verify you are human.</p></body></html>";
+    assert_eq!(count_title_links(challenge_page), 0);
 }
