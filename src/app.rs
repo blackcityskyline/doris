@@ -1122,9 +1122,18 @@ impl App {
 
             if let Some(task) = rutor_task {
                 match task.await {
-                    Ok(Ok(mut items)) => combined.append(&mut items),
-                    Ok(Err(e)) => last_err = Some(format!("rutor: {}", e)),
-                    Err(e) => last_err = Some(format!("rutor: {}", e)),
+                    Ok(Ok(items)) => {
+                        let _ = event_tx_result.send(Event::StreamLog(format!("rutor: {} results", items.len())));
+                        combined.extend(items);
+                    }
+                    Ok(Err(e)) => {
+                        let _ = event_tx_result.send(Event::StreamLog(format!("rutor: {}", e)));
+                        last_err = Some(format!("rutor: {}", e));
+                    }
+                    Err(e) => {
+                        let _ = event_tx_result.send(Event::StreamLog(format!("rutor: task error: {}", e)));
+                        last_err = Some(format!("rutor: {}", e));
+                    }
                 }
             }
             if let Some(task) = rutracker_task {
