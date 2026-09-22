@@ -1287,7 +1287,7 @@ impl App {
         // TODO(Phase 3): this should come from the active Source
         // (`Source::home_url()`) once the Source trait lands, instead of
         // being rutracker-specific here.
-        let browser = Browser::launch(&path, self.browser_visibility, RutrackerSearcher::HOME_URL).await?;
+        let browser = Browser::launch(&path, self.browser_visibility, RutrackerSearcher::HOME_URL, self.config.close_browser_on_exit).await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 
