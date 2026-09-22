@@ -173,11 +173,17 @@ impl TorrServer {
         );
 
         let player_name = player.unwrap_or("mpv");
-        let child = tokio::process::Command::new(player_name)
-            .arg(&stream_url)
+        let mut cmd = tokio::process::Command::new(player_name);
+        cmd.arg(&stream_url)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+            .stderr(std::process::Stdio::piped());
+
+        // Start the player in its own process group so it survives doris
+        // exiting (no SIGHUP propagation from the terminal).
+        #[cfg(unix)]
+        cmd.process_group(0);
+
+        let child = cmd.spawn()
             .map_err(|e| anyhow::anyhow!("Failed to launch {}: {}", player_name, e))?;
 
         Ok(child)
