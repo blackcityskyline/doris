@@ -1,4 +1,4 @@
-use doris::search::rutor::{parse_results, count_title_links};
+use doris::search::rutor::{count_title_links, parse_results, split_query, title_has_word};
 
 // A reconstructed snippet matching the row shape confirmed by fetching a
 // live rutor.org search results page while writing the parser (see the
@@ -130,4 +130,110 @@ fn test_count_title_links_zero_on_challenge_or_error_page() {
     // /torrent/ links at all.
     let challenge_page = "<html><body><h1>Access denied</h1><p>Please verify you are human.</p></body></html>";
     assert_eq!(count_title_links(challenge_page), 0);
+}
+
+// Row markup taken from a live rutor.org results page fetched while
+// fixing the zero-results bug (indentation trimmed and the decorative
+// `class` attributes dropped to fit the line limit -- neither matters to
+// the parser): the counts are wrapped as `alt="S">&nbsp;0` and
+// `alt="L"><span class="red">&nbsp;0</span>`, which is what the old
+// `\s*`-based seed regex failed to match (seeds used to come back empty
+// on every real result). The `<table>` wrapper is required, not
+// decoration: html5ever drops a bare `<tr>` outside a table, which would
+// make `enclosing_row_html` find no row at all.
+const LIVE_ROW: &str = r#"
+<table><tbody>
+  <tr class="gai">
+    <td>22 Сен 25</td>
+    <td colspan="2">
+      <a href="https://rutor.org/download/1054060"><img src="/d.gif" alt="D"></a>
+      <a href="https://rutor.org/magnet/1054060"><img src="/m.png" alt="M"></a>
+      <a href="/torrent/1054060">Sleepwell Citizen - This Is Only A Test (2025)</a>
+    </td>
+    <td align="right">528.42 MB</td>
+    <td align="center" class="nowrap">
+      <span class="green"><img src="/arrowup.gif" alt="S">&nbsp;42</span>
+      &nbsp;<img src="/arrowdown.gif" alt="L"><span class="red">&nbsp;7</span>
+    </td>
+  </tr>
+</tbody></table>
+"#;
+
+#[test]
+fn test_parses_live_row_shape() {
+    let items = parse_results(LIVE_ROW);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Sleepwell Citizen - This Is Only A Test (2025)");
+    assert_eq!(items[0].size, "528.42 MB");
+    assert_eq!(items[0].date, "22 Сен 25");
+    assert_eq!(items[0].download_url, "https://rutor.org/download/1054060");
+}
+
+#[test]
+fn test_extracts_seeds_from_live_nbsp_markup() {
+    // The regression this whole investigation started from: seeds were
+    // empty on every real row because the digits sit behind `&nbsp;`.
+    let items = parse_results(LIVE_ROW);
+    assert_eq!(items[0].seeds, "42");
+}
+
+#[test]
+fn test_split_query_drops_stopwords_and_short_words() {
+    let (kept, dropped) = split_query("world war z");
+    assert_eq!(kept, vec!["world", "war"]);
+    assert_eq!(dropped, vec!["z"]);
+
+    let (kept, dropped) = split_query("the Matrix");
+    assert_eq!(kept, vec!["Matrix"]);
+    assert_eq!(dropped, vec!["the"]);
+
+    let (kept, dropped) = split_query("i am legend");
+    assert_eq!(kept, vec!["legend"]);
+    assert_eq!(dropped, vec!["i", "am"]);
+}
+
+#[test]
+fn test_split_query_keeps_normal_queries_untouched() {
+    let (kept, dropped) = split_query("Blade Runner 2049");
+    assert_eq!(kept, vec!["Blade", "Runner", "2049"]);
+    assert!(dropped.is_empty());
+}
+
+#[test]
+fn test_split_query_trims_attached_punctuation() {
+    let (kept, dropped) = split_query("the, matrix!");
+    assert_eq!(kept, vec!["matrix"]);
+    assert_eq!(dropped, vec!["the"]);
+}
+
+#[test]
+fn test_split_query_punctuation_only_word_is_dropped_not_kept() {
+    // A stray "-" must not survive into the relaxed query.
+    let (kept, dropped) = split_query("matrix -");
+    assert_eq!(kept, vec!["matrix"]);
+    assert_eq!(dropped, vec![""]);
+}
+
+#[test]
+fn test_split_query_all_words_dropped_yields_empty_kept() {
+    // Callers must check `kept`: nothing left to search with.
+    let (kept, dropped) = split_query("it");
+    assert!(kept.is_empty());
+    assert_eq!(dropped, vec!["it"]);
+}
+
+#[test]
+fn test_title_has_word_matches_whole_words_only() {
+    assert!(title_has_word("Матрица / The Matrix (1999)", "the"));
+    assert!(title_has_word("Матрица / The Matrix (1999)", "Matrix"));
+    assert!(title_has_word("Матрица / The Matrix (1999)", "matrix"));
+    assert!(!title_has_word("Theatre (2020)", "the"));
+    assert!(!title_has_word("Матрица (1999)", "the"));
+    assert!(title_has_word("World War Z (2013)", "z"));
+    assert!(!title_has_word("World Zoo (2013)", "z"));
+}
+
+#[test]
+fn test_title_has_word_empty_word_never_matches() {
+    assert!(!title_has_word("Anything", ""));
 }
