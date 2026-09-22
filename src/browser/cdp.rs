@@ -111,9 +111,6 @@ impl Browser {
             "--no-first-run".into(),
             "--no-default-browser-check".into(),
             "--disable-infobars".into(),
-            "--disable-background-timer-throttling".into(),
-            "--disable-backgrounding-occluded-windows".into(),
-            "--disable-renderer-backgrounding".into(),
             "--lang=ru-RU".into(),
         ];
 
