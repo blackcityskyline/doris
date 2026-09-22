@@ -40,6 +40,7 @@ pub struct Browser {
     child: Option<std::process::Child>,
     temp_profile: Option<PathBuf>,
     xvfb_child: Option<std::process::Child>,
+    close_on_drop: bool,
 }
 
 impl Browser {
@@ -48,7 +49,7 @@ impl Browser {
     /// profile — it must be a page on the same domain those cookies belong
     /// to. Callers pass the active search source's home page; this module
     /// stays source-agnostic on purpose (see ROADMAP.md Phase 3).
-    pub async fn launch(binary: &Path, mode: BrowserVisibility, cookie_injection_url: &str) -> Result<Self> {
+    pub async fn launch(binary: &Path, mode: BrowserVisibility, cookie_injection_url: &str, close_on_drop: bool) -> Result<Self> {
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
@@ -151,6 +152,7 @@ impl Browser {
             child: Some(child),
             temp_profile: if mode == BrowserVisibility::Hidden { temp_profile } else { None },
             xvfb_child,
+            close_on_drop,
         };
 
         if !injected_cookies.is_empty() {
@@ -228,11 +230,13 @@ impl Browser {
 
 impl Drop for Browser {
     fn drop(&mut self) {
-        if let Some(ref mut child) = self.child {
-            let _ = child.kill();
-        }
-        if let Some(ref mut xvfb) = self.xvfb_child {
-            let _ = xvfb.kill();
+        if self.close_on_drop {
+            if let Some(ref mut child) = self.child {
+                let _ = child.kill();
+            }
+            if let Some(ref mut xvfb) = self.xvfb_child {
+                let _ = xvfb.kill();
+            }
         }
         if let Some(ref path) = self.temp_profile {
             crate::log::log("browser", &format!("cleanup temp profile {}", path.display()));

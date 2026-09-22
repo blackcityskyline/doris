@@ -34,6 +34,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         &path,
         visibility,
         doris::search::rutracker::RutrackerSearcher::HOME_URL,
+        true,
     ).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
