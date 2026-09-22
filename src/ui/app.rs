@@ -404,14 +404,21 @@ impl App {
                     self.source_changed = true;
                     return None;
                 }
-                // -1 for the border, -1 for the source-tab row above the
-                // table's own header row.
+                // -1 for the panel border: `table_row` is the 0-based line
+                // inside the Results panel -- 0 = source-tab row, 1 = the
+                // table's own header row, 2+ = data rows. This must stay in
+                // lockstep with render_results_zone's Layout (tabs / table /
+                // hints); 038c859 added the tab row and subtracted its line
+                // here but left `data_row`'s own -1, so every click used to
+                // select the row *below* the one under the cursor and a
+                // click on the header selected the first item.
                 let table_row = row.saturating_sub(area.y).saturating_sub(1);
-                if table_row == 0 {
-                    // Header row ("Seeds  Size ..."), not a data row.
+                if table_row < 2 {
+                    // Tab row (outside any tab label) or header row
+                    // ("Seeds  Size ..."): not a data row.
                     return None;
                 }
-                let data_row = (table_row - 1) as usize;
+                let data_row = (table_row - 2) as usize;
                 if let Some(&idx) = self.filtered_indices.get(data_row) {
                     self.selected = idx;
                 }
