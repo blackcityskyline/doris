@@ -1,6 +1,27 @@
-use doris::app::{cycle_index, resolve_cookie_file};
+use doris::app::{cycle_index, resolve_cookie_file, source_needs_browser};
 use doris::config::Config;
 use std::path::PathBuf;
+
+// --- source_needs_browser (fixes B0.1: streaming ignored item.source) -------
+
+#[test]
+fn test_rutor_rows_do_not_need_the_browser() {
+    assert!(!source_needs_browser("rutor"));
+}
+
+#[test]
+fn test_rutracker_rows_need_the_browser() {
+    assert!(source_needs_browser("rutracker"));
+}
+
+#[test]
+fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
+    // Results fetched before the `source` field existed deserialize to "",
+    // and any future browser-backed source should default to the same
+    // client the old hardcoded path always used.
+    assert!(source_needs_browser(""));
+    assert!(source_needs_browser("1337x"));
+}
 
 // --- cycle_index (fixes: Left/Right in Options both cycling forward) -----
 

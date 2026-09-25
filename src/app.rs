@@ -53,6 +53,15 @@ pub fn cycle_index(pos: usize, len: usize, direction: i8) -> usize {
     }
 }
 
+/// Whether fetching this source's `.torrent` files needs the browser-backed
+/// rutracker searcher. Rutor is plain unauthenticated HTTP; everything else
+/// -- including rows produced before the `source` field existed -- routes
+/// through the browser, which is what the old hardcoded path did. Extracted
+/// as a free function so tests can pin the routing choice (B0.1).
+pub fn source_needs_browser(source: &str) -> bool {
+    source != "rutor"
+}
+
 /// Resolve the cookie file path used for Rutracker login, or `None` if
 /// "Save cookies" is off. `cli_override` is `Args.cookie_file` (the
 /// `--cookie-file` flag) which takes priority when given; otherwise falls
@@ -480,6 +489,29 @@ impl App {
     /// actually produced it -- `TorrentItem.source` matters here because
     /// the "all" Results tab can mix rows from more than one source at
     /// once, each needing a different download client.
+    /// Fetch a result's `.torrent` bytes from the client that actually owns
+    /// it, instead of always going through rutracker's browser session --
+    /// which for a rutor row either failed ("No browser session") or fetched
+    /// `rutor.org/download/...` cross-origin from a rutracker page (B0.1).
+    /// Shared by `spawn_stream` and `download_selected_to_disk`.
+    ///
+    /// `searcher` is only required for browser-backed sources: pass `None`
+    /// for plain-HTTP ones, so this can never trigger a browser launch that
+    /// the download doesn't actually need.
+    async fn download_bytes_for(
+        item: &crate::search::models::TorrentItem,
+        searcher: Option<Arc<Mutex<RutrackerSearcher>>>,
+    ) -> Result<Vec<u8>> {
+        if source_needs_browser(&item.source) {
+            let searcher = searcher
+                .ok_or_else(|| anyhow::anyhow!("No browser session - search first"))?;
+            let searcher = searcher.lock().await;
+            searcher.download_torrent(&item.download_url).await
+        } else {
+            RutorSearcher::new().download_torrent(&item.download_url).await
+        }
+    }
+
     async fn download_selected_to_disk(&mut self) {
         let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
             self.ui.add_log("No result selected to download.");
@@ -493,18 +525,16 @@ impl App {
 
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
 
-        let bytes_result: Result<Vec<u8>> = if item.source == "rutor" {
-            RutorSearcher::new().download_torrent(&item.download_url).await
-        } else {
-            // Default to rutracker (also covers legacy/empty `source`
-            // values from results fetched before this field existed).
+        // Only browser-backed sources get a searcher here: asking for one
+        // launches the browser if it isn't up yet, and a rutor download
+        // must not do that.
+        let bytes_result: Result<Vec<u8>> = if source_needs_browser(&item.source) {
             match self.get_searcher().await {
-                Ok(searcher) => {
-                    let searcher = searcher.lock().await;
-                    searcher.download_torrent(&item.download_url).await
-                }
+                Ok(searcher) => Self::download_bytes_for(&item, Some(searcher)).await,
                 Err(e) => Err(e),
             }
+        } else {
+            Self::download_bytes_for(&item, None).await
         };
 
         match bytes_result {
@@ -1224,16 +1254,21 @@ impl App {
         let item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
 
-        let browser_present = self.browser.is_some();
-        if !browser_present {
-            self.ui.add_log("No browser session - search first");
-            return;
-        }
-        let searcher = match self.get_searcher().await {
-            Ok(s) => s,
-            Err(e) => {
-                self.ui.add_log(&format!("Browser error: {}", e));
+        // Only browser-backed rows require a running session; a rutor row
+        // plays straight over plain HTTP (B0.1).
+        let searcher = if !source_needs_browser(&item.source) {
+            None
+        } else {
+            if self.browser.is_none() {
+                self.ui.add_log("No browser session - search first");
                 return;
+            }
+            match self.get_searcher().await {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    self.ui.add_log(&format!("Browser error: {}", e));
+                    return;
+                }
             }
         };
 
@@ -1251,9 +1286,7 @@ impl App {
                 return;
             }
 
-            let searcher = searcher.lock().await;
-
-            match searcher.download_torrent(&item.download_url).await {
+            match Self::download_bytes_for(&item, searcher).await {
                 Ok(bytes) => {
                     log(&format!("Downloaded {} bytes", bytes.len()));
                     match torrserver.upload_torrent(&bytes, &item.title).await {
