@@ -188,15 +188,46 @@ async fn test_pause_succeeds_on_200() {
     handle.abort();
 }
 
+// A refusal has to reach the caller, not vanish: these three methods
+// used to check only that the request went out, and the app's log then
+// said "Torrent removed." for a torrent that was still in TorrServer's
+// list (seen live on 25.09.2026). One test per method, since they are
+// three separate `torrents_action` calls that each forgot to look.
+
 #[tokio::test]
-async fn test_pause_does_not_error_on_non_2xx() {
-    // Documents current behavior: pause()/remove() only propagate an
-    // Err for transport-level failures (connection refused, timeout),
-    // not HTTP error statuses -- reqwest doesn't treat 4xx/5xx as Err
-    // unless .error_for_status() is called, which these methods don't.
+async fn test_pause_reports_a_refused_status_instead_of_success() {
+    let (url, handle) =
+        spawn_mock_server("HTTP/1.1 500 Internal Server Error", r#"{"error":"busy"}"#).await;
+    let client = TorrServer::new(&url);
+    let err = client.pause("somehash").await.expect_err("500 must be an Err");
+    let msg = err.to_string();
+    assert!(msg.contains("pause"), "which call failed is lost: {}", msg);
+    assert!(msg.contains("500"), "the status is lost: {}", msg);
+    assert!(msg.contains("busy"), "the server's reason is lost: {}", msg);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn test_resume_reports_a_refused_status_instead_of_success() {
+    // 404 rather than 500 so both codes stay covered: a resume the
+    // server does not honour is a failed resume either way.
+    let (url, handle) = spawn_mock_server("HTTP/1.1 404 Not Found", "{}").await;
+    let client = TorrServer::new(&url);
+    let err = client.resume("x").await.expect_err("404 must be an Err");
+    let msg = err.to_string();
+    assert!(msg.contains("resume"), "which call failed is lost: {}", msg);
+    assert!(msg.contains("404"), "the status is lost: {}", msg);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn test_remove_reports_a_refused_status_instead_of_success() {
     let (url, handle) = spawn_mock_server("HTTP/1.1 500 Internal Server Error", "{}").await;
     let client = TorrServer::new(&url);
-    assert!(client.pause("somehash").await.is_ok());
+    let err = client.remove("somehash").await.expect_err("500 must be an Err");
+    let msg = err.to_string();
+    assert!(msg.contains("remove"), "which call failed is lost: {}", msg);
+    assert!(msg.contains("500"), "the status is lost: {}", msg);
     handle.abort();
 }
 
