@@ -91,6 +91,34 @@ pub fn parse_size(s: &str) -> u64 {
     normalized.trim().parse::<u64>().unwrap_or(0)
 }
 
+/// torio's `unescapeEntities` from `rss.ts`, in the same order: `&amp;`
+/// first, then the typographic pairs, then the angle brackets. nyaa's
+/// titles carry `&#39;`, `&#34;`, `&amp;` and `&gt;` live -- all four
+/// are in this table; anything outside it (say `&#8230;`) survives as
+/// written rather than being guessed at.
+///
+/// It lives here rather than inside `nyaa.rs` because decoding markup
+/// entities is not an RSS concern: nnmclub serves the same escapes from
+/// an HTML table (wave 3), and a second copy of this order would be a
+/// second place for the `&amp;`-before-`&lt;` sequencing to drift.
+pub fn unescape_entities(input: &str) -> String {
+    input
+        .replace("&#038;", "&")
+        .replace("&amp;", "&")
+        .replace("&#8211;", "-")
+        .replace("&#8212;", "-")
+        .replace("&#8217;", "'")
+        .replace("&#039;", "'")
+        .replace("&apos;", "'")
+        .replace("&#8220;", "\"")
+        .replace("&#8221;", "\"")
+        .replace("&quot;", "\"")
+        .replace("&#34;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
 /// The display string for a source that hands us bytes rather than a
 /// pre-rendered size (the JSON API sources, B8 wave 1) -- a port of
 /// torio's `formatBytes`, kept byte-for-byte compatible with it: step
