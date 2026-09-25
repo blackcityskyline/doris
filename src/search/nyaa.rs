@@ -35,7 +35,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::format::{format_bytes, format_date, parse_size};
+use super::format::{format_bytes, format_date, parse_size, unescape_entities};
 use super::magnet::{build_magnet, is_info_hash, normalize_info_hash};
 use super::models::TorrentItem;
 use super::net::{FetchOptions, browser_client, fetch_resilient};
@@ -107,29 +107,6 @@ fn tag(item: &str, name: &str) -> Option<String> {
     let inner = inner.strip_prefix("<![CDATA[").unwrap_or(inner);
     let inner = inner.strip_suffix("]]>").unwrap_or(inner);
     Some(inner.trim().to_string())
-}
-
-/// torio's `unescapeEntities` from `rss.ts`, in the same order: `&amp;`
-/// first, then the typographic pairs, then the angle brackets. nyaa's
-/// titles carry `&#39;`, `&#34;`, `&amp;` and `&gt;` live -- all four
-/// are in this table; anything outside it (say `&#8230;`) survives as
-/// written rather than being guessed at.
-pub fn unescape_entities(input: &str) -> String {
-    input
-        .replace("&#038;", "&")
-        .replace("&amp;", "&")
-        .replace("&#8211;", "-")
-        .replace("&#8212;", "-")
-        .replace("&#8217;", "'")
-        .replace("&#039;", "'")
-        .replace("&apos;", "'")
-        .replace("&#8220;", "\"")
-        .replace("&#8221;", "\"")
-        .replace("&quot;", "\"")
-        .replace("&#34;", "\"")
-        .replace("&#39;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
 }
 
 /// `nyaa:categoryId` -> the group the row may claim. `1_*` is the

@@ -13,8 +13,9 @@ use std::time::{Duration, Instant};
 
 use doris::search::models::TorrentItem;
 use doris::search::net::fetch_resilient;
+use doris::search::format::unescape_entities;
 use doris::search::nyaa::{
-    NyaaSearcher, fetch_options, feed_url, parse_items, to_page, unescape_entities,
+    NyaaSearcher, fetch_options, feed_url, parse_items, to_page,
 };
 use doris::search::source::{Group, SearchRequest, Source};
 
