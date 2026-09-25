@@ -1,6 +1,7 @@
 use doris::config::Config;
 use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv};
 use doris::search::rutor::RutorSearcher;
+use doris::search::x1337x::X1337xSearcher;
 use doris::ui::app::{SettingsAction, source_settings_items};
 
 #[test]
@@ -14,7 +15,9 @@ fn test_rutracker_and_rutor_are_registered_and_implemented() {
 
 #[test]
 fn test_future_sources_are_listed_but_not_implemented() {
-    for id in ["1337x", "torentino"] {
+    // 1337x used to live here too, and wave 3 moved it out (B8): the
+    // list is what a planned id is, not what it stays one.
+    for id in ["torentino"] {
         let source = KNOWN_SOURCES.iter().find(|s| s.id == id);
         assert!(source.is_some(), "{} should be listed as a planned source", id);
         assert!(!source.unwrap().implemented, "{} should not be marked implemented yet", id);
@@ -79,19 +82,22 @@ fn test_only_browser_backed_sources_ask_for_a_browser() {
     // `requires_browser` is what makes the orchestrator skip
     // `Browser::launch` entirely for plain-HTTP sources (and what B0.1's
     // `source_needs_browser` ends up backed by). Rutracker is the only
-    // source that constructs a browser today.
+    // source that constructs a browser today -- 1337x used to be listed
+    // beside it on the strength of three mirrors answering 403, and wave
+    // 3 took it off (B8): the fourth mirror answers every path, so the
+    // challenge is those mirrors' business, not a session it lacks.
     let browser_backed: Vec<&str> = KNOWN_SOURCES
         .iter()
         .filter(|s| s.requires_browser)
         .map(|s| s.id)
         .collect();
-    assert_eq!(browser_backed, vec!["rutracker", "1337x"]);
+    assert_eq!(browser_backed, vec!["rutracker"]);
+    assert!(!source::get_source("1337x").unwrap().requires_browser);
     // A planned source still declares how its host behaves, because
     // that is what the flag is about: probed 25.09.2026 with a browser
-    // UA, 1337x answered 403 to a plain client and torentino answered
-    // 200 with its front page. What holds either claim back is that
-    // nothing builds them, so neither can route a request today.
-    assert!(source::get_source("1337x").unwrap().requires_browser);
+    // UA, torentino answered 200 with its front page. What holds the
+    // claim back is that nothing builds it, so it cannot route a
+    // request today.
     assert!(!source::get_source("torentino").unwrap().requires_browser);
 }
 
@@ -108,6 +114,21 @@ fn test_registry_metadata_matches_the_buildable_implementation() {
     assert_eq!(rutor.home_url(), info.home_url);
     assert_eq!(rutor.requires_browser(), info.requires_browser);
     assert!(!rutor.requires_browser());
+
+    // 1337x is constructible offline too, so its row gets the same
+    // treatment -- and this is the flip wave 3 is made of: implemented,
+    // no browser, four groups, one home URL that is not the mirror the
+    // probes found answering.
+    let x = X1337xSearcher::new();
+    let info = source::get_source("1337x").expect("1337x must be registered");
+    assert_eq!(x.id(), info.id);
+    assert_eq!(x.label(), info.label);
+    assert_eq!(x.groups(), info.groups);
+    assert_eq!(x.home_url(), info.home_url);
+    assert_eq!(x.requires_browser(), info.requires_browser);
+    assert!(!x.requires_browser());
+    assert!(info.implemented);
+    assert!(!x.supports_browse() || !info.groups.is_empty(), "browse says something");
     assert!(!rutor.supports_browse(), "browse mode is B9, not built yet");
 }
 

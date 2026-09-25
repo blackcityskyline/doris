@@ -29,6 +29,7 @@ use super::nnmclub::NnmclubSearcher;
 use super::nyaa::NyaaSearcher;
 use super::subsplease::SubsPleaseSearcher;
 use super::tpb::TpbSearcher;
+use super::x1337x::X1337xSearcher;
 use super::yts::YtsSearcher;
 
 /// Content categories a source can attribute its results to. Declared
@@ -203,6 +204,12 @@ const NNMCLUB_GROUPS: &[Group] =
 
 /// EZTV is TV-only, and its rows say `Group::TV` to match (B8 wave 1).
 const EZTV_GROUPS: &[Group] = &[Group::TV];
+
+/// 1337x's site sections that map onto a `Group`, declared when wave 3
+/// landed it as implemented (B8 wave 3). Music, Documentaries,
+/// Applications, Other and XXX map onto none and are queried without a
+/// group; rows claim none of them either -- see `x1337x`'s module doc.
+const X1337X_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 #[async_trait]
 impl Source for RutrackerSearcher {
@@ -399,27 +406,34 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         requires_browser: false,
         home_url: NnmclubSearcher::HOME_URL,
     },
-    // Wave 3's two remaining sources, listed before they exist for the
-    // same reason nnmclub was: an id the registry knows about is an id
-    // the migration, the Options rows and the tab bar all agree on
-    // before any code claims to serve it. `groups` stays empty -- a
-    // group is a claim about rows nobody has parsed yet.
+    // 1337x's row has been in the registry since before it existed
+    // (an id the registry knows about is an id the migration, the
+    // Options rows and the tab bar all agree on) and wave 3 filled it
+    // in: `implemented`, four groups, and `requires_browser: false`.
     //
-    // `requires_browser` is a claim about the *host*, and both hosts
-    // were probed on 25.09.2026 with the same browser UA: 1337x
-    // answered 403 to a plain client (so `true`, the conservative
-    // side, which is also what `requires_browser()` falls back to for
-    // an unknown id), torentino answered 200 with its front page (so
-    // `false`). Neither has ever been run through `build_source`, so
-    // neither flag can route a real request today.
+    // That flag is a claim about the *host*, and this one was wrong
+    // for a while because only half the mirrors had been probed. The
+    // probes of 25.09.2026, same browser UA, came back split: three
+    // of torio's four hosts answer 403 with a Cloudflare JS challenge
+    // to a plain client, while `1337xx.to` 301s to
+    // `www.1337xx.to` and answers 200 on every path checked. The
+    // challenge is those mirrors' business, not a session this source
+    // is missing -- `x1337x`'s module doc keeps the evidence, and its
+    // `HOSTS` const keeps the answering mirror first.
     SourceInfo {
         id: "1337x",
         label: "1337x",
-        implemented: false,
-        groups: &[],
-        requires_browser: true,
-        home_url: "https://1337x.to",
+        implemented: true,
+        groups: X1337X_GROUPS,
+        requires_browser: false,
+        home_url: X1337xSearcher::HOME_URL,
     },
+    // The last planned id, listed before it exists for the same reason
+    // the others were: `groups` stays empty -- a group is a claim
+    // about rows nobody has parsed yet -- and its `requires_browser`
+    // is the honest `false` the probe of 25.09.2026 showed (200 with
+    // its front page), which is also what the fallback returns for an
+    // unknown id on the *other* side of the question.
     SourceInfo {
         id: "torentino",
         label: "Torentino",
@@ -461,6 +475,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "nyaa" => Ok(Arc::new(NyaaSearcher::new())),
         "nnmclub" => Ok(Arc::new(NnmclubSearcher::new())),
         "eztv" => Ok(Arc::new(EztvSearcher::new())),
+        "1337x" => Ok(Arc::new(X1337xSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
 }
