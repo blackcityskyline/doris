@@ -117,6 +117,29 @@ pub fn source_id_for(item: &crate::search::models::TorrentItem) -> &'static str 
     source::get_source(&item.source).map(|s| s.id).unwrap_or("rutracker")
 }
 
+/// Fill a row's magnet in from the row's own page, for rows that carry
+/// neither a magnet nor a `.torrent` link (1337x, B8 wave 3).
+///
+/// Deliberately at play/download time, not at search time: the link is
+/// only worth a request for a row somebody actually picks, so a search
+/// of 20 rows stays one request instead of torio's fan-out of up to 8
+/// detail pages -- at the price that every one of those 20 rows is
+/// playable, where a fan-out leaves the rest unplayable. Rows that
+/// already carry a magnet or a file never reach the `Source` call, so
+/// the other six sources are not touched by this at all.
+pub async fn fill_missing_magnet(
+    item: &mut crate::search::models::TorrentItem,
+    source: &dyn Source,
+) -> Result<()> {
+    if item.magnet.is_some() || !item.download_url.is_empty() {
+        return Ok(());
+    }
+    if let Some(magnet) = source.resolve_magnet(&item.page_url).await? {
+        item.magnet = Some(magnet);
+    }
+    Ok(())
+}
+
 /// The single log line describing how one source's dispatch ended (B0.3):
 /// `rutor: 42 results` / `rutracker: HTTP 503`.
 ///
@@ -768,6 +791,26 @@ impl App {
         }
 
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
+
+        // A row with neither link nor file (1337x, B8 wave 3) reads its
+        // magnet off its own page -- the one request this download
+        // already costs anyway, and never one per search.
+        let mut item = item;
+        if item.magnet.is_none() && item.download_url.is_empty() {
+            let resolved = match self.get_source(source_id_for(&item)).await {
+                Ok(source) => fill_missing_magnet(&mut item, source.as_ref()).await,
+                Err(e) => Err(e),
+            };
+            if let Err(e) = resolved {
+                self.ui.add_log(&format!("Could not read the magnet link: {}", e));
+                return;
+            }
+            if item.magnet.is_none() {
+                self.ui
+                    .add_log("This row carries no magnet and no .torrent link.");
+                return;
+            }
+        }
 
         // A row with no `.torrent` to fetch (YTS and friends, B8 wave 1)
         // pays its magnet as the file itself: nothing to download, so
@@ -1560,7 +1603,7 @@ impl App {
             self.ui.add_log("No result selected");
             return;
         }
-        let item = self.ui.results[self.ui.selected].clone();
+        let mut item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
 
         // Only browser-backed rows require a session that's already up;
@@ -1595,6 +1638,19 @@ impl App {
             // rejected) falls back to the old path rather than failing
             // the stream: those rows almost always play one way or the
             // other.
+            // A row with neither link nor file (1337x, B8 wave 3) reads
+            // its magnet off its own page, here, on the way to playing
+            // it -- one request for the one row being played.
+            if let Err(e) = fill_missing_magnet(&mut item, source.as_ref()).await {
+                log(&format!("Reading the magnet link failed: {}", e));
+            }
+            if item.magnet.is_none() && item.download_url.is_empty() {
+                let msg = "This row carries no magnet and no .torrent link.";
+                log(msg);
+                let _ = event_tx.send(Event::StreamError(msg.into()));
+                return;
+            }
+
             let mut linked: Option<String> = None;
             if let Some(magnet) = item.magnet.as_deref() {
                 log(&format!("Adding by magnet link: {}", item.title));
@@ -1602,6 +1658,18 @@ impl App {
                     Ok(hash) => {
                         log(&format!("Added by link, hash: {}", hash));
                         linked = Some(hash);
+                    }
+                    Err(e) if item.download_url.is_empty() => {
+                        // Nothing to fall back to: this row's only path
+                        // was the link, and this source has no file.
+                        let msg = format!(
+                            "Magnet add failed ({}), and this row has no .torrent \
+                             to fall back to",
+                            e
+                        );
+                        log(&msg);
+                        let _ = event_tx.send(Event::StreamError(msg));
+                        return;
                     }
                     Err(e) => {
                         log(&format!("Magnet add failed ({}); fetching .torrent instead", e));
