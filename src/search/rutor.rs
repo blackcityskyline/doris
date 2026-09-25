@@ -319,7 +319,14 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     // to come back empty), and the peers variant may skip one wrapper
     // `<span>` before the number. Seeds deliberately don't skip tags so
     // they can never bleed into the leech count that follows.
-    let size_re = Regex::new(r"(\d+(?:[.,]\d+)?)(?:\s|&nbsp;)*(TB|GB|MB|KB)").ok();
+    // Units come in both Latin (`2.27 GB`) and Cyrillic (`2,27 ГБ`)
+    // spellings depending on the row -- the Cyrillic variant used to parse
+    // to an empty size (B0.6). `(?i)` covers lower-case spellings too
+    // (`гб`, `mb`), which the old pattern also missed.
+    let size_re = Regex::new(
+        r"(?i)(\d+(?:[.,]\d+)?)(?:\s|&nbsp;)*(TB|GB|MB|KB|ТБ|ГБ|МБ|КБ)",
+    )
+    .ok();
     let seeds_re = Regex::new(r#"alt="S"[^>]*>(?:\s|&nbsp;)*(\d+)"#).ok();
     let peers_re = Regex::new(r#"alt="L"[^>]*>(?:<[^>]*>|\s|&nbsp;)*(\d+)"#).ok();
     // "07 Сен 25" / "31 Окт 20" style short Russian date, always the very
