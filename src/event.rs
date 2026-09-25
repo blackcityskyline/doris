@@ -8,31 +8,34 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
-    /// Results of one search dispatch, tagged with the `search_generation`
-    /// of the dispatch that produced them so a late answer from a query
-    /// that has since been replaced can be dropped instead of overwriting
-    /// the fresh one (B0.2).
-    SearchComplete {
+    /// One source of `generation` answered: its rows render immediately
+    /// instead of after the slowest source (B3). Tagged with the
+    /// `search_generation` of the dispatch that produced it, so a late
+    /// answer from a query that has since been replaced is dropped
+    /// instead of overwriting the fresh one (B0.2).
+    SourceDone {
+        source: String,
         generation: u64,
-        results: Vec<crate::search::models::TorrentItem>,
-        /// Whether at least one contributing source has another page
-        /// (B2). Replaces app.rs's `count < 50` guess, which only ever
-        /// worked because rutracker happens to page by 50.
+        items: Vec<crate::search::models::TorrentItem>,
+        /// Whether *that* source has another page (B2). `App` remembers
+        /// it per source so "Load more" only asks the ones that do.
         has_more: bool,
+        /// `Some` when the source failed; the message says what happened
+        /// (including "timed out after 25s").
+        error: Option<String>,
+        /// The per-source deadline fired rather than the source's own
+        /// error -- reported so status can distinguish the two.
+        timed_out: bool,
     },
-    /// Same generation tag as [`Event::SearchComplete`]: a stale failure
-    /// must not flip a newer search back to `Idle` or log an error the user
-    /// would attribute to it.
-    SearchError {
-        generation: u64,
-        error: String,
-    },
+    /// Every source of `generation` has reported in (or failed to):
+    /// nothing more will arrive for it, so the UI may go idle. Rows
+    /// already arrived individually via [`Event::SourceDone`].
+    SearchComplete { generation: u64 },
     StreamComplete(String),
     StreamError(String),
     StreamLog(String),
     LoginResult(bool),
     ExtensionQuery(String),
-    LoadMore(String, usize),
     /// Latest full torrent list from TorrServer's poller
     /// (`torrent::Manager`), sent on every poll tick regardless of whether
     /// anything changed -- the receiver decides what (if anything) to
