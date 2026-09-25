@@ -8,6 +8,7 @@ use tokio::sync::{Mutex, mpsc};
 use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
+use crate::search::cache::{CacheKey, SearchCache};
 use crate::search::orchestrator::{self, SourceStatus};
 use crate::search::ordering::{default_order, dedupe_by_hash};
 use crate::search::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
@@ -268,6 +269,9 @@ pub struct App {
     /// rutor pages by 100 and rutracker by 50 -- a shared counter walks
     /// off rutor's page grid and it answers with nothing.
     source_offsets: HashMap<String, usize>,
+    /// Recently fetched pages, consulted before any source is spawned
+    /// (B5): a fresh hit answers immediately, browser and all.
+    cache: Arc<SearchCache>,
     browser_visibility: BrowserVisibility,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
@@ -348,6 +352,7 @@ impl App {
             source_status: HashMap::new(),
             source_has_more: HashMap::new(),
             source_offsets: HashMap::new(),
+            cache: Arc::new(SearchCache::new()),
             browser_visibility,
             search_tx,
             search_rx,
@@ -1396,9 +1401,21 @@ impl App {
             return;
         }
 
+        let tx = self.event_handler.sender();
         let mut tasks: Vec<(&'static str, tokio::task::JoinHandle<()>)> = Vec::new();
 
         for (info, offset) in plan {
+            // Cache lookup before anything else, browser launch included
+            // (B5): a fresh hit needs no task at all -- it just has to
+            // arrive like the normal answer would, so the offsets,
+            // paging verdict and log line all update through the same
+            // path. Category is `None` until B6 gives dispatch one.
+            let key = CacheKey::new(info.id, &query, None, offset);
+            if let Some(done) = orchestrator::cached_source_done(&self.cache, &key, generation) {
+                let _ = tx.send(done);
+                continue;
+            }
+
             let source = match self.get_source(info.id).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -1414,7 +1431,6 @@ impl App {
 
             self.source_status.insert(info.id.to_string(), SourceStatus::Pending);
             let req = SearchRequest::new(query.clone(), offset);
-            let tx = self.event_handler.sender();
             let task = if info.requires_browser {
                 // If "Save cookies" is off, don't pass a cookie file
                 // path through at all -- see do_login for the same
@@ -1427,61 +1443,62 @@ impl App {
                 tokio::spawn(orchestrator::run_source(
                     info.id,
                     generation,
-                    async move {
-                        let log: LogFn = Arc::new(move |msg: &str| {
-                            let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
-                        });
-                        let (cred_user, cred_pass) = match (username, password) {
-                            (Some(u), Some(p)) => (Some(u), Some(p)),
-                            _ => match saved_creds {
-                                Some((u, p)) => {
-                                    log("Using saved credentials");
-                                    (Some(u), Some(p))
-                                }
-                                None => (None, None),
-                            },
-                        };
-                        let auth = AuthContext {
-                            cookie_file,
-                            username: cred_user,
-                            password: cred_pass,
-                        };
-                        match source.ensure_logged_in(&auth, &log).await {
-                            Ok(true) => log("SEARCH: logged in, proceeding with search"),
-                            Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
-                            Err(e) => log(&format!("SEARCH: login error: {}", e)),
-                        }
-                        source.search(&req).await
-                    },
+                    orchestrator::cached_fetch(
+                        async move {
+                            let log: LogFn = Arc::new(move |msg: &str| {
+                                let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
+                            });
+                            let (cred_user, cred_pass) = match (username, password) {
+                                (Some(u), Some(p)) => (Some(u), Some(p)),
+                                _ => match saved_creds {
+                                    Some((u, p)) => {
+                                        log("Using saved credentials");
+                                        (Some(u), Some(p))
+                                    }
+                                    None => (None, None),
+                                },
+                            };
+                            let auth = AuthContext {
+                                cookie_file,
+                                username: cred_user,
+                                password: cred_pass,
+                            };
+                            match source.ensure_logged_in(&auth, &log).await {
+                                Ok(true) => log("SEARCH: logged in, proceeding with search"),
+                                Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
+                                Err(e) => log(&format!("SEARCH: login error: {}", e)),
+                            }
+                            source.search(&req).await
+                        },
+                        Arc::clone(&self.cache),
+                        key,
+                    ),
                     orchestrator::PER_SOURCE_TIMEOUT,
-                    tx,
+                    tx.clone(),
                 ))
             } else {
                 tokio::spawn(orchestrator::run_source(
                     info.id,
                     generation,
-                    async move { source.search(&req).await },
+                    orchestrator::cached_fetch(
+                        async move { source.search(&req).await },
+                        Arc::clone(&self.cache),
+                        key,
+                    ),
                     orchestrator::PER_SOURCE_TIMEOUT,
-                    tx,
+                    tx.clone(),
                 ))
             };
             tasks.push((info.id, task));
         }
 
-        if tasks.is_empty() {
-            // Everything failed to even start, so no SourceDone is coming:
-            // close the generation here instead of leaving the UI
-            // Searching forever.
-            finish_search(
-                &mut self.ui,
-                generation,
-                self.search_generation,
-                &self.source_has_more,
-            );
-            return;
-        }
-
-        let tx = self.event_handler.sender();
+        // Always coordinate, even with an empty task list: with nothing
+        // spawned there is nothing to wait for, and sending
+        // SearchComplete through the same channel is what keeps it
+        // *behind* any SourceDone events already queued from cache hits
+        // (finishing here instead would close the generation before its
+        // own rows arrived and read paging verdicts nobody had recorded
+        // yet).
         tokio::spawn(orchestrator::coordinate(generation, tasks, tx));
     }
 

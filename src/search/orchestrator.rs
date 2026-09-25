@@ -20,12 +20,14 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use super::cache::{CacheKey, SearchCache};
 use super::models::TorrentItem;
 use super::source::{SearchPage, SourceInfo, KNOWN_SOURCES};
 use crate::event::Event;
@@ -217,4 +219,39 @@ pub fn dispatch_plan(
         .filter(|info| has_more.get(info.id) != Some(&false))
         .map(|info| (info, offsets.get(info.id).copied().unwrap_or(0)))
         .collect()
+}
+
+/// Wrap one source's page fetch so a *successful* page is stored under
+/// `key` before it is reported (B5).
+///
+/// Failures pass through untouched: caching an error would pin "no
+/// results" for the whole TTL, turning one bad request into five minutes
+/// of empty output.
+pub async fn cached_fetch(
+    fetch: impl Future<Output = Result<SearchPage>>,
+    cache: Arc<SearchCache>,
+    key: CacheKey,
+) -> Result<SearchPage> {
+    let page = fetch.await?;
+    cache.put(key, page.clone());
+    Ok(page)
+}
+
+/// The cache-first half of a dispatch (B5): a fresh hit becomes the very
+/// same [`Event::SourceDone`] a live fetch would have produced, so the
+/// UI, the per-source offsets and the paging verdict all update through
+/// the normal path -- the only thing skipped is the network, and with it
+/// the browser launch a browser-backed source would otherwise need.
+///
+/// `None` means miss or expired: spawn the source.
+pub fn cached_source_done(cache: &SearchCache, key: &CacheKey, generation: u64) -> Option<Event> {
+    let page = cache.get(key)?;
+    Some(Event::SourceDone {
+        source: key.source.clone(),
+        generation,
+        items: page.items,
+        has_more: page.has_more,
+        error: None,
+        timed_out: false,
+    })
 }
