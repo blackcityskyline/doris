@@ -170,7 +170,12 @@ fn test_legacy_rows_fall_back_to_rutracker() {
     // and they carry rutracker-shaped URLs -- the same conservative
     // fallback `source_needs_browser` makes.
     assert_eq!(source_id_for(&item_with_source("")), "rutracker");
-    assert_eq!(source_id_for(&item_with_source("1337x")), "rutracker");
+    assert_eq!(source_id_for(&item_with_source("never-heard-of-it")), "rutracker");
+    // An id the registry *knows* keeps itself even while it is still
+    // planned: such a row then fails at `build_source` with "no such
+    // source", instead of being handed to rutracker and fed markup it
+    // never came from.
+    assert_eq!(source_id_for(&item_with_source("1337x")), "1337x");
 }
 
 fn item_with_source(source: &str) -> TorrentItem {
