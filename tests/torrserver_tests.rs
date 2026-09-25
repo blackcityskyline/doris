@@ -2,12 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use doris::torrserver::api::{TorrServer, TorrentInfo};
 
-// TorrServer's Go structs have no `json` tags, so its default JSON output
-// uses the exact (capitalized) Go field names. This test locks in that
-// assumption -- see the doc comment on TorrentInfo for sources and the
-// caveat that some forks may differ slightly. If a real TorrServer
-// instance's `/torrents` response doesn't match this shape, this is the
-// test (and the #[serde(rename = ...)] list in torrserver/api.rs) to fix.
+// The *older* shape: Go structs with no `json` tags, so the output uses
+// the exact capitalized Go field names. `TorrentInfo` must keep reading
+// this -- but it is no longer the only shape out there: see
+// `LIVE_LIST_JSON` below and the doc comment on TorrentInfo for why
+// accepting only this one silently emptied the Torrent zone.
 const SAMPLE_LIST_JSON: &str = r#"
 [
   {
@@ -378,4 +377,89 @@ async fn test_add_by_link_requires_a_hash_back() {
 
     assert!(err.to_string().contains("No hash"), "{}", err);
     handle.abort();
+}
+
+// The shape the *running* server answered with on 25.09.2026 (`state.
+// TorrentStatus`, json-tagged). Captured from a live `{"action":"list"}`
+// -- row 1 verbatim, row 2 reconstructed so the fields that upstream
+// marks `omitempty` (and therefore drops when they are zero) are covered
+// too.
+const LIVE_LIST_JSON: &str = r#"
+[
+  {
+    "title": "Колония - Gunche - Colony (2026) WEB-DL 1080p.mkv",
+    "category": "",
+    "poster": "",
+    "timestamp": 1789839446,
+    "hash": "b2fb4854cf32921561786c987642e007cb9f279f",
+    "stat": 5,
+    "stat_string": "Torrent in db",
+    "torrent_size": 7626028452
+  },
+  {
+    "title": "Some.Torrent.2026.1080p.mkv",
+    "category": "",
+    "poster": "",
+    "timestamp": 1789839446,
+    "hash": "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c",
+    "stat": 2,
+    "stat_string": "Torrent working",
+    "loaded_size": 250000000,
+    "torrent_size": 1000000000,
+    "download_speed": 1048576.0,
+    "upload_speed": 65536.0,
+    "total_peers": 12,
+    "active_peers": 5,
+    "connected_seeders": 3
+  }
+]
+"#;
+
+/// The bug this sample pins: against a modern (json-tagged) server the
+/// capitalized-only renames matched nothing, `#[serde(default)]` filled
+/// in zeros, and the Torrent zone came back with no name, no hash, no
+/// size, no speed and no status -- silently, because nothing errored.
+#[test]
+fn test_parses_the_tagged_shape_a_modern_torrserver_actually_sends() {
+    let list: Vec<TorrentInfo> = serde_json::from_str(LIVE_LIST_JSON).unwrap();
+    assert_eq!(list.len(), 2);
+
+    let first = &list[0];
+    assert_eq!(first.name, "Колония - Gunche - Colony (2026) WEB-DL 1080p.mkv");
+    assert_eq!(first.hash, "b2fb4854cf32921561786c987642e007cb9f279f");
+    assert_eq!(first.total_size, 7626028452);
+    assert_eq!(first.status_string, "Torrent in db");
+    assert_eq!(first.loaded_size, 0, "absent keys still default");
+
+    let second = &list[1];
+    assert_eq!(second.hash, "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c");
+    assert_eq!(second.total_peers, 12);
+    assert_eq!(second.connected_seeders, 3);
+    assert_eq!(second.status_string, "Torrent working");
+    assert_eq!(second.progress(), 0.25, "loaded/total from the tagged keys");
+}
+
+/// Progress drives the sparkline, so the tagged keys feeding it must not
+/// silently read as zero.
+#[test]
+fn test_progress_from_the_tagged_shape_is_not_always_zero() {
+    let list: Vec<TorrentInfo> = serde_json::from_str(LIVE_LIST_JSON).unwrap();
+
+    assert_eq!(list[0].progress(), 0.0, "no loaded_size in that row");
+    assert_eq!(list[1].progress(), 0.25);
+    assert_eq!(list[1].download_speed, 1048576.0);
+}
+
+/// The older, capitalized shape must keep working -- some installs (and
+/// forks) still answer with it.
+#[test]
+fn test_the_legacy_capitalized_shape_still_parses() {
+    let list: Vec<TorrentInfo> = serde_json::from_str(SAMPLE_LIST_JSON).unwrap();
+
+    assert_eq!(list[0].name, "Big Buck Bunny");
+    assert_eq!(list[0].hash, "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c");
+    assert_eq!(list[0].total_size, 1000000000);
+    assert_eq!(list[0].loaded_size, 250000000);
+    assert_eq!(list[0].status_string, "Downloading");
+    assert_eq!(list[0].progress(), 0.25);
 }
