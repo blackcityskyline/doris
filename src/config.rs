@@ -260,12 +260,31 @@ impl Config {
     /// which is what keeps somebody who disabled `rutor` back then from
     /// having it silently switched back on, while `tpb` -- an id they
     /// have never seen -- arrives enabled.
+    ///
+    /// "Seen" means *had a chance to be decided*, and a planned source
+    /// gives no chance: its Options row is a caption, not a toggle, so
+    /// an id the registry listed while it was still unbuilt was never
+    /// something the user could accept or reject. Such ids are read as
+    /// unknown and never written back, which is what makes the flip
+    /// from planned to implemented arrive enabled -- wave 3's nnmclub
+    /// was caught by exactly this hole (it sat in `known_sources` as a
+    /// placeholder, then went live and stayed switched off), and its
+    /// two followers in the same registry are what the rule now covers.
     pub fn migrate_sources(&mut self) {
-        let known: Vec<String> = if self.known_sources.is_empty() {
+        let seen: Vec<String> = if self.known_sources.is_empty() {
             LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()
         } else {
             self.known_sources.clone()
         };
+        // Drop the ids the registry lists but has not built: today
+        // those rows cannot be toggled, so nothing was ever decided
+        // about them. What is left -- implemented ids plus ids this
+        // registry does not list at all -- is what counts as known.
+        let known: Vec<String> = seen
+            .iter()
+            .filter(|id| !KNOWN_SOURCES.iter().any(|info| info.id == **id && !info.implemented))
+            .cloned()
+            .collect();
 
         for id in default_enabled_sources() {
             let known_before = known.iter().any(|k| k == &id);
@@ -275,12 +294,19 @@ impl Config {
             }
         }
 
-        // Record every id this build knows. A source added to the
-        // registry later is then unknown again, which is what makes the
-        // *next* migration happen without anyone extending a baseline;
-        // ids the registry no longer lists are kept, since a config
-        // that knew them did not stop knowing them.
-        let mut all: Vec<String> = KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect();
+        // Record every id this build knows *as something that could be
+        // decided on* -- implemented ids only, by the same rule as
+        // above, so a placeholder row never counts as the user having
+        // seen it. A source added to the registry later is then unknown
+        // again, which is what makes the *next* migration happen
+        // without anyone extending a baseline; ids the registry no
+        // longer lists are kept, since a config that knew them did not
+        // stop knowing them.
+        let mut all: Vec<String> = KNOWN_SOURCES
+            .iter()
+            .filter(|info| info.implemented)
+            .map(|info| info.id.to_string())
+            .collect();
         for id in known {
             if !all.iter().any(|a| a == &id) {
                 all.push(id);
