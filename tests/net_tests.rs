@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use doris::search::net::{
-    FetchOptions, backoff_delay, fetch_resilient, is_retryable, parse_retry_after,
+    FetchOptions, backoff_delay, fetch_resilient, first_ok, is_retryable, parse_retry_after,
 };
 
 /// Serves each connection with the next entry of `script`; the last one
@@ -231,4 +231,90 @@ fn test_only_torios_retryable_statuses_are_retried() {
     for status in [200, 301, 400, 403, 404, 418, 451] {
         assert!(!is_retryable(status), "{} should not be retried", status);
     }
+}
+
+// --- first_ok (B5's failover helper, first consumer yts) ---------------------
+
+/// What a multi-host source asks one host: GET it, and treat a non-2xx
+/// as a failure so the next host gets its turn. Takes owned arguments on
+/// purpose -- `first_ok`'s `Fn(&str) -> Fut` is higher-ranked over the
+/// input, so the future it returns may not borrow that `&str`.
+async fn ask(client: reqwest::Client, base: String) -> anyhow::Result<u16> {
+    let resp = client
+        .get(&base)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    anyhow::ensure!(resp.status().is_success(), "{}: HTTP {}", base, resp.status());
+    Ok(resp.status().as_u16())
+}
+
+
+#[tokio::test]
+async fn test_first_ok_falls_through_to_the_next_host() {
+    // Nothing listens on port 1, so the first attempt fails at connect
+    // time -- exactly what a dead mirror looks like.
+    let (url, counter, handle) =
+        spawn_scripted(vec![response("HTTP/1.1 200 OK", &[], "pong")]).await;
+    let client = reqwest::Client::new();
+    let attempt = |base: &str| ask(client.clone(), base.to_string());
+
+    let status = first_ok(&["http://127.0.0.1:1", url.as_str()], attempt)
+        .await
+        .expect("the second host must win");
+
+    assert_eq!(status, 200);
+    assert_eq!(hits(&counter), 1, "only the working host is ever asked");
+    handle.abort();
+}
+
+#[tokio::test]
+async fn test_first_ok_stops_at_the_first_success() {
+    let (ok_url, ok_hits, ok_handle) =
+        spawn_scripted(vec![response("HTTP/1.1 200 OK", &[], "ok")]).await;
+    let (never_url, never_hits, never_handle) =
+        spawn_scripted(vec![response("HTTP/1.1 500 Internal Server Error", &[], "")]).await;
+    let client = reqwest::Client::new();
+    let attempt = |base: &str| ask(client.clone(), base.to_string());
+
+    let status = first_ok(&[ok_url.as_str(), never_url.as_str()], attempt)
+        .await
+        .expect("the first host answers");
+
+    assert_eq!(status, 200);
+    assert_eq!(hits(&ok_hits), 1);
+    assert_eq!(
+        hits(&never_hits),
+        0,
+        "a working first host must never cost a request to the second"
+    );
+    ok_handle.abort();
+    never_handle.abort();
+}
+
+#[tokio::test]
+async fn test_first_ok_surfaces_the_last_error_when_every_host_fails() {
+    let client = reqwest::Client::new();
+    let attempt = |base: &str| ask(client.clone(), base.to_string());
+
+    let err = first_ok(&["http://127.0.0.1:1", "http://127.0.0.1:2"], attempt)
+        .await
+        .expect_err("nothing is listening");
+
+    // torio keeps `lastError` too: the final host's error describes the
+    // list as a whole, which is what the log line has to show.
+    assert!(
+        err.to_string().contains("127.0.0.1:2"),
+        "expected the *last* host's error, got: {}",
+        err
+    );
+}
+
+#[tokio::test]
+async fn test_first_ok_rejects_an_empty_host_list() {
+    let err = first_ok::<u8, _, _>(&[], |_base| async { Ok(0u8) })
+        .await
+        .expect_err("no hosts is a caller bug, not a network condition");
+
+    assert!(err.to_string().contains("no hosts"), "{}", err);
 }

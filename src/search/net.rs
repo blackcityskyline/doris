@@ -14,6 +14,7 @@
 //! still putting the shared policy -- which statuses, how often, how long
 //! to wait -- in exactly one place.
 
+use std::future::Future;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -239,4 +240,30 @@ fn rand_fraction() -> f64 {
         .map(|d| d.subsec_micros())
         .unwrap_or(0);
     micros as f64 / 1_000_000.0
+}
+
+/// Try `bases` in order and hand back the first success (B5's failover
+/// helper, deliberately deferred until a source actually had mirrors to
+/// fail over to -- yts is the first, B8 wave 1).
+///
+/// Mirrors torio's loop exactly: every host is given the same attempt,
+/// and on failure the *last* error is what surfaces, because that is the
+/// one describing the state of the list as a whole. An empty list is a
+/// caller bug, not a network condition, so it says so.
+pub async fn first_ok<T, F, Fut>(bases: &[&str], attempt: F) -> Result<T>
+where
+    F: Fn(&str) -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    if bases.is_empty() {
+        anyhow::bail!("no hosts to try");
+    }
+    let mut last_error = None;
+    for base in bases {
+        match attempt(base).await {
+            Ok(value) => return Ok(value),
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no host answered")))
 }
