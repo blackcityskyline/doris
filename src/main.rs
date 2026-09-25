@@ -38,7 +38,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     ).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
-    let mut searcher = doris::search::rutracker::RutrackerSearcher::new(
+    let searcher = doris::search::rutracker::RutrackerSearcher::new(
         std::sync::Arc::clone(&browser),
     );
 

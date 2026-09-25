@@ -82,7 +82,9 @@ impl RutorSearcher {
     /// page 1). Used to translate this app's "offset" pagination
     /// convention (0, 100, 200, ...) into rutor's 1-based page numbers
     /// for "load more".
-    const PAGE_SIZE: usize = 100;
+    /// Rows per results page -- the unit `SearchRequest::offset` counts
+    /// in, and what `Source::search` uses to decide `has_more` (B2).
+    pub const PAGE_SIZE: usize = 100;
 
     pub fn new() -> Self {
         Self {
