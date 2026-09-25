@@ -15,3 +15,4 @@ pub mod tpb;
 pub mod yts;
 pub mod nyaa;
 pub mod nnmclub;
+pub mod x1337x;
