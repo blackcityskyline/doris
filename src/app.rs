@@ -1528,91 +1528,120 @@ impl App {
         tokio::spawn(async move {
             let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
 
-            log(&format!("Fetching .torrent file: {}", item.title));
-
             if !torrserver.is_reachable().await {
                 log("TorrServer is not reachable! Start TorrServer on localhost:8090");
                 let _ = event_tx.send(Event::StreamError("TorrServer unreachable".into()));
                 return;
             }
 
-            match Self::download_bytes_for(&item, source.as_ref()).await {
-                Ok(bytes) => {
+            // How the torrent reaches TorrServer (B7): a row carrying a
+            // magnet goes over as a *link* -- no .torrent round trip, and
+            // the fetch starts from the DHT plus the link's trackers
+            // instead of waiting on one host to hand over a file. Per
+            // decision, any problem with the link (missing, malformed,
+            // rejected) falls back to the old path rather than failing
+            // the stream: those rows almost always play one way or the
+            // other.
+            let mut linked: Option<String> = None;
+            if let Some(magnet) = item.magnet.as_deref() {
+                log(&format!("Adding by magnet link: {}", item.title));
+                match torrserver.add_by_link(magnet, &item.title).await {
+                    Ok(hash) => {
+                        log(&format!("Added by link, hash: {}", hash));
+                        linked = Some(hash);
+                    }
+                    Err(e) => {
+                        log(&format!("Magnet add failed ({}); fetching .torrent instead", e));
+                    }
+                }
+            }
+
+            let hash = match linked {
+                Some(hash) => hash,
+                None => {
+                    log(&format!("Fetching .torrent file: {}", item.title));
+                    let bytes = match Self::download_bytes_for(&item, source.as_ref()).await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            log(&format!("Download error: {}", e));
+                            let _ = event_tx.send(Event::StreamError(e.to_string()));
+                            return;
+                        }
+                    };
                     log(&format!("Downloaded {} bytes", bytes.len()));
                     match torrserver.upload_torrent(&bytes, &item.title).await {
                         Ok(hash) => {
                             log(&format!("Uploaded, hash: {}", hash));
-                            let _ = event_tx.send(Event::TorrentActive(hash.clone()));
-                            match torrserver.play(&hash, &item.title, None).await {
-                                Ok(mut child) => {
-                                    let stream_url = format!("http://127.0.0.1:8090/stream/{}", hash);
-                                    let _ = event_tx.send(Event::StreamComplete(stream_url));
-
-                                    if let Some(stderr) = child.stderr.take() {
-                                        use tokio::io::{AsyncBufReadExt, BufReader};
-                                        let mut reader = BufReader::new(stderr).lines();
-                                        while let Ok(Some(line)) = reader.next_line().await {
-                                            let l = line.trim();
-                                            if l.is_empty() { continue; }
-                                            let low = l.to_lowercase();
-                                            if low.contains("vo:")
-                                                || low.contains("ao:")
-                                                || low.contains("av:")
-                                                || low.contains("video:")
-                                                || low.contains("audio:")
-                                                || low.contains("cache")
-                                                || low.contains("hwdec")
-                                                || low.contains("vaapi")
-                                                || low.contains("vdpau")
-                                                || low.contains("nvdec")
-                                                || low.contains("cuda")
-                                                || low.contains("drm")
-                                                || low.contains("duration:")
-                                                || low.contains("playing:")
-                                                || low.contains("exiting")
-                                                || low.contains("resume")
-                                                || low.contains("track")
-                                                || low.contains("tag:")
-                                                || low.contains("kbps")
-                                                || low.contains("fps")
-                                                || low.contains("h264")
-                                                || low.contains("h265")
-                                                || low.contains("hevc")
-                                                || low.contains("av1")
-                                                || low.contains("vp9")
-                                                || low.contains("aac")
-                                                || low.contains("ac3")
-                                                || low.contains("opus")
-                                                || low.contains("flac")
-                                                || low.contains("passthrough")
-                                                || low.contains("format")
-                                                || low.contains("video output")
-                                                || low.contains("audio output")
-                                                || low.contains("pix_fmt")
-                                                || low.contains("backend")
-                                                || low.contains("1056")
-                                                || low.contains("1920")
-                                                || low.contains("1280")
-                                            {
-                                                log(&format!("MPV: {}", l));
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log(&format!("Player error: {}", e));
-                                    let _ = event_tx.send(Event::StreamError(e.to_string()));
-                                }
-                            }
+                            hash
                         }
                         Err(e) => {
                             log(&format!("Upload error: {}", e));
                             let _ = event_tx.send(Event::StreamError(e.to_string()));
+                            return;
+                        }
+                    }
+                }
+            };
+
+            let _ = event_tx.send(Event::TorrentActive(hash.clone()));
+            match torrserver.play(&hash, &item.title, None).await {
+                Ok(mut child) => {
+                    let stream_url = format!("http://127.0.0.1:8090/stream/{}", hash);
+                    let _ = event_tx.send(Event::StreamComplete(stream_url));
+
+                    if let Some(stderr) = child.stderr.take() {
+                        use tokio::io::{AsyncBufReadExt, BufReader};
+                        let mut reader = BufReader::new(stderr).lines();
+                        while let Ok(Some(line)) = reader.next_line().await {
+                            let l = line.trim();
+                            if l.is_empty() { continue; }
+                            let low = l.to_lowercase();
+                            if low.contains("vo:")
+                                || low.contains("ao:")
+                                || low.contains("av:")
+                                || low.contains("video:")
+                                || low.contains("audio:")
+                                || low.contains("cache")
+                                || low.contains("hwdec")
+                                || low.contains("vaapi")
+                                || low.contains("vdpau")
+                                || low.contains("nvdec")
+                                || low.contains("cuda")
+                                || low.contains("drm")
+                                || low.contains("duration:")
+                                || low.contains("playing:")
+                                || low.contains("exiting")
+                                || low.contains("resume")
+                                || low.contains("track")
+                                || low.contains("tag:")
+                                || low.contains("kbps")
+                                || low.contains("fps")
+                                || low.contains("h264")
+                                || low.contains("h265")
+                                || low.contains("hevc")
+                                || low.contains("av1")
+                                || low.contains("vp9")
+                                || low.contains("aac")
+                                || low.contains("ac3")
+                                || low.contains("opus")
+                                || low.contains("flac")
+                                || low.contains("passthrough")
+                                || low.contains("format")
+                                || low.contains("video output")
+                                || low.contains("audio output")
+                                || low.contains("pix_fmt")
+                                || low.contains("backend")
+                                || low.contains("1056")
+                                || low.contains("1920")
+                                || low.contains("1280")
+                            {
+                                log(&format!("MPV: {}", l));
+                            }
                         }
                     }
                 }
                 Err(e) => {
-                    log(&format!("Download error: {}", e));
+                    log(&format!("Player error: {}", e));
                     let _ = event_tx.send(Event::StreamError(e.to_string()));
                 }
             }
