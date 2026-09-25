@@ -62,6 +62,19 @@ pub fn source_needs_browser(source: &str) -> bool {
     source != "rutor"
 }
 
+/// The single log line describing how one source's dispatch ended (B0.3):
+/// `rutor: 42 results` / `rutracker: HTTP 503`.
+///
+/// Every source always reports one line, because `last_err` is only
+/// surfaced to the user when *nothing* came back -- so before this, a
+/// source failing next to a healthy one was completely silent.
+pub fn source_outcome_line(source: &str, outcome: &Result<usize, String>) -> String {
+    match outcome {
+        Ok(count) => format!("{}: {} results", source, count),
+        Err(err) => format!("{}: {}", source, err),
+    }
+}
+
 /// Apply one search dispatch's results to the UI -- unless the event came
 /// from a dispatch that a newer `start_search` has since superseded, in
 /// which case it is dropped and `false` is returned (B0.2: a late
@@ -1255,28 +1268,25 @@ impl App {
             let mut combined = Vec::new();
             let mut last_err: Option<String> = None;
 
-            if let Some(task) = rutor_task {
-                match task.await {
+            // One outcome line per source, always (B0.3): `last_err` only
+            // reaches the user when nothing came back, so a source failing
+            // next to a healthy one used to vanish without a trace.
+            for (source, task) in [("rutor", rutor_task), ("rutracker", rutracker_task)] {
+                let Some(task) = task else { continue };
+                let outcome: Result<usize, String> = match task.await {
                     Ok(Ok(items)) => {
-                        let _ = event_tx_result.send(Event::StreamLog(format!("rutor: {} results", items.len())));
+                        let count = items.len();
                         combined.extend(items);
+                        Ok(count)
                     }
-                    Ok(Err(e)) => {
-                        let _ = event_tx_result.send(Event::StreamLog(format!("rutor: {}", e)));
-                        last_err = Some(format!("rutor: {}", e));
-                    }
-                    Err(e) => {
-                        let _ = event_tx_result.send(Event::StreamLog(format!("rutor: task error: {}", e)));
-                        last_err = Some(format!("rutor: {}", e));
-                    }
+                    Ok(Err(e)) => Err(e.to_string()),
+                    Err(e) => Err(format!("task error: {}", e)),
+                };
+                let line = source_outcome_line(source, &outcome);
+                if outcome.is_err() {
+                    last_err = Some(line.clone());
                 }
-            }
-            if let Some(task) = rutracker_task {
-                match task.await {
-                    Ok(Ok(mut items)) => combined.append(&mut items),
-                    Ok(Err(e)) => last_err = Some(format!("rutracker: {}", e)),
-                    Err(e) => last_err = Some(format!("rutracker: {}", e)),
-                }
+                let _ = event_tx_result.send(Event::StreamLog(line));
             }
 
             if combined.is_empty() {

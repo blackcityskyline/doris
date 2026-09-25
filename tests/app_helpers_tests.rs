@@ -1,4 +1,7 @@
-use doris::app::{apply_search_results, cycle_index, resolve_cookie_file, source_needs_browser};
+use doris::app::{
+    apply_search_results, cycle_index, resolve_cookie_file, source_needs_browser,
+    source_outcome_line,
+};
 use doris::config::Config;
 use doris::search::models::TorrentItem;
 use doris::ui::app::App as UiApp;
@@ -170,4 +173,29 @@ fn test_cookie_file_default_config_value_is_usable() {
     assert!(config.save_cookies);
     let resolved = resolve_cookie_file(&config, None);
     assert_eq!(resolved, Some(PathBuf::from("cookies.txt")));
+}
+
+// --- source_outcome_line (fixes B0.3: per-source errors were dropped) -------
+
+#[test]
+fn test_outcome_line_reports_a_successful_source() {
+    assert_eq!(source_outcome_line("rutor", &Ok(42)), "rutor: 42 results");
+}
+
+#[test]
+fn test_outcome_line_reports_a_failing_source() {
+    assert_eq!(
+        source_outcome_line("rutracker", &Err("HTTP 503".to_string())),
+        "rutracker: HTTP 503"
+    );
+}
+
+#[test]
+fn test_outcome_line_distinguishes_sources_on_the_same_error() {
+    // The whole point of B0.3: when one source fails and the other
+    // succeeds, the failure still has to name which source it came from.
+    let healthy: Result<usize, String> = Ok(7);
+    let broken: Result<usize, String> = Err("timeout".to_string());
+    assert_eq!(source_outcome_line("rutor", &healthy), "rutor: 7 results");
+    assert_eq!(source_outcome_line("rutracker", &broken), "rutracker: timeout");
 }
