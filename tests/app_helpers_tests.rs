@@ -59,7 +59,6 @@ fn test_rows_append_and_the_outcome_line_is_logged() {
     assert!(applied);
     assert_eq!(ui.results.len(), 3, "each source appends into the same list");
     assert_eq!(ui.results[2].title, "b");
-    assert_eq!(ui.search_offset, 3);
     assert!(
         ui.logs.iter().any(|l| l.contains("rutor: 2 results")),
         "the per-source outcome line must reach the log: {:?}",

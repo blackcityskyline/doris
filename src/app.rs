@@ -162,7 +162,6 @@ pub fn apply_source_done(
     };
     ui.add_log(&source_outcome_line(source, &outcome));
     ui.results.extend(items);
-    ui.search_offset = ui.results.len();
     ui.update_filter();
     true
 }
@@ -229,6 +228,11 @@ pub struct App {
     /// by "Load more" and turned into `ui.all_loaded` by
     /// [`finish_search`].
     source_has_more: HashMap<String, bool>,
+    /// How many rows each source has delivered for the current query (B3):
+    /// the cursor "Load more" resumes it at. One per source, because
+    /// rutor pages by 100 and rutracker by 50 -- a shared counter walks
+    /// off rutor's page grid and it answers with nothing.
+    source_offsets: HashMap<String, usize>,
     browser_visibility: BrowserVisibility,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
@@ -308,6 +312,7 @@ impl App {
             sources: HashMap::new(),
             source_status: HashMap::new(),
             source_has_more: HashMap::new(),
+            source_offsets: HashMap::new(),
             browser_visibility,
             search_tx,
             search_rx,
@@ -377,7 +382,11 @@ impl App {
                                     timed_out,
                                 );
                                 self.source_status.insert(source.clone(), status);
-                                self.source_has_more.insert(source, has_more);
+                                self.source_has_more.insert(source.clone(), has_more);
+                                // Failures deliver no rows, so a failed
+                                // page leaves the cursor where it was and
+                                // the source gets asked again from there.
+                                *self.source_offsets.entry(source).or_insert(0) += count;
                             }
                         }
                         Event::SearchComplete { generation } => {
@@ -740,8 +749,7 @@ impl App {
                 self.ui.navigate_down();
                 if self.ui.needs_more() {
                     if let Some(q) = self.ui.search_query.clone() {
-                        let offset = self.ui.search_offset;
-                        self.load_more(q, offset).await;
+                        self.load_more(q).await;
                     }
                 }
             }
@@ -1292,7 +1300,6 @@ impl App {
     async fn start_search(&mut self, query: String) {
         self.ui.state = AppState::Searching;
         self.ui.search_query = Some(query.clone());
-        self.ui.search_offset = 0;
         self.ui.all_loaded = false;
         // Rows now arrive one source at a time (B3), so there is no
         // single moment where the old list gets replaced by the new one:
@@ -1303,17 +1310,21 @@ impl App {
         self.ui.update_filter();
         self.source_status.clear();
         self.source_has_more.clear();
+        self.source_offsets.clear();
         self.ui.add_log(&format!("Searching '{}' for '{}'...", self.ui.active_source, query));
         // New generation: anything still in flight for a previous query is
         // now stale and gets dropped when it lands (B0.2).
         self.search_generation += 1;
         let generation = self.search_generation;
-        self.dispatch_search(query, 0, generation).await;
+        self.dispatch_search(query, generation).await;
     }
 
-    /// Kick off the search for `query` at `offset`: one task per source
-    /// `orchestrator::selected_sources` picks (Results tab + Options),
-    /// each under the per-source deadline. Every task reports in on its
+    /// Kick off the search for `query`: one task per source
+    /// `orchestrator::selected_sources` picks (Results tab + Options)
+    /// and `orchestrator::dispatch_plan` says is worth asking (a fresh
+    /// search asks everyone, a "load more" asks only the sources that
+    /// reported another page, each at its own cursor), each task under
+    /// the per-source deadline. Every task reports in on its
     /// own through `Event::SourceDone`, so rows render as sources answer
     /// instead of after the slowest one, and `Event::SearchComplete`
     /// closes the generation -- both stamped with it, so an answer
@@ -1323,7 +1334,7 @@ impl App {
     /// Rutor needs no browser/login at all; a source that does (rutracker)
     /// walks login *inside* its task, so the deadline covers that walk
     /// too rather than timing only the page fetch.
-    async fn dispatch_search(&mut self, query: String, offset: usize, generation: u64) {
+    async fn dispatch_search(&mut self, query: String, generation: u64) {
         let selected =
             orchestrator::selected_sources(&self.ui.active_source, &self.config.enabled_sources);
         if selected.is_empty() {
@@ -1332,9 +1343,27 @@ impl App {
             return;
         }
 
+        let plan = orchestrator::dispatch_plan(
+            &selected,
+            &self.source_offsets,
+            &self.source_has_more,
+        );
+        if plan.is_empty() {
+            // Every selected source already reported its last page, so no
+            // SourceDone is coming: close the generation here instead of
+            // leaving the UI Searching.
+            finish_search(
+                &mut self.ui,
+                generation,
+                self.search_generation,
+                &self.source_has_more,
+            );
+            return;
+        }
+
         let mut tasks: Vec<(&'static str, tokio::task::JoinHandle<()>)> = Vec::new();
 
-        for info in selected {
+        for (info, offset) in plan {
             let source = match self.get_source(info.id).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -1405,8 +1434,9 @@ impl App {
         }
 
         if tasks.is_empty() {
-            // Nothing could even start, so no SourceDone is coming: close
-            // the generation here instead of leaving the UI Searching.
+            // Everything failed to even start, so no SourceDone is coming:
+            // close the generation here instead of leaving the UI
+            // Searching forever.
             finish_search(
                 &mut self.ui,
                 generation,
@@ -1592,11 +1622,13 @@ impl App {
         }
     }
 
-    async fn load_more(&mut self, query: String, offset: usize) {
+    async fn load_more(&mut self, query: String) {
         self.ui.state = AppState::Searching;
-        // Same generation as the results already on screen: a page-2 answer
-        // extends them instead of being treated as a superseded search.
+        // Same generation as the results already on screen: the next page
+        // appends to them instead of being treated as a superseded search.
+        // Which sources get asked, and from which cursor, is decided per
+        // source inside `dispatch_search`.
         let generation = self.search_generation;
-        self.dispatch_search(query, offset, generation).await;
+        self.dispatch_search(query, generation).await;
     }
 }
