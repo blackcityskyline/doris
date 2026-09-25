@@ -123,6 +123,46 @@ impl TorrServer {
         Ok(())
     }
 
+    /// Hand TorrServer a magnet link instead of a `.torrent` file (B7):
+    /// no download round trip, and the fetch starts from the DHT plus
+    /// whatever trackers the link carries. Returns the torrent's hash,
+    /// the same way [`upload_torrent`](Self::upload_torrent) does, so the
+    /// caller has one thing to hold on to either way.
+    ///
+    /// Verified before use (the ROADMAP caveat): the request fields come
+    /// from TorrServer's own `torrReqJS` (`link` required for `add`,
+    /// plus `title`/`poster`/`category`/`data`/`save_to_db`), and a
+    /// live `POST {"action":"add"}` answers `400 {"error":"link is
+    /// empty"}` -- which is how we know `link` is the field it reads.
+    /// `save_to_db` is set to stay symmetric with the `.torrent` upload
+    /// path (`/torrent/upload?save=db`), so an added magnet survives a
+    /// TorrServer restart and can be resumed later.
+    ///
+    /// On success the handler answers `200` with the torrent's status
+    /// object, whose `hash` is read here.
+    pub async fn add_by_link(&self, link: &str, title: &str) -> Result<String> {
+        let body = serde_json::json!({
+            "action": "add",
+            "link": link,
+            "title": title,
+            "save_to_db": true,
+        });
+        let response = self.torrents_action(body).await?;
+        if !response.status().is_success() {
+            // TorrServer reports why in the body ("link is empty",
+            // "error parse link: ..."), so surface it instead of a bare
+            // status code.
+            let text = response.text().await.unwrap_or_default();
+            anyhow::bail!("TorrServer rejected the link: {}", text);
+        }
+        let json: serde_json::Value = response.json().await?;
+        let hash = json
+            .get("hash")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No hash returned from TorrServer"))?;
+        Ok(hash.to_string())
+    }
+
     pub async fn upload_torrent(&self, torrent_bytes: &[u8], title: &str) -> Result<String> {
         let safe_title = title
             .chars()
