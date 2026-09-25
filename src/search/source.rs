@@ -25,6 +25,7 @@ use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
 use super::eztv::EztvSearcher;
+use super::nyaa::NyaaSearcher;
 use super::subsplease::SubsPleaseSearcher;
 use super::tpb::TpbSearcher;
 use super::yts::YtsSearcher;
@@ -171,6 +172,12 @@ const TPB_GROUPS: &[Group] = &[Group::Movies, Group::TV];
 
 /// SubsPlease is anime-only by nature (B8 wave 1).
 const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
+
+/// Nyaa is anime's tracker by nature (B8 wave 2), which is what
+/// `groups()` says about the *source*; an all-category query means each
+/// row still carries its own group (`nyaa::group_from_category`), and
+/// rows nyaa calls Audio/Literature claim none at all.
+const NYAA_GROUPS: &[Group] = &[Group::Anime];
 
 /// EZTV is TV-only, and its rows say `Group::TV` to match (B8 wave 1).
 const EZTV_GROUPS: &[Group] = &[Group::TV];
@@ -347,6 +354,14 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: SubsPleaseSearcher::HOME_URL,
     },
     SourceInfo {
+        id: "nyaa",
+        label: "Nyaa",
+        implemented: true,
+        groups: NYAA_GROUPS,
+        requires_browser: false,
+        home_url: NyaaSearcher::HOME_URL,
+    },
+    SourceInfo {
         id: "eztv",
         label: "EZTV",
         implemented: true,
@@ -392,6 +407,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "yts" => Ok(Arc::new(YtsSearcher::new())),
         "tpb" => Ok(Arc::new(TpbSearcher::new())),
         "subsplease" => Ok(Arc::new(SubsPleaseSearcher::new())),
+        "nyaa" => Ok(Arc::new(NyaaSearcher::new())),
         "eztv" => Ok(Arc::new(EztvSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
