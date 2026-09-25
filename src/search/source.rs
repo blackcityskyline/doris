@@ -25,6 +25,7 @@ use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
 use super::eztv::EztvSearcher;
+use super::nnmclub::NnmclubSearcher;
 use super::nyaa::NyaaSearcher;
 use super::subsplease::SubsPleaseSearcher;
 use super::tpb::TpbSearcher;
@@ -178,6 +179,12 @@ const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
 /// row still carries its own group (`nyaa::group_from_category`), and
 /// rows nyaa calls Audio/Literature claim none at all.
 const NYAA_GROUPS: &[Group] = &[Group::Anime];
+
+/// NNM-Club spans four forums -- the three torio splits (movies, TV,
+/// games) plus the anime ones the live search page was returning from
+/// (B8 wave 3). Rows claim none of them: see `nnmclub`'s module doc.
+const NNMCLUB_GROUPS: &[Group] =
+    &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// EZTV is TV-only, and its rows say `Group::TV` to match (B8 wave 1).
 const EZTV_GROUPS: &[Group] = &[Group::TV];
@@ -372,10 +379,39 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
     SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
+        implemented: true,
+        groups: NNMCLUB_GROUPS,
+        requires_browser: false,
+        home_url: NnmclubSearcher::HOME_URL,
+    },
+    // Wave 3's two remaining sources, listed before they exist for the
+    // same reason nnmclub was: an id the registry knows about is an id
+    // the migration, the Options rows and the tab bar all agree on
+    // before any code claims to serve it. `groups` stays empty -- a
+    // group is a claim about rows nobody has parsed yet.
+    //
+    // `requires_browser` is a claim about the *host*, and both hosts
+    // were probed on 25.09.2026 with the same browser UA: 1337x
+    // answered 403 to a plain client (so `true`, the conservative
+    // side, which is also what `requires_browser()` falls back to for
+    // an unknown id), torentino answered 200 with its front page (so
+    // `false`). Neither has ever been run through `build_source`, so
+    // neither flag can route a real request today.
+    SourceInfo {
+        id: "1337x",
+        label: "1337x",
+        implemented: false,
+        groups: &[],
+        requires_browser: true,
+        home_url: "https://1337x.to",
+    },
+    SourceInfo {
+        id: "torentino",
+        label: "Torentino",
         implemented: false,
         groups: &[],
         requires_browser: false,
-        home_url: "",
+        home_url: "https://torentino.org",
     },
 ];
 
@@ -408,6 +444,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "tpb" => Ok(Arc::new(TpbSearcher::new())),
         "subsplease" => Ok(Arc::new(SubsPleaseSearcher::new())),
         "nyaa" => Ok(Arc::new(NyaaSearcher::new())),
+        "nnmclub" => Ok(Arc::new(NnmclubSearcher::new())),
         "eztv" => Ok(Arc::new(EztvSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }

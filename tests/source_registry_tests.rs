@@ -14,7 +14,7 @@ fn test_rutracker_and_rutor_are_registered_and_implemented() {
 
 #[test]
 fn test_future_sources_are_listed_but_not_implemented() {
-    for id in ["nnmclub"] {
+    for id in ["1337x", "torentino"] {
         let source = KNOWN_SOURCES.iter().find(|s| s.id == id);
         assert!(source.is_some(), "{} should be listed as a planned source", id);
         assert!(!source.unwrap().implemented, "{} should not be marked implemented yet", id);
@@ -85,10 +85,14 @@ fn test_only_browser_backed_sources_ask_for_a_browser() {
         .filter(|s| s.requires_browser)
         .map(|s| s.id)
         .collect();
-    assert_eq!(browser_backed, vec!["rutracker"]);
-    // Planned sources must not promise a browser: nothing builds them,
-    // so nothing can hand one over.
-    assert!(!source::get_source("nnmclub").unwrap().requires_browser);
+    assert_eq!(browser_backed, vec!["rutracker", "1337x"]);
+    // A planned source still declares how its host behaves, because
+    // that is what the flag is about: probed 25.09.2026 with a browser
+    // UA, 1337x answered 403 to a plain client and torentino answered
+    // 200 with its front page. What holds either claim back is that
+    // nothing builds them, so neither can route a request today.
+    assert!(source::get_source("1337x").unwrap().requires_browser);
+    assert!(!source::get_source("torentino").unwrap().requires_browser);
 }
 
 #[test]
@@ -127,8 +131,20 @@ fn test_get_source_and_sources_by_group_view_the_same_registry() {
     assert!(games.iter().any(|s| s.id == "rutor"));
     assert!(games.iter().all(|s| s.groups.contains(&Group::Games)));
 
-    // A planned source with no groups belongs to no group view.
-    assert!(source::sources_by_group(Group::Anime).iter().all(|s| s.id != "nnmclub"));
+    // A planned source has no rows yet, so it belongs to no group
+    // view -- and the group list is the claim it may not make.
+    for planned in KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
+        assert!(planned.groups.is_empty(), "{} is planned: no rows, no groups", planned.id);
+        assert!(!planned.home_url.is_empty(), "{} still says where it will live", planned.id);
+        for group in [Group::Games, Group::Movies, Group::TV, Group::Anime] {
+            assert!(
+                source::sources_by_group(group).iter().all(|s| s.id != planned.id),
+                "{} must not be in the {:?} view",
+                planned.id,
+                group
+            );
+        }
+    }
 }
 
 #[test]
