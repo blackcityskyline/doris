@@ -207,9 +207,15 @@ pub struct App {
     /// the 'p' key should do next, not something derived from polling.
     pub torrent_paused: bool,
     /// Which source (or "all") the Results panel's tab bar has selected --
-    /// see `SOURCE_TABS` and `App::cycle_source`. Search dispatch in
+    /// see [`source_tabs`] and `App::cycle_source`. Search dispatch in
     /// app.rs reads this directly.
     pub active_source: String,
+    /// The tabs the Results bar shows: `all` plus every implemented,
+    /// *enabled* source, in registry order. Held rather than computed
+    /// per frame so it can never disagree with `active_source` -- both
+    /// are rewritten together by `set_source_tabs`, the only place
+    /// either changes for config reasons.
+    pub source_tabs: Vec<&'static str>,
     /// Set whenever the user switches the active source tab (via `]` key or
     /// mouse click). Cleared on the next Enter press, which uses it to
     /// decide whether Enter means "re-search with the new source" (true)
@@ -240,6 +246,29 @@ pub struct App {
 
 fn bool_str(b: bool) -> String {
     if b { "True".into() } else { "False".into() }
+}
+
+/// The Results bar's tabs for this config: every implemented source
+/// that is switched on, in registry order, then `all` (search every
+/// enabled+implemented source at once and merge).
+///
+/// A disabled source has no tab -- decided with the user after wave 1's
+/// live run: a tab whose search can only answer "Selected source is
+/// disabled" is a trap, and the list moving is honest feedback for the
+/// toggle that removed it. Unimplemented sources (nnmclub) have no tab
+/// either: there is nothing to offer until `implemented` flips.
+///
+/// `all` stays even with every source off, so the bar always has
+/// somewhere to be.
+pub fn source_tabs(config: &Config) -> Vec<&'static str> {
+    let mut tabs: Vec<&'static str> = KNOWN_SOURCES
+        .iter()
+        .filter(|info| info.implemented)
+        .filter(|info| config.enabled_sources.iter().any(|e| e == info.id))
+        .map(|info| info.id)
+        .collect();
+    tabs.push("all");
+    tabs
 }
 
 /// The `streaming -> Sources` rows: one per registry entry, in
@@ -320,6 +349,10 @@ impl App {
             active_torrent_hash: None,
             torrent_paused: false,
             active_source: "rutracker".to_string(),
+            // A fresh install's view: every implemented source is on by
+            // default. `App::new` immediately re-derives it from the
+            // config actually being loaded.
+            source_tabs: source_tabs(&Config::default()),
             source_changed: false,
             last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),
@@ -384,19 +417,42 @@ impl App {
     /// active). Shared by mouse clicks (`click_at`) and scroll-wheel
     /// hover-targeting in the orchestrator, so "click a panel" and "scroll
     /// over a panel" agree on which panel that is.
-    /// Tabs shown at the top of the Results panel, btop-proc-tab style:
-    /// each real source plus "all" (search every enabled+implemented
-    /// source at once and merge). "nnmclub" isn't included since it isn't
-    /// implemented yet -- no point offering a tab that can never return
-    /// anything.
-    pub const SOURCE_TABS: &'static [&'static str] =
-        &["rutracker", "rutor", "yts", "tpb", "subsplease", "eztv", "all"];
-
     /// Cycle the Results panel's active source tab forward (wraps).
     pub fn cycle_source(&mut self) {
-        let pos = Self::SOURCE_TABS.iter().position(|&s| s == self.active_source).unwrap_or(0);
-        self.active_source = Self::SOURCE_TABS[(pos + 1) % Self::SOURCE_TABS.len()].to_string();
+        let pos = self
+            .source_tabs
+            .iter()
+            .position(|&s| s == self.active_source)
+            .unwrap_or(0);
+        // The bar always holds at least `["all"]`, so the modulo cannot
+        // divide by zero even if every source were switched off.
+        self.active_source =
+            self.source_tabs[(pos + 1) % self.source_tabs.len()].to_string();
         self.source_changed = true;
+    }
+
+    /// [`UiApp::new`] takes no config, so the caller that *does* have
+    /// one applies the tabs it implies; chaining keeps that from being
+    /// an easy line to forget at construction.
+    pub fn with_source_tabs(mut self, config: &Config) -> Self {
+        self.set_source_tabs(config);
+        self
+    }
+
+    /// Re-derive the tab bar from `config` and repair `active_source`
+    /// when the tab it pointed at has just disappeared (its source was
+    /// switched off in Options).
+    ///
+    /// Called once from `App::new` and after every enable/disable --
+    /// the two moments the enabled set changes. A *valid* tab is left
+    /// alone, so opening and closing Settings never disturbs where the
+    /// user already was.
+    pub fn set_source_tabs(&mut self, config: &Config) {
+        self.source_tabs = source_tabs(config);
+        if !self.source_tabs.iter().any(|t| *t == self.active_source) {
+            self.active_source =
+                self.source_tabs.first().copied().unwrap_or("all").to_string();
+        }
     }
 
     /// Which source tab (if any) is under `(row, col)`, given the Results
@@ -414,7 +470,7 @@ impl App {
             return None;
         }
         let mut x = area.x + 1;
-        for &tab in Self::SOURCE_TABS {
+        for &tab in &self.source_tabs {
             let label_len = if tab == self.active_source { tab.chars().count() + 2 } else { tab.chars().count() };
             if col >= x && col < x + label_len as u16 {
                 return Some(tab);
@@ -1467,7 +1523,7 @@ impl App {
 
         // --- source tab bar ------------------------------------------------
         let mut tab_spans = Vec::new();
-        for (i, &tab) in Self::SOURCE_TABS.iter().enumerate() {
+        for (i, &tab) in self.source_tabs.iter().enumerate() {
             let is_active = tab == self.active_source;
             let label = if is_active { format!("[{}]", tab) } else { tab.to_string() };
             let style = if is_active {
@@ -1476,7 +1532,7 @@ impl App {
                 Style::default().fg(self.theme.inactive_fg.to_color())
             };
             tab_spans.push(Span::styled(label, style));
-            if i < Self::SOURCE_TABS.len() - 1 {
+            if i < self.source_tabs.len() - 1 {
                 tab_spans.push(Span::raw("  "));
             }
         }

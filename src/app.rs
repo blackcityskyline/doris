@@ -383,7 +383,8 @@ impl App {
                 config.theme_background,
                 config.truecolor,
                 config.false_tty,
-            ),
+            )
+            .with_source_tabs(&config),
             event_handler,
             torrserver,
             browser: None,
@@ -974,6 +975,10 @@ impl App {
                         } else {
                             self.config.enabled_sources.push(id.to_string());
                         }
+                        // The bar is derived from this same list: a
+                        // source switched off loses its tab (and may
+                        // vacate the one that was selected).
+                        self.ui.set_source_tabs(&self.config);
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::OpenLog => {
