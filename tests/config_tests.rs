@@ -149,3 +149,93 @@ fn test_config_parse_with_keybindings() {
     assert_eq!(kb.quit.as_deref(), Some("ctrl+x"));
     assert_eq!(kb.focus_search.as_deref(), Some("/"));
 }
+
+// --- enabled_sources migration (B8 wave 1 fallout) --------------------------
+
+/// What a config written before wave 1 looks like: it lists the two
+/// sources that existed, and knows nothing about ids added later. This
+/// is the live case -- the finished wave ran into it on an installed
+/// config, where every new tab answered "Selected source is disabled".
+#[test]
+fn test_a_config_from_before_wave1_gains_the_new_sources() {
+    let mut config = from_toml(
+        "enabled_sources = [\n    \"rutracker\",\n    \"rutor\",\n]\nsave_config_on_exit = true\n",
+    )
+    .expect("legacy config parses");
+
+    for id in ["yts", "tpb", "subsplease", "eztv"] {
+        assert!(
+            config.enabled_sources.iter().any(|s| s == id),
+            "{} must arrive enabled, got {:?}",
+            id,
+            config.enabled_sources
+        );
+    }
+    assert!(config.enabled_sources.iter().any(|s| s == "rutracker"));
+    assert!(
+        config.known_sources.iter().any(|s| s == "tpb"),
+        "and the config now knows it: {:?}",
+        config.known_sources
+    );
+}
+
+/// The distinction `known_sources` exists for: `rutor` was in the
+/// legacy baseline, so a user who switched it off before wave 1 keeps
+/// it off -- the migration adds only ids the config has never seen.
+#[test]
+fn test_a_source_the_user_switched_off_before_wave1_stays_off() {
+    let config = from_toml("enabled_sources = [ \"rutracker\" ]").expect("legacy config parses");
+
+    assert!(
+        !config.enabled_sources.iter().any(|s| s == "rutor"),
+        "rutor existed then and was turned off deliberately"
+    );
+    assert!(
+        config.enabled_sources.iter().any(|s| s == "tpb"),
+        "tpb did not exist then and is new"
+    );
+}
+
+/// A config that already knows every id -- i.e. one this build has
+/// saved -- is left exactly as the user configured it.
+#[test]
+fn test_known_sources_are_never_re_enabled() {
+    let mut config = Config::default();
+    config.known_sources = KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect();
+    config.enabled_sources = vec!["rutracker".to_string()];
+
+    config.migrate_sources();
+
+    assert_eq!(
+        config.enabled_sources,
+        vec!["rutracker".to_string()],
+        "five deliberately disabled sources came back on"
+    );
+}
+
+#[test]
+fn test_migration_is_idempotent() {
+    let mut config = from_toml("enabled_sources = [ \"rutracker\", \"rutor\" ]")
+        .expect("legacy config parses");
+    let after_once = config.enabled_sources.clone();
+    let known_once = config.known_sources.clone();
+
+    config.migrate_sources();
+
+    assert_eq!(config.enabled_sources, after_once, "second run changed the list");
+    assert_eq!(config.known_sources, known_once, "second run changed what is known");
+}
+
+/// A fresh config already knows everything, so `Config::default()` must
+/// come through the migration untouched -- otherwise every startup
+/// would be rewriting a user's choices.
+#[test]
+fn test_a_fresh_default_config_is_not_migrated() {
+    let mut config = Config::default();
+    let enabled = config.enabled_sources.clone();
+
+    config.migrate_sources();
+
+    assert_eq!(config.enabled_sources, enabled);
+    assert_eq!(config.known_sources.len(), KNOWN_SOURCES.len());
+}

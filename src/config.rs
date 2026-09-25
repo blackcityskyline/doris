@@ -1,5 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
+use crate::search::source::KNOWN_SOURCES;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -65,6 +67,13 @@ pub struct Config {
     pub graph_symbol: String,
     #[serde(default)]
     pub save_config_on_exit: bool,
+    /// Every source id this config has been shown to know -- the key
+    /// that lets `migrate_sources` tell "new to this build" apart from
+    /// "the user turned it off". Written on every save; empty only in a
+    /// config written before B8 wave 1, which is exactly the case the
+    /// migration has to read carefully.
+    #[serde(default)]
+    pub known_sources: Vec<String>,
 
     // --- Options / "streaming" category (ROADMAP.md Phase 6) ---------------
     /// Kill the automated browser when Doris exits. Note: this is already
@@ -135,6 +144,7 @@ impl Default for Config {
             terminal_sync: true,
             graph_symbol: default_graph_symbol(),
             save_config_on_exit: false,
+            known_sources: KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect(),
             close_browser_on_exit: true,
             save_cookies: true,
             save_credentials: true,
@@ -207,17 +217,22 @@ fn default_presets() -> Vec<String> {
 }
 
 fn default_enabled_sources() -> Vec<String> {
-    // Only sources that are actually implemented (see
-    // search::source::KNOWN_SOURCES) are enabled by default.
-    vec![
-        "rutracker".to_string(),
-        "rutor".to_string(),
-        "yts".to_string(),
-        "tpb".to_string(),
-        "subsplease".to_string(),
-        "eztv".to_string(),
-    ]
+    // "Every implemented source ships turned on" -- stated against the
+    // registry rather than as a second handwritten list, so a source
+    // can only be left out of the defaults by not being implemented.
+    KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect()
 }
+
+/// Source ids a config written before B8 wave 1 could possibly mention:
+/// exactly what `KNOWN_SOURCES` held at `9d5ae14`, the last commit
+/// before wave 1 added yts. Used only to seed `known_sources` for a
+/// config that predates the field (see `migrate_sources`).
+const LEGACY_SOURCES: &[&str] = &["rutracker", "rutor", "nnmclub"];
+
 
 fn default_download_dir_mode() -> String {
     "default".to_string()
@@ -226,6 +241,62 @@ fn default_download_dir_mode() -> String {
 fn default_config_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_default();
     home.join(".config").join("doris").join("config.toml")
+}
+
+impl Config {
+    /// Give a config the source ids it has never heard of.
+    ///
+    /// `enabled_sources` is opt-in, so a config saved before wave 1 --
+    /// which lists only the sources that existed then -- would keep
+    /// yts/tpb/subsplease/eztv switched off forever, with no UI able to
+    /// switch them on until this build's Options rows arrived. That is
+    /// not a hypothetical: it is what a live run of the finished wave
+    /// hit.
+    ///
+    /// The line between "new to this build" and "the user turned it
+    /// off" is [`Config::known_sources`]: an id this config has already
+    /// seen is never re-added. A config predating the field is
+    /// recognised by being empty and seeded with [`LEGACY_SOURCES`],
+    /// which is what keeps somebody who disabled `rutor` back then from
+    /// having it silently switched back on, while `tpb` -- an id they
+    /// have never seen -- arrives enabled.
+    pub fn migrate_sources(&mut self) {
+        let known: Vec<String> = if self.known_sources.is_empty() {
+            LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()
+        } else {
+            self.known_sources.clone()
+        };
+
+        for id in default_enabled_sources() {
+            let known_before = known.iter().any(|k| k == &id);
+            let already_on = self.enabled_sources.iter().any(|e| e == &id);
+            if !known_before && !already_on {
+                self.enabled_sources.push(id);
+            }
+        }
+
+        // Record every id this build knows. A source added to the
+        // registry later is then unknown again, which is what makes the
+        // *next* migration happen without anyone extending a baseline;
+        // ids the registry no longer lists are kept, since a config
+        // that knew them did not stop knowing them.
+        let mut all: Vec<String> = KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect();
+        for id in known {
+            if !all.iter().any(|a| a == &id) {
+                all.push(id);
+            }
+        }
+        self.known_sources = all;
+    }
+}
+
+/// Parse config TOML and run the migrations it needs: the single entry
+/// point `load` and the tests share, so what a test asserts is what a
+/// real config file goes through.
+pub fn from_toml(content: &str) -> Result<Config> {
+    let mut config: Config = toml::from_str(content)?;
+    config.migrate_sources();
+    Ok(config)
 }
 
 pub fn load(path: Option<&Path>) -> Result<Config> {
@@ -244,8 +315,7 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
     match config_path {
         Some(p) => {
             let content = std::fs::read_to_string(&p)?;
-            let config: Config = toml::from_str(&content)?;
-            Ok(config)
+            from_toml(&content)
         }
         None => Ok(Config::default()),
     }
