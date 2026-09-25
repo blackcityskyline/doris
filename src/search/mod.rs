@@ -9,5 +9,6 @@ pub mod ordering;
 pub mod rutracker;
 pub mod rutor;
 pub mod source;
+pub mod subsplease;
 pub mod tpb;
 pub mod yts;

@@ -331,7 +331,7 @@ impl App {
     /// implemented yet -- no point offering a tab that can never return
     /// anything.
     pub const SOURCE_TABS: &'static [&'static str] =
-        &["rutracker", "rutor", "yts", "tpb", "all"];
+        &["rutracker", "rutor", "yts", "tpb", "subsplease", "all"];
 
     /// Cycle the Results panel's active source tab forward (wraps).
     pub fn cycle_source(&mut self) {
