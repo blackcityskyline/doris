@@ -24,6 +24,7 @@ use tokio::sync::Mutex;
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
+use super::eztv::EztvSearcher;
 use super::subsplease::SubsPleaseSearcher;
 use super::tpb::TpbSearcher;
 use super::yts::YtsSearcher;
@@ -170,6 +171,9 @@ const TPB_GROUPS: &[Group] = &[Group::Movies, Group::TV];
 
 /// SubsPlease is anime-only by nature (B8 wave 1).
 const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
+
+/// EZTV is TV-only, and its rows say `Group::TV` to match (B8 wave 1).
+const EZTV_GROUPS: &[Group] = &[Group::TV];
 
 #[async_trait]
 impl Source for RutrackerSearcher {
@@ -343,6 +347,14 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: SubsPleaseSearcher::HOME_URL,
     },
     SourceInfo {
+        id: "eztv",
+        label: "EZTV",
+        implemented: true,
+        groups: EZTV_GROUPS,
+        requires_browser: false,
+        home_url: EztvSearcher::HOME_URL,
+    },
+    SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
         implemented: false,
@@ -380,6 +392,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "yts" => Ok(Arc::new(YtsSearcher::new())),
         "tpb" => Ok(Arc::new(TpbSearcher::new())),
         "subsplease" => Ok(Arc::new(SubsPleaseSearcher::new())),
+        "eztv" => Ok(Arc::new(EztvSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
 }
