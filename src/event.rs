@@ -15,6 +15,10 @@ pub enum Event {
     SearchComplete {
         generation: u64,
         results: Vec<crate::search::models::TorrentItem>,
+        /// Whether at least one contributing source has another page
+        /// (B2). Replaces app.rs's `count < 50` guess, which only ever
+        /// worked because rutracker happens to page by 50.
+        has_more: bool,
     },
     /// Same generation tag as [`Event::SearchComplete`]: a stale failure
     /// must not flip a newer search back to `Idle` or log an error the user

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseButton, MouseEventKind};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{Mutex, mpsc};
@@ -7,8 +8,9 @@ use tokio::sync::{Mutex, mpsc};
 use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
-use crate::search::rutracker::RutrackerSearcher;
-use crate::search::rutor::RutorSearcher;
+use crate::search::source::{
+    self, AuthContext, LogFn, SearchPage, SearchRequest, Source, SourceEnv,
+};
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
@@ -58,8 +60,21 @@ pub fn cycle_index(pos: usize, len: usize, direction: i8) -> usize {
 /// -- including rows produced before the `source` field existed -- routes
 /// through the browser, which is what the old hardcoded path did. Extracted
 /// as a free function so tests can pin the routing choice (B0.1).
+///
+/// Since B2 the answer comes from the registry (`SourceInfo::
+/// requires_browser`) instead of a literal `"rutor"` comparison, so a
+/// newly registered source gets its routing from one place.
 pub fn source_needs_browser(source: &str) -> bool {
-    source != "rutor"
+    source::requires_browser(source)
+}
+
+/// The registered id to talk to for a result row. Rows carry their own
+/// source id; rows from before that field existed (or with an id no
+/// longer in the registry) hold rutracker-shaped URLs, so they fall back
+/// to `"rutracker"` -- the same conservative default
+/// [`source_needs_browser`] has had since B0.1.
+pub fn source_id_for(item: &crate::search::models::TorrentItem) -> &'static str {
+    source::get_source(&item.source).map(|s| s.id).unwrap_or("rutracker")
 }
 
 /// The single log line describing how one source's dispatch ended (B0.3):
@@ -121,6 +136,10 @@ pub fn enter_action(
 /// `SearchComplete` from the previous query used to land after the new one
 /// started and overwrite its results).
 ///
+/// `has_more` comes from the sources themselves (B2): the old `count < 50`
+/// test could only ever be right for rutracker's 50-row pages, and rutor's
+/// 100-row ones never tripped it.
+///
 /// A free function over `&mut UiApp` rather than a method on `App` so the
 /// stale-vs-fresh decision is testable without a terminal, a browser or a
 /// running event loop.
@@ -129,6 +148,7 @@ pub fn apply_search_results(
     event_generation: u64,
     current_generation: u64,
     results: Vec<crate::search::models::TorrentItem>,
+    has_more: bool,
 ) -> bool {
     if event_generation != current_generation {
         ui.add_log("Dropped stale search results (superseded by a newer search)");
@@ -143,9 +163,12 @@ pub fn apply_search_results(
         ui.selected = 0;
         ui.add_log(&format!("Found {} results", count));
     }
-    if count < 50 {
-        ui.all_loaded = true;
-    }
+    // Assigned rather than only ever latched to `true`: a fresh search
+    // must clear the previous query's end-of-results state too (the
+    // event loop resets it as well, but only for `start_search` -- a
+    // Load more that somehow lands on generation 1 again shouldn't keep
+    // the pager stuck).
+    ui.all_loaded = !has_more;
     ui.search_offset = ui.results.len();
     ui.state = AppState::Idle;
     ui.update_filter();
@@ -174,16 +197,14 @@ pub struct App {
     event_handler: EventHandler,
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
-    /// Shared across start_search/load_more/do_login (all run in spawned
-    /// tasks) so RutrackerSearcher's `logged_in` flag actually persists
-    /// between calls. Previously each of those constructed its own fresh
-    /// RutrackerSearcher::new(browser), which reset `logged_in` to false
-    /// every time -- so paginating past the first page of results (or any
-    /// action after the first) went through a full re-login/cookie
-    /// re-injection sequence every single time, which is slow. The
-    /// browser itself was always reused correctly via get_browser(); this
-    /// mirrors that same lazy-cache pattern for the searcher.
-    searcher: Option<Arc<Mutex<RutrackerSearcher>>>,
+    /// Live sources keyed by id, built once via `source::build_source`
+    /// and reused across start_search/load_more/do_login (all run in
+    /// spawned tasks). The session state that used to live in a cached
+    /// `RutrackerSearcher` -- its `logged_in` flag, so pagination didn't
+    /// re-login every call -- now lives in the `Arc<dyn Source>` itself;
+    /// the browser behind it was always reused via `get_browser()` and
+    /// still is.
+    sources: HashMap<&'static str, Arc<dyn Source>>,
     browser_visibility: BrowserVisibility,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
@@ -260,7 +281,7 @@ impl App {
             event_handler,
             torrserver,
             browser: None,
-            searcher: None,
+            sources: HashMap::new(),
             browser_visibility,
             search_tx,
             search_rx,
@@ -302,12 +323,13 @@ impl App {
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);
                         },
-                        Event::SearchComplete { generation, results } => {
+                        Event::SearchComplete { generation, results, has_more } => {
                             apply_search_results(
                                 &mut self.ui,
                                 generation,
                                 self.search_generation,
                                 results,
+                                has_more,
                             );
                         }
                         Event::SearchError { generation, error } => {
@@ -574,34 +596,26 @@ impl App {
         }
     }
 
+    /// Fetch a result's `.torrent` bytes through the `Source` that
+    /// actually owns it, instead of always going through rutracker's
+    /// browser session -- which for a rutor row either failed ("No
+    /// browser session") or fetched `rutor.org/download/...`
+    /// cross-origin from a rutracker page (B0.1). Since B2 the client is
+    /// just `&dyn Source`: which one to hand in is decided by
+    /// [`source_id_for`] + [`source_needs_browser`] at the call site.
+    /// Shared by `spawn_stream` and `download_selected_to_disk`.
+    async fn download_bytes_for(
+        item: &crate::search::models::TorrentItem,
+        source: &dyn Source,
+    ) -> Result<Vec<u8>> {
+        source.download_torrent(&item.download_url).await
+    }
+
     /// Download the selected result's .torrent file to disk (Options ->
     /// download's resolved directory), dispatching to whichever Source
     /// actually produced it -- `TorrentItem.source` matters here because
     /// the "all" Results tab can mix rows from more than one source at
     /// once, each needing a different download client.
-    /// Fetch a result's `.torrent` bytes from the client that actually owns
-    /// it, instead of always going through rutracker's browser session --
-    /// which for a rutor row either failed ("No browser session") or fetched
-    /// `rutor.org/download/...` cross-origin from a rutracker page (B0.1).
-    /// Shared by `spawn_stream` and `download_selected_to_disk`.
-    ///
-    /// `searcher` is only required for browser-backed sources: pass `None`
-    /// for plain-HTTP ones, so this can never trigger a browser launch that
-    /// the download doesn't actually need.
-    async fn download_bytes_for(
-        item: &crate::search::models::TorrentItem,
-        searcher: Option<Arc<Mutex<RutrackerSearcher>>>,
-    ) -> Result<Vec<u8>> {
-        if source_needs_browser(&item.source) {
-            let searcher = searcher
-                .ok_or_else(|| anyhow::anyhow!("No browser session - search first"))?;
-            let searcher = searcher.lock().await;
-            searcher.download_torrent(&item.download_url).await
-        } else {
-            RutorSearcher::new().download_torrent(&item.download_url).await
-        }
-    }
-
     async fn download_selected_to_disk(&mut self) {
         let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
             self.ui.add_log("No result selected to download.");
@@ -615,16 +629,13 @@ impl App {
 
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
 
-        // Only browser-backed sources get a searcher here: asking for one
-        // launches the browser if it isn't up yet, and a rutor download
-        // must not do that.
-        let bytes_result: Result<Vec<u8>> = if source_needs_browser(&item.source) {
-            match self.get_searcher().await {
-                Ok(searcher) => Self::download_bytes_for(&item, Some(searcher)).await,
-                Err(e) => Err(e),
-            }
-        } else {
-            Self::download_bytes_for(&item, None).await
+        // `get_source` launches the browser only for sources whose
+        // registry entry says they need one -- a rutor download must
+        // never start Chrome (B0.1), and `requires_browser` is what says
+        // so (B2).
+        let bytes_result: Result<Vec<u8>> = match self.get_source(source_id_for(&item)).await {
+            Ok(source) => Self::download_bytes_for(&item, source.as_ref()).await,
+            Err(e) => Err(e),
         };
 
         match bytes_result {
@@ -1193,7 +1204,10 @@ impl App {
             let _ = crate::credentials::save_credentials(username, password);
         }
 
-        let searcher = match self.get_searcher().await {
+        // The login modal is rutracker's -- it's the only source with a
+        // session to establish (rutor's `ensure_logged_in` is a no-op) --
+        // so the target id is fixed rather than read off the tab.
+        let source = match self.get_source("rutracker").await {
             Ok(s) => s,
             Err(e) => {
                 self.ui.add_log(&format!("Browser error: {}", e));
@@ -1201,17 +1215,19 @@ impl App {
             }
         };
 
-        let username = username.to_string();
-        let password = password.to_string();
-        let cookie_file = self.resolve_cookie_file();
+        let auth = AuthContext {
+            cookie_file: self.resolve_cookie_file(),
+            username: Some(username.to_string()),
+            password: Some(password.to_string()),
+        };
         let event_tx_login = self.event_handler.sender();
         let event_tx_result = self.event_handler.sender();
-        let log = Arc::new(move |msg: &str| { let _ = event_tx_login.send(Event::StreamLog(msg.to_string())); });
+        let log: LogFn = Arc::new(move |msg: &str| {
+            let _ = event_tx_login.send(Event::StreamLog(msg.to_string()));
+        });
 
         tokio::spawn(async move {
-            let searcher = searcher.lock().await;
-
-            match searcher.ensure_logged_in(cookie_file.as_deref(), Some(&username), Some(&password), log.clone()).await {
+            match source.ensure_logged_in(&auth, &log).await {
                 Ok(true) => {
                     let _ = event_tx_result.send(Event::LoginResult(true));
                 }
@@ -1246,9 +1262,10 @@ impl App {
     /// knows how to replace vs. extend `ui.results` based on `offset`)
     /// doesn't need to change. `generation` is stamped onto both events it
     /// can emit, so a result arriving after a newer search started is
-    /// dropped rather than merged into it (B0.2). Rutor needs no browser/login at all, so it
-    /// runs as a plain standalone task; Rutracker still goes through the
-    /// shared cached searcher exactly as before.
+    /// dropped rather than merged into it (B0.2). Since B2 both sources
+    /// are `Arc<dyn Source>` instances from the registry cache -- rutor
+    /// needs no browser/login at all, rutracker still runs its
+    /// `ensure_logged_in` first, now through `AuthContext`.
     async fn dispatch_search(&mut self, query: String, offset: usize, generation: u64) {
         let active = self.ui.active_source.clone();
         let want_rutracker = (active == "rutracker" || active == "all")
@@ -1264,18 +1281,24 @@ impl App {
 
         let event_tx_result = self.event_handler.sender();
 
-        let rutor_task: Option<tokio::task::JoinHandle<Result<Vec<crate::search::models::TorrentItem>>>> = if want_rutor {
-            let query = query.clone();
-            Some(tokio::spawn(async move {
-                RutorSearcher::new().search_page(&query, offset).await
-            }))
+        let rutor_task: Option<tokio::task::JoinHandle<Result<SearchPage>>> = if want_rutor {
+            match self.get_source("rutor").await {
+                Ok(source) => {
+                    let req = SearchRequest::new(query.clone(), offset);
+                    Some(tokio::spawn(async move { source.search(&req).await }))
+                }
+                Err(e) => {
+                    self.ui.add_log(&format!("Source error: {}", e));
+                    None
+                }
+            }
         } else {
             None
         };
 
-        let rutracker_task: Option<tokio::task::JoinHandle<Result<Vec<crate::search::models::TorrentItem>>>> = if want_rutracker {
-            match self.get_searcher().await {
-                Ok(searcher) => {
+        let rutracker_task: Option<tokio::task::JoinHandle<Result<SearchPage>>> = if want_rutracker {
+            match self.get_source("rutracker").await {
+                Ok(source) => {
                     let event_tx_log = self.event_handler.sender();
                     // If "Save cookies" is off, don't pass a cookie file
                     // path through at all -- see do_login for the same
@@ -1284,10 +1307,11 @@ impl App {
                     let username = self.args.username.clone();
                     let password = self.args.password.clone();
                     let saved_creds = crate::credentials::load_credentials();
-                    let query = query.clone();
-                    let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
+                    let req = SearchRequest::new(query.clone(), offset);
+                    let log: LogFn = Arc::new(move |msg: &str| {
+                        let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
+                    });
                     Some(tokio::spawn(async move {
-                        let searcher = searcher.lock().await;
                         let (cred_user, cred_pass) = match (username, password) {
                             (Some(u), Some(p)) => (Some(u), Some(p)),
                             _ => match saved_creds {
@@ -1298,12 +1322,17 @@ impl App {
                                 None => (None, None),
                             },
                         };
-                        match searcher.ensure_logged_in(cookie_file.as_deref(), cred_user.as_deref(), cred_pass.as_deref(), log.clone()).await {
+                        let auth = AuthContext {
+                            cookie_file,
+                            username: cred_user,
+                            password: cred_pass,
+                        };
+                        match source.ensure_logged_in(&auth, &log).await {
                             Ok(true) => log("SEARCH: logged in, proceeding with search"),
                             Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
                             Err(e) => log(&format!("SEARCH: login error: {}", e)),
                         }
-                        searcher.search_page(&query, offset).await
+                        source.search(&req).await
                     }))
                 }
                 Err(e) => {
@@ -1318,22 +1347,28 @@ impl App {
         tokio::spawn(async move {
             let mut combined = Vec::new();
             let mut last_err: Option<String> = None;
+            // B2: the sources themselves say whether another page exists,
+            // instead of app.rs guessing `count < 50`. Merged across
+            // sources it's an OR -- if any of them has more, loading more
+            // is still worth offering.
+            let mut any_has_more = false;
 
             // One outcome line per source, always (B0.3): `last_err` only
             // reaches the user when nothing came back, so a source failing
             // next to a healthy one used to vanish without a trace.
-            for (source, task) in [("rutor", rutor_task), ("rutracker", rutracker_task)] {
+            for (source_id, task) in [("rutor", rutor_task), ("rutracker", rutracker_task)] {
                 let Some(task) = task else { continue };
                 let outcome: Result<usize, String> = match task.await {
-                    Ok(Ok(items)) => {
-                        let count = items.len();
-                        combined.extend(items);
+                    Ok(Ok(page)) => {
+                        let count = page.items.len();
+                        any_has_more |= page.has_more;
+                        combined.extend(page.items);
                         Ok(count)
                     }
                     Ok(Err(e)) => Err(e.to_string()),
                     Err(e) => Err(format!("task error: {}", e)),
                 };
-                let line = source_outcome_line(source, &outcome);
+                let line = source_outcome_line(source_id, &outcome);
                 if outcome.is_err() {
                     last_err = Some(line.clone());
                 }
@@ -1352,6 +1387,7 @@ impl App {
             let _ = event_tx_result.send(Event::SearchComplete {
                 generation,
                 results: combined,
+                has_more: any_has_more,
             });
         });
     }
@@ -1364,21 +1400,15 @@ impl App {
         let item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
 
-        // Only browser-backed rows require a running session; a rutor row
-        // plays straight over plain HTTP (B0.1).
-        let searcher = if !source_needs_browser(&item.source) {
-            None
-        } else {
-            if self.browser.is_none() {
-                self.ui.add_log("No browser session - search first");
+        // Only browser-backed rows require a session that's already up;
+        // a rutor row plays straight over plain HTTP and is built on the
+        // spot (B0.1). Streaming never launches a browser itself: if the
+        // session a search should have created isn't there, say so.
+        let source = match self.source_for_row(source_id_for(&item)).await {
+            Ok(s) => s,
+            Err(e) => {
+                self.ui.add_log(&e.to_string());
                 return;
-            }
-            match self.get_searcher().await {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    self.ui.add_log(&format!("Browser error: {}", e));
-                    return;
-                }
             }
         };
 
@@ -1396,7 +1426,7 @@ impl App {
                 return;
             }
 
-            match Self::download_bytes_for(&item, searcher).await {
+            match Self::download_bytes_for(&item, source.as_ref()).await {
                 Ok(bytes) => {
                     log(&format!("Downloaded {} bytes", bytes.len()));
                     match torrserver.upload_torrent(&bytes, &item.title).await {
@@ -1479,7 +1509,10 @@ impl App {
         });
     }
 
-    async fn get_browser(&mut self) -> Result<Arc<Mutex<Browser>>> {
+    /// `home_url` comes from the registry entry of the source asking for
+    /// the browser: the `Source` instance can't supply it, because
+    /// building that instance is exactly what needs the browser.
+    async fn get_browser(&mut self, home_url: &str) -> Result<Arc<Mutex<Browser>>> {
         if let Some(ref b) = self.browser {
             return Ok(Arc::clone(b));
         }
@@ -1489,28 +1522,46 @@ impl App {
         let (kind, path) = detect::detect_browser_with_priority(browser_choice, &browser_priority)?;
         self.ui.add_log(&format!("Launching {} ({})...", kind, self.browser_visibility));
 
-        // TODO(Phase 3): this should come from the active Source
-        // (`Source::home_url()`) once the Source trait lands, instead of
-        // being rutracker-specific here.
-        let browser = Browser::launch(&path, self.browser_visibility, RutrackerSearcher::HOME_URL, self.config.close_browser_on_exit).await?;
+        let browser = Browser::launch(&path, self.browser_visibility, home_url, self.config.close_browser_on_exit).await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 
         Ok(browser)
     }
 
-    /// Lazily create (once) and reuse the same `RutrackerSearcher` for the
-    /// lifetime of the browser session, so its `logged_in` flag actually
-    /// means something across calls. See the field doc comment on
-    /// `searcher` for why this exists.
-    async fn get_searcher(&mut self) -> Result<Arc<Mutex<RutrackerSearcher>>> {
-        if let Some(ref s) = self.searcher {
-            return Ok(Arc::clone(s));
+    /// Build (once) and reuse the live `Source` for `id` -- the one
+    /// path from `app.rs` onto a concrete source type, via the registry
+    /// and `source::build_source` (B2). Browser-backed sources get their
+    /// session launched here with the registry's `home_url`.
+    async fn get_source(&mut self, id: &str) -> Result<Arc<dyn Source>> {
+        if let Some(existing) = self.sources.get(id) {
+            return Ok(Arc::clone(existing));
         }
-        let browser = self.get_browser().await?;
-        let searcher = Arc::new(Mutex::new(RutrackerSearcher::new(browser)));
-        self.searcher = Some(Arc::clone(&searcher));
-        Ok(searcher)
+        let info = source::get_source(id)
+            .ok_or_else(|| anyhow::anyhow!("unknown source '{}'", id))?;
+        let browser = if info.requires_browser {
+            Some(self.get_browser(info.home_url).await?)
+        } else {
+            None
+        };
+        let built = source::build_source(info.id, SourceEnv { browser })?;
+        self.sources.insert(info.id, Arc::clone(&built));
+        Ok(built)
+    }
+
+    /// The instance a result row is played through: plain-HTTP sources
+    /// are built on the spot, browser-backed ones must already be in the
+    /// cache -- streaming never launches a browser itself (B0.1), it
+    /// reports "No browser session - search first" instead.
+    async fn source_for_row(&mut self, id: &'static str) -> Result<Arc<dyn Source>> {
+        if source_needs_browser(id) {
+            self.sources
+                .get(id)
+                .map(Arc::clone)
+                .ok_or_else(|| anyhow::anyhow!("No browser session - search first"))
+        } else {
+            self.get_source(id).await
+        }
     }
 
     async fn load_more(&mut self, query: String, offset: usize) {
