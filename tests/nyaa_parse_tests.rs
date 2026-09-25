@@ -7,11 +7,53 @@
 //! (never CDATA), `nyaa:size` as a human string, `<guid isPermaLink>`
 //! with an attribute, and a `-0000` offset on `<pubDate>`.
 
-use doris::search::nyaa::{
-    NyaaSearcher, feed_url, parse_items, to_page, unescape_entities,
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
 use doris::search::models::TorrentItem;
+use doris::search::net::fetch_resilient;
+use doris::search::nyaa::{
+    NyaaSearcher, fetch_options, feed_url, parse_items, to_page, unescape_entities,
+};
 use doris::search::source::{Group, SearchRequest, Source};
+
+/// What `ddos-guard` served this network all day: no body, no hint.
+const FIVE_OH_FOUR: &str = concat!(
+    "HTTP/1.1 504 Gateway Timeout\r\n",
+    "Server: ddos-guard\r\n",
+    "Content-Length: 0\r\n",
+    "Connection: close\r\n\r\n",
+);
+
+/// A local stand-in that answers every request the same way, so the
+/// retry budget can be measured without waiting on the real host.
+async fn spawn_always_504() -> (String, Arc<AtomicUsize>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let hits = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock server");
+    let addr = listener.local_addr().expect("mock server local addr");
+    let counter = Arc::clone(&hits);
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            counter.fetch_add(1, Ordering::SeqCst);
+            tokio::spawn(async move {
+                let mut buf = [0u8; 8192];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(FIVE_OH_FOUR.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    (format!("http://{}", addr), hits)
+}
 
 /// Six items, four of which may become rows: two lack a usable hash
 /// and are dropped one row each (the parser's own rule).
@@ -256,4 +298,34 @@ fn test_the_feed_url_asks_for_every_category_and_encodes_the_query() {
         feed_url("").contains("c=0_0"),
         "the all-category scope is part of the URL, not of the query"
     );
+}
+
+#[tokio::test]
+async fn test_a_blocked_host_is_named_in_one_attempt_inside_the_window() {
+    // The decision behind `fetch_options()`: nyaa's 504 costs ~16 s a
+    // try here, the orchestrator allows 25 s total, so any retry budget
+    // above zero simply hides the cause behind `timed out after 25s`.
+    // One attempt must land inside that window *and* say why it failed.
+    let (url, hits) = spawn_always_504().await;
+    let client = reqwest::Client::new();
+
+    let started = Instant::now();
+    let err = fetch_resilient(&url, || client.get(&url), &fetch_options())
+        .await
+        .expect_err("a 504 must never be handed back as a page");
+    let waited = started.elapsed();
+
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        1,
+        "the budget is one attempt, and the mock must see exactly that"
+    );
+    let text = err.to_string();
+    assert!(text.contains("HTTP 504"), "the cause must survive: {}", text);
+    assert!(
+        waited < Duration::from_secs(5),
+        "backoff would have kept the user waiting: {:?}",
+        waited
+    );
+    assert_eq!(fetch_options().retries, 0, "and that is what we ask for");
 }
