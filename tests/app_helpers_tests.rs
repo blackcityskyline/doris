@@ -1,14 +1,15 @@
 use doris::app::{
-    EnterAction, apply_search_results, cycle_index, enter_action, resolve_cookie_file,
+    EnterAction, apply_source_done, cycle_index, enter_action, finish_search, resolve_cookie_file,
     source_id_for, source_needs_browser, source_outcome_line,
 };
 use doris::config::Config;
 use doris::search::models::TorrentItem;
 use doris::ui::app::App as UiApp;
 use doris::ui::app::AppState;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-// --- apply_search_results (fixes B0.2: stale search overwrites fresh) -------
+// --- apply_source_done (B0.2 stale-drop; B3 per-source arrival) -------------
 
 fn make_ui() -> UiApp {
     UiApp::new(
@@ -36,11 +37,10 @@ fn item(title: &str) -> TorrentItem {
 fn test_stale_generation_results_are_dropped() {
     let mut ui = make_ui();
     ui.results = vec![item("fresh")];
-    ui.search_offset = ui.results.len();
     ui.state = AppState::Searching;
 
     // Generation 1 answers after generation 2's search started.
-    let applied = apply_search_results(&mut ui, 1, 2, vec![item("stale")], false);
+    let applied = apply_source_done(&mut ui, 1, 2, "rutor", vec![item("stale")], None);
 
     assert!(!applied, "stale results must not be applied");
     assert_eq!(ui.results.len(), 1, "the fresh results must survive");
@@ -49,71 +49,91 @@ fn test_stale_generation_results_are_dropped() {
 }
 
 #[test]
-fn test_current_generation_results_replace_the_list() {
+fn test_rows_append_and_the_outcome_line_is_logged() {
     let mut ui = make_ui();
-    ui.results = vec![item("old")];
+    ui.results = vec![item("already here")];
     ui.state = AppState::Searching;
 
-    let applied = apply_search_results(&mut ui, 3, 3, vec![item("a"), item("b")], false);
+    let applied = apply_source_done(&mut ui, 3, 3, "rutor", vec![item("a"), item("b")], None);
 
     assert!(applied);
-    assert_eq!(ui.results.len(), 2);
-    assert_eq!(ui.results[0].title, "a");
-    assert_eq!(ui.selected, 0);
-    assert_eq!(ui.search_offset, 2);
+    assert_eq!(ui.results.len(), 3, "each source appends into the same list");
+    assert_eq!(ui.results[2].title, "b");
+    assert_eq!(ui.search_offset, 3);
+    assert!(
+        ui.logs.iter().any(|l| l.contains("rutor: 2 results")),
+        "the per-source outcome line must reach the log: {:?}",
+        ui.logs
+    );
+    assert!(
+        ui.state == AppState::Searching,
+        "one source answering must not end the search others are still in"
+    );
+}
+
+#[test]
+fn test_a_failing_source_logs_its_line_without_adding_rows() {
+    // B0.3: a source that fails still reports, naming itself -- even
+    // though it brings no rows.
+    let mut ui = make_ui();
+    ui.results = vec![item("kept")];
+    ui.state = AppState::Searching;
+
+    let applied = apply_source_done(
+        &mut ui,
+        3,
+        3,
+        "rutracker",
+        vec![],
+        Some("timed out after 25s"),
+    );
+
+    assert!(applied, "a failed source still counts as an answer");
+    assert_eq!(ui.results.len(), 1, "a failure adds no rows");
+    assert!(ui.results[0].title == "kept");
+    assert!(
+        ui.logs.iter().any(|l| l.contains("rutracker: timed out after 25s")),
+        "the failure line must reach the log: {:?}",
+        ui.logs
+    );
+}
+
+// --- finish_search (B3: the generation is over when every source answered) --
+
+#[test]
+fn test_completion_marks_all_loaded_when_no_source_has_more() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+    let has_more: HashMap<String, bool> = HashMap::new();
+
+    assert!(finish_search(&mut ui, 1, 1, &has_more));
+    assert!(ui.all_loaded, "no source with another page means stop paging");
     assert!(ui.state == AppState::Idle);
 }
 
 #[test]
-fn test_current_generation_extends_when_paging() {
-    let mut ui = make_ui();
-    ui.results = vec![item("page1")];
-    ui.search_offset = ui.results.len();
-    ui.state = AppState::Searching;
-
-    let applied = apply_search_results(&mut ui, 7, 7, vec![item("page2")], true);
-
-    assert!(applied);
-    assert_eq!(ui.results.len(), 2, "offset > 0 extends instead of replacing");
-    assert_eq!(ui.results[1].title, "page2");
-    assert_eq!(ui.search_offset, 2);
-}
-
-// --- apply_search_results: has_more replaces the `count < 50` guess (B2) -----
-
-#[test]
-fn test_last_page_marks_all_loaded() {
+fn test_completion_keeps_paging_open_while_any_source_has_more() {
     let mut ui = make_ui();
     ui.state = AppState::Searching;
+    let mut has_more = HashMap::new();
+    has_more.insert("rutor".to_string(), false);
+    has_more.insert("rutracker".to_string(), true);
 
-    apply_search_results(&mut ui, 1, 1, vec![item("a")], false);
-
-    assert!(ui.all_loaded, "a source reporting no more pages must stop the pager");
+    assert!(finish_search(&mut ui, 1, 1, &has_more));
+    assert!(!ui.all_loaded, "one source with another page keeps Load more alive");
+    assert!(ui.state == AppState::Idle);
 }
 
 #[test]
-fn test_a_source_with_more_pages_keeps_loading_available() {
+fn test_stale_completion_does_not_flip_a_newer_search_idle() {
     let mut ui = make_ui();
     ui.state = AppState::Searching;
-    // Exactly 50 results -- the size that made the old `count < 50` test
-    // look right for rutracker. `has_more` is now what decides.
-    let full_page: Vec<TorrentItem> = (0..50).map(|i| item(&format!("row {}", i))).collect();
 
-    apply_search_results(&mut ui, 1, 1, full_page, true);
-
-    assert!(!ui.all_loaded, "a full page must leave Load more available");
-}
-
-#[test]
-fn test_all_loaded_resets_on_a_fresh_search() {
-    let mut ui = make_ui();
-    ui.state = AppState::Searching;
-    ui.all_loaded = true; // left over from the previous query's last page
-    ui.search_offset = 0;
-
-    apply_search_results(&mut ui, 2, 2, vec![item("fresh")], true);
-
-    assert!(!ui.all_loaded, "a new search must not inherit the old query's state");
+    assert!(!finish_search(&mut ui, 1, 2, &HashMap::new()));
+    assert!(
+        ui.state == AppState::Searching,
+        "a superseded generation must not end the newer search"
+    );
 }
 
 // --- source_needs_browser (fixes B0.1: streaming ignored item.source) -------

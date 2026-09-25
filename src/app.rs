@@ -8,9 +8,8 @@ use tokio::sync::{Mutex, mpsc};
 use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
-use crate::search::source::{
-    self, AuthContext, LogFn, SearchPage, SearchRequest, Source, SourceEnv,
-};
+use crate::search::orchestrator::{self, SourceStatus};
+use crate::search::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
@@ -130,48 +129,64 @@ pub fn enter_action(
     }
 }
 
-/// Apply one search dispatch's results to the UI -- unless the event came
-/// from a dispatch that a newer `start_search` has since superseded, in
-/// which case it is dropped and `false` is returned (B0.2: a late
-/// `SearchComplete` from the previous query used to land after the new one
-/// started and overwrite its results).
+/// Merge one source's page into the Results panel and log its B0.3
+/// outcome line -- unless the event came from a dispatch that a newer
+/// `start_search` has since superseded, in which case it is dropped and
+/// `false` is returned (B0.2: a late answer from the previous query used
+/// to land after the new one started and overwrite the fresh one's
+/// results).
 ///
-/// `has_more` comes from the sources themselves (B2): the old `count < 50`
-/// test could only ever be right for rutracker's 50-row pages, and rutor's
-/// 100-row ones never tripped it.
+/// Since B3 rows arrive one source at a time, so this only ever appends:
+/// the fresh search clears the table before dispatching, and appending
+/// keeps the selection where the user put it while the other sources are
+/// still answering.
 ///
 /// A free function over `&mut UiApp` rather than a method on `App` so the
 /// stale-vs-fresh decision is testable without a terminal, a browser or a
 /// running event loop.
-pub fn apply_search_results(
+pub fn apply_source_done(
     ui: &mut UiApp,
     event_generation: u64,
     current_generation: u64,
-    results: Vec<crate::search::models::TorrentItem>,
-    has_more: bool,
+    source: &str,
+    items: Vec<crate::search::models::TorrentItem>,
+    error: Option<&str>,
 ) -> bool {
     if event_generation != current_generation {
         ui.add_log("Dropped stale search results (superseded by a newer search)");
         return false;
     }
-    let count = results.len();
-    if ui.search_offset > 0 {
-        ui.results.extend(results);
-        ui.add_log(&format!("Loaded {} more results (total: {})", count, ui.results.len()));
-    } else {
-        ui.results = results;
-        ui.selected = 0;
-        ui.add_log(&format!("Found {} results", count));
-    }
-    // Assigned rather than only ever latched to `true`: a fresh search
-    // must clear the previous query's end-of-results state too (the
-    // event loop resets it as well, but only for `start_search` -- a
-    // Load more that somehow lands on generation 1 again shouldn't keep
-    // the pager stuck).
-    ui.all_loaded = !has_more;
+    let outcome: Result<usize, String> = match error {
+        None => Ok(items.len()),
+        Some(err) => Err(err.to_string()),
+    };
+    ui.add_log(&source_outcome_line(source, &outcome));
+    ui.results.extend(items);
     ui.search_offset = ui.results.len();
-    ui.state = AppState::Idle;
     ui.update_filter();
+    true
+}
+
+/// Every source of `generation` reported in (or failed to): nothing more
+/// is coming for it, so the UI goes idle. Whether "Load more" still has
+/// anything to offer is read from the per-source `has_more` verdicts
+/// (B2/B3) instead of the old `count < 50` guess.
+///
+/// Returns `false` when the completion belongs to a superseded dispatch
+/// -- it must not flip a newer search back to idle (B0.2's rule,
+/// applied to the new final event).
+pub fn finish_search(
+    ui: &mut UiApp,
+    event_generation: u64,
+    current_generation: u64,
+    has_more: &HashMap<String, bool>,
+) -> bool {
+    if event_generation != current_generation {
+        ui.add_log("Dropped stale search completion (superseded by a newer search)");
+        return false;
+    }
+    ui.all_loaded = !has_more.values().any(|&more| more);
+    ui.state = AppState::Idle;
     true
 }
 
@@ -205,6 +220,15 @@ pub struct App {
     /// the browser behind it was always reused via `get_browser()` and
     /// still is.
     sources: HashMap<&'static str, Arc<dyn Source>>,
+    /// Where each source of the current dispatch stands (B3): `Pending`
+    /// while its task runs, then `Ok`/`Error`/`Timeout` from its
+    /// `SourceDone`. The log line is the interim surface; a status row
+    /// can render this map later.
+    source_status: HashMap<String, SourceStatus>,
+    /// Each source's last "has another page" verdict (B2/B3): consulted
+    /// by "Load more" and turned into `ui.all_loaded` by
+    /// [`finish_search`].
+    source_has_more: HashMap<String, bool>,
     browser_visibility: BrowserVisibility,
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
@@ -282,6 +306,8 @@ impl App {
             torrserver,
             browser: None,
             sources: HashMap::new(),
+            source_status: HashMap::new(),
+            source_has_more: HashMap::new(),
             browser_visibility,
             search_tx,
             search_rx,
@@ -323,20 +349,44 @@ impl App {
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);
                         },
-                        Event::SearchComplete { generation, results, has_more } => {
-                            apply_search_results(
+                        Event::SourceDone {
+                            source,
+                            generation,
+                            items,
+                            has_more,
+                            error,
+                            timed_out,
+                        } => {
+                            let count = items.len();
+                            let applied = apply_source_done(
                                 &mut self.ui,
                                 generation,
                                 self.search_generation,
-                                results,
-                                has_more,
+                                &source,
+                                items,
+                                error.as_deref(),
                             );
-                        }
-                        Event::SearchError { generation, error } => {
-                            if generation == self.search_generation {
-                                self.ui.state = AppState::Idle;
-                                self.ui.add_log(&format!("Search error: {}", error));
+                            // A superseded dispatch may not touch the
+                            // newer search's status or its paging verdict
+                            // (B0.2), which is why the bookkeeping sits
+                            // behind the merge's result.
+                            if applied {
+                                let status = SourceStatus::from_event(
+                                    count,
+                                    error.as_deref(),
+                                    timed_out,
+                                );
+                                self.source_status.insert(source.clone(), status);
+                                self.source_has_more.insert(source, has_more);
                             }
+                        }
+                        Event::SearchComplete { generation } => {
+                            finish_search(
+                                &mut self.ui,
+                                generation,
+                                self.search_generation,
+                                &self.source_has_more,
+                            );
                         }
                         Event::StreamComplete(url) => {
                             self.ui.state = AppState::Idle;
@@ -363,9 +413,6 @@ impl App {
                             self.ui.search_input = query.clone();
                             self.ui.show_menu = false;
                             self.start_search(query).await;
-                        }
-                        Event::LoadMore(query, offset) => {
-                            self.load_more(query, offset).await;
                         }
                         Event::TorrentListUpdate(list) => {
                             // Prefer the torrent we're actively
@@ -1247,6 +1294,15 @@ impl App {
         self.ui.search_query = Some(query.clone());
         self.ui.search_offset = 0;
         self.ui.all_loaded = false;
+        // Rows now arrive one source at a time (B3), so there is no
+        // single moment where the old list gets replaced by the new one:
+        // the table empties here, and each source appends into it. The
+        // per-source records belong to the old query and go with it.
+        self.ui.results.clear();
+        self.ui.selected = 0;
+        self.ui.update_filter();
+        self.source_status.clear();
+        self.source_has_more.clear();
         self.ui.add_log(&format!("Searching '{}' for '{}'...", self.ui.active_source, query));
         // New generation: anything still in flight for a previous query is
         // now stale and gets dropped when it lands (B0.2).
@@ -1255,63 +1311,62 @@ impl App {
         self.dispatch_search(query, 0, generation).await;
     }
 
-    /// Kick off the search(es) for `query` at `offset` against whichever
-    /// source(s) the Results panel's tab bar has selected
-    /// (`ui.active_source`: "rutracker" / "rutor" / "all"), merging into
-    /// one `Event::SearchComplete` so the existing handler (which already
-    /// knows how to replace vs. extend `ui.results` based on `offset`)
-    /// doesn't need to change. `generation` is stamped onto both events it
-    /// can emit, so a result arriving after a newer search started is
-    /// dropped rather than merged into it (B0.2). Since B2 both sources
-    /// are `Arc<dyn Source>` instances from the registry cache -- rutor
-    /// needs no browser/login at all, rutracker still runs its
-    /// `ensure_logged_in` first, now through `AuthContext`.
+    /// Kick off the search for `query` at `offset`: one task per source
+    /// `orchestrator::selected_sources` picks (Results tab + Options),
+    /// each under the per-source deadline. Every task reports in on its
+    /// own through `Event::SourceDone`, so rows render as sources answer
+    /// instead of after the slowest one, and `Event::SearchComplete`
+    /// closes the generation -- both stamped with it, so an answer
+    /// arriving after a newer search started is dropped instead of
+    /// merged into it (B0.2).
+    ///
+    /// Rutor needs no browser/login at all; a source that does (rutracker)
+    /// walks login *inside* its task, so the deadline covers that walk
+    /// too rather than timing only the page fetch.
     async fn dispatch_search(&mut self, query: String, offset: usize, generation: u64) {
-        let active = self.ui.active_source.clone();
-        let want_rutracker = (active == "rutracker" || active == "all")
-            && self.config.enabled_sources.iter().any(|s| s == "rutracker");
-        let want_rutor = (active == "rutor" || active == "all")
-            && self.config.enabled_sources.iter().any(|s| s == "rutor");
-
-        if !want_rutracker && !want_rutor {
+        let selected =
+            orchestrator::selected_sources(&self.ui.active_source, &self.config.enabled_sources);
+        if selected.is_empty() {
             self.ui.add_log("Selected source is disabled in Options -> streaming -> Sources.");
             self.ui.state = AppState::Idle;
             return;
         }
 
-        let event_tx_result = self.event_handler.sender();
+        let mut tasks: Vec<(&'static str, tokio::task::JoinHandle<()>)> = Vec::new();
 
-        let rutor_task: Option<tokio::task::JoinHandle<Result<SearchPage>>> = if want_rutor {
-            match self.get_source("rutor").await {
-                Ok(source) => {
-                    let req = SearchRequest::new(query.clone(), offset);
-                    Some(tokio::spawn(async move { source.search(&req).await }))
-                }
+        for info in selected {
+            let source = match self.get_source(info.id).await {
+                Ok(s) => s,
                 Err(e) => {
-                    self.ui.add_log(&format!("Source error: {}", e));
-                    None
+                    // This source can't run at all, and with no task
+                    // spawned nothing else will ever speak for it: it
+                    // still owes the user a line (B0.3).
+                    self.ui.add_log(&source_outcome_line(info.id, &Err(e.to_string())));
+                    self.source_status
+                        .insert(info.id.to_string(), SourceStatus::Error(e.to_string()));
+                    continue;
                 }
-            }
-        } else {
-            None
-        };
+            };
 
-        let rutracker_task: Option<tokio::task::JoinHandle<Result<SearchPage>>> = if want_rutracker {
-            match self.get_source("rutracker").await {
-                Ok(source) => {
-                    let event_tx_log = self.event_handler.sender();
-                    // If "Save cookies" is off, don't pass a cookie file
-                    // path through at all -- see do_login for the same
-                    // gating.
-                    let cookie_file = self.resolve_cookie_file();
-                    let username = self.args.username.clone();
-                    let password = self.args.password.clone();
-                    let saved_creds = crate::credentials::load_credentials();
-                    let req = SearchRequest::new(query.clone(), offset);
-                    let log: LogFn = Arc::new(move |msg: &str| {
-                        let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
-                    });
-                    Some(tokio::spawn(async move {
+            self.source_status.insert(info.id.to_string(), SourceStatus::Pending);
+            let req = SearchRequest::new(query.clone(), offset);
+            let tx = self.event_handler.sender();
+            let task = if info.requires_browser {
+                // If "Save cookies" is off, don't pass a cookie file
+                // path through at all -- see do_login for the same
+                // gating.
+                let event_tx_log = self.event_handler.sender();
+                let cookie_file = self.resolve_cookie_file();
+                let username = self.args.username.clone();
+                let password = self.args.password.clone();
+                let saved_creds = crate::credentials::load_credentials();
+                tokio::spawn(orchestrator::run_source(
+                    info.id,
+                    generation,
+                    async move {
+                        let log: LogFn = Arc::new(move |msg: &str| {
+                            let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
+                        });
                         let (cred_user, cred_pass) = match (username, password) {
                             (Some(u), Some(p)) => (Some(u), Some(p)),
                             _ => match saved_creds {
@@ -1333,63 +1388,36 @@ impl App {
                             Err(e) => log(&format!("SEARCH: login error: {}", e)),
                         }
                         source.search(&req).await
-                    }))
-                }
-                Err(e) => {
-                    self.ui.add_log(&format!("Browser error: {}", e));
-                    None
-                }
-            }
-        } else {
-            None
-        };
+                    },
+                    orchestrator::PER_SOURCE_TIMEOUT,
+                    tx,
+                ))
+            } else {
+                tokio::spawn(orchestrator::run_source(
+                    info.id,
+                    generation,
+                    async move { source.search(&req).await },
+                    orchestrator::PER_SOURCE_TIMEOUT,
+                    tx,
+                ))
+            };
+            tasks.push((info.id, task));
+        }
 
-        tokio::spawn(async move {
-            let mut combined = Vec::new();
-            let mut last_err: Option<String> = None;
-            // B2: the sources themselves say whether another page exists,
-            // instead of app.rs guessing `count < 50`. Merged across
-            // sources it's an OR -- if any of them has more, loading more
-            // is still worth offering.
-            let mut any_has_more = false;
-
-            // One outcome line per source, always (B0.3): `last_err` only
-            // reaches the user when nothing came back, so a source failing
-            // next to a healthy one used to vanish without a trace.
-            for (source_id, task) in [("rutor", rutor_task), ("rutracker", rutracker_task)] {
-                let Some(task) = task else { continue };
-                let outcome: Result<usize, String> = match task.await {
-                    Ok(Ok(page)) => {
-                        let count = page.items.len();
-                        any_has_more |= page.has_more;
-                        combined.extend(page.items);
-                        Ok(count)
-                    }
-                    Ok(Err(e)) => Err(e.to_string()),
-                    Err(e) => Err(format!("task error: {}", e)),
-                };
-                let line = source_outcome_line(source_id, &outcome);
-                if outcome.is_err() {
-                    last_err = Some(line.clone());
-                }
-                let _ = event_tx_result.send(Event::StreamLog(line));
-            }
-
-            if combined.is_empty() {
-                if let Some(e) = last_err {
-                    let _ = event_tx_result.send(Event::SearchError {
-                        generation,
-                        error: e,
-                    });
-                    return;
-                }
-            }
-            let _ = event_tx_result.send(Event::SearchComplete {
+        if tasks.is_empty() {
+            // Nothing could even start, so no SourceDone is coming: close
+            // the generation here instead of leaving the UI Searching.
+            finish_search(
+                &mut self.ui,
                 generation,
-                results: combined,
-                has_more: any_has_more,
-            });
-        });
+                self.search_generation,
+                &self.source_has_more,
+            );
+            return;
+        }
+
+        let tx = self.event_handler.sender();
+        tokio::spawn(orchestrator::coordinate(generation, tasks, tx));
     }
 
     async fn spawn_stream(&mut self) {
