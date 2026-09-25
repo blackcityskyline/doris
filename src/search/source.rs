@@ -24,6 +24,7 @@ use tokio::sync::Mutex;
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
+use super::subsplease::SubsPleaseSearcher;
 use super::tpb::TpbSearcher;
 use super::yts::YtsSearcher;
 
@@ -166,6 +167,9 @@ const YTS_GROUPS: &[Group] = &[Group::Movies];
 /// decision): it declares the two groups it can attribute rows to, and
 /// filtering *within* a search is B6's job.
 const TPB_GROUPS: &[Group] = &[Group::Movies, Group::TV];
+
+/// SubsPlease is anime-only by nature (B8 wave 1).
+const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
 
 #[async_trait]
 impl Source for RutrackerSearcher {
@@ -331,6 +335,14 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: TpbSearcher::HOME_URL,
     },
     SourceInfo {
+        id: "subsplease",
+        label: "SubsPlease",
+        implemented: true,
+        groups: SUBSPLEASE_GROUPS,
+        requires_browser: false,
+        home_url: SubsPleaseSearcher::HOME_URL,
+    },
+    SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
         implemented: false,
@@ -367,6 +379,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "rutor" => Ok(Arc::new(RutorSearcher::new())),
         "yts" => Ok(Arc::new(YtsSearcher::new())),
         "tpb" => Ok(Arc::new(TpbSearcher::new())),
+        "subsplease" => Ok(Arc::new(SubsPleaseSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
 }

@@ -214,6 +214,7 @@ fn default_enabled_sources() -> Vec<String> {
         "rutor".to_string(),
         "yts".to_string(),
         "tpb".to_string(),
+        "subsplease".to_string(),
     ]
 }
 
