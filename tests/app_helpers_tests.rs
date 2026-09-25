@@ -1,6 +1,6 @@
 use doris::app::{
-    EnterAction, apply_source_done, cycle_index, enter_action, finish_search, resolve_cookie_file,
-    source_id_for, source_needs_browser, source_outcome_line,
+    EnterAction, apply_source_done, cycle_index, enter_action, finish_search, magnet_only_download,
+    resolve_cookie_file, safe_filename, source_id_for, source_needs_browser, source_outcome_line,
 };
 use doris::config::Config;
 use doris::search::models::TorrentItem;
@@ -393,5 +393,73 @@ fn test_finish_search_clamps_the_selection_when_dedup_removed_that_row() {
         ui.results[ui.selected].title,
         "the one I highlighted",
         "the removed row cannot stay selected"
+    );
+}
+
+// --- download key: magnet-only rows (B8 wave 1) -----------------------------
+
+/// A YTS row: no `.torrent` anywhere, the magnet *is* the payload.
+#[test]
+fn test_a_magnet_only_row_pays_its_magnet_as_a_file() {
+    let item = TorrentItem {
+        title: "Matrix: Generation (2024) [720p web]".to_string(),
+        download_url: String::new(),
+        magnet: Some("magnet:?xt=urn:btih:937c8886&dn=x".to_string()),
+        ..Default::default()
+    };
+
+    let (name, payload) =
+        magnet_only_download(&item).expect("a magnet-only row must download as a file");
+    assert_eq!(name, "Matrix_ Generation _2024_ _720p web_.magnet");
+    assert_eq!(
+        payload, "magnet:?xt=urn:btih:937c8886&dn=x\n",
+        "the file holds the magnet, newline-terminated like a link list expects"
+    );
+}
+
+/// rutor rows carry *both* a download URL and a magnet: the magnet is
+/// the streaming path (B7), not an excuse to stop fetching the file the
+/// user asked to save.
+#[test]
+fn test_a_row_with_a_download_url_keeps_going_through_its_source() {
+    let item = TorrentItem {
+        title: "rutor row".to_string(),
+        download_url: "https://rutor.info/download/123".to_string(),
+        magnet: Some("magnet:?xt=urn:btih:abc".to_string()),
+        ..Default::default()
+    };
+
+    assert!(
+        magnet_only_download(&item).is_none(),
+        "a fetchable row must not be silently reduced to a link file"
+    );
+}
+
+#[test]
+fn test_a_row_with_neither_a_url_nor_a_magnet_is_not_written_at_all() {
+    // Such a row must fail in the normal path *with a message*; writing
+    // an empty `.magnet` would look like a successful download.
+    let item = TorrentItem {
+        title: "broken row".to_string(),
+        ..Default::default()
+    };
+
+    assert!(magnet_only_download(&item).is_none());
+}
+
+/// The sanitizer both download paths now share: only the characters a
+/// filesystem objects to become `_`, and the result is trimmed.
+#[test]
+fn test_safe_filename_escapes_path_characters_and_trims() {
+    assert_eq!(
+        safe_filename("YTS: The Matrix / Reloaded? (2003)"),
+        "YTS_ The Matrix _ Reloaded_ _2003_"
+    );
+    assert_eq!(safe_filename("  spaced  "), "spaced");
+    assert_eq!(safe_filename("сериал 1 сезон"), "сериал 1 сезон");
+    assert_eq!(
+        safe_filename("a\\b<c>d\"e|f"),
+        "a_b_c_d_e_f",
+        "every separator and shell-special character is neutralised"
     );
 }
