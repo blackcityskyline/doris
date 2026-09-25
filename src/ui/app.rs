@@ -1118,9 +1118,9 @@ impl App {
 
         let sources_line = crate::search::source::KNOWN_SOURCES.iter()
             .map(|s| if s.implemented {
-                format!("{}{}", "\u{2714} ", s.display_name)
+                format!("{}{}", "\u{2714} ", s.label)
             } else {
-                format!("{}{} (planned)", "\u{26a0} ", s.display_name)
+                format!("{}{} (planned)", "\u{26a0} ", s.label)
             })
             .collect::<Vec<_>>()
             .join("   ");

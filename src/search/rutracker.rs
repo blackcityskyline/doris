@@ -4,6 +4,7 @@ use crate::search::models::TorrentItem;
 use crate::search::cookies::{self, Cookie};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 
 /// Resolve a rutracker download URL against the forum root. Lives here,
@@ -20,10 +21,14 @@ pub fn resolve_url(url: &str) -> String {
     }
 }
 
-#[derive(Clone)]
 pub struct RutrackerSearcher {
     browser: Arc<Mutex<Browser>>,
-    logged_in: bool,
+    /// Interior mutability because `Source::ensure_logged_in` takes
+    /// `&self`: an `Arc<dyn Source>` registry cannot hand out `&mut`
+    /// (B2). Relaxed ordering is fine -- the flag is a memo of "login
+    /// succeeded", and the browser mutex already serializes the work it
+    /// guards.
+    logged_in: AtomicBool,
 }
 
 impl RutrackerSearcher {
@@ -34,8 +39,13 @@ impl RutrackerSearcher {
     /// just to get a URL constant.
     pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";
 
+    /// Rows per `tracker.php?start=` page -- the unit the trait's
+    /// `SearchRequest::offset` counts in, and what `Source::search` uses
+    /// to decide `has_more`.
+    pub const PAGE_SIZE: usize = 50;
+
     pub fn new(browser: Arc<Mutex<Browser>>) -> Self {
-        Self { browser, logged_in: false }
+        Self { browser, logged_in: AtomicBool::new(false) }
     }
 
     /// Park the tab on `about:blank` between operations.
@@ -54,7 +64,7 @@ impl RutrackerSearcher {
     }
 
     pub async fn ensure_logged_in(
-        &mut self,
+        &self,
         cookie_file: Option<&Path>,
         username: Option<&str>,
         password: Option<&str>,
@@ -68,13 +78,13 @@ impl RutrackerSearcher {
     }
 
     async fn ensure_logged_in_inner(
-        &mut self,
+        &self,
         cookie_file: Option<&Path>,
         username: Option<&str>,
         password: Option<&str>,
         log: Arc<dyn Fn(&str) + Send + Sync>,
     ) -> Result<bool> {
-        if self.logged_in {
+        if self.logged_in.load(Ordering::Relaxed) {
             log("AUTH: already logged in (cached)");
             return Ok(true);
         }
@@ -139,7 +149,7 @@ impl RutrackerSearcher {
 
         // Step 3: Check if logged in
         if self.verify_login(&browser).await {
-            self.logged_in = true;
+            self.logged_in.store(true, Ordering::Relaxed);
             log("AUTH: VERIFIED - logged in via cookies!");
             return Ok(true);
         }
@@ -154,7 +164,7 @@ impl RutrackerSearcher {
                 log(&format!("AUTH: attempting login as '{}'...", user));
                 match self.login(user, pass, log.clone()).await {
                     Ok(true) => {
-                        self.logged_in = true;
+                        self.logged_in.store(true, Ordering::Relaxed);
                         log("AUTH: LOGIN SUCCESSFUL!");
                         if let Some(cf) = cookie_file {
                             match self.get_cookies().await {

@@ -1209,7 +1209,7 @@ impl App {
         let log = Arc::new(move |msg: &str| { let _ = event_tx_login.send(Event::StreamLog(msg.to_string())); });
 
         tokio::spawn(async move {
-            let mut searcher = searcher.lock().await;
+            let searcher = searcher.lock().await;
 
             match searcher.ensure_logged_in(cookie_file.as_deref(), Some(&username), Some(&password), log.clone()).await {
                 Ok(true) => {
@@ -1287,7 +1287,7 @@ impl App {
                     let query = query.clone();
                     let log = Arc::new(move |msg: &str| { let _ = event_tx_log.send(Event::StreamLog(msg.to_string())); });
                     Some(tokio::spawn(async move {
-                        let mut searcher = searcher.lock().await;
+                        let searcher = searcher.lock().await;
                         let (cred_user, cred_pass) = match (username, password) {
                             (Some(u), Some(p)) => (Some(u), Some(p)),
                             _ => match saved_creds {

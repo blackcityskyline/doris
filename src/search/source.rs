@@ -9,15 +9,13 @@
 //! need to change. This file is intentionally the *only* place that knows
 //! the concrete list of sources.
 //!
-//! Note: `app.rs`/`main.rs` still call `RutrackerSearcher` directly today
-//! (that rewiring is a follow-up once this trait has been built by the
-//! project's own toolchain and confirmed to compile) — this module is
-//! additive and does not change any existing call path.
+//! (Phase 3's original note about rewiring `app.rs`/`main.rs` onto this
+//! trait is what ROADMAP.md phase B2 closes.)
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::models::TorrentItem;
@@ -27,7 +25,7 @@ use super::rutor::RutorSearcher;
 /// Content categories a source can attribute its results to. Declared
 /// here, next to the registry it describes (and not in `models.rs`) so
 /// `TorrentItem.group` is typed against the same enum the `Source` trait
-/// hands out in B2 -- see ROADMAP.md B1/B6.
+/// hands out -- see ROADMAP.md B1/B6.
 ///
 /// Serde renders variants as plain strings (`"Games"`), which is what
 /// `TorrentItem`'s JSON needs.
@@ -40,6 +38,57 @@ pub enum Group {
     Anime,
 }
 
+/// One run of a query against a source. Replaces the old
+/// `search(query)` / `search_page(query, start)` trait pair: the page
+/// cursor moved into the request, and a category slot was added for B6.
+#[derive(Debug, Clone)]
+pub struct SearchRequest {
+    /// The words to look for.
+    pub query: String,
+    /// Page cursor. Its unit (rows vs. page index) is deliberately owned
+    /// by the source -- rutor counts rows of 100, rutracker counts the
+    /// forum's own `start=` step -- so callers treat it as opaque and
+    /// just hand back what the previous [`SearchPage`] implied.
+    pub offset: usize,
+    /// `None` = all categories. B6 passes a real group down so sources
+    /// can filter server-side (rutor's URL has a category slot).
+    pub category: Option<Group>,
+}
+
+impl SearchRequest {
+    /// An "all categories" request -- what the Results tabs issue today.
+    pub fn new(query: impl Into<String>, offset: usize) -> Self {
+        Self { query: query.into(), offset, category: None }
+    }
+}
+
+/// One page of results plus an honest "was that the last page?".
+///
+/// `has_more` replaces app.rs's `count < 50` guess, which only worked by
+/// accident (rutracker really does page by 50, while rutor pages by 100
+/// and so could never trip it).
+#[derive(Debug, Clone, Default)]
+pub struct SearchPage {
+    pub items: Vec<TorrentItem>,
+    pub has_more: bool,
+}
+
+/// Credentials + cookie path handed to [`Source::ensure_logged_in`].
+/// Bundled into one struct so a source gaining an auth detail (a second
+/// cookie jar, a token) doesn't change the trait's signature.
+#[derive(Debug, Clone, Default)]
+pub struct AuthContext {
+    /// Where to load/save the browser cookie jar; `None` when the user
+    /// turned "Save cookies" off (callers gate it, same as before).
+    pub cookie_file: Option<PathBuf>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+/// Log sink shared by every source: messages land in the Log zone and in
+/// the TUI's detailed log view.
+pub type LogFn = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// One pluggable content source. Everything the orchestrator, the browser
 /// layer, and the Options "Sources" checklist need from a source goes
 /// through here.
@@ -49,26 +98,49 @@ pub trait Source: Send + Sync {
     /// credentials-store key and the Options "Sources" checklist key.
     fn id(&self) -> &'static str;
 
-    /// Human-readable name shown in the UI.
-    fn display_name(&self) -> &'static str;
+    /// Human-readable name shown in the UI ("Rutor").
+    fn label(&self) -> &'static str;
+
+    /// Groups this source can attribute results to -- the instance-side
+    /// view of [`SourceInfo::groups`], so a live source and the
+    /// metadata-only registry can never disagree. B6 passes a group down
+    /// through [`SearchRequest::category`].
+    fn groups(&self) -> &'static [Group];
 
     /// A page on this source's domain. Used as the navigation target for
-    /// cookie injection when the browser runs hidden — see
+    /// cookie injection when the browser runs hidden -- see
     /// `browser::cdp::Browser::launch`.
     fn home_url(&self) -> &'static str;
 
-    async fn ensure_logged_in(
-        &mut self,
-        cookie_file: Option<&Path>,
-        username: Option<&str>,
-        password: Option<&str>,
-        log: Arc<dyn for<'a> Fn(&'a str) + Send + Sync>,
-    ) -> Result<bool>;
+    /// Whether talking to this source requires a running browser
+    /// session. Only rutracker does; plain-HTTP sources are skipped by
+    /// the orchestrator instead of being handed a no-op login.
+    fn requires_browser(&self) -> bool;
 
-    async fn search(&self, query: &str) -> Result<Vec<TorrentItem>>;
-    async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>>;
+    /// Whether it can answer a `SearchRequest` with an empty `query`
+    /// (browse mode). Both current sources need real search terms, so
+    /// both return `false` until B9 builds browsing on top.
+    fn supports_browse(&self) -> bool;
+
+    /// Establish (or verify) a session, reusing cached state when the
+    /// source already has one. Takes `&self` because a registry hands
+    /// out `Arc<dyn Source>` with no `&mut` to give; the mutable session
+    /// flag lives behind interior mutability.
+    async fn ensure_logged_in(&self, auth: &AuthContext, log: &LogFn) -> Result<bool>;
+
+    async fn search(&self, req: &SearchRequest) -> Result<SearchPage>;
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>>;
 }
+
+/// Rutracker exposes no server-side category filter we've verified live,
+/// so it lists the four groups for browsing/registry purposes and B6
+/// decides (after checking `tracker.php?c[]=`) whether
+/// [`SearchRequest::category`] actually narrows anything for it.
+const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Group::Anime];
+
+/// Rutor's search URL carries a real category slot (`0` = all); B6 maps
+/// these groups onto its ids once verified.
+const RUTOR_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 #[async_trait]
 impl Source for RutrackerSearcher {
@@ -76,30 +148,43 @@ impl Source for RutrackerSearcher {
         "rutracker"
     }
 
-    fn display_name(&self) -> &'static str {
+    fn label(&self) -> &'static str {
         "Rutracker"
+    }
+
+    fn groups(&self) -> &'static [Group] {
+        RUTRACKER_GROUPS
     }
 
     fn home_url(&self) -> &'static str {
         Self::HOME_URL
     }
 
-    async fn ensure_logged_in(
-        &mut self,
-        cookie_file: Option<&Path>,
-        username: Option<&str>,
-        password: Option<&str>,
-        log: Arc<dyn for<'a> Fn(&'a str) + Send + Sync>,
-    ) -> Result<bool> {
-        RutrackerSearcher::ensure_logged_in(self, cookie_file, username, password, log).await
+    fn requires_browser(&self) -> bool {
+        true
     }
 
-    async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
-        RutrackerSearcher::search(self, query).await
+    fn supports_browse(&self) -> bool {
+        false
     }
 
-    async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
-        RutrackerSearcher::search_page(self, query, start).await
+    async fn ensure_logged_in(&self, auth: &AuthContext, log: &LogFn) -> Result<bool> {
+        RutrackerSearcher::ensure_logged_in(
+            self,
+            auth.cookie_file.as_deref(),
+            auth.username.as_deref(),
+            auth.password.as_deref(),
+            log.clone(),
+        )
+        .await
+    }
+
+    async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
+        let items = RutrackerSearcher::search_page(self, &req.query, req.offset).await?;
+        // The forum pages `tracker.php?start=` by 50, so a short page is
+        // the last one and a full one may have more behind it.
+        let has_more = items.len() >= RutrackerSearcher::PAGE_SIZE;
+        Ok(SearchPage { items, has_more })
     }
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
@@ -115,30 +200,38 @@ impl Source for RutorSearcher {
         "rutor"
     }
 
-    fn display_name(&self) -> &'static str {
+    fn label(&self) -> &'static str {
         "Rutor"
+    }
+
+    fn groups(&self) -> &'static [Group] {
+        RUTOR_GROUPS
     }
 
     fn home_url(&self) -> &'static str {
         Self::HOME_URL
     }
 
-    async fn ensure_logged_in(
-        &mut self,
-        _cookie_file: Option<&Path>,
-        _username: Option<&str>,
-        _password: Option<&str>,
-        _log: Arc<dyn for<'a> Fn(&'a str) + Send + Sync>,
-    ) -> Result<bool> {
+    fn requires_browser(&self) -> bool {
+        false
+    }
+
+    fn supports_browse(&self) -> bool {
+        false
+    }
+
+    async fn ensure_logged_in(&self, _auth: &AuthContext, _log: &LogFn) -> Result<bool> {
         Ok(true)
     }
 
-    async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
-        RutorSearcher::search(self, query).await
-    }
-
-    async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
-        RutorSearcher::search_page(self, query, start).await
+    async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
+        let items = RutorSearcher::search_page(self, &req.query, req.offset).await?;
+        // Fixed 100-row pages (see `RutorSearcher::PAGE_SIZE`). The
+        // category slot is intentionally not honored yet: B6 verifies
+        // rutor's category ids against the live site before claiming
+        // server-side filtering.
+        let has_more = items.len() >= RutorSearcher::PAGE_SIZE;
+        Ok(SearchPage { items, has_more })
     }
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
@@ -150,13 +243,29 @@ impl Source for RutorSearcher {
 /// "Sources" checklist without needing a live, logged-in instance (which
 /// requires a running `Browser`). Real `Source` instances are constructed
 /// lazily by the orchestrator only when a source is actually used.
+///
+/// The `groups`/`requires_browser`/`home_url` values mirror what the
+/// corresponding `Source` impl returns -- `source_registry_tests.rs`
+/// pins that correspondence where it can be checked offline.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceInfo {
     pub id: &'static str,
-    pub display_name: &'static str,
-    /// `false` for sources reserved for the future (e.g. rutor, nnm-club)
+    /// Human-readable name shown in the UI. Was called `display_name`
+    /// until B2 renamed it to match `Source::label()`.
+    pub label: &'static str,
+    /// `false` for sources reserved for the future (e.g. nnm-club)
     /// so Options can list them as coming-soon rather than hide them.
     pub implemented: bool,
+    pub groups: &'static [Group],
+    /// Whether using this source needs a browser session launched first
+    /// (see `Source::requires_browser`). `false` for planned sources:
+    /// nothing constructs them yet, so nothing may promise a browser.
+    pub requires_browser: bool,
+    /// Domain home page, `""` while the source isn't implemented. The
+    /// orchestrator passes it to `Browser::launch` before the `Source`
+    /// instance itself exists (the instance is what *needs* the browser,
+    /// so it can't supply its own home page).
+    pub home_url: &'static str,
 }
 
 /// The full list of sources the app knows about, implemented or not. This
@@ -164,7 +273,49 @@ pub struct SourceInfo {
 /// implementing [`Source`] for it is the separate step that makes
 /// `implemented` become `true`.
 pub const KNOWN_SOURCES: &[SourceInfo] = &[
-    SourceInfo { id: "rutracker", display_name: "Rutracker", implemented: true },
-    SourceInfo { id: "rutor", display_name: "Rutor", implemented: true },
-    SourceInfo { id: "nnmclub", display_name: "NNM-Club", implemented: false },
+    SourceInfo {
+        id: "rutracker",
+        label: "Rutracker",
+        implemented: true,
+        groups: RUTRACKER_GROUPS,
+        requires_browser: true,
+        home_url: RutrackerSearcher::HOME_URL,
+    },
+    SourceInfo {
+        id: "rutor",
+        label: "Rutor",
+        implemented: true,
+        groups: RUTOR_GROUPS,
+        requires_browser: false,
+        home_url: RutorSearcher::HOME_URL,
+    },
+    SourceInfo {
+        id: "nnmclub",
+        label: "NNM-Club",
+        implemented: false,
+        groups: &[],
+        requires_browser: false,
+        home_url: "",
+    },
 ];
+
+/// Registry lookup by id -- the metadata-only twin of building a live
+/// [`Source`] (`build_source`, used by the orchestrator).
+pub fn get_source(id: &str) -> Option<&'static SourceInfo> {
+    KNOWN_SOURCES.iter().find(|s| s.id == id)
+}
+
+/// Which sources belong to a group, for B6's category -> source mapping
+/// and for the Options UI grouping rows by what they can filter.
+pub fn sources_by_group(group: Group) -> Vec<&'static SourceInfo> {
+    KNOWN_SOURCES.iter().filter(|s| s.groups.contains(&group)).collect()
+}
+
+/// Whether orchestrating `id` needs a browser session launched first.
+/// Unknown ids fall back to `true`: the conservative answer, because
+/// guessing "no browser" for a source we don't know about would send its
+/// login through a path that can't reach a browser (same fallback
+/// `app.rs::source_needs_browser` has always had).
+pub fn requires_browser(id: &str) -> bool {
+    get_source(id).map(|s| s.requires_browser).unwrap_or(true)
+}
