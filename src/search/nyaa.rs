@@ -56,6 +56,25 @@ const ALL_CATEGORIES: &str = "0_0";
 /// into a page whose existence we never confirmed.
 const PAGE_ITEMS: usize = 75;
 
+/// How hard nyaa tries -- one attempt, deliberately not torio's
+/// default of five (wave-2 decision, taken after measuring: a 504 from
+/// `ddos-guard` costs ~16 s *per attempt* here, and the orchestrator
+/// gives a source 25 s total, so five retries could never report their
+/// own outcome -- the user would just read `timed out after 25s` with
+/// the cause hidden behind it). One attempt spends ~16 s and names the
+/// status, which is the difference between "nyaa is blocked" and "the
+/// app is broken".
+///
+/// The download path uses the same budget: nothing downstream waits
+/// 96 s for it either, and a user who wants a second try can press the
+/// key again.
+pub fn fetch_options() -> FetchOptions {
+    FetchOptions {
+        retries: 0,
+        ..FetchOptions::default()
+    }
+}
+
 /// The feed URL for `query`. Public so the fixture tests and the live
 /// test build exactly what `search` sends.
 pub fn feed_url(query: &str) -> String {
@@ -282,13 +301,7 @@ impl Source for NyaaSearcher {
         );
 
         let url = feed_url(query);
-        // torio's retry defaults. 504 is in `RETRY_STATUS`, and 504 is
-        // exactly what `ddos-guard` answered while this source was
-        // being verified -- the *same* URL went 504 -> 200 -> 504 across
-        // attempts, so riding out a transient block earns more than a
-        // fast failure costs.
-        let response =
-            fetch_resilient(&url, || self.client.get(&url), &FetchOptions::default()).await?;
+        let response = fetch_resilient(&url, || self.client.get(&url), &fetch_options()).await?;
         let status = response.status();
         anyhow::ensure!(status.is_success(), "Nyaa returned {}", status);
         let body = response.text().await?;
@@ -301,8 +314,7 @@ impl Source for NyaaSearcher {
         // live). The status check matters for the same reason rutor's
         // has one: a block page must never reach TorrServer as a
         // .torrent file.
-        let response =
-            fetch_resilient(url, || self.client.get(url), &FetchOptions::default()).await?;
+        let response = fetch_resilient(url, || self.client.get(url), &fetch_options()).await?;
         let status = response.status();
         if !status.is_success() {
             anyhow::bail!("nyaa download {} answered HTTP {}", url, status);
