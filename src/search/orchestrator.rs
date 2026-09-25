@@ -17,6 +17,7 @@
 //! Which sources a dispatch includes is decided here too
 //! (`selected_sources`) so the rule is testable as a plain function.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
@@ -188,5 +189,32 @@ pub fn selected_sources(active_tab: &str, enabled: &[String]) -> Vec<&'static So
         .filter(|info| info.implemented)
         .filter(|info| enabled.iter().any(|e| e == info.id))
         .filter(|info| active_tab == "all" || active_tab == info.id)
+        .collect()
+}
+
+/// The `(source, offset)` pairs a dispatch should run: every selected
+/// source on a fresh search, and on a "load more" only the ones that
+/// said they have another page -- each at *its own* cursor.
+///
+/// Own cursors are the fix for a real bug: offsets used to be one shared
+/// row count, which drifts off rutor's 100-row page grid the moment two
+/// sources with different page sizes are merged, and rutor silently
+/// answers a misaligned offset with nothing (it guards `offset %
+/// PAGE_SIZE`, see `rutor.rs`).
+///
+/// Skipping exactly `Some(false)` rather than requiring `Some(true)` is
+/// deliberate: a source that failed last time has no verdict, so it gets
+/// another chance -- which is what the old always-dispatch-both behavior
+/// did.
+pub fn dispatch_plan(
+    selected: &[&'static SourceInfo],
+    offsets: &HashMap<String, usize>,
+    has_more: &HashMap<String, bool>,
+) -> Vec<(&'static SourceInfo, usize)> {
+    selected
+        .iter()
+        .copied()
+        .filter(|info| has_more.get(info.id) != Some(&false))
+        .map(|info| (info, offsets.get(info.id).copied().unwrap_or(0)))
         .collect()
 }

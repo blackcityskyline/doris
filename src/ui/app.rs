@@ -162,7 +162,6 @@ pub struct App {
     pub input_mode: bool,
     pub modal: Modal,
     pub search_query: Option<String>,
-    pub search_offset: usize,
     pub all_loaded: bool,
     /// True = browser runs hidden (background). False = visible window.
     pub browser_hidden: bool,
@@ -250,7 +249,6 @@ impl App {
             input_mode: false,
             modal: Modal::None,
             search_query: None,
-            search_offset: 0,
             all_loaded: false,
             browser_hidden,
             stream_mode: true,

@@ -323,3 +323,60 @@ fn selection_follows_the_results_tab_and_the_options_checklist() {
     // Planned sources are listed in the registry but never dispatched.
     assert!(!ids("all", &both).contains(&"nnmclub"));
 }
+
+#[test]
+fn a_fresh_search_asks_every_selected_source_from_zero() {
+    let selected = orchestrator::selected_sources("all", &both_enabled());
+    let offsets = std::collections::HashMap::new();
+    let has_more = std::collections::HashMap::new();
+
+    let plan = orchestrator::dispatch_plan(&selected, &offsets, &has_more);
+
+    assert_eq!(plan.len(), 2);
+    for (info, offset) in &plan {
+        assert_eq!(*offset, 0, "{} must start at its first page", info.id);
+    }
+}
+
+#[test]
+fn load_more_asks_only_sources_that_reported_another_page() {
+    let selected = orchestrator::selected_sources("all", &both_enabled());
+    let mut offsets = std::collections::HashMap::new();
+    offsets.insert("rutor".to_string(), 100);
+    offsets.insert("rutracker".to_string(), 50);
+    let mut has_more = std::collections::HashMap::new();
+    has_more.insert("rutor".to_string(), false);
+    has_more.insert("rutracker".to_string(), true);
+
+    let plan = orchestrator::dispatch_plan(&selected, &offsets, &has_more);
+
+    // Each source resumes at *its own* cursor: rutor's pages are 100
+    // rows, rutracker's are 50, and a shared counter walks off rutor's
+    // grid -- which it answers with nothing.
+    assert_eq!(plan.len(), 1);
+    let (info, offset) = plan[0];
+    assert_eq!(info.id, "rutracker");
+    assert_eq!(offset, 50);
+}
+
+#[test]
+fn a_source_that_failed_gets_retried_from_where_it_stopped() {
+    let selected = orchestrator::selected_sources("all", &both_enabled());
+    let mut offsets = std::collections::HashMap::new();
+    offsets.insert("rutracker".to_string(), 50);
+    let mut has_more = std::collections::HashMap::new();
+    // rutor timed out on the previous page: no verdict, so it must be
+    // asked again rather than silently dropped from later pages.
+    has_more.insert("rutracker".to_string(), false);
+
+    let plan = orchestrator::dispatch_plan(&selected, &offsets, &has_more);
+
+    assert_eq!(plan.len(), 1);
+    let (info, offset) = plan[0];
+    assert_eq!(info.id, "rutor");
+    assert_eq!(offset, 0, "a source with no verdict restarts its own cursor");
+}
+
+fn both_enabled() -> Vec<String> {
+    vec!["rutracker".to_string(), "rutor".to_string()]
+}
