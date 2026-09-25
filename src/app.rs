@@ -399,6 +399,7 @@ impl App {
                             generation,
                             items,
                             has_more,
+                            next_offset,
                             error,
                             timed_out,
                         } => {
@@ -423,10 +424,13 @@ impl App {
                                 );
                                 self.source_status.insert(source.clone(), status);
                                 self.source_has_more.insert(source.clone(), has_more);
-                                // Failures deliver no rows, so a failed
-                                // page leaves the cursor where it was and
-                                // the source gets asked again from there.
-                                *self.source_offsets.entry(source).or_insert(0) += count;
+                                // Failures deliver no rows and no cursor,
+                                // so a failed page leaves the cursor where
+                                // it was and the source gets asked again
+                                // from there; a source that counts pages
+                                // of its own hands over its own cursor.
+                                let offset = self.source_offsets.entry(source).or_insert(0);
+                                *offset = orchestrator::advance_offset(*offset, count, next_offset);
                             }
                         }
                         Event::SearchComplete { generation } => {

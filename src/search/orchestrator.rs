@@ -79,6 +79,9 @@ impl fmt::Display for SourceStatus {
 pub struct SourceOutcome {
     pub items: Vec<TorrentItem>,
     pub has_more: bool,
+    /// The page's own cursor for its next dispatch (`None` on failure --
+    /// a page that never happened owes no cursor).
+    pub next_offset: Option<usize>,
     /// `None` on success; on failure the message already says whether it
     /// was a timeout (`timed_out` mirrors that for status reporting).
     pub error: Option<String>,
@@ -90,6 +93,7 @@ impl SourceOutcome {
         Self {
             items: page.items,
             has_more: page.has_more,
+            next_offset: page.next_offset,
             error: None,
             timed_out: false,
         }
@@ -99,6 +103,7 @@ impl SourceOutcome {
         Self {
             items: Vec::new(),
             has_more: false,
+            next_offset: None,
             error: Some(message.to_string()),
             timed_out: false,
         }
@@ -108,6 +113,7 @@ impl SourceOutcome {
         Self {
             items: Vec::new(),
             has_more: false,
+            next_offset: None,
             error: Some(format!("timed out after {}s", timeout.as_secs())),
             timed_out: true,
         }
@@ -150,6 +156,7 @@ pub async fn run_source(
         generation,
         items: outcome.items,
         has_more: outcome.has_more,
+        next_offset: outcome.next_offset,
         error: outcome.error,
         timed_out: outcome.timed_out,
     });
@@ -173,6 +180,7 @@ pub async fn coordinate(
                 generation,
                 items: Vec::new(),
                 has_more: false,
+                next_offset: None,
                 error: Some(format!("task failed: {}", join_err)),
                 timed_out: false,
             });
@@ -192,6 +200,21 @@ pub fn selected_sources(active_tab: &str, enabled: &[String]) -> Vec<&'static So
         .filter(|info| enabled.iter().any(|e| e == info.id))
         .filter(|info| active_tab == "all" || active_tab == info.id)
         .collect()
+}
+
+/// The cursor a source gets after reporting a page.
+///
+/// `next_offset` wins when the source gave one: that is how a source
+/// whose API counts pages of its own (yts counts *movies*, and rows per
+/// page vary with how many qualities each has) stays aligned, instead of
+/// deriving a cursor from a row count that does not match its unit.
+///
+/// Otherwise the row-paged default applies: `current + count`, which is
+/// also the right answer for a *failed* page -- failures carry no rows
+/// and no cursor, so `current + 0` leaves the cursor where it was and
+/// the source is asked again from there.
+pub fn advance_offset(current: usize, count: usize, next_offset: Option<usize>) -> usize {
+    next_offset.unwrap_or(current + count)
 }
 
 /// The `(source, offset)` pairs a dispatch should run: every selected
@@ -251,6 +274,7 @@ pub fn cached_source_done(cache: &SearchCache, key: &CacheKey, generation: u64) 
         generation,
         items: page.items,
         has_more: page.has_more,
+        next_offset: page.next_offset,
         error: None,
         timed_out: false,
     })
