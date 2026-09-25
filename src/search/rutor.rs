@@ -55,6 +55,8 @@ use anyhow::Result;
 use regex::Regex;
 use scraper::{Html, Selector};
 
+use std::sync::OnceLock;
+
 use crate::search::models::TorrentItem;
 
 pub struct RutorSearcher {
@@ -333,6 +335,13 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
+    // Inline magnet links (rutor.info puts `magnet:?xt=urn:btih:...`
+    // right in the row; rutor.org only had an `/magnet/{id}` endpoint,
+    // so rows there simply have no magnet and leave the field empty).
+    let magnet_sel = match Selector::parse(r#"a[href^="magnet:"]"#) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
 
     // Live markup puts the counts right after the icons as
     // `alt="S">&nbsp;6` / `alt="L"><span class="red">&nbsp;2</span>`:
@@ -417,17 +426,29 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
             .map(|c| c[1].replace("&nbsp;", " "))
             .unwrap_or_default();
 
-        items.push(TorrentItem {
+        let mut item = TorrentItem {
             title,
             size,
             seeds,
+            leechers: peers.parse::<u32>().unwrap_or(0),
             download_url: format!("{}/download/{}", RutorSearcher::BASE, id),
             query: String::new(),
             date,
             page_url: format!("{}/torrent/{}", RutorSearcher::BASE, id),
             source: "rutor".to_string(),
-        });
-        let _ = peers; // peers isn't a TorrentItem field today; kept for a future column.
+            magnet: magnet_href(&row, &magnet_sel),
+            ..Default::default()
+        };
+        // Numeric twins derived from the display strings above (B1), then
+        // the two fields rutor hands over directly: the added timestamp
+        // (from the date cell) and the info hash inside the row's magnet.
+        item.fill_from_display();
+        item.added = parse_added(&item.date);
+        item.info_hash = info_hash_from_magnet(item.magnet.as_deref().unwrap_or(""));
+        // `group` stays `None`: the search URL carries category 0 ("all
+        // categories"), so nothing here can attribute a row to a group --
+        // that's B6, which passes a real category down to this parser.
+        items.push(item);
     }
     items
 }
@@ -467,4 +488,76 @@ fn is_results_row(row: &scraper::ElementRef) -> bool {
         }
     }
     true
+}
+
+/// The row's inline magnet URI, when it has one. Read from the DOM
+/// attribute (entity-decoded at parse time) rather than regexing the
+/// row's serialized HTML, where the `&dn=`/`&tr=` query parts come back
+/// as `&amp;dn=`/`&amp;tr=` and would corrupt the stored URI.
+fn magnet_href(row: &scraper::ElementRef, sel: &Selector) -> Option<String> {
+    row.select(sel)
+        .next()
+        .and_then(|a| a.value().attr("href").map(str::to_string))
+}
+
+/// `xt=urn:btih:{40 hex}` inside a magnet URI -> the lower-case hash, or
+/// `""`. Only the 40-hex form is accepted: base32 hashes need
+/// normalizing, which is B7's `normalize_info_hash` job -- guessing in
+/// two places is how a wrong hash silently defeats dedup (B4).
+fn info_hash_from_magnet(magnet: &str) -> String {
+    info_hash_re()
+        .and_then(|re| re.captures(magnet))
+        .map(|caps| caps[1].to_lowercase())
+        .unwrap_or_default()
+}
+
+fn info_hash_re() -> Option<&'static Regex> {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)xt=urn:btih:([a-f0-9]{40})").ok()).as_ref()
+}
+
+/// `06 Сен 26` -> unix seconds of that UTC day, `0` when the date can't
+/// be read. Port of torio's `parseRutorDate`: three-letter Russian month
+/// abbreviations, two-digit years read as 20xx.
+fn parse_added(date: &str) -> i64 {
+    const RU_MONTHS: [&str; 12] = [
+        "Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+        "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
+    ];
+    let Some(caps) = added_re().and_then(|re| re.captures(date)) else {
+        return 0;
+    };
+    let day: i64 = match caps[1].parse::<i64>() {
+        Ok(d) => d,
+        Err(_) => return 0,
+    };
+    let Some(month) = RU_MONTHS.iter().position(|m| m.eq_ignore_ascii_case(&caps[2]))
+    else {
+        return 0;
+    };
+    let year: i64 = match caps[3].parse::<i64>() {
+        Ok(y) => 2000 + y,
+        Err(_) => return 0,
+    };
+    days_from_civil(year, month as i64 + 1, day) * 86_400
+}
+
+fn added_re() -> Option<&'static Regex> {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(\d{1,2})(?:\s|&nbsp;)+([А-Яа-я]{3})(?:\s|&nbsp;)+(\d{2})").ok())
+        .as_ref()
+}
+
+/// Days since 1970-01-01 for a civil (year, month, day) -- Howard
+/// Hinnant's `days_from_civil`. No date crate is in the dependency list
+/// (AGENTS.md: don't add dependencies speculatively) and this is the
+/// whole algorithm.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = (month + 9) % 12; // March = 0 .. February = 11
+    let doy = (153 * mp + 2) / 5 + day - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
 }

@@ -11,13 +11,18 @@ async fn live_search_returns_results() {
     println!("OK: {} items", items.len());
     for it in items.iter().take(3) {
         println!(
-            "  title={} size={} seeds={} date={} url={}",
-            it.title, it.size, it.seeds, it.date, it.download_url
+            "  title={} size_bytes={} seeds_n={} leechers={} added={} hash={} url={}",
+            it.title, it.size_bytes, it.seeds_n, it.leechers, it.added,
+            it.info_hash, it.download_url
         );
     }
     assert!(!items.is_empty(), "live rutor search returned zero items");
     // Seeds used to be empty on every real row (the &nbsp; regex bug).
     assert!(items[0].seeds.parse::<u64>().is_ok(), "seeds not numeric");
+    // B1: numeric and hash fields must come back filled from real rows.
+    assert!(items[0].size_bytes > 0, "size_bytes not derived from the display size");
+    assert!(items[0].added > 0, "added not parsed from the date cell");
+    assert_eq!(items[0].info_hash.len(), 40, "info hash not read from the magnet link");
 }
 
 /// The reported bug: queries whose words rutor's index lacks -- here the

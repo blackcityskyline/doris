@@ -107,3 +107,62 @@ fn test_parse_size_stops_at_the_second_dot_like_js_parse_float() {
     // failing the way Rust's `str::parse::<f64>` would.
     assert_eq!(parse_size("2.27.5 GB"), 2_270_000_000);
 }
+
+// --- TorrentItem v2 fields (B1) --------------------------------------------
+
+#[test]
+fn test_b1_fields_default_when_absent_from_json() {
+    // Rutracker's browser-eval script only sets the display fields, so
+    // every B1 field has to deserialize from nothing rather than fail.
+    let item: TorrentItem = serde_json::from_str(r#"{"title": "Test"}"#).unwrap();
+    assert_eq!(item.group, None);
+    assert_eq!(item.info_hash, "");
+    assert_eq!(item.magnet, None);
+    assert_eq!(item.size_bytes, 0);
+    assert_eq!(item.seeds_n, 0);
+    assert_eq!(item.leechers, 0);
+    assert_eq!(item.added, 0);
+}
+
+#[test]
+fn test_b1_fields_deserialize_when_present() {
+    let json = r#"{
+        "title": "Some Torrent",
+        "group": "Movies",
+        "info_hash": "06555d165746e815b0ab5b16de37ed24f9142595",
+        "magnet": "magnet:?xt=urn:btih:06555d165746e815b0ab5b16de37ed24f9142595",
+        "size_bytes": 4521000000,
+        "seeds_n": 42,
+        "leechers": 7,
+        "added": 1788652800
+    }"#;
+    let item: TorrentItem = serde_json::from_str(json).unwrap();
+    assert_eq!(item.group, Some(doris::search::source::Group::Movies));
+    assert_eq!(item.info_hash, "06555d165746e815b0ab5b16de37ed24f9142595");
+    assert!(item.magnet.as_deref().unwrap().starts_with("magnet:?xt=urn:btih:"));
+    assert_eq!(item.size_bytes, 4_521_000_000);
+    assert_eq!(item.seeds_n, 42);
+    assert_eq!(item.leechers, 7);
+    assert_eq!(item.added, 1_788_652_800);
+}
+
+#[test]
+fn test_fill_from_display_derives_numeric_twins() {
+    let mut item = TorrentItem {
+        size: "2,27 ГБ".to_string(),
+        seeds: " 42 ".to_string(),
+        ..Default::default()
+    };
+    item.fill_from_display();
+    assert_eq!(item.size_bytes, 2_437_393_940);
+    assert_eq!(item.seeds_n, 42);
+}
+
+#[test]
+fn test_fill_from_display_leaves_unparseable_values_at_zero() {
+    let mut item = TorrentItem::default();
+    item.fill_from_display();
+    assert_eq!(item.size_bytes, 0);
+    assert_eq!(item.seeds_n, 0);
+    assert_eq!(item.added, 0, "fill_from_display must not touch fields it derives from");
+}

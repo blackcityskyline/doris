@@ -498,6 +498,16 @@ impl RutrackerSearcher {
         let mut items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
         for item in &mut items {
             item.source = "rutracker".to_string();
+            // Numeric twins from the display strings the row script read
+            // out (B1). `added`/`leechers` stay 0 for now: the row's date
+            // cell may carry a `data-ts` timestamp and the table a leech
+            // counter, but neither is confirmed against live markup and
+            // guessing selectors here is how "0 results"-style bugs get
+            // shipped. `info_hash`/`magnet` stay empty because
+            // rutracker's search rows carry no magnet link at all, and
+            // `group` stays None because the search URL doesn't filter by
+            // category (see B6).
+            item.fill_from_display();
         }
         Ok(items)
     }
