@@ -318,7 +318,7 @@ fn test_keeping_the_active_tab_leaves_the_selection_alone() {
     assert_eq!(app.active_source, "eztv");
     assert_eq!(
         app.source_tabs,
-        vec!["rutracker", "rutor", "yts", "tpb", "subsplease", "eztv", "all"],
+        vec!["rutracker", "rutor", "yts", "tpb", "subsplease", "nyaa", "eztv", "all"],
         "and the bar itself still lists everything the default config enables"
     );
 }
