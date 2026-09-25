@@ -1,5 +1,7 @@
+use doris::config::Config;
 use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv};
 use doris::search::rutor::RutorSearcher;
+use doris::ui::app::{SettingsAction, source_settings_items};
 
 #[test]
 fn test_rutracker_and_rutor_are_registered_and_implemented() {
@@ -184,4 +186,77 @@ fn test_build_source_refuses_browser_backed_sources_without_a_browser() {
 fn test_build_source_rejects_unknown_ids() {
     assert!(!build_ok("never-heard-of-it"));
     assert!(!build_ok(""));
+}
+
+// --- Options rows derive from the same registry -----------------------------
+
+/// B8 wave 1 shipped four sources with no way to enable them: the
+/// `streaming -> Sources` rows were written out by hand for
+/// rutracker/rutor/nnmclub, so the new tabs only ever answered
+/// "Selected source is disabled". These tests pin the derivation itself,
+/// not the current roster -- a fifth source must appear on its own.
+#[test]
+fn test_options_lists_exactly_the_registry_losing_nothing_to_handwriting() {
+    let config = Config::default();
+    let items = source_settings_items(&config);
+
+    assert_eq!(
+        items.len(),
+        KNOWN_SOURCES.len(),
+        "every registered source must have a row -- handwritten lists rot"
+    );
+    for (item, info) in items.iter().zip(KNOWN_SOURCES.iter()) {
+        assert_eq!(item.label, format!("Sources: {}", info.label));
+    }
+}
+
+#[test]
+fn test_each_toggles_its_own_registry_id_and_says_whether_it_is_on() {
+    let mut config = Config::default();
+    config.enabled_sources = vec!["rutracker".to_string(), "yts".to_string()];
+
+    for (item, info) in source_settings_items(&config).iter().zip(KNOWN_SOURCES.iter()) {
+        if info.implemented {
+            assert_eq!(
+                item.action,
+                SettingsAction::ToggleSource(info.id),
+                "{} must toggle itself, not a neighbour",
+                info.id
+            );
+            let expected = if info.id == "rutracker" || info.id == "yts" {
+                "True"
+            } else {
+                "False"
+            };
+            assert_eq!(item.value, expected, "{}'s state", info.id);
+        } else {
+            assert_eq!(item.value, "planned", "{} is not implemented", info.id);
+            assert_ne!(
+                item.action,
+                SettingsAction::ToggleSource(info.id),
+                "a planned source must not claim to be toggleable"
+            );
+        }
+    }
+}
+
+/// The description is assembled from registry facts, so it can lag the
+/// code only if the registry itself lies.
+#[test]
+fn test_a_row_describes_groups_and_the_browser_the_registry_declares() {
+    let config = Config::default();
+
+    for (item, info) in source_settings_items(&config).iter().zip(KNOWN_SOURCES.iter()) {
+        let text = item.description.join("\n");
+        assert!(text.contains("Enable/disable"), "{}", info.id);
+        let groups: Vec<String> = info.groups.iter().map(|g| format!("{:?}", g)).collect();
+        assert!(text.contains(&groups.join(", ")), "{}: {}", info.id, text);
+
+        let browser_line = if info.requires_browser {
+            "Uses an automated browser."
+        } else {
+            "No browser required."
+        };
+        assert!(text.contains(browser_line), "{}: {}", info.id, text);
+    }
 }

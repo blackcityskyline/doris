@@ -968,17 +968,7 @@ impl App {
                         });
                         self.ui.open_settings(&self.config);
                     }
-                    SettingsAction::ToggleSourceRutracker => {
-                        let id = "rutracker";
-                        if self.config.enabled_sources.iter().any(|s| s == id) {
-                            self.config.enabled_sources.retain(|s| s != id);
-                        } else {
-                            self.config.enabled_sources.push(id.to_string());
-                        }
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleSourceRutor => {
-                        let id = "rutor";
+                    SettingsAction::ToggleSource(id) => {
                         if self.config.enabled_sources.iter().any(|s| s == id) {
                             self.config.enabled_sources.retain(|s| s != id);
                         } else {

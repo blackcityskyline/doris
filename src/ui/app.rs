@@ -2,6 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use crate::search::models::TorrentItem;
 use crate::config::Config;
+use crate::search::source::{KNOWN_SOURCES, SourceInfo};
 use std::collections::VecDeque;
 use super::theme::Theme;
 use super::zones::{ZoneId, ZoneLayout};
@@ -62,6 +63,25 @@ pub struct SettingsCategory {
     pub items: Vec<SettingsItem>,
 }
 
+/// What one source row says about its source: its groups and whether it
+/// needs a browser, both read from the registry so the prose can never
+/// contradict what dispatch actually does. (Login itself is not a
+/// registry fact -- the credentials flow asks for it when the source
+/// does.)
+fn source_description(info: &SourceInfo) -> Vec<String> {
+    let groups: Vec<String> = info.groups.iter().map(|g| format!("{:?}", g)).collect();
+    vec![
+        "Enable/disable this source.".into(),
+        "".into(),
+        format!("Groups: {}.", groups.join(", ")),
+        if info.requires_browser {
+            "Uses an automated browser.".into()
+        } else {
+            "No browser required.".into()
+        },
+    ]
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SettingsItem {
     pub label: String,
@@ -80,8 +100,10 @@ pub enum SettingsAction {
     ToggleSaveCredentials,
     EditCredentials,
     CheckTorrserverStatus,
-    ToggleSourceRutracker,
-    ToggleSourceRutor,
+    /// Turn one source on or off, carrying the id straight from
+    /// `KNOWN_SOURCES` -- see `source_settings_items`. One variant for
+    /// every source, so a new registry entry needs no new enum case.
+    ToggleSource(&'static str),
     ToggleDownloadEnabled,
     CycleDownloadDirMode,
     ToggleDownloadSequential,
@@ -214,6 +236,43 @@ pub struct App {
     pub truecolor: bool,
     pub false_tty: bool,
     pub filtered_indices: Vec<usize>,
+}
+
+fn bool_str(b: bool) -> String {
+    if b { "True".into() } else { "False".into() }
+}
+
+/// The `streaming -> Sources` rows: one per registry entry, in
+/// registry order.
+///
+/// Written out by hand for rutracker/rutor/nnmclub, these rows went
+/// stale the moment wave 1 added four sources -- they got tabs and
+/// no way to be enabled, which is exactly what a live run of the
+/// finished wave ran into ("Selected source is disabled", with
+/// nothing in Options that could enable it). Deriving them is what
+/// makes the next source free: a new registry entry appears here on
+/// its own, still marked "planned" until `implemented` flips.
+pub fn source_settings_items(config: &Config) -> Vec<SettingsItem> {
+    KNOWN_SOURCES
+        .iter()
+        .map(|info| SettingsItem {
+            label: format!("Sources: {}", info.label),
+            value: if info.implemented {
+                bool_str(config.enabled_sources.iter().any(|s| s == info.id))
+            } else {
+                "planned".into()
+            },
+            description: source_description(info),
+            action: if info.implemented {
+                SettingsAction::ToggleSource(info.id)
+            } else {
+                // Not implemented: say so, and do nothing when
+                // pressed -- toggling a source that cannot run
+                // would be a lie in the other direction.
+                SettingsAction::Close
+            },
+        })
+        .collect()
 }
 
 impl App {
@@ -503,6 +562,7 @@ impl App {
     /// here is computed from `self`/`config`, never a hardcoded literal --
     /// see ROADMAP.md bug B5, where roughly half of these used to be
     /// decorative strings with no backing field at all.
+
     pub fn open_settings(&mut self, config: &Config) {
         let visibility_str = if self.browser_hidden { "Hidden".to_string() } else { "Visible".to_string() };
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
@@ -513,10 +573,6 @@ impl App {
         // in the *label* position indicator every settings item already
         // gets when selected ("Color theme 46/45"), not here.
         let theme_str = theme_name.clone();
-
-        fn bool_str(b: bool) -> String {
-            if b { "True".into() } else { "False".into() }
-        }
 
         let preset_str = config.presets.get(config.preset_index)
             .cloned()
@@ -829,37 +885,7 @@ impl App {
                             ],
                             action: SettingsAction::CheckTorrserverStatus,
                         },
-                        SettingsItem {
-                            label: "Sources: rutracker".into(),
-                            value: bool_str(config.enabled_sources.iter().any(|s| s == "rutracker")),
-                            description: vec![
-                                "Enable/disable this source.".into(),
-                                "".into(),
-                                "Requires login; browser-based.".into(),
-                            ],
-                            action: SettingsAction::ToggleSourceRutracker,
-                        },
-                        SettingsItem {
-                            label: "Sources: rutor".into(),
-                            value: bool_str(config.enabled_sources.iter().any(|s| s == "rutor")),
-                            description: vec![
-                                "Enable/disable this source.".into(),
-                                "".into(),
-                                "No account needed; plain HTTP,".into(),
-                                "no browser required.".into(),
-                            ],
-                            action: SettingsAction::ToggleSourceRutor,
-                        },
-                        SettingsItem {
-                            label: "Sources: nnmclub".into(),
-                            value: "planned".into(),
-                            description: vec![
-                                "Not yet implemented -- see".into(),
-                                "search::source::KNOWN_SOURCES.".into(),
-                            ],
-                            action: SettingsAction::Close,
-                        },
-                    ],
+                    ].into_iter().chain(source_settings_items(config)).collect(),
                 },
                 SettingsCategory {
                     name: "download".into(),
