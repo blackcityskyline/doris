@@ -4,7 +4,7 @@
 use doris::search::rutor::RutorSearcher;
 
 #[tokio::test]
-#[ignore = "requires network access to rutor.org"]
+#[ignore = "requires network access to rutor.info"]
 async fn live_search_returns_results() {
     let searcher = RutorSearcher::new();
     let items = searcher.search("test").await.expect("live rutor search");
@@ -24,7 +24,7 @@ async fn live_search_returns_results() {
 /// bare `z` -- used to come back with zero results every time, because
 /// rutor ANDs every query word and never indexes such tokens.
 #[tokio::test]
-#[ignore = "requires network access to rutor.org"]
+#[ignore = "requires network access to rutor.info"]
 async fn live_search_falls_back_for_unindexable_words() {
     let searcher = RutorSearcher::new();
     let items = searcher.search("world war z").await.expect("fallback");
@@ -38,7 +38,7 @@ async fn live_search_falls_back_for_unindexable_words() {
 /// Stopword case: strict search is 0, the relaxed one must find rows and
 /// the ones actually titled "... The Matrix ..." must be promoted.
 #[tokio::test]
-#[ignore = "requires network access to rutor.org"]
+#[ignore = "requires network access to rutor.info"]
 async fn live_search_prefers_rows_mentioning_dropped_words() {
     let searcher = RutorSearcher::new();
     let items = searcher.search("the matrix").await.expect("fallback");
@@ -47,4 +47,26 @@ async fn live_search_prefers_rows_mentioning_dropped_words() {
         println!("  {}", it.title);
     }
     assert!(!items.is_empty(), "fallback for 'the matrix' still empty");
+}
+
+/// Download must return real .torrent bytes rather than an HTML page:
+/// on 25.09.2026 rutor.org's `/download/{id}` started answering
+/// `302 -> /login` to logged-out clients, which is what forced the
+/// source over to rutor.info -- this test is what pins that.
+#[tokio::test]
+#[ignore = "requires network access to rutor.info"]
+async fn live_download_returns_torrent_bytes() {
+    let searcher = RutorSearcher::new();
+    let items = searcher.search("test").await.expect("live rutor search");
+    let item = items.first().expect("no rows to download");
+    let bytes = searcher
+        .download_torrent(&item.download_url)
+        .await
+        .expect("live rutor download");
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(16)]);
+    println!("downloaded {} bytes, starts with {:?}", bytes.len(), head);
+    assert!(bytes.len() > 100, "suspiciously small download");
+    // bencode torrent files start with the dict marker `d`; an HTML login
+    // page starts with `<`.
+    assert!(!head.starts_with('<'), "got HTML instead of a .torrent: {}", head);
 }

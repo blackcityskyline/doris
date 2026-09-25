@@ -1,13 +1,23 @@
-//! Rutor.org search + download. Unlike Rutracker, this needs no browser
-//! session, no login, and no cookies -- confirmed live (September 2026):
-//! search results and .torrent downloads are both plain, unauthenticated
-//! HTTP GETs. This makes it a much lighter-weight `Source` than
-//! Rutracker's, and a good first proof that the `Source` abstraction from
-//! ROADMAP.md Phase 3 actually pays off: adding a second real source
-//! didn't require touching the browser layer at all.
+//! Rutor search + download (host: rutor.info). Unlike Rutracker, this
+//! needs no browser session, no login, and no cookies -- confirmed live
+//! (September 2026): search results and .torrent downloads are both
+//! plain, unauthenticated HTTP GETs. This makes it a much lighter-weight
+//! `Source` than Rutracker's, and a good first proof that the `Source`
+//! abstraction from ROADMAP.md Phase 3 actually pays off: adding a second
+//! real source didn't require touching the browser layer at all.
 //!
-//! Page structure (verified by fetching https://rutor.org/ and a live
-//! search results page while writing this, not guessed at from memory):
+//! Why rutor.info and not rutor.org (live check, 25.09.2026): both
+//! mirrors serve identical search results and share torrent ids, but
+//! rutor.org now answers `302 -> /login` for `/download/{id}` and
+//! `/magnet/{id}` to a logged-out client -- downloading there returns an
+//! HTML login page instead of a .torrent, which is exactly what got
+//! uploaded to TorrServer. On rutor.info the same `/download/{id}`
+//! answers `200 application/x-bittorrent` (redirecting to
+//! `d.rutor.info`), and rows carry an inline `magnet:?xt=urn:btih:...`
+//! link rutor.org does not have.
+//!
+//! Page structure (verified by fetching both mirrors and a live search
+//! results page while writing this, not guessed at from memory):
 //! - Search: `GET {BASE}/search/{page}/{category}/000/0/{urlencoded query}`,
 //!   `page` starts at 1, `category` 0 = all categories. The site's own
 //!   advanced form (`/search`) builds the same URL: its third segment is
@@ -15,20 +25,28 @@
 //!   and the fourth is a sort id -- neither changes what matches, see
 //!   [`RutorSearcher::search_page`] for rutor's real (AND, stopword-
 //!   sensitive) semantics and the fallback built on top of them.
-//! - Each result row has a title link `<a href="/torrent/{id}">`, a
-//!   download link `<a href="/download/{id}">`, and a magnet link
-//!   `<a href="/magnet/{id}">` -- no slug in any of the three, just the
-//!   numeric id.
-//! - Size ("2.27 GB"), a seed count after an `alt="S"` up-arrow icon, and
-//!   a peer/leech count after an `alt="L"` down-arrow icon all live in the
-//!   same table row as the title link. Live markup wraps the counts as
+//! - Each result row has a title link `<a href="/torrent/{id}[/{slug}]">`
+//!   (only rutor.info adds the slug; the id is the first path segment
+//!   either way), a download link (protocol-relative
+//!   `//d.rutor.info/download/{id}` on rutor.info), and a magnet link
+//!   (`magnet:?xt=urn:btih:{40 hex}...` inline on rutor.info). The
+//!   parser builds download/page URLs from the numeric id plus
+//!   [`RutorSearcher::BASE`] instead of copying the row's hrefs, so the
+//!   same code works on either mirror.
+//! - Size ("2.27 GB" / "82.73&nbsp;MB"), a seed count after an
+//!   `alt="S"` up-arrow icon, and a peer/leech count after an
+//!   `alt="L"` down-arrow icon all live in the same table row as the
+//!   title link. Live markup wraps the counts as
 //!   `<img ... alt="S">&nbsp;6` (seeds) and
 //!   `<img ... alt="L"><span class="red">&nbsp;2</span>` (peers) -- note
 //!   the literal `&nbsp;` entity and the extra `<span>` before peers.
+//! - The date cell is the first `<td>`: `06 Сен 26` with plain spaces on
+//!   rutor.org, `06&nbsp;Сен&nbsp;26` (entity separators) on
+//!   rutor.info -- the parser accepts both and normalizes to spaces.
 //! - A page holds a fixed 100 rows (verified: "matrix" = 219 hits ->
 //!   pages of 100/100/22/0 rows; page 0 and page 1 are the same page).
 //!
-//! If rutor.org changes its markup, this is the file (and
+//! If rutor changes its markup, this is the file (and
 //! `tests/rutor_parse_tests.rs`, which pins down the exact row shape seen
 //! live) to fix -- same spirit as the TorrServer JSON-shape caveat
 //! elsewhere in ROADMAP.md.
@@ -50,8 +68,12 @@ impl Default for RutorSearcher {
 }
 
 impl RutorSearcher {
-    pub const HOME_URL: &'static str = "https://rutor.org/";
-    const BASE: &'static str = "https://rutor.org";
+    pub const HOME_URL: &'static str = "https://rutor.info/";
+    /// Search/download host. rutor.info, not rutor.org: since
+    /// 25.09.2026 the .org mirror answers `302 -> /login` for
+    /// `/download/{id}`, so an unauthenticated download returns an HTML
+    /// login page instead of a .torrent (see the module docs).
+    const BASE: &'static str = "https://rutor.info";
     /// Rutor's search pages hold a fixed 100 rows, verified live while
     /// fixing the zero-results bug: `matrix` reports 219 hits and comes
     /// back 100/100/22/0 rows on pages 1/2/3/4 (page 0 is a synonym of
@@ -330,13 +352,27 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     let seeds_re = Regex::new(r#"alt="S"[^>]*>(?:\s|&nbsp;)*(\d+)"#).ok();
     let peers_re = Regex::new(r#"alt="L"[^>]*>(?:<[^>]*>|\s|&nbsp;)*(\d+)"#).ok();
     // "07 Сен 25" / "31 Окт 20" style short Russian date, always the very
-    // first text in the row.
-    let date_re = Regex::new(r"(\d{2}\s+[А-Яа-я]{3}\s+\d{2})").ok();
+    // first text in the row. rutor.info separates the parts with the
+    // literal `&nbsp;` entity where rutor.org used plain spaces, so both
+    // spellings match and the capture is normalized to spaces below.
+    let date_re = Regex::new(r"(\d{2}(?:\s|&nbsp;)+[А-Яа-я]{3}(?:\s|&nbsp;)+\d{2})").ok();
 
     let mut items = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
 
     for title_el in document.select(&title_sel) {
+        // Only rows of the search-results table count. The page also
+        // links to `/torrent/{id}` from `table#news_table` (the tracker's
+        // news posts -- ids like 472), and on rutor.info those hrefs are
+        // relative, so the title-link selector catches them too; a news
+        // row has no size/seeds/date and must not become a result.
+        let Some(row) = enclosing_row(title_el) else {
+            continue;
+        };
+        if !is_results_row(&row) {
+            continue;
+        }
+
         let href = match title_el.value().attr("href") {
             Some(h) => h,
             None => continue,
@@ -362,7 +398,7 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
             continue;
         }
 
-        let row_html = enclosing_row_html(title_el).unwrap_or_default();
+        let row_html = row.html();
 
         let size = size_re.as_ref()
             .and_then(|re| re.captures(&row_html))
@@ -378,7 +414,7 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
             .unwrap_or_default();
         let date = date_re.as_ref()
             .and_then(|re| re.captures(&row_html))
-            .map(|c| c[1].to_string())
+            .map(|c| c[1].replace("&nbsp;", " "))
             .unwrap_or_default();
 
         items.push(TorrentItem {
@@ -397,18 +433,38 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
 }
 
 /// Walk up from a title `<a>` to its enclosing `<tr>` and return that
-/// row's outer HTML, so size/seeds/date can be read from a small, known
+/// row element, so size/seeds/date can be read from a small, known
 /// snippet instead of guessed at by absolute position in the whole
-/// document. Falls back to `None` (never panics) if the DOM shape isn't
-/// what's expected -- the caller just gets blank size/seeds/date for that
-/// row rather than a crash.
-fn enclosing_row_html(el: scraper::ElementRef) -> Option<String> {
+/// document. Returns `None` (never panics) when the DOM shape isn't what
+/// was expected -- the caller skips that link entirely.
+fn enclosing_row(el: scraper::ElementRef) -> Option<scraper::ElementRef> {
     for ancestor in el.ancestors() {
         if let Some(element) = ancestor.value().as_element() {
             if element.name() == "tr" {
-                return scraper::ElementRef::wrap(ancestor).map(|r| r.html());
+                return scraper::ElementRef::wrap(ancestor);
             }
         }
     }
     None
+}
+
+/// Whether a row belongs to the search-results table. The page also
+/// lists the tracker's news posts in `table#news_table`, whose links use
+/// the same `/torrent/{id}` shape as real results (ids like 472) but have
+/// no size/seeds/date -- exactly those rows are skipped. Everything else
+/// that carries a numeric id is treated as a result, so a future change
+/// to the results rows' `gai`/`tum` classes cannot silently turn a
+/// working search into zero results.
+fn is_results_row(row: &scraper::ElementRef) -> bool {
+    for ancestor in row.ancestors() {
+        if let Some(element) = ancestor.value().as_element() {
+            if element.name() == "table" {
+                let table_id = scraper::ElementRef::wrap(ancestor)
+                    .and_then(|t| t.value().attr("id").map(str::to_string))
+                    .unwrap_or_default();
+                return table_id != "news_table";
+            }
+        }
+    }
+    true
 }
