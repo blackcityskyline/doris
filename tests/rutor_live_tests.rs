@@ -75,3 +75,33 @@ async fn live_download_returns_torrent_bytes() {
     // page starts with `<`.
     assert!(!head.starts_with('<'), "got HTML instead of a .torrent: {}", head);
 }
+
+/// B2: `SearchPage.has_more` is what the Results panel now trusts instead
+/// of app.rs's `count < 50` guess -- which could never work for rutor,
+/// whose pages hold 100 rows. Pin it against the live site by asking the
+/// question it answers: if we claim there is another page, there must be.
+#[tokio::test]
+#[ignore = "requires network access to rutor.info"]
+async fn live_trait_search_has_more_agrees_with_the_next_page() {
+    use doris::search::source::{SearchRequest, Source};
+
+    let rutor = RutorSearcher::new();
+    let query = "фильм";
+
+    let page1 = Source::search(&rutor, &SearchRequest::new(query, 0))
+        .await
+        .expect("page 1");
+    println!("page1: {} items, has_more={}", page1.items.len(), page1.has_more);
+    assert!(!page1.items.is_empty(), "query '{}' found nothing", query);
+
+    let page2 = Source::search(&rutor, &SearchRequest::new(query, 100))
+        .await
+        .expect("page 2");
+    println!("page2: {} items, has_more={}", page2.items.len(), page2.has_more);
+
+    assert_eq!(
+        page1.has_more,
+        !page2.items.is_empty(),
+        "has_more must mirror whether rutor actually serves a next page"
+    );
+}

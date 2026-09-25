@@ -12,11 +12,14 @@
 //! (Phase 3's original note about rewiring `app.rs`/`main.rs` onto this
 //! trait is what ROADMAP.md phase B2 closes.)
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use crate::browser::cdp::Browser;
+use tokio::sync::Mutex;
 
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
@@ -298,6 +301,35 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: "",
     },
 ];
+
+/// What a source needs from the app in order to be *built*. Browser
+/// lifecycle (detect, visibility, close-on-exit) stays in `app.rs`,
+/// where that config lives; this struct is the hand-off point.
+pub struct SourceEnv {
+    /// An already-launched browser session. Required by sources with
+    /// `requires_browser() == true`, ignored by plain-HTTP ones.
+    pub browser: Option<Arc<Mutex<Browser>>>,
+}
+
+/// Build the live instance for `id`: the one place that maps ids to
+/// concrete types, so `app.rs`/`main.rs` only ever handle
+/// `Arc<dyn Source>` (B2 closes Phase 3's "rewire app.rs" note).
+///
+/// Browser-backed sources need `env.browser` handed in rather than
+/// launching one themselves -- they are exactly the thing that *needs*
+/// the browser, so they cannot exist before it.
+pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
+    match id {
+        "rutracker" => {
+            let browser = env.browser.ok_or_else(|| {
+                anyhow!("source '{}' needs a running browser session", id)
+            })?;
+            Ok(Arc::new(RutrackerSearcher::new(browser)))
+        }
+        "rutor" => Ok(Arc::new(RutorSearcher::new())),
+        other => Err(anyhow!("unknown source '{}'", other)),
+    }
+}
 
 /// Registry lookup by id -- the metadata-only twin of building a live
 /// [`Source`] (`build_source`, used by the orchestrator).

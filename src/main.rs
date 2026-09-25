@@ -1,5 +1,7 @@
 use anyhow::Result;
 
+use doris::search::source::{AuthContext, LogFn, SearchRequest};
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -30,35 +32,46 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     let visibility: doris::browser::cdp::BrowserVisibility = visibility_str.parse()?;
     println!("Using browser: {} [{}] ({})", kind, visibility, path.display());
 
+    // Same registry path as the TUI (B2): the home page comes from the
+    // metadata, the instance from `build_source`, and every operation
+    // goes through `dyn Source`.
+    let info = doris::search::source::get_source("rutracker")
+        .ok_or_else(|| anyhow::anyhow!("rutracker is not registered"))?;
+
     let browser = doris::browser::cdp::Browser::launch(
         &path,
         visibility,
-        doris::search::rutracker::RutrackerSearcher::HOME_URL,
+        info.home_url,
         true,
     ).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
-    let searcher = doris::search::rutracker::RutrackerSearcher::new(
-        std::sync::Arc::clone(&browser),
-    );
+    let source = doris::search::source::build_source(
+        info.id,
+        doris::search::source::SourceEnv {
+            browser: Some(std::sync::Arc::clone(&browser)),
+        },
+    )?;
 
     println!("Searching for '{}'...", query);
     println!("{}", "-".repeat(60));
 
-    let cookie_file = args.cookie_file.as_deref();
-    let username = args.username.as_deref();
-    let password = args.password.as_deref();
+    let auth = AuthContext {
+        cookie_file: args.cookie_file.as_deref().map(std::path::PathBuf::from),
+        username: args.username.as_deref().map(str::to_string),
+        password: args.password.as_deref().map(str::to_string),
+    };
+    let log: LogFn = std::sync::Arc::new(|msg: &str| println!("[log] {}", msg));
 
-    let log = std::sync::Arc::new(|msg: &str| println!("[log] {}", msg));
-
-    match searcher.ensure_logged_in(cookie_file, username, password, log).await {
+    match source.ensure_logged_in(&auth, &log).await {
         Ok(true) => println!("Logged in successfully."),
         Ok(false) => println!("Not logged in."),
         Err(e) => println!("Login error: {}", e),
     }
 
-    match searcher.search(query).await {
-        Ok(results) => {
+    match source.search(&SearchRequest::new(query, 0)).await {
+        Ok(page) => {
+            let results = page.items;
             if results.is_empty() {
                 println!("\nNo results found.");
             } else {

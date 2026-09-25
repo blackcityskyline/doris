@@ -1,6 +1,6 @@
 use doris::app::{
     EnterAction, apply_search_results, cycle_index, enter_action, resolve_cookie_file,
-    source_needs_browser, source_outcome_line,
+    source_id_for, source_needs_browser, source_outcome_line,
 };
 use doris::config::Config;
 use doris::search::models::TorrentItem;
@@ -40,7 +40,7 @@ fn test_stale_generation_results_are_dropped() {
     ui.state = AppState::Searching;
 
     // Generation 1 answers after generation 2's search started.
-    let applied = apply_search_results(&mut ui, 1, 2, vec![item("stale")]);
+    let applied = apply_search_results(&mut ui, 1, 2, vec![item("stale")], false);
 
     assert!(!applied, "stale results must not be applied");
     assert_eq!(ui.results.len(), 1, "the fresh results must survive");
@@ -54,7 +54,7 @@ fn test_current_generation_results_replace_the_list() {
     ui.results = vec![item("old")];
     ui.state = AppState::Searching;
 
-    let applied = apply_search_results(&mut ui, 3, 3, vec![item("a"), item("b")]);
+    let applied = apply_search_results(&mut ui, 3, 3, vec![item("a"), item("b")], false);
 
     assert!(applied);
     assert_eq!(ui.results.len(), 2);
@@ -71,12 +71,49 @@ fn test_current_generation_extends_when_paging() {
     ui.search_offset = ui.results.len();
     ui.state = AppState::Searching;
 
-    let applied = apply_search_results(&mut ui, 7, 7, vec![item("page2")]);
+    let applied = apply_search_results(&mut ui, 7, 7, vec![item("page2")], true);
 
     assert!(applied);
     assert_eq!(ui.results.len(), 2, "offset > 0 extends instead of replacing");
     assert_eq!(ui.results[1].title, "page2");
     assert_eq!(ui.search_offset, 2);
+}
+
+// --- apply_search_results: has_more replaces the `count < 50` guess (B2) -----
+
+#[test]
+fn test_last_page_marks_all_loaded() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+
+    apply_search_results(&mut ui, 1, 1, vec![item("a")], false);
+
+    assert!(ui.all_loaded, "a source reporting no more pages must stop the pager");
+}
+
+#[test]
+fn test_a_source_with_more_pages_keeps_loading_available() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+    // Exactly 50 results -- the size that made the old `count < 50` test
+    // look right for rutracker. `has_more` is now what decides.
+    let full_page: Vec<TorrentItem> = (0..50).map(|i| item(&format!("row {}", i))).collect();
+
+    apply_search_results(&mut ui, 1, 1, full_page, true);
+
+    assert!(!ui.all_loaded, "a full page must leave Load more available");
+}
+
+#[test]
+fn test_all_loaded_resets_on_a_fresh_search() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+    ui.all_loaded = true; // left over from the previous query's last page
+    ui.search_offset = 0;
+
+    apply_search_results(&mut ui, 2, 2, vec![item("fresh")], true);
+
+    assert!(!ui.all_loaded, "a new search must not inherit the old query's state");
 }
 
 // --- source_needs_browser (fixes B0.1: streaming ignored item.source) -------
@@ -98,6 +135,30 @@ fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
     // client the old hardcoded path always used.
     assert!(source_needs_browser(""));
     assert!(source_needs_browser("1337x"));
+}
+
+// --- source_id_for (B2: rows route through the registry) -------------------
+
+#[test]
+fn test_rows_route_to_their_own_registered_source() {
+    assert_eq!(source_id_for(&item_with_source("rutor")), "rutor");
+    assert_eq!(source_id_for(&item_with_source("rutracker")), "rutracker");
+}
+
+#[test]
+fn test_legacy_rows_fall_back_to_rutracker() {
+    // Rows serialized before the `source` field existed deserialize to "",
+    // and they carry rutracker-shaped URLs -- the same conservative
+    // fallback `source_needs_browser` makes.
+    assert_eq!(source_id_for(&item_with_source("")), "rutracker");
+    assert_eq!(source_id_for(&item_with_source("1337x")), "rutracker");
+}
+
+fn item_with_source(source: &str) -> TorrentItem {
+    TorrentItem {
+        source: source.to_string(),
+        ..Default::default()
+    }
 }
 
 // --- cycle_index (fixes: Left/Right in Options both cycling forward) -----

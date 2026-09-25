@@ -120,8 +120,9 @@ impl RutorSearcher {
             // The app advances `offset` by however many rows came back,
             // so an offset that isn't on a page boundary means the
             // previous fetch was a partial (= final) page. Returning
-            // nothing here both avoids re-reading that page and lets the
-            // caller's `count < 50` check flip `all_loaded`.
+            // nothing here both avoids re-reading that page and makes
+            // `Source::search` report `has_more: false`, which flips
+            // `all_loaded` (B2).
             crate::log::log("rutor", &format!(
                 "offset {} is past a partial final page; no more results",
                 offset,

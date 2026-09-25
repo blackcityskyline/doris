@@ -1,4 +1,4 @@
-use doris::search::source::{self, Group, KNOWN_SOURCES, Source};
+use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv};
 use doris::search::rutor::RutorSearcher;
 
 #[test]
@@ -146,4 +146,42 @@ fn test_implemented_sources_have_a_home_url() {
             source.home_url
         );
     }
+}
+
+// --- B2: build_source factory ------------------------------------------------
+
+#[test]
+fn test_build_source_builds_every_browser_free_implemented_source() {
+    // Whatever is marked implemented and needs no browser must actually
+    // be constructible offline -- otherwise `implemented` is a lie the
+    // Options checklist happily prints.
+    for info in KNOWN_SOURCES.iter().filter(|s| s.implemented && !s.requires_browser) {
+        assert!(
+            build_ok(info.id),
+            "implemented browser-free source '{}' does not build",
+            info.id
+        );
+    }
+}
+
+fn build_ok(id: &str) -> bool {
+    matches!(source::build_source(id, SourceEnv { browser: None }), Ok(_))
+}
+
+#[test]
+fn test_build_source_refuses_browser_backed_sources_without_a_browser() {
+    // The instance is what needs the browser, so handing in `None` must
+    // fail loudly instead of producing a source that panics later.
+    let err = match source::build_source("rutracker", SourceEnv { browser: None }) {
+        Ok(_) => panic!("rutracker must not build without a browser session"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("browser"), "expected a browser complaint, got: {}", msg);
+}
+
+#[test]
+fn test_build_source_rejects_unknown_ids() {
+    assert!(!build_ok("never-heard-of-it"));
+    assert!(!build_ok(""));
 }
