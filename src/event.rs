@@ -8,8 +8,21 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
-    SearchComplete(Vec<crate::search::models::TorrentItem>),
-    SearchError(String),
+    /// Results of one search dispatch, tagged with the `search_generation`
+    /// of the dispatch that produced them so a late answer from a query
+    /// that has since been replaced can be dropped instead of overwriting
+    /// the fresh one (B0.2).
+    SearchComplete {
+        generation: u64,
+        results: Vec<crate::search::models::TorrentItem>,
+    },
+    /// Same generation tag as [`Event::SearchComplete`]: a stale failure
+    /// must not flip a newer search back to `Idle` or log an error the user
+    /// would attribute to it.
+    SearchError {
+        generation: u64,
+        error: String,
+    },
     StreamComplete(String),
     StreamError(String),
     StreamLog(String),
