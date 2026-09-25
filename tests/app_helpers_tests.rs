@@ -1,6 +1,6 @@
 use doris::app::{
-    apply_search_results, cycle_index, resolve_cookie_file, source_needs_browser,
-    source_outcome_line,
+    EnterAction, apply_search_results, cycle_index, enter_action, resolve_cookie_file,
+    source_needs_browser, source_outcome_line,
 };
 use doris::config::Config;
 use doris::search::models::TorrentItem;
@@ -198,4 +198,41 @@ fn test_outcome_line_distinguishes_sources_on_the_same_error() {
     let broken: Result<usize, String> = Err("timeout".to_string());
     assert_eq!(source_outcome_line("rutor", &healthy), "rutor: 7 results");
     assert_eq!(source_outcome_line("rutracker", &broken), "rutracker: timeout");
+}
+
+// --- enter_action (fixes B0.4: Enter on an empty query could stream) --------
+
+#[test]
+fn test_enter_on_empty_query_in_input_mode_does_nothing() {
+    // The regression: `submit_search()` returned None (having already left
+    // input mode) and the same key fell through to submit_selection() and
+    // spawned a stream. It must be DoNothing even with results selected
+    // and a pending source switch.
+    assert_eq!(
+        enter_action(true, false, true, true),
+        EnterAction::DoNothing
+    );
+}
+
+#[test]
+fn test_enter_with_a_query_submits_the_search() {
+    assert_eq!(enter_action(true, true, false, true), EnterAction::SubmitQuery);
+    // A pending source switch must not steal Enter from the typed query.
+    assert_eq!(enter_action(true, true, true, false), EnterAction::SubmitQuery);
+}
+
+#[test]
+fn test_enter_plays_outside_input_mode() {
+    assert_eq!(enter_action(false, true, false, true), EnterAction::Play);
+    assert_eq!(enter_action(false, false, false, true), EnterAction::Play);
+}
+
+#[test]
+fn test_enter_after_source_switch_restarts_the_search_instead_of_playing() {
+    assert_eq!(enter_action(false, true, true, true), EnterAction::RestartSearch);
+}
+
+#[test]
+fn test_enter_without_a_selection_does_nothing() {
+    assert_eq!(enter_action(false, true, false, false), EnterAction::DoNothing);
 }
