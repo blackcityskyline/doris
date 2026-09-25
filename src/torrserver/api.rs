@@ -5,34 +5,47 @@ use serde::Deserialize;
 /// One torrent's live status, as reported by TorrServer's `/torrents`
 /// endpoint (`{"action": "list"}` or `{"action": "get", "hash": ...}`).
 ///
-/// Field names are `#[serde(rename)]`d to match TorrServer's Go JSON
-/// output verbatim (capitalized, no json tags on the upstream struct) --
-/// see https://github.com/YouROK/TorrServer server/torr/torrent.go and
-/// server/web/api/utils. TorrServer has several community forks with
-/// slightly different response shapes; every field here has
-/// `#[serde(default)]` so an unfamiliar/renamed field degrades to a zero
-/// value instead of failing to parse the whole list.
+/// **Two shapes exist in the wild, and both are accepted here.**
+///
+/// - Modern upstream (`state.TorrentStatus`, live-verified against the
+///   running server on 25.09.2026) has json tags: `title`, `hash`,
+///   `torrent_size`, `loaded_size`, `stat_string`, ...
+/// - An older sample this file was originally written against uses the
+///   capitalized Go field names, i.e. no json tags at all: `Name`,
+///   `Hash`, `TorrentSize`, `TorrentStatusString`, ...
+///
+/// So each field keeps its capitalized name as the primary spelling and
+/// carries an `alias` for the tagged one. Getting this wrong is silent:
+/// `#[serde(default)]` means an unrecognized key yields a zero value
+/// rather than an error, so against a modern server every field parsed
+/// empty and the Torrent zone showed no hash, name, size, speed or
+/// progress -- which is exactly what it did until this was fixed
+/// (found while live-verifying B7's add-by-link).
+///
+/// `title` is deliberately *not* aliased to upstream's `name`: that key
+/// only appears once metadata is loaded, and two input keys mapping to
+/// one field would make the whole struct fail on `duplicate field`.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct TorrentInfo {
-    #[serde(rename = "Name", default)]
+    #[serde(rename = "Name", alias = "title", default)]
     pub name: String,
-    #[serde(rename = "Hash", default)]
+    #[serde(rename = "Hash", alias = "hash", default)]
     pub hash: String,
-    #[serde(rename = "TorrentSize", default)]
+    #[serde(rename = "TorrentSize", alias = "torrent_size", default)]
     pub total_size: i64,
-    #[serde(rename = "LoadedSize", default)]
+    #[serde(rename = "LoadedSize", alias = "loaded_size", default)]
     pub loaded_size: i64,
-    #[serde(rename = "DownloadSpeed", default)]
+    #[serde(rename = "DownloadSpeed", alias = "download_speed", default)]
     pub download_speed: f64,
-    #[serde(rename = "UploadSpeed", default)]
+    #[serde(rename = "UploadSpeed", alias = "upload_speed", default)]
     pub upload_speed: f64,
-    #[serde(rename = "TotalPeers", default)]
+    #[serde(rename = "TotalPeers", alias = "total_peers", default)]
     pub total_peers: i64,
-    #[serde(rename = "ActivePeers", default)]
+    #[serde(rename = "ActivePeers", alias = "active_peers", default)]
     pub active_peers: i64,
-    #[serde(rename = "ConnectedSeeders", default)]
+    #[serde(rename = "ConnectedSeeders", alias = "connected_seeders", default)]
     pub connected_seeders: i64,
-    #[serde(rename = "TorrentStatusString", default)]
+    #[serde(rename = "TorrentStatusString", alias = "stat_string", default)]
     pub status_string: String,
 }
 

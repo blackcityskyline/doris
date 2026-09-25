@@ -77,3 +77,38 @@ async fn live_add_by_link_adds_lists_and_forgets_a_real_magnet() {
     assert!(after.is_none(), "rem must have forgotten the torrent");
     println!("cleaned up");
 }
+
+/// The regression the B7 verification exposed: `TorrentInfo` only knew
+/// the capitalized Go names, while a modern TorrServer answers with
+/// json-tagged ones -- and `#[serde(default)]` turned that mismatch into
+/// *empty* fields instead of an error, leaving the Torrent zone without
+/// a hash, name, size or speed. Ignored like the rest, because it needs
+/// a running server; it does not touch it (read-only `list`).
+#[tokio::test]
+#[ignore = "needs a local TorrServer"]
+async fn live_torrent_list_parses_against_the_running_server() {
+    let torrserver = TorrServer::new(TORRSERVER);
+    assert!(
+        torrserver.is_reachable().await,
+        "no TorrServer answering on {}: start it first",
+        TORRSERVER
+    );
+
+    let list = torrserver.list_torrents().await.expect("list must not error");
+    println!("TorrServer lists {} torrents", list.len());
+    if let Some(first) = list.first() {
+        println!(
+            "first: name={:?} hash={:?} size={} status={:?}",
+            first.name, first.hash, first.total_size, first.status_string
+        );
+        assert!(
+            !first.hash.is_empty(),
+            "hash came back empty -- the response keys are not the ones we rename to"
+        );
+        assert!(!first.name.is_empty(), "title came back empty");
+        assert!(first.total_size > 0, "torrent_size came back empty");
+        assert!(!first.status_string.is_empty(), "stat_string came back empty");
+    } else {
+        println!("no torrents to inspect (empty list is a valid answer)");
+    }
+}
