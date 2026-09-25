@@ -1,9 +1,13 @@
 use doris::app::{
-    EnterAction, apply_source_done, cycle_index, enter_action, finish_search, magnet_only_download,
-    resolve_cookie_file, safe_filename, source_id_for, source_needs_browser, source_outcome_line,
+    EnterAction, apply_source_done, cycle_index, enter_action, fill_missing_magnet, finish_search,
+    magnet_only_download, resolve_cookie_file, safe_filename, source_id_for,
+    source_needs_browser, source_outcome_line,
 };
 use doris::config::Config;
 use doris::search::models::TorrentItem;
+use doris::search::source::{
+    AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, SourceEnv, build_source,
+};
 use doris::ui::app::App as UiApp;
 use doris::ui::app::AppState;
 use std::collections::HashMap;
@@ -467,4 +471,134 @@ fn test_safe_filename_escapes_path_characters_and_trims() {
         "a_b_c_d_e_f",
         "every separator and shell-special character is neutralised"
     );
+}
+
+// --- fill_missing_magnet (B8 wave 3: 1337x rows carry no link) ----------------
+
+/// A source whose rows arrive with neither a magnet nor a `.torrent`
+/// link, so the row's own page is the only place one lives (1337x).
+/// Counts how often it was actually asked, because half the contract
+/// is who must *not* be asked.
+struct LazySource {
+    asked: std::sync::atomic::AtomicUsize,
+}
+
+impl LazySource {
+    fn new() -> Self {
+        Self {
+            asked: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    fn asked(&self) -> usize {
+        self.asked.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[async_trait::async_trait]
+impl Source for LazySource {
+    fn id(&self) -> &'static str {
+        "lazy"
+    }
+
+    fn label(&self) -> &'static str {
+        "Lazy"
+    }
+
+    fn groups(&self) -> &'static [Group] {
+        &[]
+    }
+
+    fn home_url(&self) -> &'static str {
+        "https://lazy.invalid"
+    }
+
+    fn requires_browser(&self) -> bool {
+        false
+    }
+
+    fn supports_browse(&self) -> bool {
+        false
+    }
+
+    async fn ensure_logged_in(&self, _auth: &AuthContext, _log: &LogFn) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+
+    async fn search(&self, _req: &SearchRequest) -> anyhow::Result<SearchPage> {
+        Ok(SearchPage {
+            items: Vec::new(),
+            has_more: false,
+            next_offset: None,
+        })
+    }
+
+    async fn download_torrent(&self, _url: &str) -> anyhow::Result<Vec<u8>> {
+        anyhow::bail!("this mock never serves a file")
+    }
+
+    async fn resolve_magnet(&self, page_url: &str) -> anyhow::Result<Option<String>> {
+        self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            page_url, "https://lazy.invalid/torrent/1/x/",
+            "the row's own page is what gets fetched"
+        );
+        Ok(Some("magnet:?xt=urn:btih:abc".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn test_a_row_with_no_link_gets_the_magnet_off_its_own_page() {
+    let source = LazySource::new();
+    let mut item = TorrentItem {
+        title: "1337x row".to_string(),
+        page_url: "https://lazy.invalid/torrent/1/x/".to_string(),
+        ..Default::default()
+    };
+
+    fill_missing_magnet(&mut item, &source).await.expect("resolve");
+
+    assert_eq!(
+        item.magnet.as_deref(),
+        Some("magnet:?xt=urn:btih:abc"),
+        "the row is playable after this"
+    );
+    assert_eq!(source.asked(), 1, "exactly one request, at play time");
+}
+
+#[tokio::test]
+async fn test_a_row_that_already_has_a_way_to_play_is_never_asked() {
+    let with_file = LazySource::new();
+    let mut file_row = TorrentItem {
+        page_url: "https://lazy.invalid/torrent/1/x/".to_string(),
+        download_url: "https://lazy.invalid/download/1".to_string(),
+        ..Default::default()
+    };
+    fill_missing_magnet(&mut file_row, &with_file).await.expect("resolve");
+    assert_eq!(with_file.asked(), 0, "a fetchable row needs no lookup");
+    assert_eq!(file_row.magnet, None, "and is not quietly rewritten");
+
+    let with_link = LazySource::new();
+    let mut link_row = TorrentItem {
+        page_url: "https://lazy.invalid/torrent/1/x/".to_string(),
+        magnet: Some("magnet:?xt=urn:btih:present".to_string()),
+        ..Default::default()
+    };
+    fill_missing_magnet(&mut link_row, &with_link).await.expect("resolve");
+    assert_eq!(with_link.asked(), 0, "a row that has one keeps it");
+    assert_eq!(link_row.magnet.as_deref(), Some("magnet:?xt=urn:btih:present"));
+}
+
+#[tokio::test]
+async fn test_the_default_lookup_answers_without_touching_the_network() {
+    // Six sources' rows always carry a magnet or a file; their answer
+    // to "look one up" must be no, and it must cost no request -- a
+    // URL on a domain that does not exist proves it stayed local.
+    let source =
+        build_source("rutor", SourceEnv { browser: None }).expect("rutor is in the registry");
+    let found = source
+        .resolve_magnet("https://nonexistent.invalid/torrent/1/")
+        .await
+        .expect("the default never fails");
+    assert!(found.is_none(), "no link to find, and nothing was fetched");
 }

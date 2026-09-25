@@ -149,6 +149,21 @@ pub trait Source: Send + Sync {
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage>;
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>>;
+
+    /// The magnet link that lives on the row's *own* page, fetched when
+    /// a row arrives with neither a magnet nor a `.torrent` link.
+    ///
+    /// Most sources fill `magnet`/`download_url` while parsing the
+    /// results page and never need this. An aggregator that links to
+    /// torrent pages instead of serving files does (1337x, B8 wave 3):
+    /// its rows carry the page URL, and the link is one request away.
+    /// The default answers "no such link" without touching the network,
+    /// so the other six sources keep their shape, and the caller pays
+    /// the request only for a row it is about to play -- never per row
+    /// of a search.
+    async fn resolve_magnet(&self, _page_url: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
 }
 
 /// Rutracker exposes no server-side category filter we've verified live,
