@@ -25,13 +25,3 @@ pub struct TorrentItem {
     #[serde(default)]
     pub source: String,
 }
-
-pub fn resolve_url(url: &str) -> String {
-    if url.starts_with("http") {
-        url.to_string()
-    } else if url.starts_with('/') {
-        format!("https://rutracker.org{}", url)
-    } else {
-        format!("https://rutracker.org/forum/{}", url)
-    }
-}

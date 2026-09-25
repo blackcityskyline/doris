@@ -1,10 +1,24 @@
 use anyhow::Result;
 use crate::browser::cdp::Browser;
-use crate::search::models::{TorrentItem, resolve_url};
+use crate::search::models::TorrentItem;
 use crate::search::cookies::{self, Cookie};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// Resolve a rutracker download URL against the forum root. Lives here,
+/// not in the source-agnostic `models.rs`, because the host is baked in:
+/// only rutracker produces these `/forum/...` and bare `dl.php?t=` forms
+/// (B0.5).
+pub fn resolve_url(url: &str) -> String {
+    if url.starts_with("http") {
+        url.to_string()
+    } else if url.starts_with('/') {
+        format!("https://rutracker.org{}", url)
+    } else {
+        format!("https://rutracker.org/forum/{}", url)
+    }
+}
 
 #[derive(Clone)]
 pub struct RutrackerSearcher {
