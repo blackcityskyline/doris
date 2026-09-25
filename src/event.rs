@@ -20,6 +20,11 @@ pub enum Event {
         /// Whether *that* source has another page (B2). `App` remembers
         /// it per source so "Load more" only asks the ones that do.
         has_more: bool,
+        /// Where that source's next page starts, in its own cursor unit;
+        /// `None` for row-paged sources and for every failure, both of
+        /// which leave the cursor where it is. See
+        /// `SearchPage::next_offset`.
+        next_offset: Option<usize>,
         /// `Some` when the source failed; the message says what happened
         /// (including "timed out after 25s").
         error: Option<String>,

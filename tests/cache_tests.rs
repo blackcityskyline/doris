@@ -21,6 +21,7 @@ fn page(rows: usize, has_more: bool) -> SearchPage {
             })
             .collect(),
         has_more,
+        next_offset: None,
     }
 }
 
@@ -153,6 +154,7 @@ fn test_a_cache_hit_becomes_the_same_source_done_a_live_fetch_would_send() {
             generation,
             items,
             has_more,
+            next_offset,
             error,
             timed_out,
         } => {
@@ -160,6 +162,7 @@ fn test_a_cache_hit_becomes_the_same_source_done_a_live_fetch_would_send() {
             assert_eq!(generation, 7, "tagged with the dispatch it answers");
             assert_eq!(items.len(), 4);
             assert!(has_more, "the cached paging verdict survives");
+            assert_eq!(next_offset, None, "the cached cursor survives too");
             assert!(error.is_none() && !timed_out, "a hit is not a failure");
         }
         other => panic!("expected SourceDone, got {:?}", other),

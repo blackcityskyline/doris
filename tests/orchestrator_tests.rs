@@ -117,6 +117,7 @@ impl Source for FakeSource {
         Ok(SearchPage {
             items: (0..self.rows).map(|i| row(self.id, i)).collect(),
             has_more: self.has_more,
+            next_offset: None,
         })
     }
 
@@ -166,6 +167,7 @@ async fn rows_arrive_in_completion_order_and_a_deadline_does_not_block_the_rest(
             generation,
             items,
             has_more,
+            next_offset,
             error,
             timed_out,
         } => {
@@ -173,6 +175,7 @@ async fn rows_arrive_in_completion_order_and_a_deadline_does_not_block_the_rest(
             assert_eq!(generation, 7);
             assert_eq!(items.len(), 2);
             assert!(has_more, "the source's paging verdict travels with its rows");
+            assert_eq!(next_offset, None, "a row-paged source hands back no cursor");
             assert!(error.is_none());
             assert!(!timed_out);
         }
@@ -395,5 +398,63 @@ async fn an_empty_dispatch_still_closes_the_generation() {
     match next_event(&mut rx).await {
         Event::SearchComplete { generation } => assert_eq!(generation, 9),
         other => panic!("expected SearchComplete, got {:?}", other),
+    }
+}
+
+// --- cursor ownership (SearchPage::next_offset) -----------------------------
+
+/// The row-paged default: rutor/rutracker hand back nothing, so their
+/// cursor is exactly the row count delivered so far.
+#[test]
+fn a_source_without_a_cursor_advances_by_the_rows_it_delivered() {
+    assert_eq!(orchestrator::advance_offset(0, 100, None), 100);
+    assert_eq!(orchestrator::advance_offset(100, 100, None), 200);
+}
+
+/// Failures carry neither rows nor a cursor: `current + 0` is what
+/// leaves the cursor alone so the failed page is asked again.
+#[test]
+fn a_failed_page_leaves_the_cursor_where_it_was() {
+    assert_eq!(orchestrator::advance_offset(100, 0, None), 100);
+    assert_eq!(orchestrator::advance_offset(7, 0, None), 7);
+}
+
+/// yts pages by *movie*, so its cursor is a page number that has nothing
+/// to do with how many rows came back: the source's own number must win
+/// over the row count, or "Load more" would skip movies (or repeat them).
+#[test]
+fn a_source_supplied_cursor_beats_the_row_count() {
+    assert_eq!(orchestrator::advance_offset(0, 137, Some(2)), 2);
+    assert_eq!(orchestrator::advance_offset(137, 0, Some(3)), 3);
+    assert_eq!(orchestrator::advance_offset(50, 12, Some(6)), 6);
+}
+
+/// The cursor has to survive the trip through the event, not just exist
+/// on `SearchPage`: `app.rs` only ever sees `Event::SourceDone`.
+#[tokio::test]
+async fn a_source_supplied_cursor_travels_with_its_rows() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+
+    let page = SearchPage {
+        items: vec![row("yts", 0), row("yts", 1)],
+        has_more: true,
+        next_offset: Some(2),
+    };
+    tokio::spawn(orchestrator::run_source(
+        "yts",
+        9,
+        async { Ok(page) },
+        Duration::from_secs(1),
+        tx,
+    ));
+
+    match next_event(&mut rx).await {
+        Event::SourceDone {
+            next_offset, has_more, ..
+        } => {
+            assert_eq!(next_offset, Some(2), "the source's own cursor must arrive");
+            assert!(has_more);
+        }
+        other => panic!("expected a SourceDone, got {:?}", other),
     }
 }

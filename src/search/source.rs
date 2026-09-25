@@ -74,6 +74,16 @@ impl SearchRequest {
 pub struct SearchPage {
     pub items: Vec<TorrentItem>,
     pub has_more: bool,
+    /// The cursor the *next* dispatch should hand back, in this source's
+    /// own unit -- rows for row-paged sources, a page number for an API
+    /// that counts pages of its own (yts pages by *movie*, and how many
+    /// rows a page yields depends on how many qualities each movie has,
+    /// so any row-derived cursor would skip or repeat).
+    ///
+    /// `None` = "rows": `offset + items.len()`, which is exactly what
+    /// rutor/rutracker want and what a *failed* page wants too (no rows
+    /// -> cursor unchanged). See `orchestrator::advance_offset`.
+    pub next_offset: Option<usize>,
 }
 
 /// Credentials + cookie path handed to [`Source::ensure_logged_in`].
@@ -187,7 +197,7 @@ impl Source for RutrackerSearcher {
         // The forum pages `tracker.php?start=` by 50, so a short page is
         // the last one and a full one may have more behind it.
         let has_more = items.len() >= RutrackerSearcher::PAGE_SIZE;
-        Ok(SearchPage { items, has_more })
+        Ok(SearchPage { items, has_more, next_offset: None })
     }
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
@@ -234,7 +244,7 @@ impl Source for RutorSearcher {
         // rutor's category ids against the live site before claiming
         // server-side filtering.
         let has_more = items.len() >= RutorSearcher::PAGE_SIZE;
-        Ok(SearchPage { items, has_more })
+        Ok(SearchPage { items, has_more, next_offset: None })
     }
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
