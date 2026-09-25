@@ -62,6 +62,43 @@ pub fn source_needs_browser(source: &str) -> bool {
     source != "rutor"
 }
 
+/// Apply one search dispatch's results to the UI -- unless the event came
+/// from a dispatch that a newer `start_search` has since superseded, in
+/// which case it is dropped and `false` is returned (B0.2: a late
+/// `SearchComplete` from the previous query used to land after the new one
+/// started and overwrite its results).
+///
+/// A free function over `&mut UiApp` rather than a method on `App` so the
+/// stale-vs-fresh decision is testable without a terminal, a browser or a
+/// running event loop.
+pub fn apply_search_results(
+    ui: &mut UiApp,
+    event_generation: u64,
+    current_generation: u64,
+    results: Vec<crate::search::models::TorrentItem>,
+) -> bool {
+    if event_generation != current_generation {
+        ui.add_log("Dropped stale search results (superseded by a newer search)");
+        return false;
+    }
+    let count = results.len();
+    if ui.search_offset > 0 {
+        ui.results.extend(results);
+        ui.add_log(&format!("Loaded {} more results (total: {})", count, ui.results.len()));
+    } else {
+        ui.results = results;
+        ui.selected = 0;
+        ui.add_log(&format!("Found {} results", count));
+    }
+    if count < 50 {
+        ui.all_loaded = true;
+    }
+    ui.search_offset = ui.results.len();
+    ui.state = AppState::Idle;
+    ui.update_filter();
+    true
+}
+
 /// Resolve the cookie file path used for Rutracker login, or `None` if
 /// "Save cookies" is off. `cli_override` is `Args.cookie_file` (the
 /// `--cookie-file` flag) which takes priority when given; otherwise falls
@@ -98,6 +135,12 @@ pub struct App {
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
+    /// Bumped by every `start_search`; each dispatch carries the value it
+    /// was started with, and results from an older generation are dropped.
+    /// Without this, a slow answer from the previous query landed after the
+    /// new one started and overwrote its results (B0.2) -- torio's
+    /// equivalent is the AbortController + `alive` flag on a search.
+    search_generation: u64,
     bridge: Option<BridgeServer>,
     terminal_size: (u16, u16),
     /// Set by the SIGHUP/SIGTERM/SIGINT listener spawned in [`App::run`] so
@@ -172,6 +215,7 @@ impl App {
             args,
             config,
             terminal_size: (0, 0),
+            search_generation: 0,
             exit_signal: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -205,26 +249,19 @@ impl App {
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);
                         },
-                        Event::SearchComplete(results) => {
-                            let count = results.len();
-                            if self.ui.search_offset > 0 {
-                                self.ui.results.extend(results);
-                                self.ui.add_log(&format!("Loaded {} more results (total: {})", count, self.ui.results.len()));
-                            } else {
-                                self.ui.results = results;
-                                self.ui.selected = 0;
-                                self.ui.add_log(&format!("Found {} results", count));
-                            }
-                            if count < 50 {
-                                self.ui.all_loaded = true;
-                            }
-                            self.ui.search_offset = self.ui.results.len();
-                            self.ui.state = AppState::Idle;
-                            self.ui.update_filter();
+                        Event::SearchComplete { generation, results } => {
+                            apply_search_results(
+                                &mut self.ui,
+                                generation,
+                                self.search_generation,
+                                results,
+                            );
                         }
-                        Event::SearchError(err) => {
-                            self.ui.state = AppState::Idle;
-                            self.ui.add_log(&format!("Search error: {}", err));
+                        Event::SearchError { generation, error } => {
+                            if generation == self.search_generation {
+                                self.ui.state = AppState::Idle;
+                                self.ui.add_log(&format!("Search error: {}", error));
+                            }
                         }
                         Event::StreamComplete(url) => {
                             self.ui.state = AppState::Idle;
@@ -1131,7 +1168,11 @@ impl App {
         self.ui.search_offset = 0;
         self.ui.all_loaded = false;
         self.ui.add_log(&format!("Searching '{}' for '{}'...", self.ui.active_source, query));
-        self.dispatch_search(query, 0).await;
+        // New generation: anything still in flight for a previous query is
+        // now stale and gets dropped when it lands (B0.2).
+        self.search_generation += 1;
+        let generation = self.search_generation;
+        self.dispatch_search(query, 0, generation).await;
     }
 
     /// Kick off the search(es) for `query` at `offset` against whichever
@@ -1139,10 +1180,12 @@ impl App {
     /// (`ui.active_source`: "rutracker" / "rutor" / "all"), merging into
     /// one `Event::SearchComplete` so the existing handler (which already
     /// knows how to replace vs. extend `ui.results` based on `offset`)
-    /// doesn't need to change. Rutor needs no browser/login at all, so it
+    /// doesn't need to change. `generation` is stamped onto both events it
+    /// can emit, so a result arriving after a newer search started is
+    /// dropped rather than merged into it (B0.2). Rutor needs no browser/login at all, so it
     /// runs as a plain standalone task; Rutracker still goes through the
     /// shared cached searcher exactly as before.
-    async fn dispatch_search(&mut self, query: String, offset: usize) {
+    async fn dispatch_search(&mut self, query: String, offset: usize, generation: u64) {
         let active = self.ui.active_source.clone();
         let want_rutracker = (active == "rutracker" || active == "all")
             && self.config.enabled_sources.iter().any(|s| s == "rutracker");
@@ -1238,11 +1281,17 @@ impl App {
 
             if combined.is_empty() {
                 if let Some(e) = last_err {
-                    let _ = event_tx_result.send(Event::SearchError(e));
+                    let _ = event_tx_result.send(Event::SearchError {
+                        generation,
+                        error: e,
+                    });
                     return;
                 }
             }
-            let _ = event_tx_result.send(Event::SearchComplete(combined));
+            let _ = event_tx_result.send(Event::SearchComplete {
+                generation,
+                results: combined,
+            });
         });
     }
 
@@ -1405,6 +1454,9 @@ impl App {
 
     async fn load_more(&mut self, query: String, offset: usize) {
         self.ui.state = AppState::Searching;
-        self.dispatch_search(query, offset).await;
+        // Same generation as the results already on screen: a page-2 answer
+        // extends them instead of being treated as a superseded search.
+        let generation = self.search_generation;
+        self.dispatch_search(query, offset, generation).await;
     }
 }

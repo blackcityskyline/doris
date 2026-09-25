@@ -1,6 +1,80 @@
-use doris::app::{cycle_index, resolve_cookie_file, source_needs_browser};
+use doris::app::{apply_search_results, cycle_index, resolve_cookie_file, source_needs_browser};
 use doris::config::Config;
+use doris::search::models::TorrentItem;
+use doris::ui::app::App as UiApp;
+use doris::ui::app::AppState;
 use std::path::PathBuf;
+
+// --- apply_search_results (fixes B0.2: stale search overwrites fresh) -------
+
+fn make_ui() -> UiApp {
+    UiApp::new(
+        "http://127.0.0.1:8090".into(),
+        "helium [visible] (/usr/bin/helium)".into(),
+        true,
+        None,
+        "/tmp".into(),
+        "braille".into(),
+        true,
+        true,
+        true,
+        false,
+    )
+}
+
+fn item(title: &str) -> TorrentItem {
+    TorrentItem {
+        title: title.to_string(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_stale_generation_results_are_dropped() {
+    let mut ui = make_ui();
+    ui.results = vec![item("fresh")];
+    ui.search_offset = ui.results.len();
+    ui.state = AppState::Searching;
+
+    // Generation 1 answers after generation 2's search started.
+    let applied = apply_search_results(&mut ui, 1, 2, vec![item("stale")]);
+
+    assert!(!applied, "stale results must not be applied");
+    assert_eq!(ui.results.len(), 1, "the fresh results must survive");
+    assert_eq!(ui.results[0].title, "fresh");
+    assert!(ui.state == AppState::Searching, "a stale event must not flip state");
+}
+
+#[test]
+fn test_current_generation_results_replace_the_list() {
+    let mut ui = make_ui();
+    ui.results = vec![item("old")];
+    ui.state = AppState::Searching;
+
+    let applied = apply_search_results(&mut ui, 3, 3, vec![item("a"), item("b")]);
+
+    assert!(applied);
+    assert_eq!(ui.results.len(), 2);
+    assert_eq!(ui.results[0].title, "a");
+    assert_eq!(ui.selected, 0);
+    assert_eq!(ui.search_offset, 2);
+    assert!(ui.state == AppState::Idle);
+}
+
+#[test]
+fn test_current_generation_extends_when_paging() {
+    let mut ui = make_ui();
+    ui.results = vec![item("page1")];
+    ui.search_offset = ui.results.len();
+    ui.state = AppState::Searching;
+
+    let applied = apply_search_results(&mut ui, 7, 7, vec![item("page2")]);
+
+    assert!(applied);
+    assert_eq!(ui.results.len(), 2, "offset > 0 extends instead of replacing");
+    assert_eq!(ui.results[1].title, "page2");
+    assert_eq!(ui.search_offset, 2);
+}
 
 // --- source_needs_browser (fixes B0.1: streaming ignored item.source) -------
 
