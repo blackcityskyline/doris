@@ -3,6 +3,41 @@ use serde::{Deserialize, Serialize};
 use super::format::parse_size;
 use super::source::Group;
 
+/// A number that arrives as either a JSON number or a numeric string.
+///
+/// Live-checked twice, and both times the endpoints disagree with
+/// themselves: apibay answers `"size":"1992277407"` on `q.php` but
+/// `"size":3808117223` on its top-100 lists, and ez'tv types
+/// `size_bytes` as `string | number`. Reading only one spelling does
+/// not fail the parse -- it silently zeroes the other, so a size column
+/// goes blank exactly where the parser guessed wrong.
+///
+/// Untagged, so serde picks by JSON type; garbage in a string costs
+/// zero for that field rather than the whole page.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum FlexNum {
+    Number(i64),
+    Text(String),
+}
+
+impl FlexNum {
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            FlexNum::Number(n) => *n,
+            FlexNum::Text(s) => s.trim().parse::<i64>().unwrap_or(0),
+        }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.as_i64().max(0) as u64
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.as_i64().max(0) as u32
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TorrentItem {
     pub title: String,

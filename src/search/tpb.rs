@@ -6,7 +6,7 @@
 //! `q.php` answers `"size":"1992277407"`, the precompiled top-100 lists
 //! answer `"size":3808117223`. A parser that only reads one spelling
 //! silently zeroes the other, so [`ApibayItem`] types those fields
-//! against [`Num`] and accepts both.
+//! against [`FlexNum`](super::models::FlexNum) and accepts both.
 //!
 //! Two more live facts shape the code:
 //!
@@ -28,7 +28,7 @@ use serde::Deserialize;
 
 use super::format::{format_bytes, format_date};
 use super::magnet::build_magnet;
-use super::models::TorrentItem;
+use super::models::{FlexNum, TorrentItem};
 use super::net::{FetchOptions, browser_client, fetch_resilient};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
@@ -46,47 +46,19 @@ const ZERO_HASH: &str = "0000000000000000000000000000000000000000";
 pub const TOP_MOVIES_URL: &str = "https://apibay.org/precompiled/data_top100_207.json";
 pub const TOP_TV_URL: &str = "https://apibay.org/precompiled/data_top100_208.json";
 
-/// apibay's numeric-ish fields, which are strings on `q.php` and
-/// numbers on the top-100 endpoints. Untagged so serde picks by JSON
-/// type, with the parse falling back to 0 on garbage -- a malformed
-/// count should cost one row's detail, not the whole page.
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Num {
-    Int(i64),
-    Str(String),
-}
-
-impl Num {
-    fn as_i64(&self) -> i64 {
-        match self {
-            Num::Int(n) => *n,
-            Num::Str(s) => s.trim().parse::<i64>().unwrap_or(0),
-        }
-    }
-
-    fn as_u64(&self) -> u64 {
-        self.as_i64().max(0) as u64
-    }
-
-    fn as_u32(&self) -> u32 {
-        self.as_i64().max(0) as u32
-    }
-}
-
 /// One apibay row. Fields are optional because the two endpoints do not
 /// agree on which ones they send (`num_files`/`username`/`imdb` come and
 /// go); a missing field degrades, it does not fail the page.
 #[derive(Debug, Deserialize)]
 struct ApibayItem {
-    id: Option<Num>,
+    id: Option<FlexNum>,
     name: Option<String>,
     info_hash: Option<String>,
-    seeders: Option<Num>,
-    leechers: Option<Num>,
-    size: Option<Num>,
-    added: Option<Num>,
-    category: Option<Num>,
+    seeders: Option<FlexNum>,
+    leechers: Option<FlexNum>,
+    size: Option<FlexNum>,
+    added: Option<FlexNum>,
+    category: Option<FlexNum>,
 }
 
 /// The search URL for one query. `cat=all`: B8 wave 1 deliberately does
@@ -132,7 +104,7 @@ fn to_row(item: &ApibayItem) -> Option<TorrentItem> {
     if info_hash.is_empty() || info_hash == ZERO_HASH {
         return None;
     }
-    if item.id.as_ref().map(Num::as_i64).unwrap_or(0) <= 0 {
+    if item.id.as_ref().map(FlexNum::as_i64).unwrap_or(0) <= 0 {
         return None;
     }
 
@@ -142,11 +114,11 @@ fn to_row(item: &ApibayItem) -> Option<TorrentItem> {
         .filter(|name| !name.trim().is_empty())
         .unwrap_or("Unknown")
         .to_string();
-    let size_bytes = item.size.as_ref().map_or(0, Num::as_u64);
-    let seeds = item.seeders.as_ref().map_or(0, Num::as_u32);
-    let added = item.added.as_ref().map_or(0, Num::as_i64);
-    let category = item.category.as_ref().map_or(0, Num::as_i64);
-    let id = item.id.as_ref().map(Num::as_i64).unwrap_or(0);
+    let size_bytes = item.size.as_ref().map_or(0, FlexNum::as_u64);
+    let seeds = item.seeders.as_ref().map_or(0, FlexNum::as_u32);
+    let added = item.added.as_ref().map_or(0, FlexNum::as_i64);
+    let category = item.category.as_ref().map_or(0, FlexNum::as_i64);
+    let id = item.id.as_ref().map(FlexNum::as_i64).unwrap_or(0);
 
     Some(TorrentItem {
         magnet: Some(build_magnet(&info_hash, &title)),
@@ -155,7 +127,7 @@ fn to_row(item: &ApibayItem) -> Option<TorrentItem> {
         seeds: seeds.to_string(),
         size_bytes,
         seeds_n: seeds,
-        leechers: item.leechers.as_ref().map_or(0, Num::as_u32),
+        leechers: item.leechers.as_ref().map_or(0, FlexNum::as_u32),
         added,
         date: format_date(added),
         info_hash,

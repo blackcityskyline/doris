@@ -194,3 +194,34 @@ fn test_format_date_renders_utc_and_refuses_the_epoch() {
     assert_eq!(format_date(0), "", "the zero value means unknown, not 1970");
     assert_eq!(format_date(-5), "", "a negative timestamp is not a date");
 }
+
+// --- FlexNum (shared string-or-number field) --------------------------------
+
+/// The two spellings apibay and ez'tv use, and the garbage case: an
+/// unmappable value must cost that field, never the page.
+#[test]
+fn test_flex_num_reads_numbers_and_numeric_strings() {
+    use doris::search::models::FlexNum;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct WithNum {
+        size: FlexNum,
+    }
+
+    let from_number: WithNum = serde_json::from_str(r#"{"size":3808117223}"#).expect("number");
+    assert_eq!(from_number.size.as_i64(), 3_808_117_223);
+    assert_eq!(from_number.size.as_u64(), 3_808_117_223);
+
+    let from_string: WithNum = serde_json::from_str(r#"{"size":"1992277407"}"#).expect("string");
+    assert_eq!(from_string.size.as_i64(), 1_992_277_407);
+
+    let padded: WithNum = serde_json::from_str(r#"{"size":" 42 "}"#).expect("padded");
+    assert_eq!(padded.size.as_i64(), 42, "surrounding space is not garbage");
+
+    let garbage: WithNum = serde_json::from_str(r#"{"size":"n/a"}"#).expect("still a value");
+    assert_eq!(garbage.size.as_i64(), 0, "unparseable -> zero, not a failure");
+
+    let negative: WithNum = serde_json::from_str(r#"{"size":-5}"#).expect("number");
+    assert_eq!(negative.size.as_u64(), 0, "sizes are never negative");
+}
