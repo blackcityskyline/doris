@@ -215,6 +215,7 @@ fn default_enabled_sources() -> Vec<String> {
         "yts".to_string(),
         "tpb".to_string(),
         "subsplease".to_string(),
+        "eztv".to_string(),
     ]
 }
 
