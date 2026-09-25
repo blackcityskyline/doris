@@ -14,3 +14,4 @@ pub mod subsplease;
 pub mod tpb;
 pub mod yts;
 pub mod nyaa;
+pub mod nnmclub;
