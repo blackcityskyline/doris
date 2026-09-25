@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod cookies;
 pub mod format;
+pub mod magnet;
 pub mod models;
 pub mod net;
 pub mod orchestrator;
