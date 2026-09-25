@@ -3,6 +3,10 @@ use fantoccini::{ClientBuilder, Client};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+/// Xvfb pid of a launch, recorded inside that launch's own temp profile so
+/// a later launch can reap the Xvfb if its doris never reached `Drop`.
+const XVFB_PID_FILE: &str = ".xvfb-pid";
+
 /// Browser window visibility. Renamed from the old "headless/gui" naming:
 /// `Visible` shows the real browser window, `Hidden` runs it off-screen
 /// (still a real, non-headless-flagged Chromium session when Xvfb is
@@ -36,7 +40,10 @@ impl std::str::FromStr for BrowserVisibility {
 }
 
 pub struct Browser {
-    client: Client,
+    /// `None` only after [`Browser::shutdown`] took it to close the session;
+    /// every other method goes through [`Browser::client`] and reports the
+    /// session being gone instead of panicking.
+    client: Option<Client>,
     child: Option<std::process::Child>,
     temp_profile: Option<PathBuf>,
     xvfb_child: Option<std::process::Child>,
@@ -50,6 +57,17 @@ impl Browser {
     /// to. Callers pass the active search source's home page; this module
     /// stays source-agnostic on purpose (see ROADMAP.md Phase 3).
     pub async fn launch(binary: &Path, mode: BrowserVisibility, cookie_injection_url: &str, close_on_drop: bool) -> Result<Self> {
+        // A run killed outright (closed terminal, `kill -9`) never reaches
+        // `Drop`: its temp profile, its Xvfb and any browser process that
+        // outlived chromedriver stay behind, the browser keeping a page
+        // loaded and burning CPU forever. Sweep previous runs first -- it
+        // scans /proc and only blocks when there is actually something to
+        // kill, so it belongs off the runtime worker.
+        let sweep = tokio::task::spawn_blocking(cleanup_stale_profiles);
+        if let Err(e) = sweep.await {
+            crate::log::log("browser", &format!("stale run sweep failed: {}", e));
+        }
+
         let browser_major = detect_browser_major_version(binary)?;
         let chromedriver_path = get_or_patch_chromedriver(browser_major).await?;
 
@@ -74,8 +92,14 @@ impl Browser {
             }
             Some(tmp)
         } else {
-            if let Some(ref dir) = native_profile {
-                graceful_shutdown_if_running(dir);
+            if let Some(dir) = native_profile.clone() {
+                // Waits up to ~12s for a browser already holding the profile
+                // to shut down -- a blocking loop full of `pgrep`/`kill` and
+                // sleeps, so run it off the runtime worker thread.
+                let old = tokio::task::spawn_blocking(move || graceful_shutdown_if_running(&dir));
+                if let Err(e) = old.await {
+                    crate::log::log("browser", &format!("old browser shutdown failed: {}", e));
+                }
             }
             native_profile.clone()
         };
@@ -91,6 +115,11 @@ impl Browser {
         let mut cmd = if use_xvfb {
             let display_num = find_free_display();
             xvfb_child = start_xvfb(display_num);
+            record_xvfb_pid(xvfb_child.as_ref(), temp_profile.as_ref());
+            // Give Xvfb time to create its socket before anything renders
+            // into it. This used to be a `std::thread::sleep` inside
+            // `start_xvfb`, which parked a runtime worker for a second.
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let mut c = std::process::Command::new(&chromedriver_path);
             c.env("DISPLAY", format!(":{}", display_num));
             c
@@ -102,17 +131,42 @@ impl Browser {
             .stderr(Stdio::piped())
             .stdout(Stdio::null());
 
-        let child = cmd.spawn()?;
+        let mut child = cmd.spawn()?;
+        if let Some(stderr) = child.stderr.take() {
+            spawn_chromedriver_log_drain(stderr);
+        }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
+        // NB: `--disable-background-timer-throttling` and
+        // `--disable-backgrounding-occluded-windows` are deliberately *not*
+        // listed here: we tried removing them to let Chrome throttle idle
+        // pages, but chromedriver injects both itself (they're compiled into
+        // its default switch list) and Chrome has no counter-switch, so idle
+        // throttling can never be relied upon. Unloading the page instead
+        // (`Browser::park`) is the only fix that actually works.
         let mut chrome_args: Vec<String> = vec![
             "--no-sandbox".into(),
             "--disable-dev-shm-usage".into(),
             "--disable-blink-features=AutomationControlled".into(),
             "--no-first-run".into(),
             "--no-default-browser-check".into(),
-            "--disable-infobars".into(),
             "--lang=ru-RU".into(),
+            // Chrome's own background services (component updater, domain
+            // reliability reporting, metrics, component-extension background
+            // pages) keep working while Doris sits idle, for no benefit to
+            // us -- all off.
+            "--disable-component-update".into(),
+            "--disable-component-extensions-with-background-pages".into(),
+            "--disable-domain-reliability".into(),
+            "--metrics-recording-only".into(),
+            "--no-pings".into(),
+            // rutrk.org is rutracker's ad CDN: the looping <video>/GIF
+            // banners that keep the compositor producing frames at full
+            // speed for as long as a page stays open -- by far the biggest
+            // idle-CPU source measured (VizCompositor pegged at ~66% of a
+            // core). No parsing depends on ad creatives, so block the host;
+            // drop this line if a page ever legitimately needs it.
+            "--host-resolver-rules=MAP rutrk.org ~NOTFOUND".into(),
         ];
 
         if mode == BrowserVisibility::Hidden && !use_xvfb {
@@ -148,7 +202,7 @@ impl Browser {
         crate::log::log("browser", &format!("{} via patched chromedriver on port {}", mode, port));
 
         let browser = Self {
-            client,
+            client: Some(client),
             child: Some(child),
             temp_profile: if mode == BrowserVisibility::Hidden { temp_profile } else { None },
             xvfb_child,
@@ -161,18 +215,93 @@ impl Browser {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             crate::log::log("browser", &format!("injecting {} cookies into hidden session", injected_cookies.len()));
             browser.add_cookies(&injected_cookies).await?;
+            // Cookies live in the profile, not in the tab: don't leave the
+            // source's home page (ads and all) loaded before Doris has even
+            // been asked to do anything.
+            browser.park().await?;
         }
 
         Ok(browser)
     }
 
+    fn client(&self) -> Result<&Client> {
+        self.client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("browser session is already closed"))
+    }
+
+    /// Park the tab on `about:blank` so nothing keeps running while Doris is
+    /// idle.
+    ///
+    /// Without this, whatever page an operation last touched stays loaded
+    /// forever: rutracker's pages carry looping ad video/GIF banners, the tab
+    /// counts as visible (under Xvfb nothing ever occludes the window) and
+    /// chromedriver forces `--disable-background-timer-throttling`, so Chrome
+    /// produces frames at full speed indefinitely -- measured at ~90% of a
+    /// core with no operations in flight. Cookies are unaffected: they belong
+    /// to the profile, which survives navigation.
+    pub async fn park(&self) -> Result<()> {
+        self.client()?.goto("about:blank").await?;
+        Ok(())
+    }
+
+    /// Close the session properly: end the WebDriver session first (that
+    /// DELETE is what makes chromedriver take the browser down with it), and
+    /// only then reap chromedriver itself.
+    ///
+    /// Call this on the normal exit path -- [`Drop`] cannot await the session
+    /// DELETE, and killing chromedriver with SIGKILL before it ran leaves the
+    /// browser orphaned, still burning CPU on the page it was showing.
+    pub async fn shutdown(&mut self) {
+        if let Some(client) = self.client.take() {
+            if self.close_on_drop {
+                match client.close().await {
+                    Ok(()) => crate::log::log("browser", "webdriver session closed"),
+                    Err(e) => crate::log::log("browser", &format!("webdriver close failed: {}", e)),
+                }
+            } else {
+                // The browser is meant to outlive Doris: tell fantoccini not
+                // to send the session DELETE when the handle goes away.
+                if let Err(e) = client.persist().await {
+                    crate::log::log("browser", &format!("persist failed: {}", e));
+                }
+            }
+        }
+        self.reap();
+    }
+
+    /// Kill chromedriver (and Xvfb), sweep browser processes that outlived
+    /// them, and drop the temp profile. All fields are taken, so a second
+    /// pass -- [`Browser::shutdown`] then [`Drop`] -- is a no-op.
+    fn reap(&mut self) {
+        if self.close_on_drop {
+            if let Some(mut child) = self.child.take() {
+                terminate_child(&mut child);
+            }
+            if let Some(mut xvfb) = self.xvfb_child.take() {
+                let _ = xvfb.kill();
+            }
+            if let Some(ref profile) = self.temp_profile {
+                // Last line of defence for the paths where the session
+                // DELETE never happened (a crash, or `Drop` running without
+                // `shutdown`): whatever still holds our temp profile is a
+                // leftover from this very launch and must not stay behind.
+                sweep_profile(profile);
+            }
+        }
+        if let Some(path) = self.temp_profile.take() {
+            crate::log::log("browser", &format!("cleanup temp profile {}", path.display()));
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+
     pub async fn navigate(&self, url: &str) -> Result<()> {
-        self.client.goto(url).await?;
+        self.client()?.goto(url).await?;
         Ok(())
     }
 
     pub async fn get_page_source(&self) -> Result<String> {
-        Ok(self.client.source().await?)
+        Ok(self.client()?.source().await?)
     }
 
     pub async fn eval_js(&self, script: &str) -> Result<serde_json::Value> {
@@ -183,11 +312,11 @@ impl Browser {
             let s = script.trim_end().trim_end_matches(';');
             format!("return {};", s)
         };
-        Ok(self.client.execute(&wrapped, vec![]).await?)
+        Ok(self.client()?.execute(&wrapped, vec![]).await?)
     }
 
     pub async fn get_cookies(&self) -> Result<Vec<serde_json::Value>> {
-        let cookies = self.client.get_all_cookies().await?;
+        let cookies = self.client()?.get_all_cookies().await?;
         let values: Vec<serde_json::Value> = cookies
             .into_iter()
             .map(|c| {
@@ -205,6 +334,7 @@ impl Browser {
     }
 
     pub async fn add_cookies(&self, cookies: &[serde_json::Value]) -> Result<()> {
+        let client = self.client()?;
         for c in cookies {
             let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -222,7 +352,7 @@ impl Browser {
                 builder = builder.http_only(h);
             }
             let cookie = builder.build();
-            self.client.add_cookie(cookie).await?;
+            client.add_cookie(cookie).await?;
         }
         Ok(())
     }
@@ -230,19 +360,167 @@ impl Browser {
 
 impl Drop for Browser {
     fn drop(&mut self) {
-        if self.close_on_drop {
-            if let Some(ref mut child) = self.child {
-                let _ = child.kill();
+        // The session DELETE is async, and by the time Drop runs the runtime
+        // may already be gone -- so this is the belt-and-braces path: end
+        // chromedriver first (SIGTERM, short grace, then SIGKILL) and sweep
+        // anything that outlived it. Call `shutdown()` on the normal exit
+        // path for a clean, fully awaited close.
+        self.reap();
+    }
+}
+
+/// Send `SIGTERM` (or `SIGKILL` when `hard`) to `pid` via `kill(1)`.
+fn send_signal(pid: u32, hard: bool) {
+    let mut cmd = std::process::Command::new("kill");
+    if hard {
+        cmd.arg("-9");
+    }
+    cmd.arg(pid.to_string());
+    let _ = cmd.stdout(Stdio::null()).stderr(Stdio::null()).output();
+}
+
+/// Terminate a child, giving it a short grace period to exit on SIGTERM
+/// before escalating. Returns as soon as it's gone -- normally immediately.
+fn terminate_child(child: &mut std::process::Child) {
+    send_signal(child.id(), false);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            if let Some(ref mut xvfb) = self.xvfb_child {
-                let _ = xvfb.kill();
-            }
-        }
-        if let Some(ref path) = self.temp_profile {
-            crate::log::log("browser", &format!("cleanup temp profile {}", path.display()));
-            let _ = std::fs::remove_dir_all(path);
+            Ok(None) => break,
+            Err(_) => break,
         }
     }
+    let _ = child.kill();
+}
+
+/// Kill every browser process still holding `profile_dir` (matched by its
+/// `--user-data-dir=`), escalating to SIGKILL if they don't go away.
+///
+/// This is what stops an orphaned browser -- one whose chromedriver died
+/// without delivering the session DELETE -- from staying behind and burning
+/// CPU on a loaded page forever.
+fn sweep_profile(profile_dir: &Path) {
+    let pids = find_pids_by_profile(profile_dir);
+    if pids.is_empty() {
+        return;
+    }
+    for pid in &pids {
+        send_signal(*pid, false);
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
+    loop {
+        if find_pids_by_profile(profile_dir).is_empty() {
+            crate::log::log("browser", &format!("swept {} orphaned processes", pids.len()));
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            for pid in &pids {
+                send_signal(*pid, true);
+            }
+            crate::log::log("browser", &format!("SIGKILLed {} orphaned processes", pids.len()));
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// Remember which Xvfb this run started, inside the run's own profile dir,
+/// so a later launch can reap it if its doris dies without reaching `Drop`.
+fn record_xvfb_pid(child: Option<&std::process::Child>, profile: Option<&PathBuf>) {
+    if let (Some(child), Some(profile)) = (child, profile) {
+        let _ = std::fs::write(profile.join(XVFB_PID_FILE), child.id().to_string());
+    }
+}
+
+/// Sweep the leftovers of runs whose doris is gone: their temp profile
+/// (a ~100MB directory), any browser still holding it, and the Xvfb they
+/// started. Called before every launch.
+fn cleanup_stale_profiles() {
+    let me = std::process::id();
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        let pid = match name
+            .strip_prefix("doris-hidden-")
+            .and_then(|p| p.parse::<u32>().ok())
+        {
+            Some(p) => p,
+            None => continue,
+        };
+        // Still running (or its pid got recycled): not ours to touch.
+        if pid == me || process_exists(pid) {
+            continue;
+        }
+        sweep_profile(&path);
+        kill_recorded_xvfb(&path);
+        if std::fs::remove_dir_all(&path).is_ok() {
+            crate::log::log(
+                "browser",
+                &format!("removed leftovers of dead run {}", path.display()),
+            );
+        }
+    }
+}
+
+fn process_exists(pid: u32) -> bool {
+    Path::new(&format!("/proc/{}", pid)).exists()
+}
+
+/// Kill the Xvfb a dead run recorded in its profile dir. Only if it still
+/// really is an Xvfb -- pids are reused, and killing an unrelated process
+/// would take down whatever else owns it.
+fn kill_recorded_xvfb(profile_dir: &Path) {
+    let Ok(record) = std::fs::read_to_string(profile_dir.join(XVFB_PID_FILE)) else {
+        return;
+    };
+    let Ok(pid) = record.trim().parse::<u32>() else {
+        return;
+    };
+    let cmdline = std::fs::read_to_string(format!("/proc/{}/cmdline", pid))
+        .unwrap_or_default()
+        .replace('\0', " ");
+    if !cmdline.starts_with("Xvfb ") || !cmdline.contains("1920x1080x24") {
+        return;
+    }
+    send_signal(pid, false);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(400);
+    while process_exists(pid) {
+        if std::time::Instant::now() >= deadline {
+            send_signal(pid, true);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    crate::log::log(
+        "browser",
+        &format!("reaped orphaned Xvfb of dead run (pid {})", pid),
+    );
+}
+
+/// Drain chromedriver's stderr on its own thread. Its output must not reach
+/// the terminal (it would corrupt the TUI), but a piped stderr nobody reads
+/// blocks the writer for good once the pipe buffer fills -- which would hang
+/// the whole session. Keep only the lines that carry a failure.
+fn spawn_chromedriver_log_drain(stderr: std::process::ChildStderr) {
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let low = line.to_lowercase();
+            if low.contains("error") || low.contains("fatal") || low.contains("panic") {
+                crate::log::log("chromedriver", &line);
+            }
+        }
+    });
 }
 
 fn find_free_port() -> Result<u16> {
@@ -283,7 +561,8 @@ fn start_xvfb(display_num: u32) -> Option<std::process::Child> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    // The caller waits for Xvfb to come up (see `Browser::launch`): a sleep
+    // here would block a runtime worker thread.
     crate::log::log("browser", &format!("started Xvfb on :{}", display_num));
     Some(child)
 }
@@ -303,9 +582,7 @@ fn graceful_shutdown_if_running(profile_dir: &Path) {
     }
 
     for pid in &pids {
-        let _ = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .output();
+        send_signal(*pid, false);
     }
     crate::log::log("browser", &format!("sent SIGTERM to {} processes", pids.len()));
 
@@ -318,9 +595,7 @@ fn graceful_shutdown_if_running(profile_dir: &Path) {
         if std::time::Instant::now() >= deadline {
             crate::log::log("browser", "timeout, sending SIGKILL");
             for pid in &pids {
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
+                send_signal(*pid, true);
             }
             std::thread::sleep(std::time::Duration::from_secs(2));
             let _ = std::fs::remove_file(&lock);

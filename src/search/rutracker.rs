@@ -24,7 +24,36 @@ impl RutrackerSearcher {
         Self { browser, logged_in: false }
     }
 
+    /// Park the tab on `about:blank` between operations.
+    ///
+    /// Everything below navigates somewhere expensive (rutracker's pages
+    /// carry looping ad video/GIFs, and with chromedriver forcing
+    /// `--disable-background-timer-throttling` nothing ever throttles them),
+    /// while cookies -- the only state that has to survive -- live in the
+    /// browser profile. So each public operation ends here instead of
+    /// leaving a live page behind for Doris's whole idle lifetime.
+    async fn park(&self) {
+        let browser = self.browser.lock().await;
+        if let Err(e) = browser.park().await {
+            crate::log::log("search", &format!("idle park failed: {}", e));
+        }
+    }
+
     pub async fn ensure_logged_in(
+        &mut self,
+        cookie_file: Option<&Path>,
+        username: Option<&str>,
+        password: Option<&str>,
+        log: Arc<dyn Fn(&str) + Send + Sync>,
+    ) -> Result<bool> {
+        let outcome = self
+            .ensure_logged_in_inner(cookie_file, username, password, log)
+            .await;
+        self.park().await;
+        outcome
+    }
+
+    async fn ensure_logged_in_inner(
         &mut self,
         cookie_file: Option<&Path>,
         username: Option<&str>,
@@ -390,6 +419,12 @@ impl RutrackerSearcher {
     }
 
     pub async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
+        let outcome = self.search_page_inner(query, start).await;
+        self.park().await;
+        outcome
+    }
+
+    async fn search_page_inner(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
         let browser = self.browser.lock().await;
         let encoded_query = urlencoding::encode(query);
         let search_url = if start == 0 {
@@ -455,6 +490,30 @@ impl RutrackerSearcher {
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let full_url = resolve_url(url);
+        let outcome = self.fetch_torrent_bytes(&full_url).await;
+        self.park().await;
+        outcome
+    }
+
+    /// Runs with the browser lock held for its whole duration, so it must not
+    /// call anything that takes that lock again (`self.park` in particular).
+    async fn fetch_torrent_bytes(&self, full_url: &str) -> Result<Vec<u8>> {
+        let browser = self.browser.lock().await;
+
+        // The fetch below runs in the page's own origin: once the tab has
+        // been parked on `about:blank` a cross-origin request is refused, so
+        // return to the source first when that's where we happen to be.
+        let on_source = browser
+            .eval_js("location.host")
+            .await
+            .ok()
+            .and_then(|v| v.as_str().map(|host| host.contains("rutracker")))
+            .unwrap_or(false);
+        if !on_source {
+            browser.navigate(Self::HOME_URL).await?;
+            crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+            Self::wait_cloudflare_if_needed(&browser).await;
+        }
 
         // Download through the browser so Cloudflare cookies and JS
         // challenges are handled automatically — plain reqwest gets 403.
@@ -481,7 +540,7 @@ impl RutrackerSearcher {
             url = full_url.replace('"', "\\\""),
         );
 
-        let result = self.browser.lock().await.eval_js(&fetch_script).await?;
+        let result = browser.eval_js(&fetch_script).await?;
         let b64 = result
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Browser fetch returned non-string"))?;
@@ -531,6 +590,23 @@ impl RutrackerSearcher {
                     return;
                 }
             }
+        }
+    }
+
+    /// Wait out a Cloudflare challenge, but only if there is one.
+    ///
+    /// [`Self::wait_cloudflare`] always spends at least 4s (its first poll
+    /// sleeps before looking at the title, then a three second settle) --
+    /// right for the login/search paths where a challenge is expected, but
+    /// pure overhead on a path that just navigated to a page known to load
+    /// clean, which would only keep an ad-heavy page rendering for longer.
+    async fn wait_cloudflare_if_needed(browser: &Browser) {
+        let challenged = matches!(
+            browser.eval_js("document.title").await,
+            Ok(serde_json::Value::String(ref title)) if title == "Just a moment..."
+        );
+        if challenged {
+            Self::wait_cloudflare(browser).await;
         }
     }
 }

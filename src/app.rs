@@ -1,6 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseButton, MouseEventKind};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{Mutex, mpsc};
 
 use crate::browser::cdp::{Browser, BrowserVisibility};
@@ -90,6 +91,12 @@ pub struct App {
     search_rx: mpsc::UnboundedReceiver<String>,
     bridge: Option<BridgeServer>,
     terminal_size: (u16, u16),
+    /// Set by the SIGHUP/SIGTERM/SIGINT listener spawned in [`App::run`] so
+    /// a terminal being closed (or a plain `kill`) goes through the normal
+    /// exit path -- browser shutdown and temp-profile cleanup included --
+    /// instead of dropping the process mid-flight and leaving the browser
+    /// stack behind.
+    exit_signal: Arc<AtomicBool>,
 }
 
 impl App {
@@ -156,12 +163,15 @@ impl App {
             args,
             config,
             terminal_size: (0, 0),
+            exit_signal: Arc::new(AtomicBool::new(false)),
         })
     }
 
     pub async fn run(&mut self) -> Result<()> {
         let mut terminal = tui::init()?;
         self.terminal_size = terminal.size().map(|s| (s.width, s.height)).unwrap_or((80, 24));
+
+        Self::spawn_termination_watch(Arc::clone(&self.exit_signal));
 
         if let Some(query) = self.args.query.clone() {
             self.ui.search_input = query.clone();
@@ -288,12 +298,21 @@ impl App {
                 }
             }
 
-            if !self.ui.running {
+            if !self.ui.running || self.exit_signal.load(Ordering::Relaxed) {
                 break;
             }
         }
 
         tui::restore(&mut terminal)?;
+
+        // End the WebDriver session while the runtime is still alive: the
+        // session DELETE is what makes chromedriver take the browser down
+        // with it, and Drop alone cannot await it (SIGKILLing chromedriver
+        // first leaves the browser orphaned on a loaded page).
+        if let Some(browser) = self.browser.take() {
+            let mut browser = browser.lock().await;
+            browser.shutdown().await;
+        }
 
         if self.config.save_config_on_exit {
             if let Err(e) = crate::config::save(&self.config, None) {
@@ -303,6 +322,49 @@ impl App {
 
         Ok(())
     }
+
+    /// Watch for a termination signal and expose it as a flag instead of
+    /// letting the default handler kill the process: dying mid-flight skips
+    /// `Browser::shutdown`, so chromedriver's session is never deleted, the
+    /// temp profile (a ~100MB directory) and the run's Xvfb are left in /tmp
+    /// forever, and any browser that did survive keeps rendering a page
+    /// nobody will ever navigate away again.
+    #[cfg(unix)]
+    fn spawn_termination_watch(flag: Arc<AtomicBool>) {
+        use tokio::signal::unix::{signal, SignalKind};
+        tokio::spawn(async move {
+            let mut hup = match signal(SignalKind::hangup()) {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::log::log("app", &format!("could not install SIGHUP handler: {}", e));
+                    return;
+                }
+            };
+            let mut term = match signal(SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::log::log("app", &format!("could not install SIGTERM handler: {}", e));
+                    return;
+                }
+            };
+            let mut interrupt = match signal(SignalKind::interrupt()) {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::log::log("app", &format!("could not install SIGINT handler: {}", e));
+                    return;
+                }
+            };
+            tokio::select! {
+                _ = hup.recv() => crate::log::log("app", "SIGHUP received, exiting cleanly"),
+                _ = term.recv() => crate::log::log("app", "SIGTERM received, exiting cleanly"),
+                _ = interrupt.recv() => crate::log::log("app", "SIGINT received, exiting cleanly"),
+            }
+            flag.store(true, Ordering::Relaxed);
+        });
+    }
+
+    #[cfg(not(unix))]
+    fn spawn_termination_watch(_flag: Arc<AtomicBool>) {}
 
     async fn handle_mouse(&mut self, mouse: MouseEvent) {
         if self.config.disable_mouse {
