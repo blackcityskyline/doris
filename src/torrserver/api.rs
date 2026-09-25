@@ -95,6 +95,32 @@ impl TorrServer {
             .await?)
     }
 
+}
+
+/// Reject a non-2xx answer from `/torrents` with a sentence the log can
+/// show. reqwest hands back a plain `Response` for a 4xx/5xx as well, so
+/// a call that only checks "did the request go out" reports success for
+/// a rejection: `remove` did exactly that, and the UI logged "Torrent
+/// removed." while the torrent was still in the list (seen live on
+/// 25.09.2026; every direct `rem`/`drop` since has answered 200, so the
+/// refusal itself stayed uncaught -- only the missing check is proven).
+async fn ensure_ok(resp: reqwest::Response, what: &str) -> Result<()> {
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    // TorrServer puts its reason in the body ("link is empty", ...).
+    let body = resp.text().await.unwrap_or_default();
+    let body = body.trim();
+    let reason = if body.is_empty() {
+        String::new()
+    } else {
+        format!(" -- {}", body.chars().take(200).collect::<String>())
+    };
+    anyhow::bail!("TorrServer refused to {}: {}{}", what, status, reason);
+}
+
+impl TorrServer {
     /// All torrents TorrServer currently knows about (`{"action": "list"}`).
     pub async fn list_torrents(&self) -> Result<Vec<TorrentInfo>> {
         let resp = self.torrents_action(serde_json::json!({ "action": "list" })).await?;
@@ -118,22 +144,30 @@ impl TorrServer {
     /// way clients implement pause (it stops network activity but keeps
     /// the torrent's metadata, unlike `rem` which forgets it entirely).
     pub async fn pause(&self, hash: &str) -> Result<()> {
-        self.torrents_action(serde_json::json!({ "action": "drop", "hash": hash })).await?;
-        Ok(())
+        let body = serde_json::json!({ "action": "drop", "hash": hash });
+        let resp = self.torrents_action(body).await?;
+        ensure_ok(resp, "pause the torrent").await
     }
 
     /// Resume a paused (dropped) torrent. There's no dedicated "resume"
     /// action either; re-`get`-ting a dropped torrent's hash makes
     /// TorrServer reload and resume it.
+    ///
+    /// It asks for the status itself instead of going through
+    /// [`get_torrent`](Self::get_torrent), which turns a refusal into
+    /// `Ok(None)` -- indistinguishable here from "no such torrent", and
+    /// so a resume that was rejected would still read as done.
     pub async fn resume(&self, hash: &str) -> Result<()> {
-        let _ = self.get_torrent(hash).await?;
-        Ok(())
+        let body = serde_json::json!({ "action": "get", "hash": hash });
+        let resp = self.torrents_action(body).await?;
+        ensure_ok(resp, "resume the torrent").await
     }
 
     /// Remove a torrent entirely (`{"action": "rem", "hash": ...}`).
     pub async fn remove(&self, hash: &str) -> Result<()> {
-        self.torrents_action(serde_json::json!({ "action": "rem", "hash": hash })).await?;
-        Ok(())
+        let body = serde_json::json!({ "action": "rem", "hash": hash });
+        let resp = self.torrents_action(body).await?;
+        ensure_ok(resp, "remove the torrent").await
     }
 
     /// Hand TorrServer a magnet link instead of a `.torrent` file (B7):
