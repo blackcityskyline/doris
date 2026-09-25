@@ -9,10 +9,21 @@ pub fn init() {
     let log_dir = home.join(".local").join("share").join("doris");
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join("doris.log");
+
+    // Rotate instead of truncating. Truncating wiped whatever a second
+    // instance had logged the moment it started -- leaving an empty file
+    // exactly when the log is needed most -- and append lets concurrently
+    // running instances share one history.
+    const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+    if let Ok(meta) = std::fs::metadata(&log_path) {
+        if meta.len() >= MAX_LOG_BYTES {
+            let _ = std::fs::rename(&log_path, log_dir.join("doris.log.1"));
+        }
+    }
+
     if let Ok(file) = OpenOptions::new()
         .create(true)
-        .truncate(true)
-        .write(true)
+        .append(true)
         .open(&log_path)
     {
         *LOG_FILE.lock().unwrap() = Some(file);
