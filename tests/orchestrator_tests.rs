@@ -380,3 +380,20 @@ fn a_source_that_failed_gets_retried_from_where_it_stopped() {
 fn both_enabled() -> Vec<String> {
     vec!["rutracker".to_string(), "rutor".to_string()]
 }
+
+#[tokio::test]
+async fn an_empty_dispatch_still_closes_the_generation() {
+    // Nothing was spawned -- every source answered from cache, or none
+    // could start -- and the UI still has to leave `Searching`. The
+    // SearchComplete must travel through the same channel, so it queues
+    // *behind* the cache hits already sent and the paging verdicts they
+    // carry are read in the right order.
+    let (tx, mut rx) = mpsc::unbounded_channel();
+
+    tokio::spawn(orchestrator::coordinate(9, vec![], tx));
+
+    match next_event(&mut rx).await {
+        Event::SearchComplete { generation } => assert_eq!(generation, 9),
+        other => panic!("expected SearchComplete, got {:?}", other),
+    }
+}
