@@ -1,4 +1,5 @@
 use doris::config::*;
+use doris::search::source::KNOWN_SOURCES;
 
 #[test]
 fn test_config_default() {
@@ -32,7 +33,15 @@ fn test_config_default() {
     assert!(config.close_browser_on_exit);
     assert!(config.save_cookies);
     assert!(config.save_credentials);
-    assert_eq!(config.enabled_sources, vec!["rutracker".to_string(), "rutor".to_string()]);
+    // The default is "every implemented source", asserted *against the
+    // registry* so adding a source to KNOWN_SOURCES forces the decision
+    // of whether it ships enabled rather than forgetting it silently.
+    let implemented: Vec<String> = KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect();
+    assert_eq!(config.enabled_sources, implemented);
     assert!(config.download_enabled);
     assert_eq!(config.download_dir_mode, "default");
     assert!(config.download_dir_custom_1.is_empty());

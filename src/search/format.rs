@@ -1,4 +1,5 @@
-//! Size parsing shared by every source (ROADMAP.md B1).
+//! Size/date parsing and formatting shared by every source
+//! (ROADMAP.md B1 for parsing, B8 wave 1 for formatting).
 //!
 //! [`parse_size`] is a port of torio's `util/format.ts` `parseSize`,
 //! keeping its unit table and its one non-obvious rule: Russian units
@@ -88,4 +89,45 @@ pub fn parse_size(s: &str) -> u64 {
         return (num * per_unit).round() as u64;
     }
     normalized.trim().parse::<u64>().unwrap_or(0)
+}
+
+/// The display string for a source that hands us bytes rather than a
+/// pre-rendered size (the JSON API sources, B8 wave 1) -- a port of
+/// torio's `formatBytes`, kept byte-for-byte compatible with it: step
+/// by 1024, print two decimals past the byte unit, and label the steps
+/// `KB`/`MB`/`GB` even though the step is binary, which is torio's own
+/// quirk. Matching it means a YTS row and a rutor row read the same
+/// number for the same movie.
+///
+/// `0` reads `"0 B"`: an unknown size should look like a size, not like
+/// a gap in the column.
+pub fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{} B", bytes)
+    } else {
+        format!("{:.2} {}", value, UNITS[unit])
+    }
+}
+
+/// `YYYY-MM-DD` for a source that reports a unix timestamp (yts's
+/// `date_uploaded_unix`, ez'tv's `date_released_unix`, apibay's `added`),
+/// or `""` for the zero value -- `1970-01-01` in the Date column would
+/// claim knowledge the source never gave us.
+pub fn format_date(unix: i64) -> String {
+    if unix <= 0 {
+        return String::new();
+    }
+    chrono::DateTime::from_timestamp(unix, 0)
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
 }

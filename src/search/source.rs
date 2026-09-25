@@ -24,6 +24,7 @@ use tokio::sync::Mutex;
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
+use super::yts::YtsSearcher;
 
 /// Content categories a source can attribute its results to. Declared
 /// here, next to the registry it describes (and not in `models.rs`) so
@@ -154,6 +155,11 @@ const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Gro
 /// Rutor's search URL carries a real category slot (`0` = all); B6 maps
 /// these groups onto its ids once verified.
 const RUTOR_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
+
+/// YTS only ever has movies, so it declares that one group -- which is
+/// also what makes its rows land in the Movies view without any
+/// per-row category guessing (B8 wave 1; category *filtering* is B6).
+const YTS_GROUPS: &[Group] = &[Group::Movies];
 
 #[async_trait]
 impl Source for RutrackerSearcher {
@@ -303,6 +309,14 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: RutorSearcher::HOME_URL,
     },
     SourceInfo {
+        id: "yts",
+        label: "YTS",
+        implemented: true,
+        groups: YTS_GROUPS,
+        requires_browser: false,
+        home_url: YtsSearcher::HOME_URL,
+    },
+    SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
         implemented: false,
@@ -337,6 +351,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
             Ok(Arc::new(RutrackerSearcher::new(browser)))
         }
         "rutor" => Ok(Arc::new(RutorSearcher::new())),
+        "yts" => Ok(Arc::new(YtsSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
 }

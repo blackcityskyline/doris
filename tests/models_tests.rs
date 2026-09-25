@@ -166,3 +166,31 @@ fn test_fill_from_display_leaves_unparseable_values_at_zero() {
     assert_eq!(item.seeds_n, 0);
     assert_eq!(item.added, 0, "fill_from_display must not touch fields it derives from");
 }
+
+// --- format_bytes / format_date (B8 wave 1: JSON sources report numbers) ----
+
+#[test]
+fn test_format_bytes_matches_torios_format_bytes() {
+    use doris::search::format::format_bytes;
+
+    assert_eq!(format_bytes(0), "0 B", "unknown size must still look like a size");
+    assert_eq!(format_bytes(511), "511 B");
+    assert_eq!(format_bytes(1024), "1.00 KB");
+    // torio steps by 1024 but labels the units SI -- kept identical so a
+    // YTS row reads the same as a row a tracker rendered for us.
+    assert_eq!(format_bytes(511_568_773), "487.87 MB");
+    assert_eq!(format_bytes(1_073_741_824), "1.00 GB");
+    // Just under a unit boundary: two decimals round up rather than
+    // silently promoting the row to the next unit.
+    assert_eq!(format_bytes(1_073_741_224), "1024.00 MB");
+    assert_eq!(format_bytes(4_000_000_000), "3.73 GB");
+}
+
+#[test]
+fn test_format_date_renders_utc_and_refuses_the_epoch() {
+    use doris::search::format::format_date;
+
+    assert_eq!(format_date(1_705_959_944), "2024-01-22");
+    assert_eq!(format_date(0), "", "the zero value means unknown, not 1970");
+    assert_eq!(format_date(-5), "", "a negative timestamp is not a date");
+}

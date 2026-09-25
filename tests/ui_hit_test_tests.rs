@@ -208,13 +208,20 @@ fn test_click_at_tab_row_switches_active_source() {
 #[test]
 fn test_cycle_source_wraps_through_all_tabs() {
     let mut app = make_app("chrome", "http://127.0.0.1:8090");
-    assert_eq!(app.active_source, "rutracker");
+    // Derived from SOURCE_TABS rather than spelled out: B8 adds a tab
+    // per source, and a hardcoded list here would either break on every
+    // addition or -- worse -- stop proving that the cycle covers
+    // everything the header draws.
+    let tabs = doris::ui::app::App::SOURCE_TABS;
+    assert!(tabs.contains(&"all"), "the merge tab is part of the cycle");
+    assert_eq!(app.active_source, tabs[0]);
+
+    for expected in tabs.iter().skip(1) {
+        app.cycle_source();
+        assert_eq!(&app.active_source, expected, "walks the whole list");
+    }
     app.cycle_source();
-    assert_eq!(app.active_source, "rutor");
-    app.cycle_source();
-    assert_eq!(app.active_source, "all");
-    app.cycle_source();
-    assert_eq!(app.active_source, "rutracker"); // wraps
+    assert_eq!(&app.active_source, tabs[0], "the cycle must wrap");
 }
 
 #[test]
