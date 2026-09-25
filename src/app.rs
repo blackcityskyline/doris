@@ -74,6 +74,45 @@ pub fn source_needs_browser(source: &str) -> bool {
 /// longer in the registry) hold rutracker-shaped URLs, so they fall back
 /// to `"rutracker"` -- the same conservative default
 /// [`source_needs_browser`] has had since B0.1.
+/// The file name a result title may safely have on disk: everything
+/// outside alphanumerics, spaces and the usual punctuation becomes `_`.
+/// Shared by the `.torrent` and `.magnet` paths so the two spell the
+/// same title the same way -- they are siblings in one download
+/// directory, and a mismatch would show up as two names for one row.
+pub fn safe_filename(title: &str) -> String {
+    title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// What the download key owes a row that has no `.torrent` to fetch
+/// (B8 wave 1: YTS publishes magnets, not files): `(file name, contents)`
+/// for a `<title>.magnet` file, or `None` when the row *does* have a
+/// download URL and must go through its Source exactly as before.
+///
+/// A row with neither URL nor magnet also returns `None`: it then fails
+/// in the normal path with a message, which is the honest outcome --
+/// the alternative is writing an empty file that looks like a result.
+pub fn magnet_only_download(item: &crate::search::models::TorrentItem) -> Option<(String, String)> {
+    if !item.download_url.is_empty() {
+        return None;
+    }
+    let magnet = item.magnet.as_deref()?;
+    Some((
+        format!("{}.magnet", safe_filename(&item.title)),
+        format!("{}\n", magnet),
+    ))
+}
+
 pub fn source_id_for(item: &crate::search::models::TorrentItem) -> &'static str {
     source::get_source(&item.source).map(|s| s.id).unwrap_or("rutracker")
 }
@@ -729,6 +768,23 @@ impl App {
 
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
 
+        // A row with no `.torrent` to fetch (YTS and friends, B8 wave 1)
+        // pays its magnet as the file itself: nothing to download, so
+        // the Source is never asked -- which also means no browser can
+        // be launched for what is a local write.
+        if let Some((name, payload)) = magnet_only_download(&item) {
+            let dir = self.resolve_download_dir();
+            let path = std::path::Path::new(&dir).join(&name);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::write(&path, payload.as_bytes()) {
+                Ok(_) => self.ui.add_log(&format!("Saved magnet link to {}", path.display())),
+                Err(e) => self.ui.add_log(&format!("Failed to save file: {}", e)),
+            }
+            return;
+        }
+
         // `get_source` launches the browser only for sources whose
         // registry entry says they need one -- a rutor download must
         // never start Chrome (B0.1), and `requires_browser` is what says
@@ -741,10 +797,8 @@ impl App {
         match bytes_result {
             Ok(bytes) => {
                 let dir = self.resolve_download_dir();
-                let safe_title: String = item.title.chars()
-                    .map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') { c } else { '_' })
-                    .collect();
-                let path = std::path::Path::new(&dir).join(format!("{}.torrent", safe_title.trim()));
+                let path = std::path::Path::new(&dir)
+                    .join(format!("{}.torrent", safe_filename(&item.title)));
                 if let Some(parent) = path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
