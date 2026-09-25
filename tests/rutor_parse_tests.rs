@@ -237,3 +237,48 @@ fn test_title_has_word_matches_whole_words_only() {
 fn test_title_has_word_empty_word_never_matches() {
     assert!(!title_has_word("Anything", ""));
 }
+
+// Rows served to Russian-language clients spell the unit in Cyrillic,
+// which the original `(TB|GB|MB|KB)` pattern missed entirely: `size`
+// came back empty for `2,27 ГБ` (B0.6).
+const CYRILLIC_SIZE_ROW: &str = r#"
+<table>
+<tr class="gai">
+  <td>07 Сен 25</td>
+  <td width="30">
+    <a href="/torrent/1052257">Игра престолов (2019) WEB-DL 1080p</a>
+  </td>
+  <td align="right">2,27&nbsp;ГБ</td>
+  <td>
+    <img src="arrowup.gif" alt="S"> 14
+    <img src="arrowdown.gif" alt="L"> 3
+  </td>
+</tr>
+<tr class="tum">
+  <td>08 Июн 25</td>
+  <td width="30">
+    <a href="/torrent/1052258">Мелкий ремонт (2024) HDRip</a>
+  </td>
+  <td align="right">750 мб</td>
+  <td>
+    <img src="arrowup.gif" alt="S"> 1
+    <img src="arrowdown.gif" alt="L"> 0
+  </td>
+</tr>
+</table>
+"#;
+
+#[test]
+fn test_extracts_size_with_cyrillic_units() {
+    let items = parse_results(CYRILLIC_SIZE_ROW);
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].size, "2.27 ГБ", "comma decimal + Cyrillic unit");
+    assert_eq!(items[1].size, "750 мб", "lower-case Cyrillic unit");
+}
+
+#[test]
+fn test_cyrillic_size_does_not_break_seeds_or_date() {
+    let items = parse_results(CYRILLIC_SIZE_ROW);
+    assert_eq!(items[0].seeds, "14");
+    assert_eq!(items[0].date, "07 Сен 25");
+}
