@@ -58,6 +58,7 @@ use scraper::{Html, Selector};
 use std::sync::OnceLock;
 
 use crate::search::models::TorrentItem;
+use crate::search::net::{FetchOptions, browser_client, fetch_resilient};
 
 pub struct RutorSearcher {
     client: reqwest::Client,
@@ -87,11 +88,10 @@ impl RutorSearcher {
     pub const PAGE_SIZE: usize = 100;
 
     pub fn new() -> Self {
+        // The shared browser-like client (B5): User-Agent plus the
+        // Accept/Accept-Language pair rutor used to set per request.
         Self {
-            client: reqwest::Client::builder()
-                .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            client: browser_client(),
         }
     }
 
@@ -198,20 +198,25 @@ impl RutorSearcher {
         let encoded = urlencoding::encode(query);
         let url = format!("{}/search/{}/0/000/0/{}", Self::BASE, page, encoded);
 
-        // Headers beyond User-Agent: some sites gate on Accept/Referer
-        // too, and a request missing everything a real browser always
-        // sends is an easy bot-detection signal. Logged unconditionally
-        // to crate::log (~/.local/share/doris/doris.log) since the
-        // Source trait's search_page has no log-callback parameter to
-        // surface this in the UI's own Detailed Log panel the way
-        // Rutracker's AUTH steps do -- if this ever returns zero results
-        // again, that file is the first thing to check.
-        let response = self.client.get(&url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
-            .header("Referer", Self::BASE)
-            .send()
-            .await?;
+        // Accept/Accept-Language come from the shared client (B5); the
+        // only per-request header left is Referer, which names this
+        // source's own site. The fetch retries transient failures
+        // (rutor occasionally answers 503 under load) and refuses to
+        // retry a ddos-guard challenge, which would otherwise burn the
+        // whole request budget on a page that never becomes an answer.
+        //
+        // Logged unconditionally to crate::log
+        // (~/.local/share/doris/doris.log) since the Source trait's
+        // search_page has no log-callback parameter to surface this in
+        // the UI's own Detailed Log panel the way Rutracker's AUTH steps
+        // do -- if this ever returns zero results again, that file is
+        // the first thing to check.
+        let response = fetch_resilient(
+            &url,
+            || self.client.get(&url).header("Referer", Self::BASE),
+            &FetchOptions::default(),
+        )
+        .await?;
 
         let status = response.status();
         let html = response.text().await?;
@@ -238,7 +243,20 @@ impl RutorSearcher {
     }
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
-        let bytes = self.client.get(url).send().await?.bytes().await?;
+        // Same resilient path as search: a .torrent fetch that hits a
+        // transient 503 should retry rather than hand TorrServer a
+        // failure page.
+        let response = fetch_resilient(url, || self.client.get(url), &FetchOptions::default())
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            // This used to be unchecked, so a mirror answering
+            // `302 -> /login` (or a plain 404) had its HTML body
+            // uploaded as a .torrent -- the exact failure that made us
+            // move to rutor.info in the first place.
+            anyhow::bail!("rutor download {} answered HTTP {}", url, status);
+        }
+        let bytes = response.bytes().await?;
         Ok(bytes.to_vec())
     }
 }
