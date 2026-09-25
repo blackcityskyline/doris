@@ -237,5 +237,34 @@ fn test_a_fresh_default_config_is_not_migrated() {
     config.migrate_sources();
 
     assert_eq!(config.enabled_sources, enabled);
-    assert_eq!(config.known_sources.len(), KNOWN_SOURCES.len());
+    assert_eq!(
+        config.known_sources.len(),
+        KNOWN_SOURCES.iter().filter(|info| info.implemented).count(),
+        "and only the ids that could be switched on or off are in it"
+    );
+}
+
+/// What wave 3 ran into live: nnmclub sat in `known_sources` as a
+/// placeholder row, then went implemented -- and because the id looked
+/// already seen, the migration kept it switched off, so the source
+/// shipped and the user's tab bar never mentioned it.
+#[test]
+fn test_a_planned_source_is_never_recorded_as_seen() {
+    let mut config = Config::default();
+    config.known_sources = KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect();
+    config.enabled_sources = vec!["rutracker".to_string()];
+
+    config.migrate_sources();
+
+    for info in KNOWN_SOURCES.iter().filter(|info| !info.implemented) {
+        assert!(
+            !config.known_sources.iter().any(|k| k == info.id),
+            "{} was a caption in Options, not a choice: {:?}",
+            info.id,
+            config.known_sources
+        );
+    }
+    // While the planned id is written off, the implemented ones still
+    // count -- which is the half that protects a deliberate "off".
+    assert_eq!(config.enabled_sources, vec!["rutracker".to_string()]);
 }
