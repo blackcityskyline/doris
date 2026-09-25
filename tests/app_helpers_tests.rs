@@ -316,3 +316,82 @@ fn test_enter_after_source_switch_restarts_the_search_instead_of_playing() {
 fn test_enter_without_a_selection_does_nothing() {
     assert_eq!(enter_action(false, true, false, false), EnterAction::DoNothing);
 }
+
+// --- B4: dedup + default order applied when a generation finishes ------------
+
+fn row(hash: &str, seeds: u32) -> TorrentItem {
+    TorrentItem {
+        title: format!("row-{}", hash),
+        info_hash: hash.to_string(),
+        source: "rutor".to_string(),
+        seeds_n: seeds,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_finish_search_dedupes_and_orders_the_merged_list() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+    // The same torrent arrived from two sources with different health,
+    // plus a healthier unrelated row that arrived first.
+    ui.results = vec![row("other", 5), row("dup", 3), row("dup", 12)];
+    ui.selected = 0;
+
+    finish_search(&mut ui, 1, 1, &HashMap::new());
+
+    assert_eq!(ui.results.len(), 2, "one row per info hash");
+    assert_eq!(ui.results[0].seeds_n, 12, "healthiest copy first");
+    assert_eq!(ui.results[1].title, "row-other");
+    assert!(
+        ui.logs.iter().any(|l| l.contains("Removed 1 duplicate results")),
+        "the dedup must be visible in the log: {:?}",
+        ui.logs
+    );
+}
+
+#[test]
+fn test_finish_search_follows_the_selected_row_to_its_new_position() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+    ui.results = vec![row("cold", 1), row("warm", 9), row("mild", 5)];
+    ui.selected = 0; // the cold row, which the default order moves last
+
+    finish_search(&mut ui, 1, 1, &HashMap::new());
+
+    assert_eq!(
+        ui.results[ui.selected].title, "row-cold",
+        "reordering must not silently change what the user had highlighted"
+    );
+    assert_eq!(ui.results[0].title, "row-warm", "the list itself is reordered");
+}
+
+#[test]
+fn test_finish_search_clamps_the_selection_when_dedup_removed_that_row() {
+    let mut ui = make_ui();
+    ui.state = AppState::Searching;
+    // Same torrent, two sources named it differently -- the selected
+    // row is the copy that loses the dedup and disappears entirely.
+    let loser = TorrentItem {
+        title: "the one I highlighted".to_string(),
+        info_hash: "deadbeef".to_string(),
+        source: "rutor".to_string(),
+        seeds_n: 3,
+        ..Default::default()
+    };
+    ui.results = vec![loser, row("deadbeef", 12), row("other", 1)];
+    ui.selected = 0;
+
+    finish_search(&mut ui, 1, 1, &HashMap::new());
+
+    assert_eq!(ui.results.len(), 2, "the two hash-equal rows collapsed");
+    assert!(
+        ui.selected < ui.results.len(),
+        "selection must land on a real row, not past the end"
+    );
+    assert_ne!(
+        ui.results[ui.selected].title,
+        "the one I highlighted",
+        "the removed row cannot stay selected"
+    );
+}

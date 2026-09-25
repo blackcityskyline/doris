@@ -9,6 +9,7 @@ use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
 use crate::search::orchestrator::{self, SourceStatus};
+use crate::search::ordering::{default_order, dedupe_by_hash};
 use crate::search::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
@@ -184,9 +185,43 @@ pub fn finish_search(
         ui.add_log("Dropped stale search completion (superseded by a newer search)");
         return false;
     }
+    present_results(ui);
     ui.all_loaded = !has_more.values().any(|&more| more);
     ui.state = AppState::Idle;
     true
+}
+
+/// Dedupe the merged multi-source list and put it into its default order
+/// (B4). This runs exactly once per generation -- when every source has
+/// answered -- because reordering while sources are still arriving would
+/// move rows out from under the user's selection.
+///
+/// The row the selection pointed at is followed to its new position, so
+/// what the user had highlighted stays highlighted; if dedup removed that
+/// row, the selection clamps into the list instead of going stale.
+fn present_results(ui: &mut UiApp) {
+    let before = ui.results.len();
+    let anchor = ui.results.get(ui.selected).cloned();
+
+    ui.results = default_order(&dedupe_by_hash(&ui.results), false);
+
+    let removed = before - ui.results.len();
+    if removed > 0 {
+        ui.add_log(&format!("Removed {} duplicate results", removed));
+    }
+    if let Some(anchor) = anchor {
+        let keep = ui
+            .results
+            .iter()
+            .position(|row| row.page_url == anchor.page_url && row.title == anchor.title);
+        ui.selected = keep.unwrap_or_else(|| {
+            ui.selected
+                .min(ui.results.len().saturating_sub(1))
+        });
+    } else {
+        ui.selected = 0;
+    }
+    ui.update_filter();
 }
 
 /// Resolve the cookie file path used for Rutracker login, or `None` if
