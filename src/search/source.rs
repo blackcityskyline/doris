@@ -16,12 +16,29 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
+
+/// Content categories a source can attribute its results to. Declared
+/// here, next to the registry it describes (and not in `models.rs`) so
+/// `TorrentItem.group` is typed against the same enum the `Source` trait
+/// hands out in B2 -- see ROADMAP.md B1/B6.
+///
+/// Serde renders variants as plain strings (`"Games"`), which is what
+/// `TorrentItem`'s JSON needs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Group {
+    #[default]
+    Games,
+    Movies,
+    TV,
+    Anime,
+}
 
 /// One pluggable content source. Everything the orchestrator, the browser
 /// layer, and the Options "Sources" checklist need from a source goes

@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use super::format::parse_size;
+use super::source::Group;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TorrentItem {
     pub title: String,
@@ -24,4 +27,49 @@ pub struct TorrentItem {
     /// fills it in to "rutracker" right after deserializing there instead.
     #[serde(default)]
     pub source: String,
+
+    // --- B1 fields (numeric/hash twins of the display strings above) ---
+    // All `#[serde(default)]`: Rutracker's JS-eval-produced JSON only sets
+    // the display fields, and any source that cannot provide one of these
+    // leaves it at the zero value rather than failing to deserialize.
+
+    /// Content group this row belongs to, or `None` when the result
+    /// cannot be attributed to one (searched with "all categories", or a
+    /// source that doesn't filter server-side). Rows with `None` show up
+    /// only in the "all" view -- see B6, which is what starts filling it.
+    #[serde(default)]
+    pub group: Option<Group>,
+    /// Lower-case hex info hash, `""` when the source can't provide it
+    /// (rutracker's rows carry no magnet link at all).
+    #[serde(default)]
+    pub info_hash: String,
+    /// The row's magnet URI as-is, when it has one. B7 normalizes/rebuilds
+    /// these; keeping the original preserves whatever trackers it came
+    /// with.
+    #[serde(default)]
+    pub magnet: Option<String>,
+    /// Numeric twin of `size`, in bytes; `0` = unknown.
+    #[serde(default)]
+    pub size_bytes: u64,
+    /// Numeric twin of `seeds`; `0` = unknown/none.
+    #[serde(default)]
+    pub seeds_n: u32,
+    /// Peer/leech count (rutor parses one and used to throw it away).
+    /// `0` = unknown.
+    #[serde(default)]
+    pub leechers: u32,
+    /// Unix seconds when the row was added; `0` = unknown.
+    #[serde(default)]
+    pub added: i64,
+}
+
+impl TorrentItem {
+    /// Derive the numeric twins from the display strings a source
+    /// produced. Sources that read a number directly (a `data-ts`
+    /// timestamp, a magnet's `btih`) set those fields themselves; this
+    /// only handles the two values every source renders as text.
+    pub fn fill_from_display(&mut self) {
+        self.size_bytes = parse_size(&self.size);
+        self.seeds_n = self.seeds.trim().parse::<u32>().unwrap_or(0);
+    }
 }

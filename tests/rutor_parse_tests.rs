@@ -335,3 +335,68 @@ fn test_news_row_does_not_shadow_a_real_result_with_the_same_id() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Bad Matrix - Dangerous Game (2026) MP3");
 }
+
+// --- B1 numeric/hash fields ------------------------------------------------
+
+#[test]
+fn test_live_row_fills_numeric_and_hash_fields() {
+    let items = parse_results(LIVE_ROW);
+    let it = &items[0];
+    assert_eq!(it.size_bytes, 82_730_000, "82.73 MB in bytes");
+    assert_eq!(it.seeds_n, 1);
+    assert_eq!(it.leechers, 0, "the row's peer count was 0");
+    assert_eq!(it.added, 1_788_652_800, "06 Сен 26 as unix seconds (UTC)");
+    assert_eq!(it.info_hash, "06555d165746e815b0ab5b16de37ed24f9142595");
+    let magnet = it.magnet.as_deref().expect("row has an inline magnet");
+    assert!(magnet.starts_with("magnet:?xt=urn:btih:06555d165746e815"));
+    assert!(
+        magnet.contains("&dn=rutor.info"),
+        "query parts must not come back HTML-escaped: {}",
+        magnet
+    );
+    assert_eq!(it.group, None, "category 0 = 'all', nothing to attribute");
+}
+
+#[test]
+fn test_sample_rows_fill_leechers_and_added() {
+    let items = parse_results(SAMPLE_ROW);
+    // Row 1: `<img alt="L"> 2` peers; row 2: none.
+    assert_eq!(items[0].leechers, 2);
+    assert_eq!(items[1].leechers, 0);
+    assert_eq!(items[0].seeds_n, 6);
+    // "07 Сен 25" / "08 Июн 25" -> UTC midnight of that day.
+    assert_eq!(items[0].added, 1_757_203_200);
+    assert_eq!(items[1].added, 1_749_340_800);
+    assert_eq!(items[0].size_bytes, 2_270_000_000);
+    assert_eq!(items[1].size_bytes, 3_110_000_000);
+}
+
+#[test]
+fn test_row_without_magnet_leaves_hash_and_magnet_empty() {
+    // rutor.org's rows only had an `/magnet/{id}` endpoint, not an inline
+    // magnet URI -- such rows must not invent a hash.
+    let items = parse_results(SAMPLE_ROW);
+    assert_eq!(items[0].magnet, None);
+    assert_eq!(items[0].info_hash, "");
+}
+
+#[test]
+fn test_base32_info_hash_is_left_for_the_magnet_pipeline() {
+    // A 32-char base32 btih is a real hash, but converting it to hex is
+    // B7's `normalize_info_hash` job -- filling it in half-way here would
+    // make dedup (B4) compare a base32 hash against a hex one.
+    let html = r#"
+    <table><tr class="gai">
+      <td>06 Сен 26</td>
+      <td colspan="2">
+        <a href="magnet:?xt=urn:btih:ABCDEF234567890ABCDEF234567890AB"><img alt="M"></a>
+        <a href="/torrent/42">Base32 Row</a>
+      </td>
+      <td align="right">1 GB</td>
+    </tr></table>
+    "#;
+    let items = parse_results(html);
+    assert_eq!(items.len(), 1);
+    assert!(items[0].magnet.is_some(), "the magnet URI itself is kept");
+    assert_eq!(items[0].info_hash, "");
+}
