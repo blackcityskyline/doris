@@ -75,6 +75,46 @@ pub fn source_outcome_line(source: &str, outcome: &Result<usize, String>) -> Str
     }
 }
 
+/// What pressing Enter in the results view means (B0.4).
+///
+/// The old chain of `if let Some(..)` calls let an empty search query fall
+/// through: `submit_search()` turned `input_mode` off and returned `None`,
+/// so the very same key reached `submit_selection()` and started a stream.
+/// Making the decision a value -- with "typed but empty" spelled out as its
+/// own outcome -- is what makes that impossible to reintroduce silently.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EnterAction {
+    /// Search input is focused and holds a non-empty query.
+    SubmitQuery,
+    /// Input focused but the query is empty: Enter only leaves input mode.
+    DoNothing,
+    /// Source tab was switched and needs a re-search instead of playing.
+    RestartSearch,
+    /// Play the highlighted result.
+    Play,
+}
+
+pub fn enter_action(
+    input_mode: bool,
+    has_query: bool,
+    source_changed: bool,
+    has_selection: bool,
+) -> EnterAction {
+    if input_mode {
+        if has_query {
+            EnterAction::SubmitQuery
+        } else {
+            EnterAction::DoNothing
+        }
+    } else if source_changed {
+        EnterAction::RestartSearch
+    } else if has_selection {
+        EnterAction::Play
+    } else {
+        EnterAction::DoNothing
+    }
+}
+
 /// Apply one search dispatch's results to the UI -- unless the event came
 /// from a dispatch that a newer `start_search` has since superseded, in
 /// which case it is dropped and `false` is returned (B0.2: a late
@@ -1058,18 +1098,29 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                if let Some(query) = self.ui.submit_search() {
-                    self.start_search(query).await;
-                } else if self.ui.source_changed {
-                    // Source was just switched via `]` or click — re-search
-                    // with the new source instead of playing a torrent.
-                    self.ui.source_changed = false;
-                    if let Some(ref q) = self.ui.search_query.clone() {
-                        let query = q.clone();
-                        self.start_search(query).await;
+                let action = enter_action(
+                    self.ui.input_mode,
+                    !self.ui.search_input.is_empty(),
+                    self.ui.source_changed,
+                    self.ui.submit_selection().is_some(),
+                );
+                match action {
+                    EnterAction::SubmitQuery => {
+                        if let Some(query) = self.ui.submit_search() {
+                            self.start_search(query).await;
+                        }
                     }
-                } else if let Some(_idx) = self.ui.submit_selection() {
-                    self.spawn_stream().await;
+                    EnterAction::RestartSearch => {
+                        // Source was just switched via `]` or click — re-search
+                        // with the new source instead of playing a torrent.
+                        self.ui.source_changed = false;
+                        if let Some(ref q) = self.ui.search_query.clone() {
+                            let query = q.clone();
+                            self.start_search(query).await;
+                        }
+                    }
+                    EnterAction::Play => self.spawn_stream().await,
+                    EnterAction::DoNothing => {}
                 }
             }
             KeyCode::Char('u') if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
