@@ -38,7 +38,9 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     ).await?;
     let browser = std::sync::Arc::new(tokio::sync::Mutex::new(browser));
 
-    let mut searcher = doris::search::rutracker::RutrackerSearcher::new(browser);
+    let mut searcher = doris::search::rutracker::RutrackerSearcher::new(
+        std::sync::Arc::clone(&browser),
+    );
 
     println!("Searching for '{}'...", query);
     println!("{}", "-".repeat(60));
@@ -74,6 +76,13 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
             println!("Search failed: {}", e);
         }
     }
+
+    // Same reason as in `App::run`: the session DELETE has to happen while
+    // the runtime is still alive, or chromedriver gets SIGKILLed first and
+    // the browser it started outlives this process.
+    let mut launched = browser.lock().await;
+    launched.shutdown().await;
+    drop(launched);
 
     Ok(())
 }
