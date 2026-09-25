@@ -1,10 +1,11 @@
 use doris::search::rutor::{count_title_links, parse_results, split_query, title_has_word};
 
-// A reconstructed snippet matching the row shape confirmed by fetching a
-// live rutor.org search results page while writing the parser (see the
+// A reconstructed snippet matching the row shape confirmed by fetching
+// live rutor search results pages while writing the parser (see the
 // module doc comment on rutor.rs) -- not literally saved off the wire,
 // but every field (hrefs, size format, seed/leech icon+number pattern,
-// date format) matches what was actually observed there.
+// date format) matches what was actually observed there. URL assertions
+// below expect `rutor.info` because that is the source's BASE.
 const SAMPLE_ROW: &str = r#"
 <table>
 <tr class="gai">
@@ -52,9 +53,9 @@ fn test_extracts_title_correctly() {
 #[test]
 fn test_download_and_page_urls_use_the_numeric_id() {
     let items = parse_results(SAMPLE_ROW);
-    assert_eq!(items[0].download_url, "https://rutor.org/download/1052257");
-    assert_eq!(items[0].page_url, "https://rutor.org/torrent/1052257");
-    assert_eq!(items[1].download_url, "https://rutor.org/download/1040722");
+    assert_eq!(items[0].download_url, "https://rutor.info/download/1052257");
+    assert_eq!(items[0].page_url, "https://rutor.info/torrent/1052257");
+    assert_eq!(items[1].download_url, "https://rutor.info/download/1040722");
 }
 
 #[test]
@@ -132,29 +133,28 @@ fn test_count_title_links_zero_on_challenge_or_error_page() {
     assert_eq!(count_title_links(challenge_page), 0);
 }
 
-// Row markup taken from a live rutor.org results page fetched while
-// fixing the zero-results bug (indentation trimmed and the decorative
-// `class` attributes dropped to fit the line limit -- neither matters to
-// the parser): the counts are wrapped as `alt="S">&nbsp;0` and
-// `alt="L"><span class="red">&nbsp;0</span>`, which is what the old
-// `\s*`-based seed regex failed to match (seeds used to come back empty
-// on every real result). The `<table>` wrapper is required, not
-// decoration: html5ever drops a bare `<tr>` outside a table, which would
-// make `enclosing_row_html` find no row at all.
+// Row markup taken from a live rutor.info results page fetched on
+// 25.09.2026 (indentation trimmed and the decorative `class` attributes
+// dropped to fit the line limit -- neither matters to the parser). What
+// differs from the old rutor.org row and is pinned here: the download
+// link is protocol-relative and points at `d.rutor.info`, the title link
+// carries a slug after the numeric id, the magnet link is an inline
+// `magnet:?xt=urn:btih:...` URI rather than an `/magnet/{id}` endpoint,
+// and the date parts are separated by literal `&nbsp;` entities. The
+// `<table>` wrapper is required, not decoration: html5ever drops a bare
+// `<tr>` outside a table, which would make `enclosing_row` find no
+// row at all.
 const LIVE_ROW: &str = r#"
 <table><tbody>
   <tr class="gai">
-    <td>22 Сен 25</td>
-    <td colspan="2">
-      <a href="https://rutor.org/download/1054060"><img src="/d.gif" alt="D"></a>
-      <a href="https://rutor.org/magnet/1054060"><img src="/m.png" alt="M"></a>
-      <a href="/torrent/1054060">Sleepwell Citizen - This Is Only A Test (2025)</a>
+    <td>06&nbsp;Сен&nbsp;26</td>
+    <td colspan = "2">
+      <a class="downgif" href="//d.rutor.info/download/1105259"><img src="//cdnbunny.org/i/d.gif" alt="D" /></a>
+      <a href="magnet:?xt=urn:btih:06555d165746e815b0ab5b16de37ed24f9142595&dn=rutor.info&tr=udp://opentor.net:6969"><img src="//cdnbunny.org/i/m.png" alt="M" /></a>
+      <a href="/torrent/1105259/bad-matrix-dangerous-game-2026-mp3">Bad Matrix - Dangerous Game (2026) MP3 </a>
     </td>
-    <td align="right">528.42 MB</td>
-    <td align="center" class="nowrap">
-      <span class="green"><img src="/arrowup.gif" alt="S">&nbsp;42</span>
-      &nbsp;<img src="/arrowdown.gif" alt="L"><span class="red">&nbsp;7</span>
-    </td>
+    <td align="right">82.73&nbsp;MB</td>
+    <td align="center"><span class="green"><img src="//cdnbunny.org/t/arrowup.gif" alt="S" />&nbsp;1</span>&nbsp;<img src="//cdnbunny.org/t/arrowdown.gif" alt="L" /><span class="red">&nbsp;0</span></td>
   </tr>
 </tbody></table>
 "#;
@@ -163,10 +163,10 @@ const LIVE_ROW: &str = r#"
 fn test_parses_live_row_shape() {
     let items = parse_results(LIVE_ROW);
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0].title, "Sleepwell Citizen - This Is Only A Test (2025)");
-    assert_eq!(items[0].size, "528.42 MB");
-    assert_eq!(items[0].date, "22 Сен 25");
-    assert_eq!(items[0].download_url, "https://rutor.org/download/1054060");
+    assert_eq!(items[0].title, "Bad Matrix - Dangerous Game (2026) MP3");
+    assert_eq!(items[0].size, "82.73 MB");
+    // `&nbsp;`-separated on rutor.info, normalized back to plain spaces.
+    assert_eq!(items[0].date, "06 Сен 26");
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn test_extracts_seeds_from_live_nbsp_markup() {
     // The regression this whole investigation started from: seeds were
     // empty on every real row because the digits sit behind `&nbsp;`.
     let items = parse_results(LIVE_ROW);
-    assert_eq!(items[0].seeds, "42");
+    assert_eq!(items[0].seeds, "1");
 }
 
 #[test]
@@ -281,4 +281,57 @@ fn test_cyrillic_size_does_not_break_seeds_or_date() {
     let items = parse_results(CYRILLIC_SIZE_ROW);
     assert_eq!(items[0].seeds, "14");
     assert_eq!(items[0].date, "07 Сен 25");
+}
+
+#[test]
+fn test_live_row_urls_are_built_from_the_numeric_id_plus_base() {
+    // rutor.info title links carry a slug (`/torrent/{id}/{slug}`) and
+    // protocol-relative `//d.rutor.info/download/{id}` hrefs; the parser
+    // takes the first path segment as the id and rebuilds both URLs on
+    // BASE, so either mirror's markup yields the same pair.
+    let items = parse_results(LIVE_ROW);
+    assert_eq!(items[0].download_url, "https://rutor.info/download/1105259");
+    assert_eq!(items[0].page_url, "https://rutor.info/torrent/1105259");
+}
+
+// rutor.info carries a news table (`table#news_table`) whose links use
+// the same `/torrent/{id}` shape as real results, with ids like 472 --
+// they have no size/seeds/date and must never show up as torrents. This
+// leaked through as soon as the source moved to rutor.info, because
+// there those hrefs are relative and the title-link selector matches
+// them (on rutor.org they were absolute).
+const NEWS_AND_RESULT: &str = r#"
+<table id="news_table">
+  <tr><td colspan="2"><strong>Новости трекера</strong></td></tr>
+  <tr><td class="news_date">22-Апр</td>
+    <td class="news_title"><a href="/torrent/472" id="news89">Новый Адрес: RUTOR.INFO</a></td></tr>
+</table>
+<table><tbody>
+  <tr class="gai">
+    <td>06&nbsp;Сен&nbsp;26</td>
+    <td colspan = "2">
+      <a href="/torrent/1105259/bad-matrix-dangerous-game-2026-mp3">Bad Matrix - Dangerous Game (2026) MP3 </a>
+    </td>
+    <td align="right">82.73&nbsp;MB</td>
+    <td align="center"><span class="green"><img src="//cdnbunny.org/t/arrowup.gif" alt="S" />&nbsp;1</span></td>
+  </tr>
+</tbody></table>
+"#;
+
+#[test]
+fn test_news_table_rows_are_not_results() {
+    let items = parse_results(NEWS_AND_RESULT);
+    assert_eq!(items.len(), 1, "news links must be skipped");
+    assert_eq!(items[0].title, "Bad Matrix - Dangerous Game (2026) MP3");
+    assert_eq!(items[0].download_url, "https://rutor.info/download/1105259");
+}
+
+#[test]
+fn test_news_row_does_not_shadow_a_real_result_with_the_same_id() {
+    // The id filter runs after the row-class filter: a news entry whose
+    // id happened to match a real result must not consume it.
+    let html = NEWS_AND_RESULT.replace("/torrent/472", "/torrent/1105259");
+    let items = parse_results(&html);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Bad Matrix - Dangerous Game (2026) MP3");
 }
