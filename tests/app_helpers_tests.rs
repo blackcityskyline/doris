@@ -155,9 +155,12 @@ fn test_rutracker_rows_need_the_browser() {
 fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
     // Results fetched before the `source` field existed deserialize to "",
     // and any future browser-backed source should default to the same
-    // client the old hardcoded path always used.
+    // client the old hardcoded path always used. An id the registry
+    // knows is not "unknown" -- its own flag answers for it, which is
+    // why 1337x left this test in wave 3 (B8).
     assert!(source_needs_browser(""));
-    assert!(source_needs_browser("1337x"));
+    assert!(source_needs_browser("never-heard-of-it"));
+    assert!(!source_needs_browser("1337x"), "it needs no browser session");
 }
 
 // --- source_id_for (B2: rows route through the registry) -------------------

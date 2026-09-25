@@ -278,10 +278,11 @@ fn test_a_switched_off_source_has_no_tab() {
 #[test]
 fn test_unimplemented_sources_never_get_a_tab() {
     let tabs = doris::ui::app::source_tabs(&Config::default());
-    for planned in ["1337x", "torentino"] {
+    for planned in ["torentino"] {
         assert!(!tabs.contains(&planned), "planned sources offer nothing");
     }
     assert!(tabs.contains(&"nnmclub"), "wave 3's first source does");
+    assert!(tabs.contains(&"1337x"), "and wave 3's second one does too");
 }
 
 #[test]
@@ -323,7 +324,7 @@ fn test_keeping_the_active_tab_leaves_the_selection_alone() {
         app.source_tabs,
         vec![
             "rutracker", "rutor", "yts", "tpb", "subsplease", "nyaa", "eztv", "nnmclub",
-            "all",
+            "1337x", "all",
         ],
         "and the bar itself still lists everything the default config enables"
     );
