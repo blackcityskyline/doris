@@ -24,6 +24,7 @@ use tokio::sync::Mutex;
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
 use super::rutor::RutorSearcher;
+use super::tpb::TpbSearcher;
 use super::yts::YtsSearcher;
 
 /// Content categories a source can attribute its results to. Declared
@@ -160,6 +161,11 @@ const RUTOR_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::
 /// also what makes its rows land in the Movies view without any
 /// per-row category guessing (B8 wave 1; category *filtering* is B6).
 const YTS_GROUPS: &[Group] = &[Group::Movies];
+
+/// One apibay source covers torio's tpb-movies + tpb-tv pair (B8 wave 1
+/// decision): it declares the two groups it can attribute rows to, and
+/// filtering *within* a search is B6's job.
+const TPB_GROUPS: &[Group] = &[Group::Movies, Group::TV];
 
 #[async_trait]
 impl Source for RutrackerSearcher {
@@ -317,6 +323,14 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: YtsSearcher::HOME_URL,
     },
     SourceInfo {
+        id: "tpb",
+        label: "TPB",
+        implemented: true,
+        groups: TPB_GROUPS,
+        requires_browser: false,
+        home_url: TpbSearcher::HOME_URL,
+    },
+    SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
         implemented: false,
@@ -352,6 +366,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         }
         "rutor" => Ok(Arc::new(RutorSearcher::new())),
         "yts" => Ok(Arc::new(YtsSearcher::new())),
+        "tpb" => Ok(Arc::new(TpbSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
 }
