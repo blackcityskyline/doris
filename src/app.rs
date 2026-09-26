@@ -1512,10 +1512,27 @@ impl App {
     /// walks login *inside* its task, so the deadline covers that walk
     /// too rather than timing only the page fetch.
     async fn dispatch_search(&mut self, query: String, generation: u64) {
-        let selected =
-            orchestrator::selected_sources(&self.ui.active_source, &self.config.enabled_sources);
+        let selected = orchestrator::selected_sources(
+            &self.ui.active_source,
+            &self.config.enabled_sources,
+            self.ui.active_group,
+        );
         if selected.is_empty() {
-            self.ui.add_log("Selected source is disabled in Options -> streaming -> Sources.");
+            // Two ways to get here, and they have different fixes: the
+            // tab's source is off, or nothing the tab can reach serves
+            // the selected category (B6).
+            let reason = match self.ui.active_group {
+                Some(group) => format!(
+                    "No source on this tab serves '{}' -- see Options -> streaming \
+                     -> Sources.",
+                    group.label()
+                ),
+                None => {
+                    "Selected source is disabled in Options -> streaming -> Sources."
+                        .to_string()
+                }
+            };
+            self.ui.add_log(&reason);
             self.ui.state = AppState::Idle;
             return;
         }
@@ -1546,8 +1563,16 @@ impl App {
             // (B5): a fresh hit needs no task at all -- it just has to
             // arrive like the normal answer would, so the offsets,
             // paging verdict and log line all update through the same
-            // path. Category is `None` until B6 gives dispatch one.
-            let key = CacheKey::new(info.id, &query, None, offset);
+            // path. The category is part of the key (B6): the same words
+            // at the same offset under a different category are
+            // different pages, so an "all" hit must never answer a
+            // "Movies" request.
+            let key = CacheKey::new(
+                info.id,
+                &query,
+                self.ui.active_group.map(source::Group::label),
+                offset,
+            );
             if let Some(done) = orchestrator::cached_source_done(&self.cache, &key, generation) {
                 let _ = tx.send(done);
                 continue;
@@ -1567,7 +1592,13 @@ impl App {
             };
 
             self.source_status.insert(info.id.to_string(), SourceStatus::Pending);
-            let req = SearchRequest::new(query.clone(), offset);
+            let mut req = SearchRequest::new(query.clone(), offset);
+            // The selection rides along (B6): a source that can filter
+            // server-side will, one that cannot returns what it has --
+            // and the view keeps only the rows claiming this category,
+            // so an unhonoured category reads as fewer rows rather than
+            // as a category nobody actually applied.
+            req.category = self.ui.active_group;
             let task = if info.requires_browser {
                 // If "Save cookies" is off, don't pass a cookie file
                 // path through at all -- see do_login for the same
