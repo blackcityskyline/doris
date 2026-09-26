@@ -1,5 +1,6 @@
 use doris::config::Config;
 use doris::search::models::TorrentItem;
+use doris::search::source::Group;
 use doris::ui::app::{App as UiApp, HeaderHint, TorrentClickAction};
 use doris::ui::zones::ZoneId;
 use ratatui::layout::Rect;
@@ -132,9 +133,9 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     let before = app.selected;
-    // +1 for the border, +1 for the source-tab row above the table's own
-    // header row -- see render_results_zone.
-    app.click_at(results_area.y + 2, results_area.x); // table header row, not a data row
+    // +1 for the border, +2 for the source and category tab rows above
+    // the table's own header row -- see render_results_zone.
+    app.click_at(results_area.y + 3, results_area.x); // table header row, not a data row
     assert_eq!(app.selected, before);
 }
 
@@ -146,11 +147,12 @@ fn test_click_at_results_data_row_selects_that_item() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    // y+1 = source tabs, y+2 = table header, y+3 = first data row (index 0).
-    app.click_at(results_area.y + 3, results_area.x);
+    // y+1 = source tabs, y+2 = category tabs, y+3 = table header,
+    // y+4 = first data row (index 0).
+    app.click_at(results_area.y + 4, results_area.x);
     assert_eq!(app.selected, 0);
 
-    app.click_at(results_area.y + 4, results_area.x);
+    app.click_at(results_area.y + 5, results_area.x);
     assert_eq!(app.selected, 1);
 }
 
@@ -163,7 +165,7 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    app.click_at(results_area.y + 3, results_area.x); // first visible (filtered) row
+    app.click_at(results_area.y + 4, results_area.x); // first visible (filtered) row
     assert_eq!(app.selected, 3);
 }
 
@@ -304,7 +306,7 @@ fn test_losing_the_active_tab_moves_the_selection_to_a_live_one() {
 
     let mut config = Config::default();
     config.enabled_sources = vec!["rutracker".to_string(), "eztv".to_string()];
-    app.set_source_tabs(&config);
+    app.set_result_tabs(&config);
 
     assert_eq!(app.active_source, "rutracker", "first live tab wins");
     assert!(app.source_tabs.contains(&app.active_source.as_str()));
@@ -317,7 +319,7 @@ fn test_keeping_the_active_tab_leaves_the_selection_alone() {
     let mut app = make_app("chrome", "http://127.0.0.1:8090");
     app.active_source = "eztv".to_string();
 
-    app.set_source_tabs(&Config::default());
+    app.set_result_tabs(&Config::default());
 
     assert_eq!(app.active_source, "eztv");
     assert_eq!(
@@ -332,13 +334,13 @@ fn test_keeping_the_active_tab_leaves_the_selection_alone() {
 
 /// The rendered bar and the click hit-test read the same field, so a
 /// tab that is drawn can be clicked: derivations must stay in one
-/// place (`set_source_tabs`), never in the render path alone.
+/// place (`set_result_tabs`), never in the render path alone.
 #[test]
 fn test_clicking_a_tab_that_was_derived_selects_it() {
     let mut app = make_app("chrome", "http://127.0.0.1:8090");
     let mut config = Config::default();
     config.enabled_sources = vec!["yts".to_string(), "all".to_string()];
-    app.set_source_tabs(&config);
+    app.set_result_tabs(&config);
     app.active_source = "yts".to_string();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
@@ -347,4 +349,140 @@ fn test_clicking_a_tab_that_was_derived_selects_it() {
     let tpb_col = results.x + 1 + 3 + 2;
     assert_eq!(app.source_tab_at(results.y + 1, tpb_col), None);
     assert_eq!(app.source_tab_at(results.y + 1, results.x + 1), Some("yts"));
+}
+
+// --- category tab row (B6's second Results row) ---------------------------
+
+/// Availability rather than a fixed four: with only single-group
+/// sources enabled the row shrinks to what they can answer, which is
+/// the same rule `source_tabs` applies to disabled sources.
+#[test]
+fn test_category_row_offers_only_groups_an_enabled_source_serves() {
+    let mut yts_only = Config::default();
+    yts_only.enabled_sources = vec!["yts".to_string()];
+    assert_eq!(
+        doris::ui::app::group_tabs(&yts_only),
+        vec![None, Some(Group::Movies)],
+        "yts declares Movies and nothing else"
+    );
+
+    let mut eztv_only = Config::default();
+    eztv_only.enabled_sources = vec!["eztv".to_string()];
+    assert_eq!(
+        doris::ui::app::group_tabs(&eztv_only),
+        vec![None, Some(Group::TV)]
+    );
+
+    let mut all_off = Config::default();
+    all_off.enabled_sources = Vec::new();
+    assert_eq!(
+        doris::ui::app::group_tabs(&all_off),
+        vec![None],
+        "with everything off the row still has somewhere to be"
+    );
+
+    // The default config enables every implemented source, and between
+    // them they serve all four groups -- in `GROUP_ORDER`, "all" first.
+    assert_eq!(
+        doris::ui::app::group_tabs(&Config::default()),
+        vec![
+            None,
+            Some(Group::Movies),
+            Some(Group::TV),
+            Some(Group::Games),
+            Some(Group::Anime),
+        ]
+    );
+}
+
+#[test]
+fn test_cycle_group_walks_the_row_and_wraps() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    // Derived from the function the row is drawn from rather than
+    // spelled out: a group added to the registry must not leave this
+    // test walking a list the UI no longer shows.
+    let tabs = doris::ui::app::group_tabs(&Config::default());
+    assert_eq!(app.active_group, tabs[0], "starts on all");
+    assert_eq!(app.active_group, None);
+
+    for expected in tabs.iter().skip(1) {
+        app.cycle_group(true);
+        assert_eq!(&app.active_group, expected, "walks the whole row");
+        assert!(app.group_changed, "every step is owed a re-search");
+    }
+    app.cycle_group(true);
+    assert_eq!(app.active_group, tabs[0], "the cycle must wrap");
+
+    // Backwards from "all" lands on the last tab, never one before it.
+    app.cycle_group(false);
+    assert_eq!(app.active_group, tabs[tabs.len() - 1]);
+}
+
+/// The row that is drawn is the row that is clickable: the hit-test
+/// walks the same `group_tabs` field the render does, one row lower.
+#[test]
+fn test_group_tab_at_finds_each_tab_it_drew() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let results = app.zones.get_area(ZoneId::Results);
+    let row = results.y + 2; // one row below the source tabs
+    let first = results.x + 1;
+
+    // "[all]" is bracketed while selected: 5 cells, then two spaces.
+    assert_eq!(app.group_tab_at(row, first), Some(None), "the all tab");
+    assert_eq!(app.group_tab_at(row, first + 4), Some(None), "its bracket");
+    assert_eq!(
+        app.group_tab_at(row, first + 5 + 2),
+        Some(Some(Group::Movies))
+    );
+    // The source row above and the table's header row below are not
+    // this row, however close their columns look.
+    assert_eq!(app.group_tab_at(results.y + 1, first), None);
+    assert_eq!(app.group_tab_at(results.y + 3, first), None);
+
+    // A click selects the tab, flags the owed search, and focuses the
+    // zone -- like every other Results click.
+    assert_eq!(app.click_at(row, first + 5 + 2), None);
+    assert_eq!(app.active_group, Some(Group::Movies));
+    assert!(app.group_changed);
+    assert_eq!(app.zones.focused, ZoneId::Results);
+
+    // Now "[all]" has lost its brackets and every label to its right
+    // moved left; the hit-test follows on its own because both sides
+    // derive from the same field.
+    assert_eq!(
+        app.group_tab_at(row, first + 4),
+        None,
+        "the bracket cell is a gap now"
+    );
+    assert_eq!(app.group_tab_at(row, first + 5), Some(Some(Group::Movies)));
+}
+
+/// Switching the source that was the last one serving a category must
+/// not leave the row pointing at a tab that is no longer drawn.
+#[test]
+fn test_losing_the_category_moves_the_selection_to_all() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.active_group = Some(Group::Games);
+
+    let mut config = Config::default();
+    config.enabled_sources = vec!["yts".to_string()];
+    app.set_result_tabs(&config);
+
+    assert_eq!(app.active_group, None, "falls back to all");
+    assert!(app.group_tabs.contains(&Some(Group::Movies)));
+    assert!(!app.group_tabs.contains(&Some(Group::Games)));
+}
+
+/// Opening and closing Settings re-derives both rows every time; a
+/// category that still has sources behind it stays where it was.
+#[test]
+fn test_keeping_the_category_leaves_the_selection_alone() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.active_group = Some(Group::Movies);
+
+    app.set_result_tabs(&Config::default());
+
+    assert_eq!(app.active_group, Some(Group::Movies));
+    assert!(!app.group_changed, "re-deriving is not a switch");
 }

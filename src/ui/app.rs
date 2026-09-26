@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use crate::search::models::TorrentItem;
 use crate::config::Config;
-use crate::search::source::{KNOWN_SOURCES, SourceInfo};
+use crate::search::source::{Group, KNOWN_SOURCES, SourceInfo, GROUP_ORDER};
 use std::collections::VecDeque;
 use super::theme::Theme;
 use super::zones::{ZoneId, ZoneLayout};
@@ -216,6 +216,24 @@ pub struct App {
     /// are rewritten together by `set_source_tabs`, the only place
     /// either changes for config reasons.
     pub source_tabs: Vec<&'static str>,
+    /// Which category the Results table is showing -- the second tab row,
+    /// under the source row; `None` is the "all" tab. Search dispatch in
+    /// app.rs reads this to fill `SearchRequest.category` and to skip the
+    /// sources that do not serve it (B6).
+    pub active_group: Option<Group>,
+    /// The category row itself: "all", then every group at least one
+    /// enabled, implemented source serves, in `GROUP_ORDER`. Held like
+    /// `source_tabs` so the drawn row, the hit-test and the selection can
+    /// never disagree -- and so a group nothing can answer is never
+    /// drawn, the same reasoning wave 1 settled on for disabled sources.
+    pub group_tabs: Vec<Option<Group>>,
+    /// Set when the category is switched (`g`/`G` or a click), cleared by
+    /// the next `start_search`: Enter means "re-search with the new
+    /// selection" for this row too. The other half of a switch happens
+    /// right there in [`UiApp::set_group`] -- the view is re-derived from
+    /// the rows already on screen -- so nothing here implies a request
+    /// was already made.
+    pub group_changed: bool,
     /// Set whenever the user switches the active source tab (via `]` key or
     /// mouse click). Cleared on the next Enter press, which uses it to
     /// decide whether Enter means "re-search with the new source" (true)
@@ -268,6 +286,31 @@ pub fn source_tabs(config: &Config) -> Vec<&'static str> {
         .map(|info| info.id)
         .collect();
     tabs.push("all");
+    tabs
+}
+
+/// The category row's tabs: "all", then -- in `GROUP_ORDER` -- every
+/// group that at least one enabled, implemented source serves.
+///
+/// Availability rather than a fixed four (the layout B6's question was
+/// asked in): a category no enabled source could answer would be a tab
+/// that can only show an empty table with no explanation, which is the
+/// trap `source_tabs` already avoids for disabled sources.
+pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
+    let available = |group: Group| {
+        KNOWN_SOURCES
+            .iter()
+            .filter(|info| info.implemented)
+            .filter(|info| config.enabled_sources.iter().any(|e| e == info.id))
+            .any(|info| info.groups.contains(&group))
+    };
+    let mut tabs = vec![None];
+    tabs.extend(
+        GROUP_ORDER
+            .into_iter()
+            .filter(|&group| available(group))
+            .map(Some),
+    );
     tabs
 }
 
@@ -353,6 +396,9 @@ impl App {
             // default. `App::new` immediately re-derives it from the
             // config actually being loaded.
             source_tabs: source_tabs(&Config::default()),
+            active_group: None,
+            group_tabs: group_tabs(&Config::default()),
+            group_changed: false,
             source_changed: false,
             last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),
@@ -431,27 +477,74 @@ impl App {
         self.source_changed = true;
     }
 
+    /// Switch the category row to `group` -- the single path behind both
+    /// `g`/`G` and a click on the row.
+    ///
+    /// Two halves of the same decision: the view is re-derived from the
+    /// rows already on screen, so "Movies" means Movies *now* and not
+    /// after the next search; and `group_changed` tells Enter that the
+    /// sources still owe the server-side answer. Neither half makes a
+    /// request on its own -- one keypress stays one keypress, and the
+    /// search that follows is the Enter that was always required after
+    /// switching a tab.
+    pub fn set_group(&mut self, group: Option<Group>) {
+        if self.active_group == group {
+            return;
+        }
+        self.active_group = group;
+        self.group_changed = true;
+        self.update_filter();
+    }
+
+    /// Move the category row one tab, forward for `g` and back for `G`
+    /// (wraps). The row always holds "all", so the modulo is safe even
+    /// with every source switched off -- same reasoning as
+    /// [`UiApp::cycle_source`].
+    pub fn cycle_group(&mut self, forward: bool) {
+        let pos = self
+            .group_tabs
+            .iter()
+            .position(|&g| g == self.active_group)
+            .unwrap_or(0);
+        let len = self.group_tabs.len();
+        let next = if forward {
+            (pos + 1) % len
+        } else {
+            (pos + len - 1) % len
+        };
+        self.set_group(self.group_tabs[next]);
+    }
+
     /// [`UiApp::new`] takes no config, so the caller that *does* have
     /// one applies the tabs it implies; chaining keeps that from being
     /// an easy line to forget at construction.
-    pub fn with_source_tabs(mut self, config: &Config) -> Self {
-        self.set_source_tabs(config);
+    pub fn with_result_tabs(mut self, config: &Config) -> Self {
+        self.set_result_tabs(config);
         self
     }
 
-    /// Re-derive the tab bar from `config` and repair `active_source`
-    /// when the tab it pointed at has just disappeared (its source was
-    /// switched off in Options).
+    /// Re-derive both Results tab rows from `config` and repair
+    /// `active_source` / `active_group` when the tab they pointed at has
+    /// just disappeared (its source was switched off in Options, which
+    /// can take a group with it when no other enabled source serves it).
     ///
     /// Called once from `App::new` and after every enable/disable --
     /// the two moments the enabled set changes. A *valid* tab is left
     /// alone, so opening and closing Settings never disturbs where the
     /// user already was.
-    pub fn set_source_tabs(&mut self, config: &Config) {
+    pub fn set_result_tabs(&mut self, config: &Config) {
         self.source_tabs = source_tabs(config);
         if !self.source_tabs.iter().any(|t| *t == self.active_source) {
             self.active_source =
                 self.source_tabs.first().copied().unwrap_or("all").to_string();
+        }
+        self.group_tabs = group_tabs(config);
+        if !self.group_tabs.contains(&self.active_group) {
+            // "all" is always first, so this is `Some(None)` by
+            // construction; `flatten` is only here because
+            // `first().copied()` on `Vec<Option<Group>>` keeps both
+            // layers of the Option.
+            self.active_group = self.group_tabs.first().copied().flatten();
         }
     }
 
@@ -474,6 +567,35 @@ impl App {
             let label_len = if tab == self.active_source { tab.chars().count() + 2 } else { tab.chars().count() };
             if col >= x && col < x + label_len as u16 {
                 return Some(tab);
+            }
+            x += label_len as u16 + 2; // + "  " gap
+        }
+        None
+    }
+
+    /// Which category tab (if any) is under `(row, col)` -- the same
+    /// construction as [`UiApp::source_tab_at`], one row lower, so a tab
+    /// that is drawn can be clicked. The *outer* `None` means "not on the
+    /// category row"; the inner one is the "all" tab, which is exactly
+    /// what a category-less view is.
+    pub fn group_tab_at(&self, row: u16, col: u16) -> Option<Option<Group>> {
+        let area = self.zones.get_area(ZoneId::Results);
+        if area.width == 0 || area.height == 0 {
+            return None;
+        }
+        if row != area.y + 2 {
+            return None;
+        }
+        let mut x = area.x + 1;
+        for &group in &self.group_tabs {
+            let text = group.map_or("all", Group::label);
+            let label_len = if group == self.active_group {
+                text.chars().count() + 2
+            } else {
+                text.chars().count()
+            };
+            if col >= x && col < x + label_len as u16 {
+                return Some(group);
             }
             x += label_len as u16 + 2; // + "  " gap
         }
@@ -518,21 +640,30 @@ impl App {
                     self.source_changed = true;
                     return None;
                 }
+                if let Some(group) = self.group_tab_at(row, col) {
+                    // The category's own switch path: view re-derived
+                    // here, `group_changed` set for Enter. No request.
+                    self.set_group(group);
+                    return None;
+                }
                 // -1 for the panel border: `table_row` is the 0-based line
-                // inside the Results panel -- 0 = source-tab row, 1 = the
-                // table's own header row, 2+ = data rows. This must stay in
-                // lockstep with render_results_zone's Layout (tabs / table /
+                // inside the Results panel -- 0 = source-tab row, 1 =
+                // category row, 2 = the table's own header row, 3+ = data
+                // rows. This must stay in lockstep with
+                // render_results_zone's Layout (tabs / categories / table /
                 // hints); 038c859 added the tab row and subtracted its line
                 // here but left `data_row`'s own -1, so every click used to
                 // select the row *below* the one under the cursor and a
-                // click on the header selected the first item.
+                // click on the header selected the first item -- the same
+                // class of off-by-one the category row would have brought
+                // back if only the draw side moved.
                 let table_row = row.saturating_sub(area.y).saturating_sub(1);
-                if table_row < 2 {
-                    // Tab row (outside any tab label) or header row
-                    // ("Seeds  Size ..."): not a data row.
+                if table_row < 3 {
+                    // Source row (outside any tab label), category row, or
+                    // header row ("Seeds  Size ..."): not a data row.
                     return None;
                 }
-                let data_row = (table_row - 2) as usize;
+                let data_row = (table_row - 3) as usize;
                 if let Some(&idx) = self.filtered_indices.get(data_row) {
                     self.selected = idx;
                 }
@@ -1371,18 +1502,27 @@ impl App {
         }
     }
 
+    /// Which rows the Results panel shows: the selected category first,
+    /// then the `F` text filter on top of it.
+    ///
+    /// The category half is B6's *instant* side: switching the row
+    /// re-derives this from the rows already on screen, so a selected
+    /// category never sits above a table still showing every group.
+    /// Rows a source could not attribute (`item.group = None`) belong to
+    /// the "all" view only -- hiding them here is what makes that
+    /// ROADMAP rule mean something instead of being a comment.
     pub fn update_filter(&mut self) {
         let filter = self.zones.filter_input.clone();
-        if filter.is_empty() {
-            self.filtered_indices = (0..self.results.len()).collect();
-        } else {
-            let lower = filter.to_lowercase();
-            self.filtered_indices = self.results.iter()
-                .enumerate()
-                .filter(|(_, item)| item.title.to_lowercase().contains(&lower))
-                .map(|(i, _)| i)
-                .collect();
-        }
+        let lower = filter.to_lowercase();
+        self.filtered_indices = self.results.iter()
+            .enumerate()
+            .filter(|(_, item)| match self.active_group {
+                None => true,
+                Some(group) => item.group == Some(group),
+            })
+            .filter(|(_, item)| filter.is_empty() || item.title.to_lowercase().contains(&lower))
+            .map(|(i, _)| i)
+            .collect();
         if !self.filtered_indices.is_empty() && !self.filtered_indices.contains(&self.selected) {
             self.selected = self.filtered_indices[0];
         }
@@ -1525,6 +1665,7 @@ impl App {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1), // source tabs (btop proc-tab style)
+                Constraint::Length(1), // category tabs (B6's second row)
                 Constraint::Min(0),    // results table
                 Constraint::Length(1), // action hints
             ])
@@ -1546,6 +1687,26 @@ impl App {
             }
         }
         frame.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
+
+        // --- category tab bar ----------------------------------------------
+        // Same shape as the row above it, and read from the same
+        // `group_tabs` field `group_tab_at` walks, so drawn == clickable.
+        let mut group_spans = Vec::new();
+        for (i, &group) in self.group_tabs.iter().enumerate() {
+            let is_active = group == self.active_group;
+            let text = group.map_or("all", Group::label);
+            let label = if is_active { format!("[{}]", text) } else { text.to_string() };
+            let style = if is_active {
+                Style::default().fg(self.theme.hi_fg.to_color()).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(self.theme.inactive_fg.to_color())
+            };
+            group_spans.push(Span::styled(label, style));
+            if i < self.group_tabs.len() - 1 {
+                group_spans.push(Span::raw("  "));
+            }
+        }
+        frame.render_widget(Paragraph::new(Line::from(group_spans)), chunks[1]);
 
         // --- results table ---------------------------------------------------
         let header = Row::new(vec![
@@ -1584,9 +1745,11 @@ impl App {
         if let Some(local_pos) = self.filtered_indices.iter().position(|&i| i == self.selected) {
             state.select(Some(local_pos));
         }
-        frame.render_stateful_widget(table, chunks[1], &mut state);
+        frame.render_stateful_widget(table, chunks[2], &mut state);
 
         // --- action hint bar -------------------------------------------------
+        // Both tab rows are click targets as well as keys; the hint stays
+        // one line, so it names the keys and the rows carry the labels.
         let action_spans = vec![
             Span::styled("Enter", Style::default().fg(Color::Yellow)),
             Span::raw(": play  "),
@@ -1595,11 +1758,13 @@ impl App {
             Span::styled("v", Style::default().fg(Color::Yellow)),
             Span::raw(": info  "),
             Span::styled("]", Style::default().fg(Color::Yellow)),
-            Span::raw(": switch source (or click tabs above)"),
+            Span::raw(": source  "),
+            Span::styled("g", Style::default().fg(Color::Yellow)),
+            Span::raw(": category"),
         ];
         frame.render_widget(
             Paragraph::new(Line::from(action_spans)).style(Style::default().fg(self.theme.inactive_fg.to_color())),
-            chunks[2],
+            chunks[3],
         );
     }
 

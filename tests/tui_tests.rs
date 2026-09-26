@@ -5,6 +5,7 @@ use doris::ui::app::App as UiApp;
 use doris::ui::app::Modal;
 use doris::ui::app::LoginField;
 use doris::search::models::TorrentItem;
+use doris::search::source::Group;
 
 fn make_test_app() -> UiApp {
     UiApp::new(
@@ -560,4 +561,77 @@ fn test_state_streaming() {
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
+}
+
+/// B6's instant half: picking a category re-derives the view from the
+/// rows already on screen, and rows no source could attribute
+/// (`group = None`) belong to the "all" view alone.
+#[test]
+fn test_switching_the_category_rederives_the_view_instantly() {
+    let mut app = make_test_app();
+    let mut results = make_results(4);
+    results[0].group = Some(Group::Movies);
+    results[1].group = Some(Group::TV);
+    results[2].group = None; // a source that could not attribute it
+    results[3].group = Some(Group::Movies);
+    app.results = results;
+    app.update_filter();
+    assert_eq!(
+        app.filtered_indices,
+        vec![0, 1, 2, 3],
+        "the all view keeps every row"
+    );
+
+    app.set_group(Some(Group::Movies));
+    assert_eq!(
+        app.filtered_indices,
+        vec![0, 3],
+        "only Movies: TV is out, and the unattributed row claims nothing"
+    );
+    assert!(app.group_changed, "Enter still owes the server-side search");
+
+    app.set_group(None);
+    assert_eq!(
+        app.filtered_indices,
+        vec![0, 1, 2, 3],
+        "back to all restores every row -- nothing was discarded"
+    );
+}
+
+/// The row exists on screen and not only in state: the table's own
+/// header moved down a line to make room for it.
+#[test]
+fn test_render_draws_the_category_row_under_the_source_row() {
+    let mut app = make_test_app();
+    app.zones.update_areas(Rect::new(0, 0, 120, 40));
+    let results = app.zones.get_area(doris::ui::zones::ZoneId::Results);
+
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    let buf = terminal.backend().buffer();
+    let row_text = |y: u16| -> String {
+        (0..buf.area.width)
+            .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().chars().next().unwrap_or(' ')))
+            .collect()
+    };
+
+    let source_row = row_text(results.y + 1);
+    assert!(source_row.contains("rutracker"), "source row: {source_row}");
+
+    // "all" is the selected category on a fresh app, so it is the
+    // bracketed one here -- the row below the source row, and only it.
+    let category_row = row_text(results.y + 2);
+    assert!(category_row.contains("[all]"), "category row: {category_row}");
+    for group in ["Movies", "TV", "Games", "Anime"] {
+        assert!(category_row.contains(group), "missing {group}: {category_row}");
+    }
+    assert!(
+        !category_row.contains("rutracker"),
+        "a separate line, not a repeat of the row above: {category_row}"
+    );
+    assert!(
+        row_text(results.y + 3).contains("Seeds"),
+        "the table header sits one row lower now"
+    );
 }
