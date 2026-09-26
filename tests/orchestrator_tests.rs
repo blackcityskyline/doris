@@ -312,7 +312,7 @@ fn the_per_source_deadline_is_torios_25_seconds() {
 fn selection_follows_the_results_tab_and_the_options_checklist() {
     let both = vec!["rutracker".to_string(), "rutor".to_string()];
     let ids = |tab: &str, enabled: &[String]| -> Vec<&'static str> {
-        orchestrator::selected_sources(tab, enabled)
+        orchestrator::selected_sources(tab, enabled, None)
             .iter()
             .map(|info| info.id)
             .collect()
@@ -327,9 +327,42 @@ fn selection_follows_the_results_tab_and_the_options_checklist() {
     assert!(!ids("all", &both).contains(&"nnmclub"));
 }
 
+/// B6: the category decides who gets asked, and a source that does not
+/// serve it is skipped outright -- not asked and filtered afterwards.
+/// Its rows would arrive claiming no category, the view would drop all
+/// of them, and the table would read as "this category found nothing"
+/// while the sources able to filter it server-side were the only ones
+/// really consulted.
+#[test]
+fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
+    // rutracker declares all four groups, yts only Movies.
+    let both = vec!["rutracker".to_string(), "yts".to_string()];
+    let ids = |tab: &str, group: Option<Group>| -> Vec<&'static str> {
+        orchestrator::selected_sources(tab, &both, group)
+            .iter()
+            .map(|info| info.id)
+            .collect()
+    };
+
+    assert_eq!(ids("all", None), vec!["rutracker", "yts"]);
+    assert_eq!(ids("all", Some(Group::Movies)), vec!["rutracker", "yts"]);
+    assert_eq!(
+        ids("all", Some(Group::TV)),
+        vec!["rutracker"],
+        "yts cannot answer TV, so it is not asked"
+    );
+    assert_eq!(ids("all", Some(Group::Anime)), vec!["rutracker"]);
+    assert_eq!(ids("all", Some(Group::Games)), vec!["rutracker"]);
+    // The tab still wins when it disagrees with the category.
+    assert!(
+        ids("yts", Some(Group::TV)).is_empty(),
+        "yts is reachable only through its own tab, and only serves Movies"
+    );
+}
+
 #[test]
 fn a_fresh_search_asks_every_selected_source_from_zero() {
-    let selected = orchestrator::selected_sources("all", &both_enabled());
+    let selected = orchestrator::selected_sources("all", &both_enabled(), None);
     let offsets = std::collections::HashMap::new();
     let has_more = std::collections::HashMap::new();
 
@@ -343,7 +376,7 @@ fn a_fresh_search_asks_every_selected_source_from_zero() {
 
 #[test]
 fn load_more_asks_only_sources_that_reported_another_page() {
-    let selected = orchestrator::selected_sources("all", &both_enabled());
+    let selected = orchestrator::selected_sources("all", &both_enabled(), None);
     let mut offsets = std::collections::HashMap::new();
     offsets.insert("rutor".to_string(), 100);
     offsets.insert("rutracker".to_string(), 50);
@@ -364,7 +397,7 @@ fn load_more_asks_only_sources_that_reported_another_page() {
 
 #[test]
 fn a_source_that_failed_gets_retried_from_where_it_stopped() {
-    let selected = orchestrator::selected_sources("all", &both_enabled());
+    let selected = orchestrator::selected_sources("all", &both_enabled(), None);
     let mut offsets = std::collections::HashMap::new();
     offsets.insert("rutracker".to_string(), 50);
     let mut has_more = std::collections::HashMap::new();

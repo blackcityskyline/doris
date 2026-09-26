@@ -29,7 +29,7 @@ use tokio::task::JoinHandle;
 
 use super::cache::{CacheKey, SearchCache};
 use super::models::TorrentItem;
-use super::source::{SearchPage, SourceInfo, KNOWN_SOURCES};
+use super::source::{Group, SearchPage, SourceInfo, KNOWN_SOURCES};
 use crate::event::Event;
 
 /// torio's `PER_SOURCE_TIMEOUT_MS`: one slow source must not hold the
@@ -193,12 +193,28 @@ pub async fn coordinate(
 /// on the active Results tab (`"all"` means every one of them). This is
 /// the registry-driven replacement for `app.rs`'s two hardcoded
 /// branches -- a source registered later needs no orchestrator change.
-pub fn selected_sources(active_tab: &str, enabled: &[String]) -> Vec<&'static SourceInfo> {
+/// Which sources a dispatch should ask: the Results tab, the Options
+/// checklist, and -- since B6 -- the selected category.
+///
+/// A source that does not serve the category is *not asked* rather than
+/// asked and filtered afterwards: it would answer with rows that claim
+/// no category, the view would drop every one of them, and the table
+/// would read as "this category is empty" while sources able to filter
+/// it server-side were the only ones consulted.
+pub fn selected_sources(
+    active_tab: &str,
+    enabled: &[String],
+    group: Option<Group>,
+) -> Vec<&'static SourceInfo> {
     KNOWN_SOURCES
         .iter()
         .filter(|info| info.implemented)
         .filter(|info| enabled.iter().any(|e| e == info.id))
         .filter(|info| active_tab == "all" || active_tab == info.id)
+        .filter(|info| match group {
+            None => true,
+            Some(group) => info.groups.contains(&group),
+        })
         .collect()
 }
 

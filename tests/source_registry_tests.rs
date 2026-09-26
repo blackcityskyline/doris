@@ -1,5 +1,5 @@
 use doris::config::Config;
-use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv};
+use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, GROUP_ORDER};
 use doris::search::rutor::RutorSearcher;
 use doris::search::x1337x::X1337xSearcher;
 use doris::ui::app::{SettingsAction, source_settings_items};
@@ -75,6 +75,34 @@ fn test_declared_groups_are_the_four_known_ones() {
             assert!(valid.contains(group), "{:?} is not a known group", group);
         }
     }
+}
+
+/// B6: the category row is built from `GROUP_ORDER` and `Group::label`,
+/// so both must stay in step with the enum -- a group missing from the
+/// order would be unreachable from the UI (nothing to click), and a
+/// repeated label would make two tabs the same category.
+#[test]
+fn test_group_order_offers_every_group_once_and_labels_them_distinctly() {
+    for group in [Group::Games, Group::Movies, Group::TV, Group::Anime] {
+        assert_eq!(
+            GROUP_ORDER.iter().filter(|&&g| g == group).count(),
+            1,
+            "{:?} must appear in the category row exactly once",
+            group
+        );
+    }
+
+    let labels: Vec<&str> = GROUP_ORDER.iter().map(|g| g.label()).collect();
+    let mut unique = labels.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        labels.len(),
+        "two tabs would read as one category: {:?}",
+        labels
+    );
+    assert_eq!(labels, vec!["Movies", "TV", "Games", "Anime"]);
 }
 
 #[test]
