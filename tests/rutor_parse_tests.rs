@@ -1,4 +1,9 @@
-use doris::search::rutor::{count_title_links, parse_results, split_query, title_has_word};
+use doris::search::models::TorrentItem;
+use doris::search::rutor::{
+    GROUP_IDS, RutorSearcher, count_title_links, group_ids, parse_results, split_query,
+    title_has_word, to_page,
+};
+use doris::search::source::Group;
 
 // A reconstructed snippet matching the row shape confirmed by fetching
 // live rutor search results pages while writing the parser (see the
@@ -399,4 +404,132 @@ fn test_base32_info_hash_is_left_for_the_magnet_pipeline() {
     assert_eq!(items.len(), 1);
     assert!(items[0].magnet.is_some(), "the magnet URI itself is kept");
     assert_eq!(items[0].info_hash, "");
+}
+
+// --- B6: the category slot --------------------------------------------------
+
+/// One row the way `to_page` sees it: an id, and the page URL the
+/// dedup keys on.
+fn row(id: &str) -> TorrentItem {
+    TorrentItem {
+        title: format!("Row {}", id),
+        page_url: format!("https://rutor.info/torrent/{}", id),
+        ..Default::default()
+    }
+}
+
+/// B6's acceptance in one direction: the category is rutor's own third
+/// path segment, `0` is its spelling for "all categories", and every
+/// id a group fans out over is one the URL asks for -- one GET per id,
+/// because a comma list is not a list (live 26.09.2026: `cat=1,5`
+/// answered exactly the rows of `cat=1` and silently lost all 96 of
+/// `cat=5`).
+#[test]
+fn test_the_category_slot_is_the_urls_third_segment() {
+    assert_eq!(
+        RutorSearcher::search_url(1, 0, "matrix"),
+        "https://rutor.info/search/1/0/000/0/matrix",
+        "no category selected -> rutor's own 'all categories'"
+    );
+    assert_eq!(
+        RutorSearcher::search_url(2, 16, "мир"),
+        "https://rutor.info/search/2/16/000/0/%D0%BC%D0%B8%D1%80",
+        "page, rubric id, the search-method and sort ids, then the query"
+    );
+    for (group, ids) in GROUP_IDS {
+        for id in ids {
+            assert_eq!(
+                RutorSearcher::search_url(1, *id, "x"),
+                format!("https://rutor.info/search/1/{}/000/0/x", id),
+                "{:?} fans out over id {}",
+                group,
+                id
+            );
+        }
+    }
+}
+
+/// The table covers exactly the four groups the registry declares for
+/// rutor: the ids picked from the live inventory (each rubric's name
+/// read off a torrent's own page), no id in two groups at once -- a
+/// fan-out would otherwise show one torrent twice -- and none of the
+/// rubrics rutor keeps for itself (music, software, books, sport, ...)
+/// claiming a group it was never asked for.
+#[test]
+fn test_group_ids_cover_the_declared_groups_and_nobody_elses_rubrics() {
+    let expected = [
+        (Group::Movies, vec![1, 5, 7, 12]),
+        (Group::TV, vec![4, 6, 15, 16]),
+        (Group::Games, vec![8]),
+        (Group::Anime, vec![10]),
+    ];
+    for (group, ids) in expected {
+        assert_eq!(group_ids(group).to_vec(), ids, "{:?}", group);
+    }
+
+    let mut mine = Vec::new();
+    for (group, ids) in GROUP_IDS {
+        for id in ids {
+            assert!(!mine.contains(id), "{} is in two groups ({:?})", id, group);
+            mine.push(*id);
+        }
+    }
+    assert_eq!(mine.len(), 10, "4 + 4 + 1 + 1 rubric ids");
+    for other in [2, 3, 9, 11, 13, 14, 17] {
+        assert!(!mine.contains(&other), "rubric {} is not ours", other);
+    }
+}
+
+/// The fan-out assembly, where paging honesty lives: rows merge in id
+/// order and dedup by `page_url`, rows claim the category that fetched
+/// them (and nothing when no category did), `has_more` reads each id's
+/// own page instead of the sum, and the cursor steps exactly one page
+/// -- every id was read at that same page number.
+#[test]
+fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
+    let rows_of = |count: usize, prefix: &str| -> Vec<TorrentItem> {
+        (0..count).map(|i| row(&format!("{}{}", prefix, i))).collect()
+    };
+    let full = RutorSearcher::PAGE_SIZE;
+
+    // One rubric answered a full page -> more exists, one page forward.
+    let page = to_page(vec![rows_of(full, "a"), rows_of(1, "b")], Some(Group::Games), 0);
+    assert!(page.has_more, "one id answered a full page");
+    assert_eq!(page.next_offset, Some(full), "one page, not N merged rows");
+
+    // 60 + 60 rows in total, but neither rubric's page is full: a
+    // merged count would promise a next page the site does not have.
+    let page = to_page(vec![rows_of(60, "a"), rows_of(60, "b")], Some(Group::Games), 0);
+    assert!(!page.has_more, "four partial pages are still partial");
+    assert_eq!(page.next_offset, None);
+
+    // The cursor keeps its unit at any offset, not only at zero.
+    let page = to_page(vec![rows_of(full, "a")], Some(Group::Movies), 100);
+    assert_eq!(page.next_offset, Some(100 + full));
+
+    // The same torrent arriving from two rubric pages stays one row,
+    // and every row claims the category that fetched it.
+    let shared = row("111");
+    let page = to_page(
+        vec![vec![shared.clone(), row("222")], vec![shared, row("333")]],
+        Some(Group::TV),
+        0,
+    );
+    assert_eq!(page.items.len(), 3, "one torrent listed twice is one row");
+    for item in &page.items {
+        assert_eq!(item.group, Some(Group::TV), "{} claims its category", item.title);
+    }
+    assert!(!page.has_more, "two rows per id is not a full page");
+
+    // No category selected -> rows claim nothing, which is the honest
+    // reading of an unfiltered row this parser cannot attribute.
+    let page = to_page(vec![rows_of(3, "x")], None, 0);
+    assert!(page.items.iter().all(|item| item.group.is_none()));
+
+    // A group the row itself already carries outranks the URL that
+    // fetched it -- the same rule 1337x's `stamp_category` pins down.
+    let mut attributed = row("999");
+    attributed.group = Some(Group::Anime);
+    let page = to_page(vec![vec![attributed]], Some(Group::Movies), 0);
+    assert_eq!(page.items[0].group, Some(Group::Anime), "the row outranks the URL");
 }

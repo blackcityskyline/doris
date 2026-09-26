@@ -192,8 +192,10 @@ pub trait Source: Send + Sync {
 /// [`SearchRequest::category`] actually narrows anything for it.
 const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Group::Anime];
 
-/// Rutor's search URL carries a real category slot (`0` = all); B6 maps
-/// these groups onto its ids once verified.
+/// Rutor's search URL carries a real category slot (`0` = all), and B6
+/// maps these groups onto the rubric ids live-verified in
+/// `rutor::GROUP_IDS` -- that table feeds both the URL and the rows'
+/// claim, so the two cannot drift apart.
 const RUTOR_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// YTS only ever has movies, so it declares that one group -- which is
@@ -313,13 +315,11 @@ impl Source for RutorSearcher {
     }
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
-        let items = RutorSearcher::search_page(self, &req.query, req.offset).await?;
-        // Fixed 100-row pages (see `RutorSearcher::PAGE_SIZE`). The
-        // category slot is intentionally not honored yet: B6 verifies
-        // rutor's category ids against the live site before claiming
-        // server-side filtering.
-        let has_more = items.len() >= RutorSearcher::PAGE_SIZE;
-        Ok(SearchPage { items, has_more, next_offset: None })
+        // Fixed 100-row pages (see `RutorSearcher::PAGE_SIZE`), fanned
+        // out over the selected category's rubric ids when B6's
+        // `category` says so -- `rutor::to_page` reads `has_more` off
+        // each id's own page and steps the cursor by one page.
+        RutorSearcher::search_page(self, &req.query, req.offset, req.category).await
     }
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {

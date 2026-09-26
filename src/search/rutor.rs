@@ -46,6 +46,20 @@
 //! - A page holds a fixed 100 rows (verified: "matrix" = 219 hits ->
 //!   pages of 100/100/22/0 rows; page 0 and page 1 are the same page).
 //!
+//! - **B6: a category is a fan-out over rubric ids, not a comma list**
+//!   (live 26.09.2026): `/search/{page}/{cat}/000/0/{q}` filters
+//!   server-side, while a row carries no category at all -- the rubric
+//!   is named only on the torrent's own page ("Категория Зарубежные
+//!   фильмы"). So a selected group becomes one GET per id of
+//!   [`GROUP_IDS`], asked one after another (rutor answers 503 under
+//!   load, so no burst), merged and deduped by `page_url` -- and the
+//!   rows claim the category that fetched them, which the site's own
+//!   rubric just proved. A comma list is not a shortcut: live,
+//!   `cat=1,5` answered byte-for-byte the rows of `cat=1` and silently
+//!   lost all 96 of `cat=5`, while an unknown id (`cat=999`) answers 0
+//!   rows rather than everything. No selection keeps `cat=0` and rows
+//!   claim nothing -- the honesty gap `source.rs` records.
+//!
 //! If rutor changes its markup, this is the file (and
 //! `tests/rutor_parse_tests.rs`, which pins down the exact row shape seen
 //! live) to fix -- same spirit as the TorrServer JSON-shape caveat
@@ -55,10 +69,50 @@ use anyhow::Result;
 use regex::Regex;
 use scraper::{Html, Selector};
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use crate::search::models::TorrentItem;
 use crate::search::net::{FetchOptions, browser_client, fetch_resilient};
+use crate::search::source::{Group, SearchPage};
+
+/// The rubric id behind each group this source declares -- one table
+/// for both halves of B6: the id the search URL is asked with, and the
+/// category a returned row claims, so the two can never drift apart.
+///
+/// Every id was read off the live site on 26.09.2026 by fetching a row
+/// from each rubric and taking the name its own page prints ("Категория
+/// ..."), rather than guessed from the URL:
+///
+/// - Movies: 1 Зарубежные фильмы, 5 Наши фильмы, 7 Мультипликация,
+///   12 Научно-популярные фильмы -- the four buckets holding films
+///   (decision with the user: cartoons and documentaries count).
+/// - TV: 4 Зарубежные сериалы, 16 Наши сериалы, 6 Телевизор, 15 Юмор --
+///   series plus everything else broadcast (decision with the user).
+/// - Games: 8 Игры. Anime: 10 Аниме.
+///
+/// Everything else stays out -- 2 Музыка, 9 Софт, 11 Книги, 13 Спорт и
+/// Здоровье, 14 Хозяйство и Быт, 17 Иностранные релизы and the
+/// remaining buckets -- because a row fetched from them would be shown
+/// under a group this registry never promised for rutor.
+pub const GROUP_IDS: [(Group, &[i64]); 4] = [
+    (Group::Movies, &[1, 5, 7, 12]),
+    (Group::TV, &[4, 6, 15, 16]),
+    (Group::Games, &[8]),
+    (Group::Anime, &[10]),
+];
+
+/// The ids a category search fans out over, or an empty list for a
+/// group rutor does not declare. The orchestrator only asks a source
+/// for groups it registered, so the empty list is a safe landing rather
+/// than a branch with a user behind it.
+pub fn group_ids(group: Group) -> &'static [i64] {
+    GROUP_IDS
+        .iter()
+        .find(|(known, _)| *known == group)
+        .map(|(_, ids)| *ids)
+        .unwrap_or(&[])
+}
 
 pub struct RutorSearcher {
     client: reqwest::Client,
@@ -96,7 +150,7 @@ impl RutorSearcher {
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
-        self.search_page(query, 0).await
+        Ok(self.search_page(query, 0, None).await?.items)
     }
 
     /// Rutor matches a multi-word query as a strict AND over *all* of its
@@ -115,7 +169,20 @@ impl RutorSearcher {
     /// unmatchable words removed and then prefer the rows that do mention
     /// them -- strict precision when rutor allows it, relaxed-but-useful
     /// rows otherwise, instead of a guaranteed empty result list.
-    pub async fn search_page(&self, query: &str, offset: usize) -> Result<Vec<TorrentItem>> {
+    /// One page of results, fanned out over the selected category's
+    /// rubric ids: one request per id of [`GROUP_IDS`], asked one after
+    /// another (rutor answers 503 under load, so no burst), or a single
+    /// request with `cat=0` when no category is selected.
+    ///
+    /// `has_more` and the cursor are decided per id by [`to_page`]: a
+    /// merged row count would lie, because four partial pages can add up
+    /// past `PAGE_SIZE` while not one of them has a next page.
+    pub async fn search_page(
+        &self,
+        query: &str,
+        offset: usize,
+        category: Option<Group>,
+    ) -> Result<SearchPage> {
         if offset % Self::PAGE_SIZE != 0 {
             // The app advances `offset` by however many rows came back,
             // so an offset that isn't on a page boundary means the
@@ -127,11 +194,36 @@ impl RutorSearcher {
                 "offset {} is past a partial final page; no more results",
                 offset,
             ));
-            return Ok(Vec::new());
+            return Ok(SearchPage::default());
         }
         let page = (offset / Self::PAGE_SIZE) + 1;
 
-        let (status, html) = self.fetch_page(page, query).await?;
+        let ids: &[i64] = match category {
+            Some(group) => group_ids(group),
+            None => &[0],
+        };
+        crate::log::log("rutor", &format!(
+            "page {} category {:?} -> rubric ids {:?}",
+            page, category, ids,
+        ));
+        let mut per_id = Vec::with_capacity(ids.len());
+        for &cat in ids {
+            per_id.push(self.search_one_category(page, query, cat).await?);
+        }
+        Ok(to_page(per_id, category, offset))
+    }
+
+    /// One rubric id's page: the fetch, the parse, and the relaxed
+    /// fallback that works around rutor's strict-AND semantics -- split
+    /// out of `search_page` unchanged so every id of a fan-out gets the
+    /// exact same treatment, including the fallback.
+    async fn search_one_category(
+        &self,
+        page: usize,
+        query: &str,
+        category: i64,
+    ) -> Result<Vec<TorrentItem>> {
+        let (status, html) = self.fetch_page(page, category, query).await?;
         if !status.is_success() {
             // Parsing an error/challenge page always finds zero results;
             // say so explicitly instead of silently returning an empty
@@ -157,7 +249,7 @@ impl RutorSearcher {
              {:?} and ANDs every query word)",
             query, relaxed, dropped,
         ));
-        let (status, html) = self.fetch_page(page, &relaxed).await?;
+        let (status, html) = self.fetch_page(page, category, &relaxed).await?;
         if !status.is_success() {
             crate::log::log("rutor", &format!(
                 "relaxed query {:?} failed with HTTP {}", relaxed, status,
@@ -191,12 +283,31 @@ impl RutorSearcher {
         Ok(items)
     }
 
+    /// The search URL for one rubric id: `/search/{page}/{cat}/000/0/
+    /// {query}` -- `cat` is rutor's own rubric slot, `0` meaning "all
+    /// categories" (its spelling, not ours). Public so tests can pin the
+    /// category slot without the network, the way the other sources'
+    /// URL builders are.
+    pub fn search_url(page: usize, category: i64, query: &str) -> String {
+        format!(
+            "{}/search/{}/{}/000/0/{}",
+            Self::BASE,
+            page,
+            category,
+            urlencoding::encode(query)
+        )
+    }
+
     /// One GET of a search page plus the unconditional diagnostic log
-    /// line (kept out of `search_page` so the strict and the relaxed
-    /// attempt share the exact same request shape).
-    async fn fetch_page(&self, page: usize, query: &str) -> Result<(reqwest::StatusCode, String)> {
-        let encoded = urlencoding::encode(query);
-        let url = format!("{}/search/{}/0/000/0/{}", Self::BASE, page, encoded);
+    /// line (kept out of `search_one_category` so the strict and the
+    /// relaxed attempt share the exact same request shape).
+    async fn fetch_page(
+        &self,
+        page: usize,
+        category: i64,
+        query: &str,
+    ) -> Result<(reqwest::StatusCode, String)> {
+        let url = Self::search_url(page, category, query);
 
         // Accept/Accept-Language come from the shared client (B5); the
         // only per-request header left is Referer, which names this
@@ -258,6 +369,52 @@ impl RutorSearcher {
         }
         let bytes = response.bytes().await?;
         Ok(bytes.to_vec())
+    }
+}
+
+/// One fan-out's worth of pages -> the page the app sees. `per_id` is
+/// one `Vec` per rubric id asked for (a single one for an unfiltered
+/// `cat=0`), and the rules are:
+///
+/// - **Merge, then dedup by `page_url`.** Rubrics are disjoint on the
+///   live site (`cat=1` and `cat=5` shared zero ids on 26.09.2026), so
+///   the dedup is the belt on those braces: a torrent listed twice is
+///   still one torrent.
+/// - **`has_more` reads each id's own page** -- one full page means at
+///   least one rubric has a next one. A *merged* count would answer
+///   "more" whenever four partial pages add up past `PAGE_SIZE`, and
+///   then promise a page the site does not have.
+/// - **The cursor steps by exactly one page** (`offset + PAGE_SIZE`):
+///   every id was read at the same page number, so counting the merged
+///   rows instead would jump ahead and skip each rubric's rows.
+/// - **Rows claim the category that fetched them** (B6). With no
+///   category they claim nothing -- the honest reading of an
+///   unfiltered row this parser cannot attribute.
+pub fn to_page(
+    per_id: Vec<Vec<TorrentItem>>,
+    category: Option<Group>,
+    offset: usize,
+) -> SearchPage {
+    let has_more = per_id
+        .iter()
+        .any(|rows| rows.len() >= RutorSearcher::PAGE_SIZE);
+    let mut seen = HashSet::new();
+    let mut items = Vec::new();
+    for rows in per_id {
+        for mut row in rows {
+            if !seen.insert(row.page_url.clone()) {
+                continue;
+            }
+            if row.group.is_none() {
+                row.group = category;
+            }
+            items.push(row);
+        }
+    }
+    SearchPage {
+        items,
+        has_more,
+        next_offset: has_more.then_some(offset + RutorSearcher::PAGE_SIZE),
     }
 }
 
