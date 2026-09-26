@@ -223,6 +223,34 @@ pub fn selected_sources(
         .collect()
 }
 
+/// The log line for a category search that selected nobody, phrased by
+/// what would actually change the outcome.
+///
+/// Two cases, and only one of them is fixed in Options: a tab whose
+/// source declares the group but cannot filter by it (rutracker, until
+/// its `c[]` probe passes) is told so -- the sources checklist would
+/// show it enabled and its groups unchanged, so sending the user there
+/// would send them in a circle. Everything else keeps the older line,
+/// where enabling or switching a source is the real fix.
+pub fn nothing_to_ask_reason(tab: &str, group: Group) -> String {
+    let blocked = KNOWN_SOURCES.iter().find(|info| {
+        info.id == tab && !info.category_filter && info.groups.contains(&group)
+    });
+    match blocked {
+        Some(info) => format!(
+            "{} cannot filter by '{}' yet (its category slot is \
+             unverified) -- try the 'all' tab.",
+            info.label,
+            group.label()
+        ),
+        None => format!(
+            "No source on this tab serves '{}' -- see Options -> \
+             streaming -> Sources.",
+            group.label()
+        ),
+    }
+}
+
 /// The cursor a source gets after reporting a page.
 ///
 /// `next_offset` wins when the source gave one: that is how a source
