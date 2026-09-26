@@ -61,29 +61,67 @@ struct ApibayItem {
     category: Option<FlexNum>,
 }
 
-/// The search URL for one query. `cat=all`: B8 wave 1 deliberately does
-/// not filter -- category filtering is B6's job, and the row's own
-/// `category` is already carried into `TorrentItem::group`.
-pub fn search_url(query: &str) -> String {
-    format!("{}/q.php?q={}", API, urlencoding::encode(query.trim()))
+/// The apibay category ids behind each group this source declares --
+/// the single source of truth for both halves of B6: the `cat=` list
+/// the server is asked to trim by, and the mapping a returned row's
+/// own `category` is read back through. One list for both is what
+/// makes "the server fetched exactly what the view will show"
+/// structural instead of a promise.
+///
+/// Classified live against `q.php` on 26.09.2026, sampling every id
+/// that exists in the 200 tree: 201 video, 202 DVD, 207 HD, 209 3D
+/// and 211 UHD are films; 205 (specials), 208 and 212 (1080p/2160p
+/// episodes) are series. 203 concerts, 204 animation and 206 -- films
+/// *and* series mixed -- stay out: none can be attributed to a group
+/// this registry entry promises without lying about it. torio's
+/// MOVIE_CATS/TV_CATS predate 211/212, and leaving them out hid real
+/// rows: 23 of the first 100 "matrix" hits are 211.
+const GROUP_CATS: [(Group, &[i64]); 2] = [
+    (Group::Movies, &[201, 202, 207, 209, 211]),
+    (Group::TV, &[205, 208, 212]),
+];
+
+/// The ids apibay is asked for when it should trim to `group`, and
+/// nothing at all for a group this source never declares -- the
+/// orchestrator only asks a source for groups it registered, so the
+/// empty list is a safe landing rather than a branch with a user
+/// behind it.
+fn group_cats(group: Group) -> &'static [i64] {
+    GROUP_CATS
+        .iter()
+        .find(|(known, _)| *known == group)
+        .map(|(_, ids)| *ids)
+        .unwrap_or(&[])
 }
 
-/// TPB's category -> [`Group`] mapping, restricted to the two groups
-/// this source declares (`Group::Movies`, `Group::TV` -- the pair the
-/// wave-1 decision set). Everything else -- games (301-309), music
-/// (101-109), apps, books, and the unclassified leftovers -- stays
-/// `None`: unattributed rows show only in the "all" view, and claiming
-/// a group the registry does not promise would put them somewhere the
-/// source was never asked to speak for.
-fn group_for_category(category: i64) -> Option<Group> {
-    match category {
-        // 201 Movies, 202 DVD, 207 HD Movies, 209 3D -- torio's
-        // MOVIE_CATS, mapped rather than filtered.
-        201 | 202 | 207 | 209 => Some(Group::Movies),
-        // 205 TV shows, 208 TV episodes -- torio's TV_CATS.
-        205 | 208 => Some(Group::TV),
-        _ => None,
+/// The search URL for one query. A selected category becomes apibay's
+/// `cat=` list -- comma-separated, which the API takes (live
+/// 26.09.2026: `cat=201,202,207,209` returned only those four rows),
+/// built from [`GROUP_CATS`] so the trim and the row attribution can
+/// never drift apart. `None` keeps B8's unfiltered URL: with no
+/// category selected the whole corpus is the honest answer.
+pub fn search_url(query: &str, category: Option<Group>) -> String {
+    let mut url = format!("{}/q.php?q={}", API, urlencoding::encode(query.trim()));
+    if let Some(group) = category {
+        let ids: Vec<String> = group_cats(group).iter().map(i64::to_string).collect();
+        if !ids.is_empty() {
+            url.push_str("&cat=");
+            url.push_str(&ids.join(","));
+        }
     }
+    url
+}
+
+/// TPB's category -> [`Group`] mapping, read back through [`GROUP_CATS`]
+/// -- the same list the server filter is built from. Everything else
+/// stays `None`: unattributed rows show only in the "all" view, and
+/// claiming a group the registry does not promise would put them
+/// somewhere the source was never asked to speak for.
+fn group_for_category(category: i64) -> Option<Group> {
+    GROUP_CATS
+        .iter()
+        .find(|(_, ids)| ids.contains(&category))
+        .map(|(group, _)| *group)
 }
 
 /// apibay JSON -> rows, with the placeholder row dropped. Public so the
@@ -213,15 +251,29 @@ impl Source for TpbSearcher {
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
         let query = req.query.trim().to_string();
         let items = if query.is_empty() {
-            // Browse: both top-100 lists, movies and episodes together.
-            // Two requests rather than a merged endpoint, because apibay
-            // has none -- and 100+100 rows arrive before the table can
-            // finish drawing the first 100 anyway.
-            let mut items = self.fetch_items(TOP_MOVIES_URL).await?;
-            items.extend(self.fetch_items(TOP_TV_URL).await?);
+            // Browse: the two top-100 lists, trimmed to the category
+            // the way a search is -- each list *is* one group (207
+            // films, 208 series), so the selection picks a list
+            // instead of filtering it. A group tpb does not declare
+            // fetches nothing; the orchestrator never asks for one
+            // anyway, so no visitor finds an empty box here.
+            let mut urls: Vec<&'static str> = Vec::new();
+            match req.category {
+                None => {
+                    urls.push(TOP_MOVIES_URL);
+                    urls.push(TOP_TV_URL);
+                }
+                Some(Group::Movies) => urls.push(TOP_MOVIES_URL),
+                Some(Group::TV) => urls.push(TOP_TV_URL),
+                Some(Group::Games) | Some(Group::Anime) => {}
+            }
+            let mut items = Vec::new();
+            for url in urls {
+                items.extend(self.fetch_items(url).await?);
+            }
             items
         } else {
-            self.fetch_items(&search_url(&query)).await?
+            self.fetch_items(&search_url(&query, req.category)).await?
         };
 
         let items: Vec<TorrentItem> = items.iter().filter_map(to_row).collect();

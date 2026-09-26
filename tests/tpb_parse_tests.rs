@@ -204,32 +204,74 @@ fn group_of(category: i64) -> Option<Group> {
         .group
 }
 
-/// The wave-1 decision in one test: TPB attributes rows to the two
-/// groups it declares (Movies, TV) and leaves everything else --
-/// games, music, apps, books -- unattributed rather than claiming a
-/// group the registry does not promise this source speaks for.
+/// The wave-1 decision in one test, widened by B6's live classification:
+/// TPB attributes rows to the two groups it declares (Movies, TV) and
+/// leaves everything else -- concerts, animation, the 206 mix, games,
+/// music, apps, books, XXX -- unattributed rather than claiming a group
+/// the registry does not promise this source speaks for. 211 (UHD films)
+/// and 212 (2160p episodes) are the ids torio's lists predate; 203/204/
+/// 206 are the ids a naive "everything under 200" rule would swallow.
 #[test]
 fn test_only_the_declared_groups_are_attributed() {
-    for category in [201, 202, 207, 209] {
+    for category in [201, 202, 207, 209, 211] {
         assert_eq!(group_of(category), Some(Group::Movies), "cat {}", category);
     }
-    for category in [205, 208] {
+    for category in [205, 208, 212] {
         assert_eq!(group_of(category), Some(Group::TV), "cat {}", category);
     }
-    for category in [101, 301, 401, 601] {
+    for category in [101, 203, 204, 206, 301, 401, 505, 601] {
         assert_eq!(group_of(category), None, "cat {} stays unattributed", category);
     }
 }
 
 #[test]
-fn test_the_search_url_carries_no_category_filter() {
-    let url = search_url("the matrix");
-    assert_eq!(url, "https://apibay.org/q.php?q=the%20matrix");
-    assert!(
-        !url.contains("cat="),
-        "category filtering is B6's job, not a wave-1 default"
+fn test_the_search_url_carries_the_selected_category() {
+    let plain = search_url("the matrix", None);
+    assert_eq!(plain, "https://apibay.org/q.php?q=the%20matrix");
+    assert!(!plain.contains("cat="), "no category selected, no trim");
+
+    assert_eq!(
+        search_url("the matrix", Some(Group::Movies)),
+        "https://apibay.org/q.php?q=the%20matrix&cat=201,202,207,209,211"
     );
-    assert_eq!(search_url("  spaced  "), "https://apibay.org/q.php?q=spaced");
+    assert_eq!(
+        search_url("the matrix", Some(Group::TV)),
+        "https://apibay.org/q.php?q=the%20matrix&cat=205,208,212"
+    );
+    // The two groups tpb does not declare ask for nothing at all: it is
+    // never asked for them (the registry gates the dispatch), so this
+    // branch cannot answer with rows claiming someone else's category.
+    assert!(!search_url("x", Some(Group::Games)).contains("cat="));
+    assert!(!search_url("x", Some(Group::Anime)).contains("cat="));
+
+    assert_eq!(
+        search_url("  spaced  ", None),
+        "https://apibay.org/q.php?q=spaced"
+    );
+}
+
+/// B6's acceptance in one direction: every id the server is trimmed by
+/// parses back into exactly the group it was asked for. Without this,
+/// a stale `cat=` list would fetch rows the view drops as unattributed
+/// and report an empty category while the corpus had hits.
+#[test]
+fn test_every_id_in_the_category_filter_parses_back_into_that_group() {
+    for group in [Group::Movies, Group::TV] {
+        let url = search_url("x", Some(group));
+        let ids = url
+            .split("cat=")
+            .nth(1)
+            .expect("a group tpb declares has a cat= list");
+        for id in ids.split(',') {
+            assert_eq!(
+                group_of(id.parse().expect("numeric id")),
+                Some(group),
+                "cat id {} fetched for {:?} must be that group's",
+                id,
+                group
+            );
+        }
+    }
 }
 
 // --- registry ---------------------------------------------------------------
