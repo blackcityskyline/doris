@@ -132,6 +132,7 @@ list, the tab bar and the CLI all derive from it.
 ## Key Bindings
 - `s`/`i`: enter search input mode
 - `Enter`: search (in input mode) or play (in results mode)
+- `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the `all` tab and category with it)
 - `S`: open settings modal (login is now here too: streaming -> Edit credentials -- there's no top-level login keybind anymore)
 - `L`: toggle detailed log view
 - `F`: enter filter mode (type to filter results)
@@ -140,6 +141,8 @@ list, the tab bar and the CLI all derive from it.
 - `1-4`: toggle zone visibility
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
+- `g`/`G`: cycle the category row (forward/back; an empty query is browse mode, not a category)
+- `]`: cycle the source tab
 - `p`/`d`: pause-or-resume / remove the tracked torrent, when the Torrent zone is focused
 - `Esc`: close modal / exit input mode / exit filter mode
 - Mouse: click any zone to focus it, click any header hint (s/S/L/F) to trigger it, click the Torrent panel's pause/remove hint, scroll wheel over any zone to scroll/navigate it -- see ROADMAP.md Phase 9
