@@ -48,6 +48,25 @@ pub enum Group {
     Anime,
 }
 
+impl Group {
+    /// What this group is called where a user can read it: the category
+    /// row under the source tabs, and the search log's category marker.
+    pub fn label(self) -> &'static str {
+        match self {
+            Group::Movies => "Movies",
+            Group::TV => "TV",
+            Group::Games => "Games",
+            Group::Anime => "Anime",
+        }
+    }
+}
+
+/// The order the category row offers the groups in, left to right after
+/// the "all" tab: the same order B6's tab row was decided in, kept here
+/// so the visible order is one recorded decision instead of an accident
+/// of where a variant happened to be typed above.
+pub const GROUP_ORDER: [Group; 4] = [Group::Movies, Group::TV, Group::Games, Group::Anime];
+
 /// One run of a query against a source. Replaces the old
 /// `search(query)` / `search_page(query, start)` trait pair: the page
 /// cursor moved into the request, and a category slot was added for B6.

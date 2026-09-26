@@ -166,16 +166,21 @@ pub enum EnterAction {
     SubmitQuery,
     /// Input focused but the query is empty: Enter only leaves input mode.
     DoNothing,
-    /// Source tab was switched and needs a re-search instead of playing.
+    /// A tab row was switched and needs a re-search instead of playing.
     RestartSearch,
     /// Play the highlighted result.
     Play,
 }
 
+/// `source_changed` and `group_changed` are separate flags because they
+/// are set by separate switches, but they mean the same thing here: the
+/// table no longer answers for the selection above it, so Enter owes a
+/// search before it may start a stream.
 pub fn enter_action(
     input_mode: bool,
     has_query: bool,
     source_changed: bool,
+    group_changed: bool,
     has_selection: bool,
 ) -> EnterAction {
     if input_mode {
@@ -184,7 +189,7 @@ pub fn enter_action(
         } else {
             EnterAction::DoNothing
         }
-    } else if source_changed {
+    } else if source_changed || group_changed {
         EnterAction::RestartSearch
     } else if has_selection {
         EnterAction::Play
@@ -407,7 +412,7 @@ impl App {
                 config.truecolor,
                 config.false_tty,
             )
-            .with_source_tabs(&config),
+            .with_result_tabs(&config),
             event_handler,
             torrserver,
             browser: None,
@@ -1018,10 +1023,11 @@ impl App {
                         } else {
                             self.config.enabled_sources.push(id.to_string());
                         }
-                        // The bar is derived from this same list: a
-                        // source switched off loses its tab (and may
-                        // vacate the one that was selected).
-                        self.ui.set_source_tabs(&self.config);
+                        // Both Results rows are derived from this same
+                        // list: a source switched off loses its tab (and
+                        // may vacate the one that was selected), and can
+                        // take the last tab of its category row with it.
+                        self.ui.set_result_tabs(&self.config);
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::OpenLog => {
@@ -1251,6 +1257,20 @@ impl App {
             KeyCode::Char(']') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_source();
             }
+            // The category row's keys, next to `]` and gated the same
+            // way: `g` steps forward, `G` (shift) back. Both only ever
+            // move the row and re-derive the view -- the search still
+            // waits for Enter, exactly as it does after `]`.
+            KeyCode::Char('g') if !self.ui.input_mode
+                && self.ui.zones.focused == ZoneId::Results =>
+            {
+                self.ui.cycle_group(true);
+            }
+            KeyCode::Char('G') if !self.ui.input_mode
+                && self.ui.zones.focused == ZoneId::Results =>
+            {
+                self.ui.cycle_group(false);
+            }
             KeyCode::Char('j') if self.config.vim_keys => {
                 self.handle_nav_down().await;
             }
@@ -1304,6 +1324,7 @@ impl App {
                     self.ui.input_mode,
                     !self.ui.search_input.is_empty(),
                     self.ui.source_changed,
+                    self.ui.group_changed,
                     self.ui.submit_selection().is_some(),
                 );
                 match action {
@@ -1313,9 +1334,15 @@ impl App {
                         }
                     }
                     EnterAction::RestartSearch => {
-                        // Source was just switched via `]` or click — re-search
-                        // with the new source instead of playing a torrent.
+                        // A tab row was just switched (`]`/click or
+                        // `g`/`G`/click): re-search with the new
+                        // selection instead of playing a torrent. Both
+                        // flags clear here as well as in `start_search`,
+                        // for the only path where no search follows --
+                        // nothing has ever been searched, so there is no
+                        // query to restart and no row to play either.
                         self.ui.source_changed = false;
+                        self.ui.group_changed = false;
                         if let Some(ref q) = self.ui.search_query.clone() {
                             let query = q.clone();
                             self.start_search(query).await;
@@ -1437,6 +1464,13 @@ impl App {
         self.ui.state = AppState::Searching;
         self.ui.search_query = Some(query.clone());
         self.ui.all_loaded = false;
+        // Whatever a tab switch owed this point is now paid: the search
+        // below runs against the selection as it stands, so Enter must
+        // go back to meaning "play" instead of restarting (B6's
+        // `group_changed` and the older `source_changed` clear here for
+        // the same reason).
+        self.ui.source_changed = false;
+        self.ui.group_changed = false;
         // Rows now arrive one source at a time (B3), so there is no
         // single moment where the old list gets replaced by the new one:
         // the table empties here, and each source appends into it. The
@@ -1447,7 +1481,14 @@ impl App {
         self.source_status.clear();
         self.source_has_more.clear();
         self.source_offsets.clear();
-        self.ui.add_log(&format!("Searching '{}' for '{}'...", self.ui.active_source, query));
+        let category = match self.ui.active_group {
+            Some(group) => format!(" [{}]", group.label()),
+            None => String::new(),
+        };
+        self.ui.add_log(&format!(
+            "Searching '{}'{} for '{}'...",
+            self.ui.active_source, category, query
+        ));
         // New generation: anything still in flight for a previous query is
         // now stale and gets dropped when it lands (B0.2).
         self.search_generation += 1;

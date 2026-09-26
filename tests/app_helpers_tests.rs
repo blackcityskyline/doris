@@ -299,34 +299,79 @@ fn test_enter_on_empty_query_in_input_mode_does_nothing() {
     // The regression: `submit_search()` returned None (having already left
     // input mode) and the same key fell through to submit_selection() and
     // spawned a stream. It must be DoNothing even with results selected
-    // and a pending source switch.
+    // and a pending source/category switch.
     assert_eq!(
-        enter_action(true, false, true, true),
+        enter_action(true, false, true, false, true),
+        EnterAction::DoNothing
+    );
+    assert_eq!(
+        enter_action(true, false, false, true, true),
         EnterAction::DoNothing
     );
 }
 
 #[test]
 fn test_enter_with_a_query_submits_the_search() {
-    assert_eq!(enter_action(true, true, false, true), EnterAction::SubmitQuery);
-    // A pending source switch must not steal Enter from the typed query.
-    assert_eq!(enter_action(true, true, true, false), EnterAction::SubmitQuery);
+    assert_eq!(
+        enter_action(true, true, false, false, true),
+        EnterAction::SubmitQuery
+    );
+    // A pending switch of either tab row must not steal Enter from the
+    // typed query: the search below runs against the new selection anyway.
+    assert_eq!(
+        enter_action(true, true, true, false, false),
+        EnterAction::SubmitQuery
+    );
+    assert_eq!(
+        enter_action(true, true, false, true, false),
+        EnterAction::SubmitQuery
+    );
 }
 
 #[test]
 fn test_enter_plays_outside_input_mode() {
-    assert_eq!(enter_action(false, true, false, true), EnterAction::Play);
-    assert_eq!(enter_action(false, false, false, true), EnterAction::Play);
+    assert_eq!(
+        enter_action(false, true, false, false, true),
+        EnterAction::Play
+    );
+    assert_eq!(
+        enter_action(false, false, false, false, true),
+        EnterAction::Play
+    );
 }
 
 #[test]
 fn test_enter_after_source_switch_restarts_the_search_instead_of_playing() {
-    assert_eq!(enter_action(false, true, true, true), EnterAction::RestartSearch);
+    assert_eq!(
+        enter_action(false, true, true, false, true),
+        EnterAction::RestartSearch
+    );
+}
+
+/// B6: switching the category row owes the same re-search a source tab
+/// switch does -- the view was re-derived from the rows on screen, but
+/// only the sources that filter server-side have been asked yet.
+#[test]
+fn test_enter_after_category_switch_restarts_the_search_instead_of_playing() {
+    assert_eq!(
+        enter_action(false, true, false, true, true),
+        EnterAction::RestartSearch
+    );
+    // With nothing selected yet, the owed search still wins over
+    // DoNothing: that is what stops a category switch from turning into
+    // a silent no-op Enter.
+    assert_eq!(
+        enter_action(false, false, false, true, false),
+        EnterAction::RestartSearch
+    );
 }
 
 #[test]
 fn test_enter_without_a_selection_does_nothing() {
-    assert_eq!(enter_action(false, true, false, false), EnterAction::DoNothing);
+    assert_eq!(
+        enter_action(false, true, false, false, false),
+        EnterAction::DoNothing
+    );
 }
 
 // --- B4: dedup + default order applied when a generation finishes ------------
