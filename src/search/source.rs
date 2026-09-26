@@ -272,7 +272,8 @@ impl Source for RutrackerSearcher {
     }
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
-        let items = RutrackerSearcher::search_page(self, &req.query, req.offset).await?;
+        let items =
+            RutrackerSearcher::search_page(self, &req.query, req.offset, req.category).await?;
         // The forum pages `tracker.php?start=` by 50, so a short page is
         // the last one and a full one may have more behind it.
         let has_more = items.len() >= RutrackerSearcher::PAGE_SIZE;
@@ -379,14 +380,11 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "Rutracker",
         implemented: true,
         groups: RUTRACKER_GROUPS,
-        // Four groups for browsing and for Options, but the category
-        // may not be asked of it: its search URL has no verified slot
-        // (`c[]` needs an account login and the probe is still
-        // pending), and its rows claim no group, so a category search
-        // would receive rows the view drops one and all -- a slow
-        // browser round-trip for an empty table. Flipping this to
-        // `true` is what a passing `rutracker_live_tests` licenses.
-        category_filter: false,
+        // Its search form's `f[]` multi-select is a real category slot
+        // (verified live 26.09.2026: two different forum ids answer
+        // disjoint topic sets), so a selected category reaches it and the
+        // rows claim it back -- see `rutracker::GROUP_FORUMS`.
+        category_filter: true,
         requires_browser: true,
         home_url: RutrackerSearcher::HOME_URL,
     },
