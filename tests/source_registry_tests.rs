@@ -77,6 +77,69 @@ fn test_declared_groups_are_the_four_known_ones() {
     }
 }
 
+/// B6's acceptance line: a source does not get a category it cannot
+/// serve without a documented reason. `SourceInfo::category_filter` is
+/// the capability; this list is the reason column -- an implemented
+/// source sits here exactly while it declares groups it cannot filter
+/// by, and the comment beside its entry in `KNOWN_SOURCES` says why.
+///
+/// One entry today: rutracker's `c[]` slot has never been verified
+/// live (the probe needs an account login), and its rows carry no
+/// group, so a category search would dispatch a slow browser round
+/// trip and drop every row it brought back. Passing
+/// `rutracker_live_tests` is what moves it out of this list.
+const CATEGORY_FILTER_UNVERIFIED: &[&str] = &["rutracker"];
+
+#[test]
+fn test_a_category_a_source_cannot_serve_is_documented_as_unverified() {
+    for info in KNOWN_SOURCES.iter().filter(|s| s.implemented) {
+        let documented = CATEGORY_FILTER_UNVERIFIED.contains(&info.id);
+        assert_eq!(
+            info.category_filter, !documented,
+            "{}: `category_filter: false` must appear in \
+             CATEGORY_FILTER_UNVERIFIED (with its reason next to the \
+             entry), and every other source is taken to serve the \
+             categories it declares",
+            info.id
+        );
+    }
+
+    // Nothing stale on that list either: an entry that no longer
+    // exists, is still planned, or does claim the capability it
+    // excuses would be paperwork hiding a real behavior.
+    for id in CATEGORY_FILTER_UNVERIFIED {
+        let info = KNOWN_SOURCES
+            .iter()
+            .find(|s| s.id == *id)
+            .unwrap_or_else(|| panic!("{} is not in KNOWN_SOURCES", id));
+        assert!(info.implemented, "{}: a planned source needs no excuse", id);
+        assert!(!info.category_filter, "{}: verified at last -- drop it", id);
+        assert!(
+            !info.groups.is_empty(),
+            "{}: a source with no groups has nothing to excuse",
+            id
+        );
+    }
+
+    // The shape the roadmap named: the browser-backed source that
+    // declares all four groups is exactly the one that may not be
+    // asked, while the plain HTTP sources with real slots may.
+    let rutracker = KNOWN_SOURCES
+        .iter()
+        .find(|s| s.id == "rutracker")
+        .expect("rutracker is registered");
+    assert!(rutracker.requires_browser);
+    assert_eq!(rutracker.groups.len(), 4);
+    assert!(!rutracker.category_filter);
+    for id in ["rutor", "1337x", "nnmclub", "tpb", "yts", "eztv", "nyaa"] {
+        let info = KNOWN_SOURCES
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap_or_else(|| panic!("{} is not registered", id));
+        assert!(info.category_filter, "{} must serve the category", id);
+    }
+}
+
 /// B6: the category row is built from `GROUP_ORDER` and `Group::label`,
 /// so both must stay in step with the enum -- a group missing from the
 /// order would be unreachable from the UI (nothing to click), and a

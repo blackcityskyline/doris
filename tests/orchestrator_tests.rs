@@ -335,7 +335,9 @@ fn selection_follows_the_results_tab_and_the_options_checklist() {
 /// really consulted.
 #[test]
 fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
-    // rutracker declares all four groups, yts only Movies.
+    // rutracker declares all four groups but cannot filter by any of
+    // them (`category_filter: false`, its `c[]` slot never verified
+    // live); yts declares only Movies and serves it by construction.
     let both = vec!["rutracker".to_string(), "yts".to_string()];
     let ids = |tab: &str, group: Option<Group>| -> Vec<&'static str> {
         orchestrator::selected_sources(tab, &both, group)
@@ -345,14 +347,27 @@ fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
     };
 
     assert_eq!(ids("all", None), vec!["rutracker", "yts"]);
-    assert_eq!(ids("all", Some(Group::Movies)), vec!["rutracker", "yts"]);
+    assert_eq!(
+        ids("all", Some(Group::Movies)),
+        vec!["yts"],
+        "rutracker declares Movies but cannot filter by it, so it is \
+         not asked rather than asked and emptied"
+    );
     assert_eq!(
         ids("all", Some(Group::TV)),
-        vec!["rutracker"],
-        "yts cannot answer TV, so it is not asked"
+        Vec::<&str>::new(),
+        "yts cannot answer TV, rutracker may not be asked: nothing to dispatch"
     );
-    assert_eq!(ids("all", Some(Group::Anime)), vec!["rutracker"]);
-    assert_eq!(ids("all", Some(Group::Games)), vec!["rutracker"]);
+    assert_eq!(ids("all", Some(Group::Anime)), Vec::<&str>::new());
+    assert_eq!(ids("all", Some(Group::Games)), Vec::<&str>::new());
+    // The default tab is rutracker, so this is the screen a category
+    // search starts on: no browser session is launched to produce rows
+    // the view would drop anyway.
+    assert_eq!(
+        ids("rutracker", Some(Group::Movies)),
+        Vec::<&str>::new(),
+        "the rutracker tab with a category selected asks nobody"
+    );
     // The tab still wins when it disagrees with the category.
     assert!(
         ids("yts", Some(Group::TV)).is_empty(),

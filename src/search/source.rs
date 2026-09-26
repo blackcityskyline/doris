@@ -347,6 +347,17 @@ pub struct SourceInfo {
     /// so Options can list them as coming-soon rather than hide them.
     pub implemented: bool,
     pub groups: &'static [Group],
+    /// Whether a *selected category* may be asked of this source. `true`
+    /// means every row it would return belongs to that category -- by
+    /// filtering server-side (`SearchRequest.category`), or because the
+    /// source only has that one group to begin with. `false` means it
+    /// would answer with rows the view has to drop, so
+    /// `orchestrator::selected_sources` leaves it out of a category
+    /// search instead of asking and discarding (B6, decided with the
+    /// user: a source whose category slot is unverified is not asked).
+    /// A `false` on an implemented source needs its reason next to it
+    /// in the entry below -- `source_registry_tests` checks that.
+    pub category_filter: bool,
     /// Whether using this source needs a browser session launched first
     /// (see `Source::requires_browser`). `false` for planned sources:
     /// nothing constructs them yet, so nothing may promise a browser.
@@ -368,6 +379,14 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "Rutracker",
         implemented: true,
         groups: RUTRACKER_GROUPS,
+        // Four groups for browsing and for Options, but the category
+        // may not be asked of it: its search URL has no verified slot
+        // (`c[]` needs an account login and the probe is still
+        // pending), and its rows claim no group, so a category search
+        // would receive rows the view drops one and all -- a slow
+        // browser round-trip for an empty table. Flipping this to
+        // `true` is what a passing `rutracker_live_tests` licenses.
+        category_filter: false,
         requires_browser: true,
         home_url: RutrackerSearcher::HOME_URL,
     },
@@ -376,6 +395,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "Rutor",
         implemented: true,
         groups: RUTOR_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: RutorSearcher::HOME_URL,
     },
@@ -384,6 +404,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "YTS",
         implemented: true,
         groups: YTS_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: YtsSearcher::HOME_URL,
     },
@@ -392,6 +413,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "TPB",
         implemented: true,
         groups: TPB_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: TpbSearcher::HOME_URL,
     },
@@ -400,6 +422,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "SubsPlease",
         implemented: true,
         groups: SUBSPLEASE_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: SubsPleaseSearcher::HOME_URL,
     },
@@ -408,6 +431,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "Nyaa",
         implemented: true,
         groups: NYAA_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: NyaaSearcher::HOME_URL,
     },
@@ -416,6 +440,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "EZTV",
         implemented: true,
         groups: EZTV_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: EztvSearcher::HOME_URL,
     },
@@ -424,6 +449,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "NNM-Club",
         implemented: true,
         groups: NNMCLUB_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: NnmclubSearcher::HOME_URL,
     },
@@ -446,6 +472,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "1337x",
         implemented: true,
         groups: X1337X_GROUPS,
+        category_filter: true,
         requires_browser: false,
         home_url: X1337xSearcher::HOME_URL,
     },
@@ -460,6 +487,9 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         label: "Torentino",
         implemented: false,
         groups: &[],
+        // Not implemented, so nothing to ask: an empty `groups` says
+        // the same thing from the row side of the same question.
+        category_filter: false,
         requires_browser: false,
         home_url: "https://torentino.org",
     },
