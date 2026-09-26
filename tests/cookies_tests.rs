@@ -1,6 +1,35 @@
 use doris::search::cookies::*;
 use serial_test::serial;
 
+/// The payload `Browser::add_cookies` wants, in a form Chrome accepts.
+/// The leading dot of a Netscape domain is the *Set-Cookie* spelling and
+/// `Network.setCookie` rejects it ("invalid cookie domain"), so the domain
+/// goes in bare -- live, this is what kept the session an app run saved
+/// from being re-injected at all, and every run from re-logging-in.
+#[test]
+fn test_to_json_drops_the_set_cookie_dot_from_the_domain() {
+    let cookie = Cookie {
+        domain: ".rutracker.org".to_string(),
+        path: "/forum/".to_string(),
+        secure: true,
+        name: "bb_session".to_string(),
+        value: "abc123".to_string(),
+    };
+    let json = cookie.to_json();
+    assert_eq!(json["domain"], "rutracker.org");
+    assert_eq!(json["name"], "bb_session");
+    assert_eq!(json["value"], "abc123");
+    assert_eq!(json["path"], "/forum/");
+    assert_eq!(json["secure"], true);
+
+    // A domain that is already bare survives untouched.
+    let bare = Cookie {
+        domain: "rutracker.org".to_string(),
+        ..cookie
+    };
+    assert_eq!(bare.to_json()["domain"], "rutracker.org");
+}
+
 #[test]
 fn test_parse_netscape_basic() {
     let content = "# Netscape HTTP Cookie File\n\
