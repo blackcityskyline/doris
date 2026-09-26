@@ -26,28 +26,46 @@ and more of that kind of evolution is expected as sources/features are added.
 
 ```
 src/
-├── main.rs          # Entry point, CLI parsing
+├── main.rs          # Entry point, CLI parsing (run_cli asks the registry's sources)
 ├── lib.rs           # Module declarations
-├── cli.rs           # CLI argument definitions
+├── cli.rs           # CLI argument definitions (incl. --source)
 ├── config.rs        # Config file handling (~40 persisted Options fields)
 ├── event.rs         # Event enum + EventHandler
 ├── tui.rs           # Terminal init/restore
 ├── log.rs           # File logger
 ├── app.rs           # App orchestrator (event loop, spawn)
 ├── browser/
+│   ├── mod.rs
 │   ├── cdp.rs       # Browser automation (chromedriver, fantoccini)
 │   ├── detect.rs    # BrowserKind (chrome/chromium/brave/helium) + priority-ordered detection
 │   └── cloudflare.rs # Cloudflare bypass patches
 ├── search/
+│   ├── mod.rs
 │   ├── source.rs    # Source trait + KNOWN_SOURCES registry (add new sources here)
-│   ├── rutracker.rs # Search + auth logic; impl Source
-│   ├── cookies.rs   # Cookie load/save/parse
-│   └── models.rs    # TorrentItem + resolve_url
+│   ├── orchestrator.rs # Concurrent dispatch: selected_sources, per-source cursors, cache wiring
+│   ├── net.rs       # fetch_resilient, first_ok multi-host failover
+│   ├── cache.rs     # TTL cache
+│   ├── ordering.rs  # dedupe_by_hash, default_order, sort cycle
+│   ├── magnet.rs    # magnet build/parse, info-hash normalization
+│   ├── format.rs    # size/date parsing shared by the HTML sources
+│   ├── models.rs    # TorrentItem + resolve_url
+│   ├── cookies.rs   # Cookie load/save/parse (Netscape)
+│   ├── rutracker.rs # Search + auth logic; impl Source; f[] category filter
+│   ├── rutor.rs     # Rubric-id fan-out category filter
+│   ├── yts.rs       # Movies only, multi-host
+│   ├── tpb.rs       # apibay Movies+TV via GROUP_CATS
+│   ├── eztv.rs      # TV only; query refused (its API ignores `search`)
+│   ├── subsplease.rs # Anime, one row per episode
+│   ├── nyaa.rs      # Anime; per-row group from nyaa:categoryId
+│   ├── nnmclub.rs   # windows-1251 tracker; f[] forum-id category filter
+│   └── x1337x.rs    # Mirrors, category paths, client-side OR-filter fallback
 ├── torrserver/
+│   ├── mod.rs
 │   └── api.rs       # TorrServer HTTP API (list/get/pause/resume/remove)
 ├── torrent/
 │   └── mod.rs       # Manager: background poller feeding live torrent status
 ├── bridge/
+│   ├── mod.rs
 │   └── handler.rs   # Extension bridge server
 ├── credentials/
 │   └── mod.rs       # AES-128-GCM credential encryption, keyed by resource id
@@ -58,8 +76,14 @@ src/
     ├── theme.rs     # Theme system (colors, gradients)
     ├── zones.rs     # Zone layout system (toggle, focus, presets)
     └── widgets/
+        ├── mod.rs
         └── graph.rs # btop-style history sparkline (braille/block/dot)
 ```
+
+The single list of sources is `KNOWN_SOURCES` in `search/source.rs` (one
+entry per source: implemented flag, groups, browser need, home URL) -- add
+new sources there, not in a second hand-written list; the Options sources
+list, the tab bar and the CLI all derive from it.
 
 ## UI Design (btop-inspired)
 
@@ -145,6 +169,10 @@ don't add or bump dependencies speculatively.
 - Use `#[serial]` for tests that modify global state
 - Test file logger, cookies, credentials, models, TUI, config, TorrServer
   API parsing, and the sparkline widget
+- Live probes of a real site are `#[ignore]`d tests (`*_live_tests.rs`) run
+  with `cargo test --test <name> -- --ignored --nocapture`; give them
+  `--test-threads=1` when two browsers at once have been seen to kill a
+  session mid-test, and never let them run in CI
 
 ## Git
 
