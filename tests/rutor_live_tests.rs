@@ -105,3 +105,46 @@ async fn live_trait_search_has_more_agrees_with_the_next_page() {
         "has_more must mirror whether rutor actually serves a next page"
     );
 }
+
+/// B6: a selected category is one GET per rubric id of
+/// `rutor::GROUP_IDS`, and the rows it brings back stand under that
+/// category -- the live half of the table the parse tests pin offline.
+/// Rubric 8 (`Игры`) answered 100 rows for "2026" on 26.09.2026 while
+/// `cat=0` answered a different set, so an all-Games page here means
+/// the fan-out really asked that rubric.
+#[tokio::test]
+#[ignore = "requires network access to rutor.info"]
+async fn live_a_selected_category_answers_with_only_that_category() {
+    use doris::search::source::{Group, SearchRequest, Source};
+
+    let rutor = RutorSearcher::new();
+    let mut req = SearchRequest::new("2026", 0);
+    req.category = Some(Group::Games);
+
+    let page = Source::search(&rutor, &req)
+        .await
+        .expect("live category search");
+    println!(
+        "Games: {} items, has_more={}, next_offset={:?}",
+        page.items.len(),
+        page.has_more,
+        page.next_offset
+    );
+
+    assert!(!page.items.is_empty(), "rubric 8 answered nothing");
+    for row in &page.items {
+        assert_eq!(
+            row.group,
+            Some(Group::Games),
+            "{} was fetched inside the Games rubric and claims it",
+            row.title
+        );
+    }
+    if page.has_more {
+        assert_eq!(
+            page.next_offset,
+            Some(RutorSearcher::PAGE_SIZE),
+            "a full fan-out page steps the cursor by exactly one page"
+        );
+    }
+}
