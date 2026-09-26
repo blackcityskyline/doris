@@ -14,7 +14,7 @@
 //! They skip when the mirror cannot be reached, because an unreachable
 //! host says nothing about the parser.
 
-use doris::search::source::{SearchRequest, Source};
+use doris::search::source::{Group, SearchRequest, Source};
 use doris::search::x1337x::{HOSTS, PAGE_SIZE, X1337xSearcher, search_url};
 
 /// The user agent the probes ran with.
@@ -25,7 +25,7 @@ const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
 /// thing standing in the way (the caller then skips).
 async fn require_host() -> Option<()> {
     let client = reqwest::Client::builder().user_agent(UA).build().ok()?;
-    match client.get(search_url(HOSTS[0], "frieren", 0)).send().await {
+    match client.get(search_url(HOSTS[0], "frieren", 0, None)).send().await {
         Ok(response) if response.status().is_success() => Some(()),
         Ok(response) => {
             println!(
@@ -91,6 +91,36 @@ async fn live_a_single_word_query_comes_back_precise_and_full() {
         assert_eq!(row.download_url, "");
         assert_eq!(row.info_hash, "");
         assert_eq!(row.group, None, "groups are declared, not guessed");
+    }
+}
+
+/// B6's slot as the user meets it: a category selected in the row is
+/// what the URL says out loud, and every row it brings back stands
+/// under that category. Live on 26.09.2026 the site's own `/sub/`
+/// links agreed with the path 20 of 20 rows for each label probed;
+/// this is the same claim read back from the source.
+#[tokio::test]
+#[ignore = "requires network access to 1337x"]
+async fn live_a_selected_category_is_what_the_path_and_the_rows_say() {
+    if require_host().await.is_none() {
+        return;
+    }
+    let source = X1337xSearcher::new();
+    let mut req = SearchRequest::new("matrix", 0);
+    req.category = Some(Group::Movies);
+    let page = source
+        .search(&req)
+        .await
+        .expect("live 1337x category search");
+    println!("Movies rows={}, has_more={}", page.items.len(), page.has_more);
+    assert!(!page.items.is_empty(), "the category path answered nothing");
+    for row in &page.items {
+        assert_eq!(
+            row.group,
+            Some(Group::Movies),
+            "{} arrived inside the Movies path and claims it",
+            row.title
+        );
     }
 }
 

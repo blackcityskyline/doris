@@ -15,6 +15,19 @@
 //!   browser to launch (decision; `requires_browser` said `true` in the
 //!   registry until these probes came back).
 //!
+//! - **The category slot is the site's own path** (B6, live
+//!   26.09.2026): `/category-search/<q>/<label>/<page>/` answers with
+//!   rows whose `/sub/` links are *all* the requested label -- `matrix`
+//!   came back 20/20 `movies`, 20/20 `tv`, 11/11 `games`, 1/1 `anime`,
+//!   while a made-up label answers 0 rows -- and page 2 is disjoint
+//!   from page 1, so the same page cursor keeps its meaning. Browse
+//!   has the matching slot in `/popular-<label>/` (22/21/23/2 rows,
+//!   likewise all one `/sub/`). `None` keeps `/search/` and `/home/`.
+//!   A row fetched *inside* a selected category claims that category;
+//!   with no selection there is nothing to claim, and reading an
+//!   unfiltered row's `/sub/` link was left undone rather than
+//!   guessed (the honesty gap `source.rs` pins down).
+//!
 //! - **The row carries the whole table.** Title plus
 //!   `/torrent/<id>/<slug>/`, seeders, leechers, size, uploader *and
 //!   the date* (`Oct. 01st  '22` -- the same shape torio reads off the
@@ -120,10 +133,13 @@ pub const HOSTS: &[&str] = &[
 /// more" means here -- browse never has one, see `to_browse_page`.
 pub const PAGE_SIZE: usize = 20;
 
-/// The site's categories that *have* a [`Group`] to go to. Music,
-/// Documentaries, Applications, Other and XXX do not, and inventorying
-/// what a row's `/sub/<category>/` link means is B6's job -- so rows
-/// claim no group, like nnmclub's.
+/// The site's categories that *have* a [`Group`] to go to -- and
+/// exactly the four the site's own `/category-search/<q>/<label>/` and
+/// `/popular-<label>/` paths spell the same way (live 26.09.2026), so
+/// a declared group is a URL this source can really be trimmed by.
+/// Music, Documentaries, Applications, Other and XXX have none, and an
+/// unfiltered row's `/sub/<category>/` link is still uninventoried:
+/// such a row keeps `group = None`, like nnmclub's.
 const GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// Words that carry no match of their own once the engine ORs them
@@ -145,23 +161,50 @@ const DATE_FETCHES: usize = 4;
 /// pages, so the page number is derived rather than stored -- which is
 /// also what keeps a restarted search on the site's grid.
 ///
-/// An empty query goes to browse (`/home/`), the entry point behind
-/// `supports_browse`.
-pub fn search_url(host: &str, query: &str, offset: usize) -> String {
+/// A selected category picks the site's own server-side slot: the
+/// path becomes `/category-search/<q>/<label>/<page>/`, spelled with
+/// [`Group::label`] -- the very word the tabs show, which live
+/// 26.09.2026 is also the word the site filters by (every row of the
+/// `Movies` answer carried `/sub/movies/`; a label the site does not
+/// know answers zero rows, so a typo cannot pass for a hit). `None`
+/// keeps the plain `/search/`, whose rows claim nothing (see
+/// [`stamp_category`]).
+///
+/// An empty query goes to browse, whose URL takes the same category
+/// (`/home/` vs `/popular-<label>/`).
+pub fn search_url(host: &str, query: &str, offset: usize, category: Option<Group>) -> String {
     let query = query.trim();
     if query.is_empty() {
-        return browse_url(host);
+        return browse_url(host, category);
     }
     // torio's spelling: `+` between the words (verified live to behave
     // the same as `%20`, but the reference implementation uses this).
     let encoded = urlencoding::encode(query).replace("%20", "+");
-    format!("https://{}/search/{}/{}/", host, encoded, page_of(offset))
+    match category {
+        Some(group) => format!(
+            "https://{}/category-search/{}/{}/{}/",
+            host,
+            encoded,
+            group.label(),
+            page_of(offset)
+        ),
+        None => format!("https://{}/search/{}/{}/", host, encoded, page_of(offset)),
+    }
 }
 
 /// The browse URL: the site's front page of popular rows, all sections
-/// on one page, live.
-pub fn browse_url(host: &str) -> String {
-    format!("https://{}/home/", host)
+/// on one page, live -- or, with a category selected, the matching
+/// `/popular-<label>/` section (live 26.09.2026: `/popular-movies`
+/// answered 22 rows, all of them `/sub/movies/`, and likewise for tv,
+/// games and anime), so browse is trimmed by the same selection a
+/// search is.
+pub fn browse_url(host: &str, category: Option<Group>) -> String {
+    match category {
+        Some(group) => {
+            format!("https://{}/popular-{}", host, group.label().to_lowercase())
+        }
+        None => format!("https://{}/home/", host),
+    }
 }
 
 /// `/search/<q>/<page>/` counts pages from 1; our offsets count rows
@@ -438,6 +481,30 @@ pub fn filter_or_raw(raw: Vec<TorrentItem>, query: &str) -> Vec<TorrentItem> {
     raw
 }
 
+/// The rows fetched *inside* a selected category claim it; with no
+/// selection they claim nothing. Live 26.09.2026, every row the
+/// category paths answered with carried the matching `/sub/` link
+/// (Movies 20 of 20, TV 20 of 20, Games 11 of 11, Anime 1 of 1 for
+/// `matrix`; `/popular-games` 23 of 23), so claiming the category that
+/// picked the URL is the site's own claim, not a guess. An unfiltered
+/// row stays `None` -- the "all" view is the only one it honestly
+/// belongs to, and a title is not a category (the honesty gap in
+/// `source.rs`).
+///
+/// `if row.group.is_none()` rather than an overwrite: attribution the
+/// parser ever learns from the row itself outranks the URL that
+/// fetched it.
+pub fn stamp_category(rows: Vec<TorrentItem>, category: Option<Group>) -> Vec<TorrentItem> {
+    rows.into_iter()
+        .map(|mut row| {
+            if row.group.is_none() {
+                row.group = category;
+            }
+            row
+        })
+        .collect()
+}
+
 /// The rows -> a search page, with `has_more` read off the server's
 /// page and *then* the filter applied: a full page trimmed to three
 /// rows is still a full page, and `next_offset` steps by the site's
@@ -609,6 +676,7 @@ impl Source for X1337xSearcher {
         let browse = query.is_empty();
         let filter_query = query.clone();
         let client = self.client.clone();
+        let category = req.category;
 
         // Every host gets the same attempt, and a host that answers
         // with something unparseable moves the search on to the next
@@ -621,15 +689,18 @@ impl Source for X1337xSearcher {
             let host = host.to_string();
             async move {
                 let url = if query.is_empty() {
-                    browse_url(&host)
+                    browse_url(&host, category)
                 } else {
-                    search_url(&host, &query, offset)
+                    search_url(&host, &query, offset, category)
                 };
                 let body = get(&client, &url).await?;
                 parse_rows(&body, &host)
             }
         })
         .await?;
+        // What the category path fetched, the rows claim (B6); the
+        // plain search's rows keep their None.
+        let rows = stamp_category(rows, category);
         // Rows the list left without a day get it from their own pages
         // here, before anything is shown (module doc); rows it dated
         // already cost nothing.
