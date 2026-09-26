@@ -91,21 +91,34 @@ impl RutrackerSearcher {
 
         let browser = self.browser.lock().await;
 
-        // Step 1: Load cookies from file
+        // Step 1: Navigate and pass Cloudflare
+        log("AUTH: navigating to rutracker.org...");
+        if let Err(e) = browser.navigate(Self::HOME_URL).await {
+            log(&format!("AUTH: failed to navigate: {}", e));
+            return Err(e);
+        }
+        log("AUTH: patching Cloudflare detection...");
+        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        log("AUTH: waiting for Cloudflare challenge...");
+        Self::wait_cloudflare(&browser).await;
+
+        // Step 2: Inject the session a previous run saved. This has to
+        // come *after* the navigation: WebDriver `add cookie` rejects
+        // every domain while the tab is still on chrome://new-tab-page/
+        // ("invalid cookie domain"), which is what used to make a saved
+        // session unusable -- every run silently fell back to the
+        // password form instead of reusing the cookies it had just read.
         if let Some(cf) = cookie_file {
             if cf.exists() {
                 match cookies::load_from_file(cf) {
                     Ok(loaded) if !loaded.is_empty() => {
-                        log(&format!("AUTH: loaded {} cookies from {}", loaded.len(), cf.display()));
-                        let json_cookies: Vec<serde_json::Value> = loaded.iter().map(|c| {
-                            serde_json::json!({
-                                "name": c.name,
-                                "value": c.value,
-                                "domain": c.domain,
-                                "path": c.path,
-                                "secure": c.secure,
-                            })
-                        }).collect();
+                        log(&format!(
+                            "AUTH: loaded {} cookies from {}",
+                            loaded.len(),
+                            cf.display()
+                        ));
+                        let json_cookies: Vec<serde_json::Value> =
+                            loaded.iter().map(|c| c.to_json()).collect();
                         if let Err(e) = browser.add_cookies(&json_cookies).await {
                             log(&format!("AUTH: failed to inject cookies: {}", e));
                         } else {
@@ -125,17 +138,6 @@ impl RutrackerSearcher {
         } else {
             log("AUTH: no cookie file specified");
         }
-
-        // Step 2: Navigate and pass Cloudflare
-        log("AUTH: navigating to rutracker.org...");
-        if let Err(e) = browser.navigate(Self::HOME_URL).await {
-            log(&format!("AUTH: failed to navigate: {}", e));
-            return Err(e);
-        }
-        log("AUTH: patching Cloudflare detection...");
-        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
-        log("AUTH: waiting for Cloudflare challenge...");
-        Self::wait_cloudflare(&browser).await;
 
         let current_url = browser.eval_js("location.href").await
             .map(|v| v.as_str().unwrap_or("").to_string())
