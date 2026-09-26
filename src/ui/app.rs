@@ -1141,10 +1141,16 @@ impl App {
 
         results.push("=== HEALTH CHECK ===".into());
 
-        match crate::browser::detect::detect_browser(None) {
-            Ok((kind, path)) => results.push(format!("{} Browser: {} [{}]", "\u{2714}", kind, path.display())),
-            Err(e) => results.push(format!("{} Browser: NOT FOUND ({})", "\u{2718}", e)),
-        }
+        let browser_binary = match crate::browser::detect::detect_browser(None) {
+            Ok((kind, path)) => {
+                results.push(format!("{} Browser: {} [{}]", "\u{2714}", kind, path.display()));
+                Some(path)
+            }
+            Err(e) => {
+                results.push(format!("{} Browser: NOT FOUND ({})", "\u{2718}", e));
+                None
+            }
+        };
 
         let has_xvfb = std::process::Command::new("which")
             .arg("Xvfb")
@@ -1156,11 +1162,14 @@ impl App {
         if has_xvfb { results.push(format!("{} Xvfb: available", "\u{2714}")); }
         else { results.push(format!("{} Xvfb: not found (needed to run browser hidden)", "\u{2718}")); }
 
-        let has_chromedriver = std::path::Path::new(&dirs::data_local_dir()
-            .unwrap_or_default().join("doris").join("chromedriver_patched")).exists()
-            || std::process::Command::new("which").arg("chromedriver")
-                .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
-                .status().map(|s| s.success()).unwrap_or(false);
+        // "Available" means available *for the browser named above*:
+        // the patched cache is one file per browser major now, and a
+        // system driver only counts when its own version says so
+        // (`cdp::driver_ready_for`).
+        let has_chromedriver = browser_binary
+            .as_ref()
+            .map(|binary| crate::browser::cdp::driver_ready_for(binary))
+            .unwrap_or(false);
         if has_chromedriver { results.push(format!("{} Chromedriver: patched/available", "\u{2714}")); }
         else { results.push(format!("{} Chromedriver: will be downloaded on first run", "\u{26a0}")); }
 

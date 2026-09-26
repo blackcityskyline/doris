@@ -651,8 +651,9 @@ async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("doris");
     std::fs::create_dir_all(&data_dir)?;
+    drop_un_keyed_cache(&data_dir);
 
-    let patched_path = data_dir.join("chromedriver_patched");
+    let patched_path = patched_chromedriver_path(&data_dir, browser_major);
 
     if patched_path.exists() {
         return Ok(patched_path);
@@ -673,6 +674,156 @@ async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
 
     crate::log::log("browser", &format!("patched chromedriver -> {}", patched_path.display()));
     Ok(patched_path)
+}
+
+/// Where the patched driver for `browser_major` is cached.
+///
+/// One file per major because a chromedriver only starts browsers of its
+/// own major: the cache was a single `chromedriver_patched` file reused
+/// for whichever browser launched first, so a 152 driver was handed to
+/// Helium 154 and the session died with "This version of ChromeDriver
+/// only supports Chrome version 152" (live, 25.09.2026) -- and switching
+/// the browser priority in Options hit that every time.
+pub fn patched_chromedriver_path(data_dir: &Path, browser_major: u32) -> PathBuf {
+    data_dir.join(format!("chromedriver_patched-{}", browser_major))
+}
+
+/// Whether `data_dir` already holds a patched driver for exactly this
+/// major -- the health check's idea of "no download needed", and the
+/// reason a driver built for another browser never counts.
+pub fn has_patched_chromedriver(data_dir: &Path, browser_major: u32) -> bool {
+    patched_chromedriver_path(data_dir, browser_major).exists()
+}
+
+/// Drop the un-suffixed cache file the pre-versioning code left behind.
+/// It can only ever be right for the browser it was first built for, so
+/// keeping it around is a trap, not a cache.
+fn drop_un_keyed_cache(data_dir: &Path) {
+    let legacy = data_dir.join("chromedriver_patched");
+    if !legacy.exists() {
+        return;
+    }
+    match std::fs::remove_file(&legacy) {
+        Ok(()) => crate::log::log(
+            "browser",
+            "dropped the un-keyed chromedriver cache (rebuilt per browser major)",
+        ),
+        Err(e) => crate::log::log(
+            "browser",
+            &format!("could not drop the un-keyed chromedriver cache: {}", e),
+        ),
+    }
+}
+
+/// Re-home the download made before the cache was keyed by browser
+/// major: it sits at `root/chromedriver-linux64/chromedriver`, a path
+/// nothing reads anymore, and is good for exactly one browser. Moved
+/// into this major's directory when its own version agrees -- so a
+/// machine that already has the right driver never needs the network
+/// again -- and left where it is otherwise, since it may still serve
+/// another browser. Returns the new path when it moved.
+pub fn adopt_legacy_download(root: &Path, browser_major: u32) -> Option<PathBuf> {
+    let legacy_dir = root.join("chromedriver-linux64");
+    let legacy = legacy_dir.join("chromedriver");
+    let target_dir = root
+        .join(browser_major.to_string())
+        .join("chromedriver-linux64");
+    let target = target_dir.join("chromedriver");
+
+    if target.exists() || !legacy.exists() || !driver_serves(&legacy, browser_major) {
+        return None;
+    }
+    std::fs::create_dir_all(&target_dir).ok()?;
+    match std::fs::rename(&legacy, &target) {
+        Ok(()) => {
+            crate::log::log(
+                "browser",
+                &format!("adopted the existing chromedriver for {}", browser_major),
+            );
+            let _ = std::fs::remove_dir_all(&legacy_dir);
+            Some(target)
+        }
+        Err(e) => {
+            crate::log::log(
+                "browser",
+                &format!("could not adopt the existing chromedriver: {}", e),
+            );
+            None
+        }
+    }
+}
+
+/// Can this driver start a browser of `browser_major`? The binary is
+/// asked, because nothing on disk records which browser a driver was
+/// built for and a driver answers with its own major
+/// (`ChromeDriver 152.0.7977.82 (...)`). Missing, unreadable or
+/// version-less binaries simply do not serve.
+pub fn driver_serves(path: &Path, browser_major: u32) -> bool {
+    let output = match std::process::Command::new(path).arg("--version").output() {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    driver_major(&text) == Some(browser_major)
+}
+
+/// The major a `--version` line reports, `None` when it carries no
+/// version at all. The `> 10` floor discards stray numbers -- a date, a
+/// build id -- the same way [`detect_browser_major_version`] does.
+fn driver_major(version_output: &str) -> Option<u32> {
+    for part in version_output.split_whitespace() {
+        if let Some(major) = part.split('.').next().and_then(|s| s.parse::<u32>().ok()) {
+            if major > 10 {
+                return Some(major);
+            }
+        }
+    }
+    None
+}
+
+/// The drivers already on this machine, in the order they are worth
+/// trying. Existence only -- each candidate still has to prove its
+/// major with [`driver_serves`] before being used.
+fn system_driver_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(path) = which::which("chromedriver") {
+        candidates.push(path);
+    }
+    for path in [
+        "/usr/lib/chromium/chromedriver",
+        "/usr/bin/chromedriver",
+        "/snap/chromium/current/usr/lib/chromium-browser/chromedriver",
+    ] {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            candidates.push(path);
+        }
+    }
+    candidates
+}
+
+/// Whether the first launch of `binary` can start without fetching
+/// anything: a patched driver cached for its major, or a system driver
+/// reporting the same major. The health check shows this; `launch`
+/// enforces the same rule when it actually picks a driver.
+pub fn driver_ready_for(binary: &Path) -> bool {
+    let browser_major = match detect_browser_major_version(binary) {
+        Ok(major) => major,
+        Err(_) => return false,
+    };
+    let data_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("doris");
+    if has_patched_chromedriver(&data_dir, browser_major) {
+        return true;
+    }
+    system_driver_candidates()
+        .into_iter()
+        .any(|path| driver_serves(&path, browser_major))
 }
 
 fn patch_chromedriver_binary(content: &[u8]) -> Vec<u8> {
@@ -740,24 +891,24 @@ fn measure_cdc_block(data: &[u8]) -> usize {
 }
 
 async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
-    if let Ok(path) = which::which("chromedriver") {
-        return Ok(path);
-    }
-
-    for path in &[
-        "/usr/lib/chromium/chromedriver",
-        "/usr/bin/chromedriver",
-        "/snap/chromium/current/usr/lib/chromium-browser/chromedriver",
-    ] {
-        if Path::new(path).exists() {
-            return Ok(PathBuf::from(path));
+    for path in system_driver_candidates() {
+        if driver_serves(&path, browser_major) {
+            return Ok(path);
         }
+        crate::log::log(
+            "browser",
+            &format!("ignoring {} -- built for another browser major", path.display()),
+        );
     }
 
-    let data_dir = dirs::data_local_dir()
+    // Keyed by major for the same reason the patched cache is: a driver
+    // downloaded for one browser cannot serve another, and the download
+    // below is the expensive part of finding that out late.
+    let root = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("doris")
         .join("chromedriver");
+    let data_dir = root.join(browser_major.to_string());
     std::fs::create_dir_all(&data_dir)?;
 
     let downloaded = data_dir.join("chromedriver-linux64/chromedriver");
@@ -765,13 +916,20 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
     if downloaded.exists() {
         return Ok(downloaded);
     }
+    if let Some(adopted) = adopt_legacy_download(&root, browser_major) {
+        return Ok(adopted);
+    }
 
     crate::log::log("browser", &format!("downloading chromedriver for Chromium {}...", browser_major));
 
     let url = download_chromedriver_url(browser_major).await?;
 
+    let zip = std::env::temp_dir().join(format!("chromedriver-{}.zip", browser_major));
+    let zip_str = zip
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("temp path is not valid UTF-8"))?;
     let status = std::process::Command::new("curl")
-        .args(["-sL", "-o", "/tmp/chromedriver.zip", &url])
+        .args(["-sL", "-o", zip_str, &url])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -781,7 +939,7 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
     }
 
     let status = std::process::Command::new("unzip")
-        .args(["-o", "/tmp/chromedriver.zip", "-d", data_dir.to_str().unwrap()])
+        .args(["-o", zip_str, "-d", data_dir.to_str().unwrap()])
         .stdout(std::process::Stdio::null())
         .status()
         .map_err(|e| anyhow::anyhow!("unzip failed: {}", e))?;
