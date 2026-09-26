@@ -186,10 +186,9 @@ pub trait Source: Send + Sync {
     }
 }
 
-/// Rutracker exposes no server-side category filter we've verified live,
-/// so it lists the four groups for browsing/registry purposes and B6
-/// decides (after checking `tracker.php?c[]=`) whether
-/// [`SearchRequest::category`] actually narrows anything for it.
+/// Rutracker's search form posts a real category slot -- `f[]` with forum
+/// ids, live-verified 26.09.2026 -- so it declares the four groups it can
+/// filter, and `rutracker::GROUP_FORUMS` maps them onto forum ids.
 const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Group::Anime];
 
 /// Rutor's search URL carries a real category slot (`0` = all), and B6
@@ -548,4 +547,29 @@ pub fn sources_by_group(group: Group) -> Vec<&'static SourceInfo> {
 /// `app.rs::source_needs_browser` has always had).
 pub fn requires_browser(id: &str) -> bool {
     get_source(id).map(|s| s.requires_browser).unwrap_or(true)
+}
+
+/// The sources a CLI run asks (B9): `--source <id>` names exactly one --
+/// refusing an unknown or still-planned id rather than silently falling
+/// back to a default -- and otherwise every enabled implemented source,
+/// which is the same list `orchestrator::selected_sources` builds for
+/// the `all` tab, so the CLI and the TUI cannot disagree about what
+/// "all sources" means.
+pub fn cli_sources(
+    requested: Option<&str>,
+    enabled: &[String],
+) -> Result<Vec<&'static SourceInfo>> {
+    match requested {
+        Some(id) => {
+            let info = get_source(id)
+                .ok_or_else(|| anyhow::anyhow!("unknown source '{}'", id))?;
+            if !info.implemented {
+                anyhow::bail!("source '{}' is not implemented yet", id);
+            }
+            Ok(vec![info])
+        }
+        None => Ok(crate::search::orchestrator::selected_sources(
+            "all", enabled, None,
+        )),
+    }
 }

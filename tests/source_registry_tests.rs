@@ -1,4 +1,5 @@
 use doris::config::Config;
+use doris::search::orchestrator;
 use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, GROUP_ORDER};
 use doris::search::rutor::RutorSearcher;
 use doris::search::x1337x::X1337xSearcher;
@@ -388,4 +389,47 @@ fn test_a_row_describes_groups_and_the_browser_the_registry_declares() {
         };
         assert!(text.contains(browser_line), "{}: {}", info.id, text);
     }
+}
+
+/// B9: the CLI asks what the `all` tab asks -- one list, not two. A
+/// second hand-written list in `main.rs` is how the CLI ends up skipping
+/// a source the TUI offers, or offering one the user disabled.
+#[test]
+fn test_the_cli_asks_what_the_all_tab_asks() {
+    let enabled: Vec<String> = KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect();
+
+    let cli = source::cli_sources(None, &enabled).expect("the registry answers");
+    let tab = orchestrator::selected_sources("all", &enabled, None);
+    assert_eq!(
+        cli.len(),
+        tab.len(),
+        "CLI and tab bar must derive from one list"
+    );
+
+    // A disabled source is not asked when the CLI defaults to "all".
+    let mut mostly_disabled = enabled.clone();
+    mostly_disabled.retain(|id| id != "rutor");
+    let cli = source::cli_sources(None, &mostly_disabled).expect("the registry answers");
+    assert!(
+        !cli.iter().any(|info| info.id == "rutor"),
+        "a disabled source is skipped"
+    );
+
+    // `--source` names exactly one, and refuses what it cannot serve
+    // rather than silently falling back to a default.
+    let one = source::cli_sources(Some("rutracker"), &enabled).expect("rutracker is registered");
+    assert_eq!(one.len(), 1);
+    assert_eq!(one[0].id, "rutracker");
+    assert!(
+        source::cli_sources(Some("never-heard-of-it"), &enabled).is_err(),
+        "an unknown id is refused"
+    );
+    assert!(
+        source::cli_sources(Some("torentino"), &enabled).is_err(),
+        "a planned source is refused, not defaulted"
+    );
 }
