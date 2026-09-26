@@ -1,6 +1,6 @@
 use doris::config::Config;
 use doris::search::orchestrator;
-use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, GROUP_ORDER};
+use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
 use doris::search::rutor::RutorSearcher;
 use doris::search::x1337x::X1337xSearcher;
 use doris::ui::app::{SettingsAction, source_settings_items};
@@ -16,12 +16,35 @@ fn test_rutracker_and_rutor_are_registered_and_implemented() {
 
 #[test]
 fn test_future_sources_are_listed_but_not_implemented() {
-    // 1337x used to live here too, and wave 3 moved it out (B8): the
-    // list is what a planned id is, not what it stays one.
-    for id in ["torentino"] {
-        let source = KNOWN_SOURCES.iter().find(|s| s.id == id);
-        assert!(source.is_some(), "{} should be listed as a planned source", id);
-        assert!(!source.unwrap().implemented, "{} should not be marked implemented yet", id);
+    // Every source that is not implemented yet makes no promises: no
+    // groups, no browser, no category filter, no browse. Torentino used
+    // to be the example here and B8 wave 3 moved it out; with the list
+    // empty this is the invariant the next planned source has to satisfy.
+    let planned: Vec<&SourceInfo> = KNOWN_SOURCES
+        .iter()
+        .filter(|s| !s.implemented)
+        .collect();
+    for source in planned {
+        assert!(
+            source.groups.is_empty(),
+            "{} is planned and declares groups",
+            source.id
+        );
+        assert!(
+            !source.requires_browser,
+            "{} is planned and promises a browser",
+            source.id
+        );
+        assert!(
+            !source.category_filter,
+            "{} is planned and claims a category filter",
+            source.id
+        );
+        assert!(
+            !source.supports_browse,
+            "{} is planned and claims browse",
+            source.id
+        );
     }
 }
 
@@ -455,8 +478,10 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
         source::cli_sources(Some("never-heard-of-it"), &enabled).is_err(),
         "an unknown id is refused"
     );
-    assert!(
-        source::cli_sources(Some("torentino"), &enabled).is_err(),
-        "a planned source is refused, not defaulted"
-    );
+    // Torentino is implemented now (B8 wave 3), so naming it works --
+    // and names exactly it.
+    let torentino =
+        source::cli_sources(Some("torentino"), &enabled).expect("torentino is implemented");
+    assert_eq!(torentino.len(), 1);
+    assert_eq!(torentino[0].id, "torentino");
 }
