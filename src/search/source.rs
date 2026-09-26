@@ -218,8 +218,10 @@ const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
 const NYAA_GROUPS: &[Group] = &[Group::Anime];
 
 /// NNM-Club spans four forums -- the three torio splits (movies, TV,
-/// games) plus the anime ones the live search page was returning from
-/// (B8 wave 3). Rows claim none of them: see `nnmclub`'s module doc.
+/// games) plus the anime ones (B8 wave 3). Since B6 each row claims the
+/// group of its own forum (`nnmclub::group_for_forum`), and the same
+/// four groups are what `nnmclub::GROUP_FORUMS` asks the tracker for;
+/// a test keeps the two declarations equal.
 const NNMCLUB_GROUPS: &[Group] =
     &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 

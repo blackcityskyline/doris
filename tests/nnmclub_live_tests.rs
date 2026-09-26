@@ -13,7 +13,7 @@
 //! evidence about the parser.
 
 use doris::search::nnmclub::{NnmclubSearcher, PAGE_SIZE, search_url};
-use doris::search::source::{SearchRequest, Source};
+use doris::search::source::{Group, SearchRequest, Source};
 
 /// The tracker answering at all, or `None` when this network is the
 /// thing standing in the way (the caller then skips).
@@ -25,7 +25,7 @@ async fn require_host() -> Option<()> {
         )
         .build()
         .ok()?;
-    let url = search_url("frieren", 0);
+    let url = search_url("frieren", 0, None);
     match client.get(&url).send().await {
         Ok(response) if response.status().is_success() => Some(()),
         Ok(response) => {
@@ -77,15 +77,32 @@ async fn live_rows_carry_a_link_to_a_torrent_and_a_page_to_read() {
             "the topic the title came from: {}",
             row.page_url
         );
-        // Wave-3 decision: no fan-out, so nothing to show for these
-        // -- and no group either, which is what the source declares.
+        // Wave-3 decision: no fan-out, so nothing to show for these.
         assert_eq!(row.magnet, None);
         assert_eq!(row.info_hash, "");
-        assert_eq!(row.group, None);
+        // B6: a row claims the group of its own forum -- or nothing,
+        // for sections outside the four groups (3D, fonts and books
+        // came back in this very query, live).
+        if let Some(group) = row.group {
+            assert!(
+                nnm.groups().contains(&group),
+                "{:?} is not a group nnmclub declares",
+                group
+            );
+        }
         assert!(!row.title.is_empty(), "a row nobody can recognise");
         assert!(row.size_bytes > 0, "{} has no size", row.title);
         assert!(row.added > 0, "{} has no date", row.title);
     }
+
+    // The attribution working on real rows, not just on fixtures:
+    // "frieren" comes back from the anime forums, and those claim
+    // their group (26.09.2026: sections 169/621/626/632/644).
+    assert!(
+        page.items.iter().any(|row| row.group.is_some()),
+        "not one row could be attributed to its forum -- the forum \
+         cell is gone or the table is stale"
+    );
 
     // A narrow query is a short page, and a short page is the last one
     // -- that is what makes `has_more == false` honest rather than a
@@ -224,4 +241,48 @@ async fn live_the_torrent_a_row_ships_is_a_bencoded_file() {
         Some(&b'd'),
         "a torrent file is a bencoded dict, live-verified"
     );
+}
+
+/// B6's live claim: a selected category narrows what the *server*
+/// answers, and every row that comes back claims that category from
+/// its own forum cell. Movies is the biggest list (80 `f%5B%5D=` ids,
+/// ~1 KB of URL), so it is the one that proves one request is enough;
+/// Anime is the small one that proves the attribution is not a
+/// coincidence of a single group. If the tracker ignored the params,
+/// rows from music/books/programs would come back claiming nothing and
+/// both loops below would fail.
+#[tokio::test]
+#[ignore = "requires network access to nnmclub.to"]
+async fn live_a_selected_category_answers_with_only_that_category() {
+    if require_host().await.is_none() {
+        return;
+    }
+    let nnm = NnmclubSearcher::new();
+
+    for (query, category) in [("2026", Group::Movies), ("frieren", Group::Anime)] {
+        let mut req = SearchRequest::new(query, 0);
+        req.category = Some(category);
+        let page = nnm
+            .search(&req)
+            .await
+            .unwrap_or_else(|err| panic!("{:?} search failed: {}", category, err));
+        println!("{:?} ({}) -> {} rows", category, query, page.items.len());
+        assert!(
+            !page.items.is_empty(),
+            "{:?} asked for its own forums and got nothing",
+            category
+        );
+        for row in &page.items {
+            assert_eq!(
+                row.group,
+                Some(category),
+                "{} came back from a forum outside {:?}",
+                row.title,
+                category
+            );
+        }
+        // The tracker rate-limits bursts (429 seen live), so the two
+        // requests do not arrive back to back.
+        tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+    }
 }

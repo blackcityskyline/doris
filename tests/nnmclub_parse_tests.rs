@@ -16,11 +16,12 @@ use std::sync::Arc;
 use doris::search::format::unescape_entities;
 use doris::search::models::TorrentItem;
 use doris::search::nnmclub::{
-    NnmclubSearcher, PAGE_SIZE, browse_url, parse_rows, search_url, to_page,
+    GROUP_FORUMS, NnmclubSearcher, PAGE_SIZE, browse_url, group_for_forum, parse_rows,
+    search_url, to_page,
 };
 use doris::search::source::{AuthContext, Group, LogFn, Source};
 
-/// One results table, three result rows, and the header/footer the
+/// One results table, four result rows, and the header/footer the
 /// site wraps them in.
 const TABLE: &str = r#"<table class="forumline tablesorter" cellspacing="1">
 <tr><th>Тема</th><th>Размер</th></tr>
@@ -118,7 +119,9 @@ fn test_every_field_the_live_row_carried_is_on_the_item() {
     // `spawn_stream` already knows how to use it.
     assert_eq!(first.magnet, None);
     assert_eq!(first.info_hash, "");
-    assert_eq!(first.group, None, "groups are declared, not guessed per row");
+    // B6: the row's own forum cell decides. This row's cell says
+    // `tracker.php?f=905` = "Театр", and theatre sits with cinema.
+    assert_eq!(first.group, Some(Group::Movies));
 }
 
 #[test]
@@ -219,26 +222,142 @@ fn test_a_page_without_the_results_table_says_so_instead_of_crying_empty() {
 #[test]
 fn test_the_urls_are_the_ones_that_were_fetched() {
     assert_eq!(
-        search_url("frieren", 0),
+        search_url("frieren", 0, None),
         "https://nnmclub.to/forum/tracker.php?f=-1&nm=frieren"
     );
     // Page two was fetched live for both shapes and came back disjoint
     // from page one (0 overlapping topic ids), which is what licenses
     // the cursor below.
     assert_eq!(
-        search_url("frieren 2026", 50),
+        search_url("frieren 2026", 50, None),
         "https://nnmclub.to/forum/tracker.php?f=-1&nm=frieren%202026&start=50"
     );
     assert_eq!(
-        browse_url(0),
+        browse_url(0, None),
         "https://nnmclub.to/forum/tracker.php?f=-1&o=2&sd=desc"
     );
     assert_eq!(
-        browse_url(50),
+        browse_url(50, None),
         "https://nnmclub.to/forum/tracker.php?f=-1&o=2&sd=desc&start=50"
     );
-    // An empty query is browse -- the URL behind `supports_browse`.
-    assert_eq!(search_url("   ", 0), browse_url(0));
+    // An empty query is browse -- the URL behind `supports_browse`,
+    // and a category does not change that, only the forums asked.
+    assert_eq!(search_url("   ", 0, None), browse_url(0, None));
+    assert_eq!(
+        search_url("   ", 0, Some(Group::Games)),
+        browse_url(0, Some(Group::Games))
+    );
+}
+
+/// The whole category decision in one assertion per group: one request,
+/// every id of that group as `f%5B%5D=`, nothing else in the URL. The
+/// live side of it (the tracker answering all 80 Movies ids at once,
+/// with only that group's rows coming back) is the live test's job.
+#[test]
+fn test_a_selected_group_asks_for_exactly_its_own_forums_in_one_request() {
+    for (group, ids) in GROUP_FORUMS {
+        let params = ids
+            .iter()
+            .map(|id| format!("f%5B%5D={}", id))
+            .collect::<Vec<_>>()
+            .join("&");
+        let expected =
+            format!("https://nnmclub.to/forum/tracker.php?{}&nm=matrix", params);
+        let url = search_url("matrix", 0, Some(group));
+        assert_eq!(
+            url, expected,
+            "{:?} must ask for its {} forums and no others",
+            group,
+            ids.len()
+        );
+    }
+    // Browse narrows the same way, cursor included.
+    let anime = GROUP_FORUMS
+        .iter()
+        .find(|(group, _)| *group == Group::Anime)
+        .map_or(&[][..], |(_, ids)| ids);
+    let params = anime
+        .iter()
+        .map(|id| format!("f%5B%5D={}", id))
+        .collect::<Vec<_>>()
+        .join("&");
+    assert_eq!(
+        browse_url(50, Some(Group::Anime)),
+        format!(
+            "https://nnmclub.to/forum/tracker.php?{}&o=2&sd=desc&start=50",
+            params
+        )
+    );
+}
+
+/// The table the whole feature rests on: four disjoint lists, spot-
+/// checked against the names the live tree carried, and the same four
+/// groups the source declares.
+#[test]
+fn test_the_forum_table_is_disjoint_and_maps_the_live_sections() {
+    for (i, (left, left_ids)) in GROUP_FORUMS.iter().enumerate() {
+        for (right, right_ids) in GROUP_FORUMS.iter().skip(i + 1) {
+            let shared: Vec<i32> = left_ids
+                .iter()
+                .filter(|id| right_ids.contains(id))
+                .copied()
+                .collect();
+            assert!(
+                shared.is_empty(),
+                "{:?} and {:?} share a forum: {:?}",
+                left,
+                right,
+                shared
+            );
+        }
+    }
+
+    // Sections named in the live tree (26.09.2026) and their group.
+    assert_eq!(group_for_forum(905), Some(Group::Movies), "Театр");
+    assert_eq!(group_for_forum(227), Some(Group::Movies), "Кино");
+    assert_eq!(group_for_forum(768), Some(Group::TV), "Сериалы");
+    assert_eq!(group_for_forum(410), Some(Group::Games), "Win Игры");
+    assert_eq!(group_for_forum(621), Some(Group::Anime), "Аниме (HD)");
+    // The archives the user folded into their rubric.
+    assert_eq!(group_for_forum(91), Some(Group::Movies), "Архив Кино");
+    assert_eq!(group_for_forum(668), Some(Group::Movies), "Архив классики");
+    assert_eq!(group_for_forum(169), Some(Group::Anime), "Архив Аниме");
+    assert_eq!(group_for_forum(93), Some(Group::Games), "Архив Игр");
+    assert_eq!(group_for_forum(669), Some(Group::TV), "Архив Док/TV");
+    // Checked live and kept out: MP3, books, music, and the fixture's
+    // forum id, which is not in the tree at all.
+    assert_eq!(group_for_forum(734), None, "Классика для мам = музыка");
+    assert_eq!(group_for_forum(738), None, "Образование = книги");
+    assert_eq!(group_for_forum(92), None, "Архив Музыки");
+    assert_eq!(group_for_forum(906), None, "not in the live tree");
+
+    // What the source declares is what the table spans -- the two
+    // declarations this commit moved next to each other.
+    let declared = NnmclubSearcher::new().groups();
+    let from_table: Vec<Group> = GROUP_FORUMS.iter().map(|(g, _)| *g).collect();
+    assert_eq!(declared, from_table.as_slice());
+}
+
+/// Per-row attribution: the row's own forum cell decides, and a forum
+/// the table does not know claims nothing rather than something wrong.
+#[test]
+fn test_a_row_claims_the_group_of_its_own_forum_and_nothing_more() {
+    let rows = rows();
+    assert_eq!(rows.len(), 4, "the fixture's four rows");
+    assert_eq!(
+        rows[0].group,
+        Some(Group::Movies),
+        "f=905 is Театр, and theatre sits with cinema"
+    );
+    assert_eq!(
+        rows[1].group, None,
+        "f=906 is not in the table, so this row belongs to \"all\" only"
+    );
+    assert_eq!(
+        rows[2].group, None,
+        "no forum cell in this row, so nothing to attribute it by"
+    );
+    assert_eq!(rows[3].group, None, "and none in the dead-torrent row");
 }
 
 #[test]

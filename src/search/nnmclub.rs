@@ -28,10 +28,20 @@
 //!   the row count so a single dropped row cannot misalign the cursor
 //!   -- the lesson yts taught this codebase.
 //!
-//! - **No group per row** (decision): a row *does* show its category in
-//!   Russian ("Аниме с озвучкой (FullHD)"), but mapping a live
-//!   inventory of those strings is B6's job; the source declares the
-//!   four groups it spans, like rutracker and rutor do.
+//! - **A group per row, and a group per request (B6).** The row carries
+//!   its own forum cell (`tracker.php?f=<id>`, live in every row), and
+//!   the ids behind every group come from one live inventory of the
+//!   `<select name="f[]">` on `tracker.php` -- 698 forums in 18
+//!   optgroups, parent sections holding no rows of their own because
+//!   the tracker lists leaves only. So attribution is a table lookup
+//!   like nyaa's: a tab switch filters rows already on screen, and a
+//!   category request asks the tracker for *that group's* forums in a
+//!   single GET (`f%5B%5D=` repeated -- accepted live, all of them),
+//!   which is why this source needs none of rutor's fan-out: rutor
+//!   silently keeps the first rubric id of a multi-id request, this
+//!   site honours the whole list. Sections outside the four groups
+//!   (music, books, programs) map to no group and live in "all" only,
+//!   like a row whose forum id the table does not know.
 //!
 //! - **Dead rows are rows.** Roughly two thirds of a browse page came
 //!   back with no seeders, and the site spells that by replacing the
@@ -59,8 +69,9 @@ use super::models::TorrentItem;
 use super::net::{FetchOptions, browser_client, fetch_resilient};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
-/// The three torio splits (`nnm-movies`/`nnm-tv`/`nnm-games`) plus the
-/// anime forums the live search page was actually returning rows from.
+/// The groups this source declares -- exactly the groups the forum
+/// table below spans, asserted by a test against `GROUP_FORUMS` so the
+/// two cannot drift apart.
 const GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// Rows the site puts on one page, live on both a broad query and
@@ -72,21 +83,119 @@ pub const PAGE_SIZE: usize = 50;
 /// links as "all".
 const ALL_FORUMS: &str = "f=-1";
 
+/// Every forum one group asks the tracker for -- leaf ids read off the
+/// live `<select name="f[]">` on `tracker.php` (698 options in 18
+/// optgroups). Parent sections hold no rows of their own (live: `f=224`,
+/// parent of the 58 cinema forums, answers zero), so only leaves here.
+///
+/// Composition decided with the user, live facts included: Movies = the
+/// cinema optgroup (58) + the kids' film and cartoon forums (18) + four
+/// archives; TV = series (44) + docs/shows/sport (63, sport included by
+/// choice) + three archives; Games = the games optgroup (60) + its
+/// archive; Anime = all of "Anime, Manga" (23) + its archive. The
+/// archives are the "Temp, Архив" section, joined to their rubric by
+/// the rule "an archive belongs to the rubric it archives"; kids'
+/// educational video (725/729), kids' music (734) and books (738) stay
+/// out -- checked live, they are not films. The four lists are pairwise
+/// disjoint (asserted in tests): a forum in two groups could not be
+/// attributed to one. Public as the live inventory it is -- the tests
+/// read the table rather than a copy of it.
+pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
+    (
+        Group::Movies,
+        &[
+            216, 270, 218, 219, 954, 217, 1293, 1298, 318, 320, 677, 1177, 319, 678,
+            885, 908, 1310, 909, 910, 911, 912, 220, 221, 222, 882, 889, 224, 225,
+            226, 227, 1296, 891, 1299, 682, 694, 884, 1211, 693, 913, 228, 1150, 1311,
+            1313, 1312, 256, 257, 258, 883, 955, 905, 271, 1210, 264, 265, 272, 1262,
+            266, 1294, 724, 731, 1345, 733, 1346, 1329, 1330, 1331, 1332, 1340, 658,
+            890, 1336, 1337, 1338, 1339, 660, 232, 91, 668, 892, 1143,
+        ],
+    ),
+    (
+        Group::TV,
+        &[
+            1219, 1221, 1220, 722, 768, 1344, 779, 1288, 787, 1141, 777, 786, 776, 785,
+            775, 1265, 1242, 1140, 782, 773, 1142, 772, 771, 783, 1144, 804, 1290, 1300,
+            784, 774, 922, 770, 1320, 780, 781, 1322, 769, 799, 800, 791, 793, 794,
+            796, 795, 713, 706, 577, 894, 578, 580, 579, 953, 581, 806, 714, 761, 809,
+            924, 812, 576, 590, 591, 588, 589, 598, 652, 599, 959, 956, 597, 593, 594,
+            819, 595, 587, 584, 586, 585, 600, 596, 1295, 614, 603, 1308, 1309, 1206,
+            1194, 1062, 974, 609, 1263, 951, 975, 608, 607, 606, 750, 605, 604, 950,
+            610, 613, 612, 653, 654, 611, 656, 669, 802, 400,
+        ],
+    ),
+    (
+        Group::Games,
+        &[
+            410, 411, 412, 1008, 415, 746, 428, 1009, 413, 414, 1010, 1012, 1014, 416,
+            1013, 1015, 268, 1016, 1041, 1018, 1017, 972, 971, 970, 969, 968, 1146,
+            418, 1061, 1060, 1059, 1058, 1057, 1056, 1054, 1053, 1052, 1051, 1050,
+            1049, 1048, 1047, 1046, 1045, 1044, 382, 390, 387, 388, 1264, 1318, 385,
+            386, 848, 1321, 383, 384, 1292, 389, 391, 93,
+        ],
+    ),
+    (
+        Group::Anime,
+        &[
+            615, 616, 617, 648, 619, 620, 623, 622, 621, 632, 624, 627, 626, 625, 644,
+            628, 635, 634, 638, 646, 645, 639, 640, 169,
+        ],
+    ),
+];
+
+/// The group one forum belongs to -- the row's own `tracker.php?f=<id>`
+/// cell looked up in `GROUP_FORUMS`. `None` means the section is not in
+/// any group (music, books, programs) or is a forum id the table does
+/// not know; either way the row is an "all"-only row, which is the
+/// honest answer rather than a guess.
+pub fn group_for_forum(forum: i32) -> Option<Group> {
+    GROUP_FORUMS
+        .iter()
+        .find(|(_, ids)| ids.contains(&forum))
+        .map(|(group, _)| *group)
+}
+
+/// The forum selector for one request: `f=-1` for everything, or every
+/// id of the chosen group as repeated `f%5B%5D=` (`f[]` url-encoded).
+/// One request holds the whole group -- live-checked with 58 ids at
+/// once: all sections answered, one page, `start=` still honoured --
+/// so unlike rutor there is nothing to fan out. A group with no list
+/// cannot be asked about and falls back to "all" rather than to a
+/// broken URL; no declared group is empty.
+fn forum_params(category: Option<Group>) -> String {
+    let ids = match category {
+        Some(group) => GROUP_FORUMS
+            .iter()
+            .find(|(g, _)| *g == group)
+            .map_or(&[][..], |(_, ids)| ids),
+        None => &[],
+    };
+    if ids.is_empty() {
+        return ALL_FORUMS.to_string();
+    }
+    ids.iter()
+        .map(|id| format!("f%5B%5D={}", id))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 /// Site root; every path below lives under `/forum/`.
 pub const FORUM: &str = "https://nnmclub.to/forum/";
 
 /// The page the query URL was verified against: results ordered by the
 /// tracker, tokens matched server-side (all of a row's words present).
-pub fn search_url(query: &str, offset: usize) -> String {
+/// A selected group narrows the forums the query runs over (B6).
+pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String {
     let query = query.trim();
     if query.is_empty() {
-        return browse_url(offset);
+        return browse_url(offset, category);
     }
     with_offset(
         format!(
             "{}tracker.php?{}&nm={}",
             FORUM,
-            ALL_FORUMS,
+            forum_params(category),
             urlencoding::encode(query)
         ),
         offset,
@@ -95,9 +204,13 @@ pub fn search_url(query: &str, offset: usize) -> String {
 
 /// The browse URL (live: 50 rows, `o=2&sd=desc` = newest topic first),
 /// the empty-query entry point behind `supports_browse`.
-pub fn browse_url(offset: usize) -> String {
+pub fn browse_url(offset: usize, category: Option<Group>) -> String {
     with_offset(
-        format!("{}tracker.php?{}&o=2&sd=desc", FORUM, ALL_FORUMS),
+        format!(
+            "{}tracker.php?{}&o=2&sd=desc",
+            FORUM,
+            forum_params(category)
+        ),
         offset,
     )
 }
@@ -203,6 +316,20 @@ fn download_id(row: &str) -> Option<String> {
     (!id.is_empty()).then_some(id)
 }
 
+/// The row's forum id, read off the `tracker.php?f=<id>` cell the site
+/// fills with the section's Russian name -- live present in every row
+/// of both a query and browse. The author's link is `tracker.php?pid=`
+/// and the topic's is `viewtopic.php?t=`, so `f=` picks this one.
+fn forum_of(row: &str) -> Option<i32> {
+    let marker = "tracker.php?f=";
+    let at = row.find(marker)?;
+    let id: String = row[at + marker.len()..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    id.parse().ok()
+}
+
 /// A cell identified by an attribute the site writes on it, with the
 /// cell's own span -- the seeds/leechers/added cells all have one.
 fn cell_span(row: &str, marker: &str) -> Option<(usize, usize)> {
@@ -295,7 +422,10 @@ fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
         download_url: format!("{}download.php?id={}", FORUM, download_id),
         page_url: format!("{}viewtopic.php?t={}", FORUM, topic_id),
         source: "nnmclub".to_string(),
-        group: None,
+        // The row's own forum, so a tab switch can filter rows the
+        // tracker already returned (B6); `None` for sections outside
+        // the four groups, which is what keeps "all" honest.
+        group: forum_of(row).and_then(group_for_forum),
         query: String::new(),
     })
 }
@@ -378,9 +508,8 @@ impl Source for NnmclubSearcher {
     }
 
     fn groups(&self) -> &'static [Group] {
-        // Declared, not guessed per row (wave-3 decision): the four
-        // forums the site spans, which is what the Options grouping
-        // and B6's filtering need from a source.
+        // The four groups `GROUP_FORUMS` spans -- declared once, and
+        // asserted against the forum table by a test.
         GROUPS
     }
 
@@ -406,7 +535,7 @@ impl Source for NnmclubSearcher {
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
         let offset = req.offset;
-        let url = search_url(&req.query, offset);
+        let url = search_url(&req.query, offset, req.category);
         let response =
             fetch_resilient(&url, || self.client.get(&url), &FetchOptions::default()).await?;
         let status = response.status();
