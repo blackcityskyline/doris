@@ -1,7 +1,7 @@
 use doris::search::models::TorrentItem;
 use doris::search::rutor::{
-    GROUP_IDS, RutorSearcher, count_title_links, group_ids, parse_results, split_query,
-    title_has_word, to_page,
+    BROWSE_URL, GROUP_IDS, RutorSearcher, count_title_links, group_ids, parse_results,
+    split_query, title_has_word, to_page,
 };
 use doris::search::source::Group;
 
@@ -532,4 +532,17 @@ fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     attributed.group = Some(Group::Anime);
     let page = to_page(vec![vec![attributed]], Some(Group::Movies), 0);
     assert_eq!(page.items[0].group, Some(Group::Anime), "the row outranks the URL");
+}
+
+/// B9: browse is the homepage index, not a search URL -- live
+/// 26.09.2026 it answers 149 rows of the latest releases with the same
+/// row markup as the search results, and has no pager.
+#[test]
+fn test_the_browse_url_is_the_homepage_index() {
+    assert_eq!(BROWSE_URL, "https://rutor.info/");
+    assert!(
+        !BROWSE_URL.contains("/search/"),
+        "browse must not be a search URL: {}",
+        BROWSE_URL
+    );
 }

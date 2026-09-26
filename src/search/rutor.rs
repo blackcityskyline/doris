@@ -124,6 +124,14 @@ impl Default for RutorSearcher {
     }
 }
 
+/// The browse URL (B9): the homepage index. Live 26.09.2026 it
+    /// answers 149 rows of the latest releases with the same row markup
+    /// as the search results, and it has no pager -- so browse is one
+    /// page and `has_more` is false. The category is not honoured: the
+    /// homepage is one mixed list, which is why the `b` key returns the
+    /// view to "all" before searching.
+    pub const BROWSE_URL: &str = "https://rutor.info/";
+
 impl RutorSearcher {
     pub const HOME_URL: &'static str = "https://rutor.info/";
     /// Search/download host. rutor.info, not rutor.org: since
@@ -183,6 +191,17 @@ impl RutorSearcher {
         offset: usize,
         category: Option<Group>,
     ) -> Result<SearchPage> {
+        if query.trim().is_empty() {
+            // Browse (B9): the homepage's latest releases -- one mixed
+            // list, no pager, no category. Rows claim no group, which
+            // is why the `b` key returns the view to "all" first.
+            let (status, html) = self.fetch_url(BROWSE_URL).await?;
+            if !status.is_success() {
+                anyhow::bail!("rutor returned HTTP {} for its homepage", status);
+            }
+            let items = parse_results(&html);
+            return Ok(SearchPage { items, has_more: false, next_offset: None });
+        }
         if offset % Self::PAGE_SIZE != 0 {
             // The app advances `offset` by however many rows came back,
             // so an offset that isn't on a page boundary means the
@@ -308,6 +327,14 @@ impl RutorSearcher {
         query: &str,
     ) -> Result<(reqwest::StatusCode, String)> {
         let url = Self::search_url(page, category, query);
+        self.fetch_url(&url).await
+    }
+
+    /// One GET of any URL on this source's site, with the shared client
+    /// and the unconditional diagnostic log line. Browse reuses it (B9):
+    /// the homepage is not a search URL, but it is fetched and parsed
+    /// exactly like one.
+    async fn fetch_url(&self, url: &str) -> Result<(reqwest::StatusCode, String)> {
 
         // Accept/Accept-Language come from the shared client (B5); the
         // only per-request header left is Referer, which names this
@@ -324,7 +351,7 @@ impl RutorSearcher {
         // the first thing to check.
         let response = fetch_resilient(
             &url,
-            || self.client.get(&url).header("Referer", Self::BASE),
+            || self.client.get(url).header("Referer", Self::BASE),
             &FetchOptions::default(),
         )
         .await?;

@@ -309,7 +309,9 @@ impl Source for RutorSearcher {
     }
 
     fn supports_browse(&self) -> bool {
-        false
+        // The homepage index answers an empty query with the latest
+        // releases (B9) -- see `rutor::BROWSE_URL`.
+        true
     }
 
     async fn ensure_logged_in(&self, _auth: &AuthContext, _log: &LogFn) -> Result<bool> {
@@ -358,6 +360,11 @@ pub struct SourceInfo {
     /// A `false` on an implemented source needs its reason next to it
     /// in the entry below -- `source_registry_tests` checks that.
     pub category_filter: bool,
+    /// Whether the source can answer an *empty query* -- browse mode
+    /// (B9): the freshest rows it has, with no search terms. `false`
+    /// means an empty query would come back as a broken page rather
+    /// than as a list, so `selected_sources` leaves it out of a browse.
+    pub supports_browse: bool,
     /// Whether using this source needs a browser session launched first
     /// (see `Source::requires_browser`). `false` for planned sources:
     /// nothing constructs them yet, so nothing may promise a browser.
@@ -384,6 +391,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         // disjoint topic sets), so a selected category reaches it and the
         // rows claim it back -- see `rutracker::GROUP_FORUMS`.
         category_filter: true,
+        supports_browse: false,
         requires_browser: true,
         home_url: RutrackerSearcher::HOME_URL,
     },
@@ -393,6 +401,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: RUTOR_GROUPS,
         category_filter: true,
+        supports_browse: true,
         requires_browser: false,
         home_url: RutorSearcher::HOME_URL,
     },
@@ -402,6 +411,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: YTS_GROUPS,
         category_filter: true,
+        supports_browse: true,
         requires_browser: false,
         home_url: YtsSearcher::HOME_URL,
     },
@@ -411,6 +421,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: TPB_GROUPS,
         category_filter: true,
+        supports_browse: true,
         requires_browser: false,
         home_url: TpbSearcher::HOME_URL,
     },
@@ -420,6 +431,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: SUBSPLEASE_GROUPS,
         category_filter: true,
+        supports_browse: true,
         requires_browser: false,
         home_url: SubsPleaseSearcher::HOME_URL,
     },
@@ -429,6 +441,9 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: NYAA_GROUPS,
         category_filter: true,
+        // The empty-query feed was never answered live (B8 wave 2
+        // decision), so browse is not claimed until it is.
+        supports_browse: false,
         requires_browser: false,
         home_url: NyaaSearcher::HOME_URL,
     },
@@ -438,6 +453,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: EZTV_GROUPS,
         category_filter: true,
+        supports_browse: true,
         requires_browser: false,
         home_url: EztvSearcher::HOME_URL,
     },
@@ -447,6 +463,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: NNMCLUB_GROUPS,
         category_filter: true,
+        supports_browse: true,
         requires_browser: false,
         home_url: NnmclubSearcher::HOME_URL,
     },
@@ -470,6 +487,9 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: X1337X_GROUPS,
         category_filter: true,
+        // `/home/` answers an empty query with the same row markup as
+        // search (live: 78 rows, one page).
+        supports_browse: true,
         requires_browser: false,
         home_url: X1337xSearcher::HOME_URL,
     },
@@ -487,6 +507,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         // Not implemented, so nothing to ask: an empty `groups` says
         // the same thing from the row side of the same question.
         category_filter: false,
+        supports_browse: false,
         requires_browser: false,
         home_url: "https://torentino.org",
     },
@@ -569,7 +590,7 @@ pub fn cli_sources(
             Ok(vec![info])
         }
         None => Ok(crate::search::orchestrator::selected_sources(
-            "all", enabled, None,
+            "all", enabled, None, false,
         )),
     }
 }

@@ -206,10 +206,16 @@ pub async fn coordinate(
 /// (`SourceInfo::category_filter` -- today only rutracker, whose `c[]`
 /// slot has never been verified live, so a category search skips the
 /// slow browser round-trip instead of discarding its rows).
+///
+/// `browse` is the empty-query case (B9): a source that cannot answer a
+/// query with no terms is not asked, because its "browse" would be a
+/// search for the empty string and read as a broken page rather than as
+/// the freshest rows the user asked for.
 pub fn selected_sources(
     active_tab: &str,
     enabled: &[String],
     group: Option<Group>,
+    browse: bool,
 ) -> Vec<&'static SourceInfo> {
     KNOWN_SOURCES
         .iter()
@@ -220,6 +226,7 @@ pub fn selected_sources(
             None => true,
             Some(group) => info.category_filter && info.groups.contains(&group),
         })
+        .filter(|info| !browse || info.supports_browse)
         .collect()
 }
 

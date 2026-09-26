@@ -148,3 +148,35 @@ async fn live_a_selected_category_answers_with_only_that_category() {
         );
     }
 }
+
+/// B9: an empty query is browse mode, and rutor answers it with the
+/// homepage index -- the latest releases, one mixed list, no pager.
+#[tokio::test]
+#[ignore = "requires network access to rutor.info"]
+async fn live_browse_answers_with_the_homepage_index() {
+    let searcher = RutorSearcher::new();
+    let page = searcher
+        .search_page("", 0, None)
+        .await
+        .expect("live rutor browse");
+
+    println!(
+        "browse: {} items, has_more={}",
+        page.items.len(),
+        page.has_more
+    );
+    assert!(
+        !page.items.is_empty(),
+        "the homepage must answer an empty query with the latest releases"
+    );
+    assert!(
+        !page.has_more,
+        "the homepage has no pager, so browse is one page"
+    );
+    // A browse list is mixed by nature: rows claim no group, which is
+    // why the `b` key returns the view to "all" before searching.
+    assert!(
+        page.items.iter().all(|row| row.group.is_none()),
+        "a mixed homepage list claims no category"
+    );
+}
