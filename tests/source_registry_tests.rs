@@ -82,13 +82,10 @@ fn test_declared_groups_are_the_four_known_ones() {
 /// the capability; this list is the reason column -- an implemented
 /// source sits here exactly while it declares groups it cannot filter
 /// by, and the comment beside its entry in `KNOWN_SOURCES` says why.
-///
-/// One entry today: rutracker's `c[]` slot has never been verified
-/// live (the probe needs an account login), and its rows carry no
-/// group, so a category search would dispatch a slow browser round
-/// trip and drop every row it brought back. Passing
-/// `rutracker_live_tests` is what moves it out of this list.
-const CATEGORY_FILTER_UNVERIFIED: &[&str] = &["rutracker"];
+/// Empty today: every implemented source serves the categories it
+/// declares, rutracker included (its `f[]` slot was verified live
+/// 26.09.2026). A new source that cannot filter belongs here.
+const CATEGORY_FILTER_UNVERIFIED: &[&str] = &[];
 
 #[test]
 fn test_a_category_a_source_cannot_serve_is_documented_as_unverified() {
@@ -121,16 +118,20 @@ fn test_a_category_a_source_cannot_serve_is_documented_as_unverified() {
         );
     }
 
-    // The shape the roadmap named: the browser-backed source that
-    // declares all four groups is exactly the one that may not be
-    // asked, while the plain HTTP sources with real slots may.
+    // The shape the roadmap named, now resolved: the browser-backed
+    // source that declares all four groups does filter them, on the
+    // strength of its own live test.
     let rutracker = KNOWN_SOURCES
         .iter()
         .find(|s| s.id == "rutracker")
         .expect("rutracker is registered");
     assert!(rutracker.requires_browser);
     assert_eq!(rutracker.groups.len(), 4);
-    assert!(!rutracker.category_filter);
+    assert!(
+        rutracker.category_filter,
+        "rutracker's f[] slot was verified live: two forum ids answer \
+         disjoint topic sets"
+    );
     for id in ["rutor", "1337x", "nnmclub", "tpb", "yts", "eztv", "nyaa"] {
         let info = KNOWN_SOURCES
             .iter()

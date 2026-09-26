@@ -20,14 +20,17 @@
 //! own login are injected instead. Without them this probe answers
 //! "0 categories" against a login wall, not against the site.
 //!
-//! Run with:
-//! `cargo test --test rutracker_live_tests -- --ignored --nocapture`
+//! Run with (one thread: two browsers at once have been seen to kill a
+//! session mid-test):
+//! `cargo test --test rutracker_live_tests -- --ignored --nocapture
+//! --test-threads=1`
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use doris::browser::cdp::{Browser, BrowserVisibility};
 use doris::browser::detect;
+use doris::search::source::Group;
 
 const HOME: &str = "https://rutracker.org/forum/";
 
@@ -213,6 +216,38 @@ async fn inject_saved_cookies(browser: &Browser, cookie_file: Option<&Path>) {
         Ok(()) => println!("injected {} cookies from {}", cookies.len(), path.display()),
         Err(e) => println!("injecting cookies failed: {}", e),
     }
+}
+
+/// The table itself, end to end: one GET carrying every forum id of a
+/// group must answer with rows -- this is the request the slot makes
+/// when a category is selected, so a hole in `GROUP_FORUMS` or a
+/// parameter the site stops honouring shows up here and not in the
+/// category tab's empty table.
+#[tokio::test]
+#[ignore = "launches a browser, waits out Cloudflare, needs rutracker cookies"]
+async fn live_a_group_search_asks_for_its_forums_in_one_request() {
+    let config = doris::config::load(None).unwrap_or_default();
+    let priority = detect::parse_priority(&config.browser_priority);
+    let (_, path) = detect::detect_browser_with_priority(None, &priority)
+        .expect("a browser to probe with");
+    let mut browser = Browser::launch(&path, BrowserVisibility::Hidden, HOME, true)
+        .await
+        .expect("browser session");
+
+    fetch(&browser, HOME).await;
+    inject_saved_cookies(&browser, Some(Path::new(&config.cookie_file))).await;
+
+    let url = doris::search::rutracker::search_url("gta", 0, Some(Group::Games));
+    println!("asking: {} ({} bytes)", url, url.len());
+    fetch(&browser, &url).await;
+    let topics = result_topic_ids(&browser).await;
+    println!("games search -> {} topics", topics.len());
+    assert!(
+        !topics.is_empty(),
+        "the group's own forums must answer a search filtered to them"
+    );
+
+    browser.shutdown().await;
 }
 
 /// Navigate, then wait out a Cloudflare challenge if the page brought

@@ -2,6 +2,7 @@ use anyhow::Result;
 use crate::browser::cdp::Browser;
 use crate::search::models::TorrentItem;
 use crate::search::cookies::{self, Cookie};
+use crate::search::source::Group;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,6 +30,120 @@ pub struct RutrackerSearcher {
     /// succeeded", and the browser mutex already serializes the work it
     /// guards.
     logged_in: AtomicBool,
+}
+
+/// The site sections that map onto a `Group`, read live off the search
+/// form's own `f[]` multi-select on 26.09.2026 (1339 forums, the whole
+/// tree, nested under a `|-` prefix) and grouped with the user. A
+/// category here is a **forum id**, the way it is on nnmclub: the form
+/// offers ids, and `tracker.php?f[]=<id>` answers with that forum's
+/// topics alone -- verified live, a topic from forum 941 is *not* found
+/// under `f[]=22`, so the filter is exact and a parent's id does not
+/// carry its children. Parent ids are listed too (a parent answers
+/// topics of its own: `f[]=22` returned 50), which is harmless when it
+/// does not.
+///
+/// Sections that claim no group, deliberately: sport (Olympics,
+/// Футбол, Баскетбол, Хоккей, Рестлинг, Спорт и боевые искусства),
+/// books and education, music and music video, software, Rutracker
+/// Awards, car/moto (1202 «Фильмы и передачи по авто/мото», 1964
+/// «Ремонт и эксплуатация транспортных средств») and «Разное». Rows
+/// from those sections claim no group and live in the "all" view only.
+pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
+    (
+        Group::Movies,
+        &[
+            22, 941, 1666, 376, 106, 7, 187, 2090, 2221, 2091, 2092, 2093,
+            2200, 1950, 252, 2540, 934, 505, 212, 2459, 1235, 166, 185,
+            124, 1543, 709, 1577, 511, 1493, 93, 905, 101, 100, 877, 1576,
+            572, 2220, 1670, 2198, 2199, 313, 312, 1247, 2201, 2339, 140,
+            194, 718, 775, 1457, 1940, 272, 271, 352, 549, 1213, 2109, 514,
+            2097, 4, 84, 2343, 930, 2365, 1900, 2258, 521, 208, 539, 2183,
+            209, 484, 822, 181, 921, 815, 816, 1460, 498,
+        ],
+    ),
+    (
+        Group::TV,
+        &[
+            9, 812, 81, 920, 80, 1535, 188, 91, 990, 1408, 175, 79, 104,
+            189, 842, 235, 242, 819, 1531, 721, 1102, 1120, 1214, 489, 387,
+            1359, 184, 1417, 1449, 504, 372, 110, 121, 507, 536, 1144, 195,
+            2366, 1803, 266, 193, 1690, 1459, 1463, 825, 1248, 1288, 265,
+            2404, 2405, 2370, 2396, 2398, 1498, 119, 1171, 1669, 2393, 625,
+            1949, 173, 273, 911, 325, 534, 594, 1301, 607, 1574, 1539, 694,
+            781, 704, 1537, 2100, 820, 915, 1242, 717, 1939, 2412, 2102, 19,
+            670, 1475, 2107, 1453, 294, 46, 103, 671, 2177, 656, 2538, 2159,
+            251, 98, 97, 851, 2178, 821, 2076, 56, 2123, 876, 2139, 2380,
+            1467, 1469, 672, 249, 552, 500, 2112, 1327, 1468, 1280, 752,
+            1114, 2168, 2160, 2176, 314, 2323, 1278, 1281, 2110, 979, 2169,
+            2166, 2164, 2163, 85, 24, 1959, 939, 1481, 113, 115, 882, 1482,
+            393, 1569, 373, 1186, 137, 2537, 532, 827, 1484, 1485, 114,
+            1332, 1495,
+        ],
+    ),
+    (
+        Group::Games,
+        &[
+            5, 635, 127, 2203, 647, 646, 50, 53, 1008, 900, 128, 2204, 278,
+            52, 54, 51, 2226, 2118, 1310, 2410, 2205, 2225, 2206, 1007, 2228,
+            139, 2478, 2480, 2481, 2142, 2060, 2145, 2146, 2143, 2012, 960,
+            537, 637, 899, 1992, 2059, 548, 908, 357, 886, 973, 546, 1352,
+            1116, 595, 887, 510, 773, 774, 1605, 968, 129, 2185, 2487,
+            2182, 2181, 2180, 2179, 2186, 700, 1926, 650, 2149, 2420, 1004,
+            1002, 240, 2415,
+        ],
+    ),
+    (
+        Group::Anime,
+        &[
+            33, 1106, 1105, 599, 1389, 1391, 2491, 2544, 1642, 1390, 404,
+            1277, 809, 2484, 1386, 1387, 862, 2461, 2462, 2463, 2464, 2473,
+            281, 2465, 2458,
+        ],
+    ),
+];
+
+/// `f%5B%5D=<id>` for every forum of the selected group, `""` when no
+/// category is selected -- the parameter the tracker's own search form
+/// posts (live 26.09.2026).
+fn forum_params(category: Option<Group>) -> String {
+    let ids = match category {
+        Some(group) => GROUP_FORUMS
+            .iter()
+            .find(|(g, _)| *g == group)
+            .map_or(&[][..], |(_, ids)| ids),
+        None => &[],
+    };
+    ids.iter()
+        .map(|id| format!("f%5B%5D={}", id))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// The query URL: results ordered by the tracker (`o=10&s=2`), a
+/// selected group narrowing the forums the query runs over (B6).
+/// `start=` only on the second page and later.
+pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String {
+    let encoded_query = urlencoding::encode(query);
+    let params = forum_params(category);
+    match (offset == 0, params.is_empty()) {
+        (true, true) => format!(
+            "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2",
+            encoded_query
+        ),
+        (true, false) => format!(
+            "https://rutracker.org/forum/tracker.php?{}&nm={}&o=10&s=2",
+            params, encoded_query
+        ),
+        (false, true) => format!(
+            "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2&start={}",
+            encoded_query, offset
+        ),
+        (false, false) => format!(
+            "https://rutracker.org/forum/tracker.php?{}&nm={}&o=10&s=2&start={}",
+            params, encoded_query, offset
+        ),
+    }
 }
 
 impl RutrackerSearcher {
@@ -441,29 +556,30 @@ impl RutrackerSearcher {
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<TorrentItem>> {
-        self.search_page(query, 0).await
+        self.search_page(query, 0, None).await
     }
 
-    pub async fn search_page(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
-        let outcome = self.search_page_inner(query, start).await;
+    /// One page of results under `category` (B6): `Some(group)` asks for
+    /// that group's forums only, `None` leaves the query unfiltered.
+    pub async fn search_page(
+        &self,
+        query: &str,
+        offset: usize,
+        category: Option<Group>,
+    ) -> Result<Vec<TorrentItem>> {
+        let outcome = self.search_page_inner(query, offset, category).await;
         self.park().await;
         outcome
     }
 
-    async fn search_page_inner(&self, query: &str, start: usize) -> Result<Vec<TorrentItem>> {
+    async fn search_page_inner(
+        &self,
+        query: &str,
+        start: usize,
+        category: Option<Group>,
+    ) -> Result<Vec<TorrentItem>> {
         let browser = self.browser.lock().await;
-        let encoded_query = urlencoding::encode(query);
-        let search_url = if start == 0 {
-            format!(
-                "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2",
-                encoded_query
-            )
-        } else {
-            format!(
-                "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2&start={}",
-                encoded_query, start
-            )
-        };
+        let search_url = search_url(query, start, category);
 
         browser.navigate(&search_url).await?;
         crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
@@ -510,15 +626,12 @@ impl RutrackerSearcher {
         let mut items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
         for item in &mut items {
             item.source = "rutracker".to_string();
-            // Numeric twins from the display strings the row script read
-            // out (B1). `added`/`leechers` stay 0 for now: the row's date
-            // cell may carry a `data-ts` timestamp and the table a leech
-            // counter, but neither is confirmed against live markup and
-            // guessing selectors here is how "0 results"-style bugs get
-            // shipped. `info_hash`/`magnet` stay empty because
-            // rutracker's search rows carry no magnet link at all, and
-            // `group` stays None because the search URL doesn't filter by
-            // category (see B6).
+            // The row carries no forum of its own to read a group off
+            // (rutracker's result rows link their topic and nothing else
+            // identifying), so the group is the one the query was filtered
+            // by -- the site's own `f[]` parameter said these rows are
+            // inside it (B6).
+            item.group = category;
             item.fill_from_display();
         }
         Ok(items)

@@ -349,24 +349,22 @@ fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
     assert_eq!(ids("all", None), vec!["rutracker", "yts"]);
     assert_eq!(
         ids("all", Some(Group::Movies)),
-        vec!["yts"],
-        "rutracker declares Movies but cannot filter by it, so it is \
-         not asked rather than asked and emptied"
+        vec!["rutracker", "yts"],
+        "rutracker declares Movies and filters it (its f[] slot, verified \
+         live), so it is asked like any other serving source"
     );
     assert_eq!(
         ids("all", Some(Group::TV)),
-        Vec::<&str>::new(),
-        "yts cannot answer TV, rutracker may not be asked: nothing to dispatch"
+        vec!["rutracker"],
+        "yts cannot answer TV, so it is not asked"
     );
-    assert_eq!(ids("all", Some(Group::Anime)), Vec::<&str>::new());
-    assert_eq!(ids("all", Some(Group::Games)), Vec::<&str>::new());
-    // The default tab is rutracker, so this is the screen a category
-    // search starts on: no browser session is launched to produce rows
-    // the view would drop anyway.
+    assert_eq!(ids("all", Some(Group::Anime)), vec!["rutracker"]);
+    assert_eq!(ids("all", Some(Group::Games)), vec!["rutracker"]);
+    // The rutracker tab with a category selected asks only its own source.
     assert_eq!(
         ids("rutracker", Some(Group::Movies)),
-        Vec::<&str>::new(),
-        "the rutracker tab with a category selected asks nobody"
+        vec!["rutracker"],
+        "the rutracker tab reaches its own source, and it serves Movies"
     );
     // The tab still wins when it disagrees with the category.
     assert!(
@@ -376,18 +374,14 @@ fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
 }
 
 /// The empty-dispatch message is the only hint a stuck user gets, so
-/// it has to point at the fix that works: "enable it in Options" is a
-/// dead end for a source that is already enabled and simply cannot
-/// filter by the selected category yet (rutracker, pending `c[]`).
+/// it has to point at the fix that works. The blocked-source branch is
+/// unreachable through the registry today (every implemented source
+/// serves its categories, which `source_registry_tests` guards), so the
+/// assertions cover the branch that can still fire.
 #[test]
 fn the_empty_dispatch_explains_which_fix_actually_applies() {
-    let blocked = orchestrator::nothing_to_ask_reason("rutracker", Group::Movies);
-    assert!(blocked.contains("Rutracker"), "{}", blocked);
-    assert!(blocked.contains("cannot filter by 'Movies'"), "{}", blocked);
-    assert!(blocked.contains("'all' tab"), "{}", blocked);
-
-    // A tab whose source does not declare the group at all keeps the
-    // older advice -- there enabling or switching sources is real.
+    // A tab whose source does not declare the group keeps the older
+    // advice -- there enabling or switching sources is real.
     let undeclared = orchestrator::nothing_to_ask_reason("yts", Group::TV);
     assert!(
         undeclared.contains("No source on this tab serves 'TV'"),
@@ -399,6 +393,16 @@ fn the_empty_dispatch_explains_which_fix_actually_applies() {
     // The `all` tab reaches every source, so it never blames a filter.
     let all = orchestrator::nothing_to_ask_reason("all", Group::Games);
     assert!(all.contains("No source on this tab serves 'Games'"), "{}", all);
+
+    // rutracker filters now (its f[] slot was verified live), so even the
+    // default tab with a category selected gets the generic line rather
+    // than the "cannot filter yet" one.
+    let rutracker = orchestrator::nothing_to_ask_reason("rutracker", Group::Movies);
+    assert!(
+        rutracker.contains("No source on this tab serves 'Movies'"),
+        "{}",
+        rutracker
+    );
 }
 
 #[test]
