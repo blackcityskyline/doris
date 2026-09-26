@@ -200,7 +200,12 @@ pub async fn coordinate(
 /// asked and filtered afterwards: it would answer with rows that claim
 /// no category, the view would drop every one of them, and the table
 /// would read as "this category is empty" while sources able to filter
-/// it server-side were the only ones consulted.
+/// it server-side were the only ones consulted. Two ways a source fails
+/// that test, both handled here: it does not declare the group at all
+/// (yts cannot answer TV), or it declares it but cannot filter by it
+/// (`SourceInfo::category_filter` -- today only rutracker, whose `c[]`
+/// slot has never been verified live, so a category search skips the
+/// slow browser round-trip instead of discarding its rows).
 pub fn selected_sources(
     active_tab: &str,
     enabled: &[String],
@@ -213,7 +218,7 @@ pub fn selected_sources(
         .filter(|info| active_tab == "all" || active_tab == info.id)
         .filter(|info| match group {
             None => true,
-            Some(group) => info.groups.contains(&group),
+            Some(group) => info.category_filter && info.groups.contains(&group),
         })
         .collect()
 }
