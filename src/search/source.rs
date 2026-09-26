@@ -23,6 +23,7 @@ use tokio::sync::Mutex;
 
 use super::models::TorrentItem;
 use super::rutracker::RutrackerSearcher;
+use super::torentino::TorentinoSearcher;
 use super::rutor::RutorSearcher;
 use super::eztv::EztvSearcher;
 use super::nnmclub::NnmclubSearcher;
@@ -190,6 +191,11 @@ pub trait Source: Send + Sync {
 /// ids, live-verified 26.09.2026 -- so it declares the four groups it can
 /// filter, and `rutracker::GROUP_FORUMS` maps them onto forum ids.
 const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Group::Anime];
+
+/// Torentino is a games tracker, top to bottom, so it declares the
+/// one group its rows can claim (B8 wave 3; playback is B7's
+/// `.torrent -> upload_torrent` fallback, no bencode crate).
+const TRENTINO_GROUPS: &[Group] = &[Group::Games];
 
 /// Rutor's search URL carries a real category slot (`0` = all), and B6
 /// maps these groups onto the rubric ids live-verified in
@@ -502,14 +508,16 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
     SourceInfo {
         id: "torentino",
         label: "Torentino",
-        implemented: false,
-        groups: &[],
-        // Not implemented, so nothing to ask: an empty `groups` says
-        // the same thing from the row side of the same question.
-        category_filter: false,
+        implemented: true,
+        groups: TRENTINO_GROUPS,
+        category_filter: true,
+        // Search is a POST, and the .torrent link lives on the item page
+        // (live 26.09.2026), so `download_torrent` fetches it there --
+        // no bencode crate needed for playback. Browse is not claimed:
+        // no freshest-first feed has ever been verified on this host.
         supports_browse: false,
         requires_browser: false,
-        home_url: "https://torentino.org",
+        home_url: super::torentino::HOME_URL,
     },
 ];
 
@@ -545,6 +553,7 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "nnmclub" => Ok(Arc::new(NnmclubSearcher::new())),
         "eztv" => Ok(Arc::new(EztvSearcher::new())),
         "1337x" => Ok(Arc::new(X1337xSearcher::new())),
+        "torentino" => Ok(Arc::new(TorentinoSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
     }
 }
