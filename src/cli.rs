@@ -31,6 +31,11 @@ pub struct Args {
     #[arg(long)]
     pub cli: bool,
 
+    /// Search only this source by registry id (default: every enabled
+    /// implemented source)
+    #[arg(long)]
+    pub source: Option<String>,
+
     #[arg(long)]
     pub config: Option<PathBuf>,
 }
