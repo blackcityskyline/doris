@@ -375,6 +375,32 @@ fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
     );
 }
 
+/// The empty-dispatch message is the only hint a stuck user gets, so
+/// it has to point at the fix that works: "enable it in Options" is a
+/// dead end for a source that is already enabled and simply cannot
+/// filter by the selected category yet (rutracker, pending `c[]`).
+#[test]
+fn the_empty_dispatch_explains_which_fix_actually_applies() {
+    let blocked = orchestrator::nothing_to_ask_reason("rutracker", Group::Movies);
+    assert!(blocked.contains("Rutracker"), "{}", blocked);
+    assert!(blocked.contains("cannot filter by 'Movies'"), "{}", blocked);
+    assert!(blocked.contains("'all' tab"), "{}", blocked);
+
+    // A tab whose source does not declare the group at all keeps the
+    // older advice -- there enabling or switching sources is real.
+    let undeclared = orchestrator::nothing_to_ask_reason("yts", Group::TV);
+    assert!(
+        undeclared.contains("No source on this tab serves 'TV'"),
+        "{}",
+        undeclared
+    );
+    assert!(undeclared.contains("Options"), "{}", undeclared);
+
+    // The `all` tab reaches every source, so it never blames a filter.
+    let all = orchestrator::nothing_to_ask_reason("all", Group::Games);
+    assert!(all.contains("No source on this tab serves 'Games'"), "{}", all);
+}
+
 #[test]
 fn a_fresh_search_asks_every_selected_source_from_zero() {
     let selected = orchestrator::selected_sources("all", &both_enabled(), None);

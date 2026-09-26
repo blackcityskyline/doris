@@ -1520,13 +1520,12 @@ impl App {
         if selected.is_empty() {
             // Two ways to get here, and they have different fixes: the
             // tab's source is off, or nothing the tab can reach serves
-            // the selected category (B6).
+            // the selected category (B6) -- the orchestrator words the
+            // second one by what would actually change it.
             let reason = match self.ui.active_group {
-                Some(group) => format!(
-                    "No source on this tab serves '{}' -- see Options -> streaming \
-                     -> Sources.",
-                    group.label()
-                ),
+                Some(group) => {
+                    orchestrator::nothing_to_ask_reason(&self.ui.active_source, group)
+                }
                 None => {
                     "Selected source is disabled in Options -> streaming -> Sources."
                         .to_string()
