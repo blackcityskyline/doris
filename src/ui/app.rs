@@ -234,6 +234,11 @@ pub struct App {
     /// the rows already on screen -- so nothing here implies a request
     /// was already made.
     pub group_changed: bool,
+    /// Browse mode (B9): the current search is an empty query asking
+    /// browse-capable sources for their freshest rows. Set by the `b`
+    /// key, which also returns the category to "all" -- a browse list is
+    /// mixed by nature, so rows claiming no group must stay visible.
+    pub browsing: bool,
     /// Set whenever the user switches the active source tab (via `]` key or
     /// mouse click). Cleared on the next Enter press, which uses it to
     /// decide whether Enter means "re-search with the new source" (true)
@@ -399,6 +404,7 @@ impl App {
             active_group: None,
             group_tabs: group_tabs(&Config::default()),
             group_changed: false,
+            browsing: false,
             source_changed: false,
             last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),

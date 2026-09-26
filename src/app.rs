@@ -271,7 +271,7 @@ fn present_results(ui: &mut UiApp) {
     let before = ui.results.len();
     let anchor = ui.results.get(ui.selected).cloned();
 
-    ui.results = default_order(&dedupe_by_hash(&ui.results), false);
+    ui.results = default_order(&dedupe_by_hash(&ui.results), ui.browsing);
 
     let removed = before - ui.results.len();
     if removed > 0 {
@@ -1304,6 +1304,19 @@ impl App {
             KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();
             }
+            KeyCode::Char('b') if !self.ui.input_mode => {
+                // Browse (B9): an empty query asks the browse-capable
+                // sources for their freshest rows. Browse is cross-source
+                // by nature, so it takes the `all` tab and the "all"
+                // category with it -- a mixed list of rows claiming no
+                // group must stay visible, and a single source's tab
+                // would either answer nothing (rutracker cannot browse)
+                // or hide the rest.
+                self.ui.active_source = "all".to_string();
+                self.ui.source_changed = true;
+                self.ui.set_group(None);
+                self.start_search(String::new()).await;
+            }
             KeyCode::Char('L') if !self.ui.input_mode => {
                 self.ui.toggle_detail_log();
             }
@@ -1512,10 +1525,16 @@ impl App {
     /// walks login *inside* its task, so the deadline covers that walk
     /// too rather than timing only the page fetch.
     async fn dispatch_search(&mut self, query: String, generation: u64) {
+        // An empty query is browse mode (B9): only sources that can
+        // answer one are asked, and the merged list is ordered
+        // freshest-first rather than by seeds.
+        let browsing = query.trim().is_empty();
+        self.ui.browsing = browsing;
         let selected = orchestrator::selected_sources(
             &self.ui.active_source,
             &self.config.enabled_sources,
             self.ui.active_group,
+            browsing,
         );
         if selected.is_empty() {
             // Two ways to get here, and they have different fixes: the

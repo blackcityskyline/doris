@@ -12,7 +12,7 @@ use doris::event::Event;
 use doris::search::models::TorrentItem;
 use doris::search::orchestrator::{self, SourceStatus};
 use doris::search::source::{
-    AuthContext, Group, LogFn, SearchPage, SearchRequest, Source,
+    AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, KNOWN_SOURCES,
 };
 use tokio::sync::mpsc;
 
@@ -312,7 +312,7 @@ fn the_per_source_deadline_is_torios_25_seconds() {
 fn selection_follows_the_results_tab_and_the_options_checklist() {
     let both = vec!["rutracker".to_string(), "rutor".to_string()];
     let ids = |tab: &str, enabled: &[String]| -> Vec<&'static str> {
-        orchestrator::selected_sources(tab, enabled, None)
+        orchestrator::selected_sources(tab, enabled, None, false)
             .iter()
             .map(|info| info.id)
             .collect()
@@ -340,7 +340,7 @@ fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
     // live); yts declares only Movies and serves it by construction.
     let both = vec!["rutracker".to_string(), "yts".to_string()];
     let ids = |tab: &str, group: Option<Group>| -> Vec<&'static str> {
-        orchestrator::selected_sources(tab, &both, group)
+        orchestrator::selected_sources(tab, &both, group, false)
             .iter()
             .map(|info| info.id)
             .collect()
@@ -405,9 +405,40 @@ fn the_empty_dispatch_explains_which_fix_actually_applies() {
     );
 }
 
+/// B9: an empty query is browse mode, and a source that cannot answer
+/// one is not asked -- its "browse" would be a search for the empty
+/// string, which reads as a broken page rather than as the freshest
+/// rows the user asked for.
+#[test]
+fn a_browse_asks_only_the_sources_that_can_answer_an_empty_query() {
+    let all: Vec<String> = KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect();
+    let ids = |browse: bool| -> Vec<&'static str> {
+        orchestrator::selected_sources("all", &all, None, browse)
+            .iter()
+            .map(|info| info.id)
+            .collect()
+    };
+
+    let browse = ids(true);
+    for id in ["rutor", "yts", "tpb", "eztv", "subsplease", "nnmclub", "1337x"] {
+        assert!(browse.contains(&id), "{} must be able to browse", id);
+    }
+    // The two that cannot: the browser-backed one, and the one whose
+    // empty-query feed was never answered live.
+    assert!(!browse.contains(&"rutracker"), "{:?}", browse);
+    assert!(!browse.contains(&"nyaa"), "{:?}", browse);
+    // A category search is unaffected by the browse flag: rutracker is
+    // back when the query has terms again.
+    assert!(ids(false).contains(&"rutracker"));
+}
+
 #[test]
 fn a_fresh_search_asks_every_selected_source_from_zero() {
-    let selected = orchestrator::selected_sources("all", &both_enabled(), None);
+    let selected = orchestrator::selected_sources("all", &both_enabled(), None, false);
     let offsets = std::collections::HashMap::new();
     let has_more = std::collections::HashMap::new();
 
@@ -421,7 +452,7 @@ fn a_fresh_search_asks_every_selected_source_from_zero() {
 
 #[test]
 fn load_more_asks_only_sources_that_reported_another_page() {
-    let selected = orchestrator::selected_sources("all", &both_enabled(), None);
+    let selected = orchestrator::selected_sources("all", &both_enabled(), None, false);
     let mut offsets = std::collections::HashMap::new();
     offsets.insert("rutor".to_string(), 100);
     offsets.insert("rutracker".to_string(), 50);
@@ -442,7 +473,7 @@ fn load_more_asks_only_sources_that_reported_another_page() {
 
 #[test]
 fn a_source_that_failed_gets_retried_from_where_it_stopped() {
-    let selected = orchestrator::selected_sources("all", &both_enabled(), None);
+    let selected = orchestrator::selected_sources("all", &both_enabled(), None, false);
     let mut offsets = std::collections::HashMap::new();
     offsets.insert("rutracker".to_string(), 50);
     let mut has_more = std::collections::HashMap::new();

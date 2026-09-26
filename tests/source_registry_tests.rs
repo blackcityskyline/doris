@@ -213,16 +213,20 @@ fn test_registry_metadata_matches_the_buildable_implementation() {
     // no browser, four groups, one home URL that is not the mirror the
     // probes found answering.
     let x = X1337xSearcher::new();
-    let info = source::get_source("1337x").expect("1337x must be registered");
-    assert_eq!(x.id(), info.id);
-    assert_eq!(x.label(), info.label);
-    assert_eq!(x.groups(), info.groups);
-    assert_eq!(x.home_url(), info.home_url);
-    assert_eq!(x.requires_browser(), info.requires_browser);
+    let x_info = source::get_source("1337x").expect("1337x must be registered");
+    assert_eq!(x.id(), x_info.id);
+    assert_eq!(x.label(), x_info.label);
+    assert_eq!(x.groups(), x_info.groups);
+    assert_eq!(x.home_url(), x_info.home_url);
+    assert_eq!(x.requires_browser(), x_info.requires_browser);
     assert!(!x.requires_browser());
-    assert!(info.implemented);
-    assert!(!x.supports_browse() || !info.groups.is_empty(), "browse says something");
-    assert!(!rutor.supports_browse(), "browse mode is B9, not built yet");
+    assert!(x_info.implemented);
+    // B9: the trait's browse answer and the registry's must agree, or a
+    // browse would ask a source that answers with a broken page.
+    assert!(rutor.supports_browse(), "rutor's homepage answers an empty query");
+    assert_eq!(rutor.supports_browse(), info.supports_browse);
+    assert!(x.supports_browse(), "1337x's /home/ answers an empty query");
+    assert_eq!(x.supports_browse(), x_info.supports_browse);
 }
 
 #[test]
@@ -394,6 +398,29 @@ fn test_a_row_describes_groups_and_the_browser_the_registry_declares() {
 /// B9: the CLI asks what the `all` tab asks -- one list, not two. A
 /// second hand-written list in `main.rs` is how the CLI ends up skipping
 /// a source the TUI offers, or offering one the user disabled.
+/// B9: the registry's `supports_browse` is what `selected_sources` filters
+/// on, so it has to agree with what each source's `Source` impl answers.
+/// The two that cannot are the browser-backed one (rutracker) and the
+/// one whose empty-query shape was never verified (1337x).
+#[test]
+fn test_the_registry_says_which_sources_can_browse() {
+    for (id, can) in [
+        ("rutor", true),
+        ("yts", true),
+        ("tpb", true),
+        ("subsplease", true),
+        ("eztv", true),
+        ("nnmclub", true),
+        ("1337x", true),
+        ("nyaa", false),
+        ("rutracker", false),
+    ] {
+        let info = source::get_source(id)
+            .unwrap_or_else(|| panic!("{id} is registered"));
+        assert_eq!(info.supports_browse, can, "{id}");
+    }
+}
+
 #[test]
 fn test_the_cli_asks_what_the_all_tab_asks() {
     let enabled: Vec<String> = KNOWN_SOURCES
@@ -403,7 +430,7 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
         .collect();
 
     let cli = source::cli_sources(None, &enabled).expect("the registry answers");
-    let tab = orchestrator::selected_sources("all", &enabled, None);
+    let tab = orchestrator::selected_sources("all", &enabled, None, false);
     assert_eq!(
         cli.len(),
         tab.len(),
