@@ -23,7 +23,7 @@ use doris::search::models::TorrentItem;
 use doris::search::source::{AuthContext, Group, LogFn, Source};
 use doris::search::x1337x::{
     PAGE_SIZE, X1337xSearcher, browse_url, date_from_detail, filter_rows, magnet_from_detail,
-    parse_rows, search_url, to_browse_page, to_page,
+    parse_rows, search_url, stamp_category, to_browse_page, to_page,
 };
 
 /// The mirror every live probe answered on.
@@ -456,24 +456,80 @@ fn test_the_cursor_is_the_sites_page_number() {
     // `/search/<q>/<page>/` counts pages from 1, offsets count rows
     // from 0, and the words go in the path the way torio spells them.
     assert_eq!(
-        search_url(HOST, "dune 1080p", 0),
+        search_url(HOST, "dune 1080p", 0, None),
         "https://www.1337xx.to/search/dune+1080p/1/"
     );
     assert_eq!(
-        search_url(HOST, "  dune  ", 20),
+        search_url(HOST, "  dune  ", 20, None),
         "https://www.1337xx.to/search/dune/2/",
         "and the query is trimmed before it is built"
     );
     assert_eq!(
-        search_url(HOST, "a/b", 40),
+        search_url(HOST, "a/b", 40, None),
         "https://www.1337xx.to/search/a%2Fb/3/",
         "slashes in a query stay in the path, not in the routing"
     );
-    assert_eq!(browse_url(HOST), "https://www.1337xx.to/home/");
+    assert_eq!(browse_url(HOST, None), "https://www.1337xx.to/home/");
     assert_eq!(
-        search_url(HOST, "", 0),
-        browse_url(HOST),
+        search_url(HOST, "", 0, None),
+        browse_url(HOST, None),
         "an empty query is browse, as everywhere else"
+    );
+}
+
+/// B6's slot, in the spelling the site answers to (live 26.09.2026):
+/// the group's own label names the category path, the *same* label
+/// names browse's `/popular-<label>/`, and both keep the page cursor
+/// the plain search uses. The labels are `Group::label` -- the words
+/// in the category row -- rather than a private spelling that could
+/// drift away from what the tabs promise.
+#[test]
+fn test_a_category_picks_the_sites_category_paths() {
+    let expected = [
+        (Group::Movies, "Movies", "popular-movies"),
+        (Group::TV, "TV", "popular-tv"),
+        (Group::Games, "Games", "popular-games"),
+        (Group::Anime, "Anime", "popular-anime"),
+    ];
+    for (group, label, popular) in expected {
+        assert_eq!(
+            search_url(HOST, "dune 1080p", 20, Some(group)),
+            format!("https://www.1337xx.to/category-search/dune+1080p/{}/2/", label),
+            "the site spells {:?} as {} in the path",
+            group,
+            label
+        );
+        assert_eq!(
+            browse_url(HOST, Some(group)),
+            format!("https://www.1337xx.to/{}", popular),
+            "browse is trimmed by the same selection"
+        );
+    }
+    assert_eq!(
+        search_url(HOST, "", 0, Some(Group::Games)),
+        browse_url(HOST, Some(Group::Games)),
+        "an empty query is still browse, now the category's section"
+    );
+}
+
+/// The rows fetched inside a selected category claim it, and the
+/// unfiltered answer claims nothing -- with the parser's own
+/// attribution, if it ever produces one, left alone.
+#[test]
+fn test_rows_claim_the_category_that_fetched_them() {
+    let fresh = || vec![row("Some Torrent")];
+    assert_eq!(
+        stamp_category(fresh(), Some(Group::Games))[0].group,
+        Some(Group::Games)
+    );
+    assert_eq!(stamp_category(fresh(), None)[0].group, None);
+
+    let mut attributed = fresh();
+    attributed[0].group = Some(Group::Movies);
+    assert_eq!(
+        stamp_category(attributed, Some(Group::TV))[0].group,
+        Some(Group::Movies),
+        "what the row says outranks the URL that fetched it"
     );
 }
 
