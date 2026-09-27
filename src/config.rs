@@ -18,6 +18,13 @@ pub struct Config {
     pub browser_priority: Vec<String>,
     #[serde(default = "default_torrserver_url")]
     pub torrserver_url: String,
+    /// Whether streaming goes through TorrServer at all. `false` means
+    /// `spawn_stream` refuses with the reason instead of reaching for a
+    /// server the user has switched off -- the app-side gate that replaces
+    /// a guessed-at `systemctl` flow (which would need the user's sudo
+    /// password and assume their deployment).
+    #[serde(default = "default_true")]
+    pub enable_torrserver: bool,
     #[serde(default = "default_bridge_port")]
     pub bridge_port: u16,
     #[serde(default = "default_cookie_file")]
@@ -126,6 +133,7 @@ impl Default for Config {
             browser_visibility: default_browser_visibility(),
             browser_priority: default_browser_priority(),
             torrserver_url: default_torrserver_url(),
+            enable_torrserver: default_true(),
             bridge_port: default_bridge_port(),
             cookie_file: default_cookie_file(),
             keybindings: None,

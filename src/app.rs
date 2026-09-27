@@ -1005,6 +1005,10 @@ impl App {
                         self.config.save_credentials = !self.config.save_credentials;
                         self.ui.open_settings(&self.config);
                     }
+                    SettingsAction::ToggleEnableTorrserver => {
+                        self.config.enable_torrserver = !self.config.enable_torrserver;
+                        self.ui.open_settings(&self.config);
+                    }
                     SettingsAction::EditCredentials => {
                         self.ui.open_login_modal();
                     }
@@ -1712,9 +1716,22 @@ impl App {
 
         let torrserver = self.torrserver.clone();
         let event_tx = self.event_handler.sender();
+        let torrserver_enabled = self.config.enable_torrserver;
 
         tokio::spawn(async move {
             let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
+
+            if !torrserver_enabled {
+                // The user switched TorrServer off in Options: say so
+                // rather than reaching for a server they have decided
+                // not to use (the app-side gate that replaces a guessed-at
+                // `systemctl` flow).
+                log("TorrServer is disabled in Options -> streaming -> Enable TorrServer.");
+                let _ = event_tx.send(Event::StreamError(
+                    "TorrServer is disabled in Options".into(),
+                ));
+                return;
+            }
 
             if !torrserver.is_reachable().await {
                 log("TorrServer is not reachable! Start TorrServer on localhost:8090");

@@ -3,7 +3,7 @@ use doris::search::orchestrator;
 use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
 use doris::search::rutor::RutorSearcher;
 use doris::search::x1337x::X1337xSearcher;
-use doris::ui::app::{SettingsAction, source_settings_items};
+use doris::ui::app::{SettingsAction, source_settings_items, streaming_settings_items};
 
 #[test]
 fn test_rutracker_and_rutor_are_registered_and_implemented() {
@@ -442,6 +442,36 @@ fn test_the_registry_says_which_sources_can_browse() {
             .unwrap_or_else(|| panic!("{id} is registered"));
         assert_eq!(info.supports_browse, can, "{id}");
     }
+}
+
+/// The streaming category is derived too: it must offer the TorrServer
+/// gate and the reachability check, so a user can switch the server off
+/// and still see whether it answers.
+#[test]
+fn test_the_streaming_category_offers_the_torrserver_gate() {
+    let items = streaming_settings_items(&Config::default(), true, "Streaming");
+    let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+
+    let gate = items
+        .iter()
+        .find(|item| item.label == "Enable TorrServer")
+        .expect("the category must offer the TorrServer gate");
+    assert!(
+        matches!(gate.action, SettingsAction::ToggleEnableTorrserver),
+        "the gate must toggle the config"
+    );
+    assert_eq!(gate.value, "True", "enabled by default");
+
+    assert!(
+        labels.contains(&"TorrServer"),
+        "the reachability check must stay: {:?}",
+        labels
+    );
+    assert!(
+        labels.contains(&"Edit credentials"),
+        "the login entry point must stay: {:?}",
+        labels
+    );
 }
 
 #[test]
