@@ -15,7 +15,8 @@ use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, So
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, SettingsAction, TorrentStatus, HeaderHint, TorrentClickAction};
+use crate::ui::app::{App as UiApp, AppState, Modal, TorrentStatus, HeaderHint, TorrentClickAction};
+use crate::ui::modals::settings::SettingsAction;
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
 use crate::ui::theme::Theme;

@@ -3,7 +3,7 @@ use doris::sources::orchestrator;
 use doris::sources::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
 use doris::sources::rutor::RutorSearcher;
 use doris::sources::x1337x::X1337xSearcher;
-use doris::ui::app::{SettingsAction, source_settings_items, streaming_settings_items};
+use doris::ui::modals::settings::{SettingsAction, source_settings_items, streaming_settings_items};
 
 #[test]
 fn test_rutracker_and_rutor_are_registered_and_implemented() {

@@ -367,7 +367,7 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
     let mut yts_only = Config::default();
     yts_only.enabled_sources = vec!["yts".to_string()];
     assert_eq!(
-        doris::ui::app::group_tabs(&yts_only),
+        doris::ui::modals::settings::group_tabs(&yts_only),
         vec![None, Some(Group::Movies)],
         "yts declares Movies and nothing else"
     );
@@ -375,14 +375,14 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
     let mut eztv_only = Config::default();
     eztv_only.enabled_sources = vec!["eztv".to_string()];
     assert_eq!(
-        doris::ui::app::group_tabs(&eztv_only),
+        doris::ui::modals::settings::group_tabs(&eztv_only),
         vec![None, Some(Group::TV)]
     );
 
     let mut all_off = Config::default();
     all_off.enabled_sources = Vec::new();
     assert_eq!(
-        doris::ui::app::group_tabs(&all_off),
+        doris::ui::modals::settings::group_tabs(&all_off),
         vec![None],
         "with everything off the row still has somewhere to be"
     );
@@ -390,7 +390,7 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
     // The default config enables every implemented source, and between
     // them they serve all four groups -- in `GROUP_ORDER`, "all" first.
     assert_eq!(
-        doris::ui::app::group_tabs(&Config::default()),
+        doris::ui::modals::settings::group_tabs(&Config::default()),
         vec![
             None,
             Some(Group::Movies),
@@ -407,7 +407,7 @@ fn test_cycle_group_walks_the_row_and_wraps() {
     // Derived from the function the row is drawn from rather than
     // spelled out: a group added to the registry must not leave this
     // test walking a list the UI no longer shows.
-    let tabs = doris::ui::app::group_tabs(&Config::default());
+    let tabs = doris::ui::modals::settings::group_tabs(&Config::default());
     assert_eq!(app.active_group, tabs[0], "starts on all");
     assert_eq!(app.active_group, None);
 
