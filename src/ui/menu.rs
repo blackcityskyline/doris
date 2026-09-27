@@ -75,10 +75,13 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
     let banner_w = BANNER[0].width() as u16;
     let banner_h = BANNER.len() as u16;
     let menu_count = MENU_ITEMS.len() as u16;
-    let hints_lines: u16 = 2;
     let spacing: u16 = 1;
 
-    let total_h = banner_h + spacing + menu_count * 4 + spacing + hints_lines;
+    // No keybind footer: btop's main menu (`btop_menu.cpp:1219`,
+    // `mainMenu`) draws a banner and three items and nothing else --
+    // where the keys live is the help page's job, which is what П.3
+    // moved ours to.
+    let total_h = banner_h + spacing + menu_count * 4;
     let start_y = area.y + area.height.saturating_sub(total_h) / 2;
     let start_x = area.x + area.width.saturating_sub(banner_w) / 2;
 
@@ -118,25 +121,5 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
                 render_area,
             );
         }
-    }
-
-    let hints_y = menu_y + menu_count * 4 + spacing;
-    let hints = [
-        "j/k move  Enter select  q quit",
-        "m menu  1-4 toggle zones  f fullscreen",
-    ];
-
-    for (i, hint) in hints.iter().enumerate() {
-        let w = hint.len() as u16;
-        let x = area.x + area.width.saturating_sub(w) / 2;
-        let y = hints_y + i as u16;
-        let render_area = Rect::new(x, y, w, 1);
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                *hint,
-                Style::default().fg(theme.inactive_fg.to_color()),
-            )),
-            render_area,
-        );
     }
 }

@@ -31,7 +31,7 @@ const KEY_WIDTH: usize = 20;
 /// `help_text` (`btop_menu.cpp:174`). Kept public so a test can check
 /// it still names every keybind AGENTS.md documents.
 pub const HELP_TEXT: &[(&str, &str)] = &[
-    ("Mouse 1", "Clicks zones, frame buttons and tabs."),
+    ("Mouse 1", "Clicks zones, frame buttons, tabs, the search box."),
     ("Mouse scroll", "Scrolls what is under the cursor."),
     ("s, i", "Enters search input mode."),
     ("Enter", "Searches, or plays the selected row."),

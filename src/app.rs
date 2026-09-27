@@ -15,7 +15,7 @@ use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, So
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, TorrentStatus, HeaderHint, UiAction};
+use crate::ui::app::{App as UiApp, AppState, Modal, TorrentStatus, UiAction};
 use crate::ui::modals::settings::SettingsAction;
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
@@ -372,12 +372,6 @@ impl App {
             .unwrap_or_else(|| config.browser_visibility.clone());
         let browser_visibility: BrowserVisibility = browser_visibility_str.parse()?;
 
-        let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
-        let browser_priority = detect::parse_priority(&config.browser_priority);
-        let browser_info = detect::detect_browser_with_priority(browser_choice, &browser_priority)
-            .map(|(kind, path)| format!("{} [{}] ({})", kind, browser_visibility, path.display()))
-            .unwrap_or_else(|e| format!("Error: {}", e));
-
         let (search_tx, search_rx) = mpsc::unbounded_channel();
 
         let bridge_port = config.bridge_port;
@@ -403,7 +397,6 @@ impl App {
         Ok(Self {
             ui: UiApp::new(
                 torrserver_url.clone(),
-                browser_info,
                 browser_visibility == BrowserVisibility::Hidden,
                 config.theme_name.as_deref(),
                 resolve_download_dir(&config),
@@ -701,14 +694,14 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
-                } else if mouse.row == 0 && self.ui.modal == Modal::None {
-                    match self.ui.hint_at_column(mouse.column) {
-                        Some(HeaderHint::Search) => self.ui.enter_input_mode(),
-                        Some(HeaderHint::Settings) => self.ui.open_settings(&self.config),
-                        Some(HeaderHint::Log) => self.ui.toggle_detail_log(),
-                        Some(HeaderHint::Filter) => self.ui.zones.filter_mode = true,
-                        None => {}
-                    }
+                } else if self.ui.modal == Modal::None
+                    && self.ui.search_box_at(mouse.row)
+                {
+                    // The input box is the only thing left to hit on
+                    // those rows: the header hints ("s: search | S:
+                    // settings | ...") went with П.3, and clicking the
+                    // field does what `s`/`i` do.
+                    self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
                     match self.ui.click_at(mouse.row, mouse.column) {
                         Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,

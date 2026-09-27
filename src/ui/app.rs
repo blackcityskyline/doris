@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::sources::source::{Group, KNOWN_SOURCES};
 use std::collections::VecDeque;
 use super::theme::Theme;
-use super::zones::{FrameButton, FrameSlot, ZoneId, ZoneLayout};
+use super::zones::{FrameButton, FrameSlot, SEARCH_BAR_HEIGHT, ZoneId, ZoneLayout};
 use super::menu::MenuState;
 
 #[derive(PartialEq)]
@@ -17,16 +17,6 @@ pub enum AppState {
     Searching,
     Streaming,
     Error(String),
-}
-
-/// One of the clickable hints in the top bar ("s: search | S: settings |
-/// L: log | F: filter"). See `App::hint_at_column`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeaderHint {
-    Search,
-    Settings,
-    Log,
-    Filter,
 }
 
 /// What a frame-button click (or the equivalent key) needs the
@@ -78,7 +68,6 @@ pub struct App {
     pub detail_log_mode: bool,
     pub detail_log_scroll: usize,
     pub state: AppState,
-    pub browser_info: String,
     pub torrserver_url: String,
     pub running: bool,
     pub input_mode: bool,
@@ -247,7 +236,6 @@ impl FrameLayout {
 impl App {
     pub fn new(
         torrserver_url: String,
-        browser_info: String,
         browser_hidden: bool,
         theme_name: Option<&str>,
         download_dir: String,
@@ -271,7 +259,6 @@ impl App {
             detail_log_mode: false,
             detail_log_scroll: 0,
             state: AppState::Idle,
-            browser_info,
             torrserver_url,
             running: true,
             input_mode: false,
@@ -449,8 +436,8 @@ impl App {
     /// Which source tab (if any) is under `(row, col)`, given the Results
     /// zone's current area. Kept in lockstep with render_results_zone's
     /// own tab layout by construction -- both are one row below the top
-    /// border and start one column after the left border, matching
-    /// `hint_at_column`'s approach for the header bar.
+    /// border and start one column after the left border, the same
+    /// convention `frame_layout` uses for the buttons it hangs there.
     pub fn source_tab_at(&self, row: u16, col: u16) -> Option<&'static str> {
         let area = self.zones.get_area(ZoneId::Results);
         if area.width == 0 || area.height == 0 {
@@ -1006,51 +993,38 @@ impl App {
         }
     }
 
-    /// Which top-bar hint (if any) is under `column`, given the exact
-    /// same header text `render_search_bar` builds. Kept in lockstep with
-    /// that function on purpose: both need the identical prefix length
-    /// and hint ordering, so if you change one, change the other.
-    pub fn hint_at_column(&self, column: u16) -> Option<HeaderHint> {
-        if self.input_mode {
-            return None;
-        }
-        let prefix_len = format!("[{}] {} | ", self.browser_info, self.torrserver_url).chars().count() as u16;
-        // Ratatui's default block title starts 1 column after the left
-        // border corner.
-        let mut col = 1 + prefix_len;
-        for (label, hint) in [
-            ("s: search", HeaderHint::Search),
-            ("S: settings", HeaderHint::Settings),
-            ("L: log", HeaderHint::Log),
-            ("F: filter", HeaderHint::Filter),
-        ] {
-            let len = label.chars().count() as u16;
-            if column >= col && column < col + len {
-                return Some(hint);
-            }
-            col += len + 3; // + " | " separator
-        }
-        None
+    /// Whether `row` is inside the search input's box: the top
+    /// [`SEARCH_BAR_HEIGHT`] rows of the frame, which `render_search_bar`
+    /// is handed straight from `render` and `update_areas` leaves to the
+    /// input instead of to any zone. The box is full-width, so the row
+    /// alone decides.
+    ///
+    /// Clicking it starts editing -- the job the clickable header hints
+    /// (`"s: search | ..."`) used to do before П.3 deleted them; the box
+    /// itself is the natural target now that nothing else on that line
+    /// is interactive. It is not a target while something paints over
+    /// it: fullscreen stretches a zone across the whole frame and the
+    /// detail log takes it too.
+    pub fn search_box_at(&self, row: u16) -> bool {
+        let covered = self.zones.fullscreen.is_some() || self.detail_log_mode;
+        !covered && row < SEARCH_BAR_HEIGHT
     }
 
     fn render_search_bar(&self, frame: &mut Frame, area: Rect) {
-        let bar_area = Rect::new(area.x, area.y, area.width, 3);
+        let bar_area = Rect::new(area.x, area.y, area.width, SEARCH_BAR_HEIGHT);
 
-        let filter_hint = if self.zones.filter_mode {
-            format!(" [F] filter: {} ", self.zones.filter_input)
-        } else if !self.zones.filter_input.is_empty() {
-            format!(" [F] filter: {} ", self.zones.filter_input)
-        } else {
-            String::new()
+        // A label, not a keybind cheat-sheet: where the keys live is
+        // the help page (`?`) and the frame legends now, and what this
+        // box needs to say is what it is holding. The only thing that
+        // changes is an active filter; the mode is the border colour
+        // (yellow while typing into the query, cyan while the filter is
+        // live) -- the same "colour says state, text says content"
+        // split btop's boxes use.
+        let filter_on = self.zones.filter_mode || !self.zones.filter_input.is_empty();
+        let title = match (self.input_mode, filter_on) {
+            (false, true) => format!("filter: {}", self.zones.filter_input),
+            _ => "search".to_string(),
         };
-
-        let header = format!(
-            "[{}] {} | {}{}",
-            self.browser_info,
-            self.torrserver_url,
-            if self.input_mode { "INPUT (s/i)" } else { "s: search | S: settings | L: log | F: filter" },
-            filter_hint
-        );
 
         let input_border = self.themed_block(if self.input_mode {
                 Color::Yellow
@@ -1059,7 +1033,7 @@ impl App {
             } else {
                 self.theme.div_line.to_color()
             })
-            .title(header);
+            .title(title);
 
         let input = Paragraph::new(self.search_input.as_str())
             .block(input_border)
