@@ -9,7 +9,6 @@ fn key(code: KeyCode) -> KeyEvent {
 fn make_app_in_settings() -> UiApp {
     let mut app = UiApp::new(
         "http://127.0.0.1:8090".into(),
-        "chrome".into(),
         true,
         None,
         "/tmp".into(),

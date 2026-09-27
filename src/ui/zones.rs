@@ -1,6 +1,13 @@
 use ratatui::prelude::*;
 use super::theme::Theme;
 
+/// Rows the always-visible search input takes: top border, one line of
+/// text, bottom border. `update_areas` splits it off the top of the
+/// terminal, `App::render_search_bar` draws into it and
+/// `App::search_box_at` recognises it -- one number for all three, so
+/// the zones can never drift under the box.
+pub const SEARCH_BAR_HEIGHT: u16 = 3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneId {
     Results = 1,
@@ -181,12 +188,11 @@ impl ZoneLayout {
             return;
         }
 
-        let search_bar_height: u16 = 3;
-        let available = area.height.saturating_sub(search_bar_height);
+        let available = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
         let zone_height = available / count as u16;
         let remainder = available.saturating_sub(zone_height * count as u16);
 
-        let mut y = area.y + search_bar_height;
+        let mut y = area.y + SEARCH_BAR_HEIGHT;
         for (i, &id) in visible_zones.iter().enumerate() {
             // Give the first `remainder` zones one extra row so every
             // row of the terminal is used.

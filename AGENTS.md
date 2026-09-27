@@ -172,9 +172,9 @@ free here, while `source`/`info`/`play` trail their `]`/`v`/`⏎`.
 - `p`/`d`: pause-or-resume / remove the tracked torrent, when the Torrent zone is focused
 - `Esc`: close modal / exit input mode / exit filter mode
 - `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)
-- Mouse: click any zone to focus it, click a frame button or a header hint to
-  trigger it, scroll wheel over any zone to scroll/navigate it -- see
-  ROADMAP.md Phase 9
+- Mouse: click any zone to focus it, click a frame button to
+  trigger it, click the search box to start typing, scroll wheel over any
+  zone to scroll/navigate it -- see ROADMAP.md Phase 9
 
 ## Dependencies
 

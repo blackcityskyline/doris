@@ -1,14 +1,13 @@
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
-use doris::ui::app::{App as UiApp, HeaderHint, UiAction};
+use doris::ui::app::{App as UiApp, UiAction};
 use doris::ui::zones::ZoneId;
 use ratatui::layout::Rect;
 
-fn make_app(browser_info: &str, torrserver_url: &str) -> UiApp {
+fn make_app() -> UiApp {
     UiApp::new(
-        torrserver_url.to_string(),
-        browser_info.to_string(),
+        "http://127.0.0.1:8090".to_string(),
         true,
         None,
         "/tmp".into(),
@@ -35,52 +34,42 @@ fn make_results(n: usize) -> Vec<TorrentItem> {
         .collect()
 }
 
-// --- hint_at_column ---------------------------------------------------
+// --- search_box_at ---------------------------------------------------------
 
+/// The input box owns the top three rows of the frame and nothing else:
+/// `render_search_bar` draws into exactly that, and `update_areas`
+/// starts the zones below it. Rows the box does not own belong to the
+/// zones, so a click there must not start a search.
 #[test]
-fn test_hint_at_column_finds_each_hint() {
-    let app = make_app("chrome [hidden] (/usr/bin/chrome)", "http://127.0.0.1:8090");
-    // Header text: "[<browser_info>] <torrserver_url> | s: search | S: settings | L: log | F: filter"
-    let prefix_len = format!("[{}] {} | ", app.browser_info, app.torrserver_url).chars().count() as u16;
-
-    // "s: search" starts right after the prefix (+1 for the border offset
-    // hint_at_column itself accounts for).
-    let search_col = 1 + prefix_len;
-    assert_eq!(app.hint_at_column(search_col), Some(HeaderHint::Search));
-
-    let settings_col = search_col + "s: search".chars().count() as u16 + 3;
-    assert_eq!(app.hint_at_column(settings_col), Some(HeaderHint::Settings));
-
-    let log_col = settings_col + "S: settings".chars().count() as u16 + 3;
-    assert_eq!(app.hint_at_column(log_col), Some(HeaderHint::Log));
-
-    let filter_col = log_col + "L: log".chars().count() as u16 + 3;
-    assert_eq!(app.hint_at_column(filter_col), Some(HeaderHint::Filter));
-}
-
-#[test]
-fn test_hint_at_column_returns_none_outside_any_hint() {
-    let app = make_app("chrome", "http://127.0.0.1:8090");
-    assert_eq!(app.hint_at_column(0), None);
-    assert_eq!(app.hint_at_column(3), None); // inside "[chrome]", not a hint
-}
-
-#[test]
-fn test_hint_at_column_returns_none_in_input_mode() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
-    app.input_mode = true;
-    // Even a column that would normally hit "s: search" should return
-    // None while typing -- the header shows "INPUT (s/i)" instead.
-    for col in 0..80 {
-        assert_eq!(app.hint_at_column(col), None);
+fn test_search_box_covers_the_top_three_rows_only() {
+    let app = make_app();
+    for row in 0..3 {
+        assert!(app.search_box_at(row), "row {} is the input box", row);
     }
+    assert!(!app.search_box_at(3));
+    assert!(!app.search_box_at(40));
+}
+
+/// Something can paint over the box: fullscreen stretches a zone across
+/// the whole frame and the detail log takes it too. While that is on,
+/// those rows belong to the cover, not to the input.
+#[test]
+fn test_search_box_is_not_a_target_when_something_covers_it() {
+    let mut app = make_app();
+
+    app.zones.fullscreen = Some(ZoneId::Results);
+    assert!(!app.search_box_at(0));
+
+    app.zones.fullscreen = None;
+    app.detail_log_mode = true;
+    assert!(!app.search_box_at(0));
 }
 
 // --- zone_at ------------------------------------------------------------
 
 #[test]
 fn test_zone_at_finds_the_containing_zone() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
@@ -92,7 +81,7 @@ fn test_zone_at_finds_the_containing_zone() {
 
 #[test]
 fn test_zone_at_returns_none_outside_all_zones() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     // Far outside the terminal entirely.
     assert_eq!(app.zone_at(1000, 1000), None);
@@ -100,7 +89,7 @@ fn test_zone_at_returns_none_outside_all_zones() {
 
 #[test]
 fn test_zone_at_only_hits_fullscreened_zone() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.set_fullscreen(Some(ZoneId::Log));
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
@@ -115,7 +104,7 @@ fn test_zone_at_only_hits_fullscreened_zone() {
 
 #[test]
 fn test_click_at_focuses_the_clicked_zone() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     assert_eq!(app.zones.focused, ZoneId::Results);
 
@@ -126,7 +115,7 @@ fn test_click_at_focuses_the_clicked_zone() {
 
 #[test]
 fn test_click_at_results_header_row_does_not_select_a_row() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.results = make_results(5);
     app.filtered_indices = (0..5).collect();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
@@ -141,7 +130,7 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
 
 #[test]
 fn test_click_at_results_data_row_selects_that_item() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.results = make_results(5);
     app.filtered_indices = (0..5).collect();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
@@ -158,7 +147,7 @@ fn test_click_at_results_data_row_selects_that_item() {
 
 #[test]
 fn test_click_at_respects_filtered_indices_not_raw_results_order() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.results = make_results(5);
     // Simulate a filter that only kept results 3 and 4.
     app.filtered_indices = vec![3, 4];
@@ -173,7 +162,7 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
 
 #[test]
 fn test_source_tab_at_finds_each_tab_on_the_tab_row() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
     let tab_row = results_area.y + 1;
@@ -184,7 +173,7 @@ fn test_source_tab_at_finds_each_tab_on_the_tab_row() {
 
 #[test]
 fn test_source_tab_at_returns_none_off_the_tab_row() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
     // Table header row, one below the tab row.
@@ -193,7 +182,7 @@ fn test_source_tab_at_returns_none_off_the_tab_row() {
 
 #[test]
 fn test_click_at_tab_row_switches_active_source() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
     let tab_row = results_area.y + 1;
@@ -210,7 +199,7 @@ fn test_click_at_tab_row_switches_active_source() {
 
 #[test]
 fn test_cycle_source_wraps_through_all_tabs() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     // Derived from the same function the header draws from, rather than
     // spelled out: B8 adds a tab per source, and a hardcoded list here
     // would either break on every addition or -- worse -- stop proving
@@ -229,7 +218,7 @@ fn test_cycle_source_wraps_through_all_tabs() {
 
 #[test]
 fn test_click_at_returns_none_on_the_zone_title() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
     // The top-left corner carries the zone title, not a frame button.
@@ -242,7 +231,7 @@ fn test_click_at_returns_none_on_the_zone_title() {
 /// back as the pause action, not fall through to "clicked the panel".
 #[test]
 fn test_click_at_torrent_pause_button_returns_toggle_pause() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
     let layout = app.frame_layout(ZoneId::Torrent, torrent_area);
@@ -261,7 +250,7 @@ fn test_click_at_torrent_pause_button_returns_toggle_pause() {
 
 #[test]
 fn test_click_at_torrent_delete_button_returns_remove() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
     let layout = app.frame_layout(ZoneId::Torrent, torrent_area);
@@ -277,7 +266,7 @@ fn test_click_at_torrent_delete_button_returns_remove() {
 /// nothing, or the legend would be a single imprecise hot zone.
 #[test]
 fn test_click_between_two_frame_buttons_does_nothing() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
     let layout = app.frame_layout(ZoneId::Results, results_area);
@@ -297,7 +286,7 @@ fn test_click_between_two_frame_buttons_does_nothing() {
 /// being handed to the orchestrator.
 #[test]
 fn test_clicking_the_filter_button_enters_filter_mode() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     assert!(!app.zones.filter_mode);
 
@@ -359,7 +348,7 @@ fn test_the_all_tab_survives_switching_every_source_off() {
 /// silent search that returns no rows and no explanation).
 #[test]
 fn test_losing_the_active_tab_moves_the_selection_to_a_live_one() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.active_source = "subsplease".to_string();
 
     let mut config = Config::default();
@@ -374,7 +363,7 @@ fn test_losing_the_active_tab_moves_the_selection_to_a_live_one() {
 /// must not disturb where the user already was.
 #[test]
 fn test_keeping_the_active_tab_leaves_the_selection_alone() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.active_source = "eztv".to_string();
 
     app.set_result_tabs(&Config::default());
@@ -395,7 +384,7 @@ fn test_keeping_the_active_tab_leaves_the_selection_alone() {
 /// place (`set_result_tabs`), never in the render path alone.
 #[test]
 fn test_clicking_a_tab_that_was_derived_selects_it() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     let mut config = Config::default();
     config.enabled_sources = vec!["yts".to_string(), "all".to_string()];
     app.set_result_tabs(&config);
@@ -455,7 +444,7 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
 
 #[test]
 fn test_cycle_group_walks_the_row_and_wraps() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     // Derived from the function the row is drawn from rather than
     // spelled out: a group added to the registry must not leave this
     // test walking a list the UI no longer shows.
@@ -480,7 +469,7 @@ fn test_cycle_group_walks_the_row_and_wraps() {
 /// walks the same `group_tabs` field the render does, one row lower.
 #[test]
 fn test_group_tab_at_finds_each_tab_it_drew() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results = app.zones.get_area(ZoneId::Results);
     let row = results.y + 2; // one row below the source tabs
@@ -520,7 +509,7 @@ fn test_group_tab_at_finds_each_tab_it_drew() {
 /// not leave the row pointing at a tab that is no longer drawn.
 #[test]
 fn test_losing_the_category_moves_the_selection_to_all() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.active_group = Some(Group::Games);
 
     let mut config = Config::default();
@@ -536,7 +525,7 @@ fn test_losing_the_category_moves_the_selection_to_all() {
 /// category that still has sources behind it stays where it was.
 #[test]
 fn test_keeping_the_category_leaves_the_selection_alone() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.active_group = Some(Group::Movies);
 
     app.set_result_tabs(&Config::default());
@@ -555,7 +544,7 @@ fn test_keeping_the_category_leaves_the_selection_alone() {
 #[test]
 fn test_every_frame_button_stays_on_its_own_border() {
     for (w, h) in [(80u16, 24u16), (40, 12), (20, 8), (10, 4), (6, 3)] {
-        let mut app = make_app("chrome", "http://127.0.0.1:8090");
+        let mut app = make_app();
         app.zones.update_areas(Rect::new(0, 0, w, h));
         app.zones.set_fullscreen(Some(ZoneId::Results));
         let area = app.zones.get_area(ZoneId::Results);
@@ -588,7 +577,7 @@ fn test_every_frame_button_stays_on_its_own_border() {
 /// about which of them the user meant.
 #[test]
 fn test_frame_buttons_do_not_overlap() {
-    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     for &id in ZoneId::all() {
         let area = app.zones.get_area(id);
