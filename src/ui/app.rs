@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::sources::source::{Group, KNOWN_SOURCES};
 use std::collections::VecDeque;
 use super::theme::Theme;
-use super::zones::{ZoneId, ZoneLayout};
+use super::zones::{FrameButton, FrameSlot, ZoneId, ZoneLayout};
 use super::menu::MenuState;
 
 #[derive(PartialEq)]
@@ -28,11 +28,18 @@ pub enum HeaderHint {
     Filter,
 }
 
-/// A Torrent-panel action triggered by clicking its "p: pause/resume  d:
-/// remove" hint line. Returned by `App::click_at` rather than acted on
-/// directly since it needs an async TorrServer call the orchestrator owns.
+/// What a frame-button click (or the equivalent key) needs the
+/// orchestrator to do.
+///
+/// Buttons whose effect `ui::App` can perform itself -- filter, group,
+/// source -- are handled inside `click_at` and never surface as an
+/// `UiAction`; these are the ones that reach outside the UI state (an
+/// async TorrServer call, a search restart, the results list).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TorrentClickAction {
+pub enum UiAction {
+    Play,
+    Download,
+    Info,
     TogglePause,
     Remove,
 }
@@ -180,6 +187,30 @@ pub fn source_tabs(config: &Config) -> Vec<&'static str> {
         .collect();
     tabs.push("all");
     tabs
+}
+
+/// Columns kept between two elements of a frame legend; btop's buttons
+/// sit a couple of columns apart on the border, not flush against each
+/// other.
+const FRAME_GAP: u16 = 2;
+
+/// The rects [`App::frame_layout`] hands out: every frame button with
+/// the screen rectangle it is drawn into, plus the panel's info text.
+#[derive(Debug, Default, Clone)]
+pub struct FrameLayout {
+    /// Every clickable button of the zone, in draw order.
+    pub buttons: Vec<(FrameButton, Rect)>,
+    /// Zero-sized when the zone shows no info text.
+    pub info: Rect,
+    pub info_text: String,
+}
+
+impl FrameLayout {
+    /// Which button, if any, is under `(col, row)`.
+    pub fn button_at(&self, col: u16, row: u16) -> Option<FrameButton> {
+        let pos = ratatui::layout::Position::new(col, row);
+        self.buttons.iter().find(|(_, r)| r.contains(pos)).map(|(b, _)| *b)
+    }
 }
 
 impl App {
@@ -458,16 +489,191 @@ impl App {
         None
     }
 
+    /// The text a zone shows next to its frame buttons: filter state and
+    /// row counts for Results, scroll position for Log.
+    ///
+    /// One function so the renderer and [`App::frame_layout`] always
+    /// agree on how wide it is -- `frame_layout` is what `click_at` hits
+    /// against, so a width that differed between the two would make the
+    /// legend drawn and the legend clickable two different things.
+    fn frame_info(&self, id: ZoneId, area: Rect) -> String {
+        match id {
+            ZoneId::Results => {
+                let counts = format!(" ({}/{})", self.filtered_indices.len(), self.results.len());
+                if self.zones.filter_input.is_empty() {
+                    counts
+                } else {
+                    format!(" [F: {}]{}", self.zones.filter_input, counts)
+                }
+            }
+            ZoneId::Log => {
+                let total = self.logs.len();
+                let visible = (area.height as usize).saturating_sub(2);
+                let offset = self.log_scroll.saturating_sub(visible);
+                if total > 0 {
+                    format!(" ({}/{})", offset + visible.min(total), total)
+                } else {
+                    String::new()
+                }
+            }
+            ZoneId::Torrent | ZoneId::Extra => String::new(),
+        }
+    }
+
+    /// Screen rects for `id`'s frame buttons and info text.
+    ///
+    /// Single source of truth: the renderer draws into exactly these
+    /// rects and `click_at` tests exactly these rects, so what is drawn
+    /// on the border is what a click hits. btop pairs them the same way
+    /// -- each span written in `btop_draw.cpp` is immediately followed by
+    /// the `Input::mouse_mappings[...]` line covering those columns.
+    ///
+    /// Anything that does not fit is dropped rather than clipped: the
+    /// top-right cluster disappears when the zone gets narrow, which is
+    /// btop's `if (width > 60 + sort_len)` guard in rect form.
+    pub fn frame_layout(&self, id: ZoneId, area: Rect) -> FrameLayout {
+        let mut out = FrameLayout::default();
+        // Two border columns plus somewhere to put something: shorter or
+        // narrower than this there is no legend to draw.
+        if area.width < 6 || area.height < 3 {
+            return out;
+        }
+
+        let left = area.x + 1; // first column inside the border
+        let right = area.x + area.width - 2; // last one before the corner
+        let top = area.y;
+        let bottom = area.y + area.height - 1;
+        let fits = |x: u16, w: u16| w > 0 && x <= right && x + w - 1 <= right;
+
+        let buttons = super::zones::zone_buttons(id);
+        out.info_text = self.frame_info(id, area);
+        let info_width = out.info_text.chars().count() as u16;
+
+        // Top left: the title already claims `zone_title_width` columns
+        // after the border, then the buttons, then the info text.
+        let mut x = left + super::zones::zone_title_width(id);
+        for b in buttons.iter().filter(|b| b.slot == FrameSlot::TopLeft) {
+            if !fits(x, b.width()) {
+                break;
+            }
+            out.buttons.push((*b, Rect::new(x, top, b.width(), 1)));
+            x += b.width() + FRAME_GAP;
+        }
+        if fits(x, info_width) {
+            out.info = Rect::new(x, top, info_width, 1);
+            x += info_width + FRAME_GAP;
+        }
+
+        // Top right: right aligned, dropped wholesale if it would run
+        // into whatever sits on the left.
+        let right_items: Vec<FrameButton> = buttons.iter()
+            .filter(|b| b.slot == FrameSlot::TopRight)
+            .copied()
+            .collect();
+        let right_total: u16 = right_items.iter().map(|b| b.width()).sum::<u16>()
+            + FRAME_GAP * (right_items.len().saturating_sub(1) as u16);
+        if right_total > 0 && u32::from(right_total) <= u32::from(right - left + 1) {
+            let start = right + 1 - right_total;
+            if start > x {
+                let mut cx = start;
+                for b in &right_items {
+                    out.buttons.push((*b, Rect::new(cx, top, b.width(), 1)));
+                    cx += b.width() + FRAME_GAP;
+                }
+            }
+        }
+
+        // Bottom left: the action row, btop's terminate/kill/signals line.
+        let mut cx = left;
+        for b in buttons.iter().filter(|b| b.slot == FrameSlot::BottomLeft) {
+            if !fits(cx, b.width()) {
+                break;
+            }
+            out.buttons.push((*b, Rect::new(cx, bottom, b.width(), 1)));
+            cx += b.width() + FRAME_GAP;
+        }
+
+        out
+    }
+
+    /// Whether a button's word is drawn bold: btop marks a toggle that
+    /// is currently on this way (`Fx::b` around `pause` while
+    /// `pause_proc_list`, around `tree` while `proc_tree`, ...).
+    fn frame_button_active(&self, id: ZoneId, button: FrameButton) -> bool {
+        match (id, button.key) {
+            (ZoneId::Results, 'F') => {
+                self.zones.filter_mode || !self.zones.filter_input.is_empty()
+            }
+            (ZoneId::Torrent, 'p') => self.torrent_paused,
+            _ => false,
+        }
+    }
+
+    /// Draw `id`'s frame legend -- the buttons and the info text, on top
+    /// of the border the panel's block has just drawn.
+    fn render_frame(&self, frame: &mut Frame, id: ZoneId, area: Rect) {
+        let layout = self.frame_layout(id, area);
+        if layout.info.width > 0 {
+            let info = Span::styled(
+                layout.info_text,
+                Style::default().fg(self.theme.title.to_color()),
+            );
+            frame.render_widget(Paragraph::new(Line::from(info)), layout.info);
+        }
+        for (button, rect) in &layout.buttons {
+            let spans = super::zones::button_spans(
+                &self.theme,
+                button,
+                self.frame_button_active(id, *button),
+            );
+            frame.render_widget(Paragraph::new(Line::from(spans)), *rect);
+        }
+    }
+
+    /// Perform a frame button's effect. The ones `ui::App` owns -- the
+    /// filter prompt, the category row, the source tabs -- happen right
+    /// here; the rest come back as a [`UiAction`] for the orchestrator,
+    /// which owns the async work and the results list.
+    fn activate_frame_button(&mut self, id: ZoneId, button: FrameButton) -> Option<UiAction> {
+        match (id, button.key) {
+            (ZoneId::Results, 'F') => {
+                self.zones.filter_mode = true;
+                None
+            }
+            (ZoneId::Results, 'g') => {
+                self.cycle_group(true);
+                None
+            }
+            (ZoneId::Results, ']') => {
+                self.cycle_source();
+                None
+            }
+            (ZoneId::Results, '⏎') => Some(UiAction::Play),
+            (ZoneId::Results, 'd') => Some(UiAction::Download),
+            (ZoneId::Results, 'v') => Some(UiAction::Info),
+            (ZoneId::Torrent, 'p') => Some(UiAction::TogglePause),
+            (ZoneId::Torrent, 'd') => Some(UiAction::Remove),
+            _ => None,
+        }
+    }
+
     /// Handle a left click anywhere in the main view: focuses whichever
-    /// zone the click landed in (matching btop's click-to-focus), plus a
-    /// couple of zone-specific actions (selecting a Results row, hitting
-    /// the pause/remove hint in the Torrent panel). Actions that need
-    /// the orchestrator (starting an async TorrServer call) are returned
-    /// rather than performed here, since `ui::App` doesn't own that state.
-    pub fn click_at(&mut self, row: u16, col: u16) -> Option<TorrentClickAction> {
+    /// zone the click landed in (matching btop's click-to-focus), then
+    /// tries the zone's frame legend (btop's buttons are click targets
+    /// too), then the zone's own content -- a Results row, the category
+    /// row. Actions that need the orchestrator (an async TorrServer call,
+    /// a search restart) are returned rather than performed here, since
+    /// `ui::App` doesn't own that state.
+    pub fn click_at(&mut self, row: u16, col: u16) -> Option<UiAction> {
         let id = self.zone_at(row, col)?;
         let area = self.zones.get_area(id);
         self.zones.focused = id;
+
+        // The legend sits on the border, outside every other hit target
+        // of the panel, so it can be tested first without shadowing one.
+        if let Some(button) = self.frame_layout(id, area).button_at(col, row) {
+            return self.activate_frame_button(id, button);
+        }
 
         match id {
             ZoneId::Results => {
@@ -486,8 +692,8 @@ impl App {
                 // inside the Results panel -- 0 = source-tab row, 1 =
                 // category row, 2 = the table's own header row, 3+ = data
                 // rows. This must stay in lockstep with
-                // render_results_zone's Layout (tabs / categories / table /
-                // hints); 038c859 added the tab row and subtracted its line
+                // render_results_zone's Layout (tabs / categories / table);
+                // 038c859 added the tab row and subtracted its line
                 // here but left `data_row`'s own -1, so every click used to
                 // select the row *below* the one under the cursor and a
                 // click on the header selected the first item -- the same
@@ -505,21 +711,8 @@ impl App {
                 }
             }
             ZoneId::Torrent => {
-                // The pause/remove hint is the 5th content line (index
-                // 4) inside the bordered panel -- see
-                // render_torrent_zone's `lines` vec.
-                let hint_row = area.y + 1 + 4;
-                if row == hint_row {
-                    let hint_col = col.saturating_sub(area.x + 1);
-                    const PAUSE_LABEL: &str = "p: pause/resume";
-                    const GAP: u16 = 2;
-                    let pause_len = PAUSE_LABEL.chars().count() as u16;
-                    if hint_col < pause_len {
-                        return Some(TorrentClickAction::TogglePause);
-                    } else if hint_col >= pause_len + GAP {
-                        return Some(TorrentClickAction::Remove);
-                    }
-                }
+                // Pause and remove live on the frame now (btop's
+                // terminate/kill row), handled by the legend test above.
             }
             ZoneId::Log | ZoneId::Extra => {}
         }
@@ -744,13 +937,11 @@ impl App {
         for zone_id in ZoneId::all() {
             let zone_area = self.zones.get_area(*zone_id);
             if zone_area.width == 0 || zone_area.height == 0 { continue; }
-            let border_color = super::zones::zone_border_color(*zone_id, self.zones.focused, &self.theme);
-            let title = super::zones::zone_title(*zone_id, &self.theme);
             match zone_id {
-                ZoneId::Results => self.render_results_zone(frame, zone_area, border_color, title),
-                ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, border_color, title),
-                ZoneId::Log => self.render_log_zone(frame, zone_area, border_color, title),
-                ZoneId::Extra => self.render_extra_zone(frame, zone_area, border_color, title),
+                ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id),
+                ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id),
+                ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id),
+                ZoneId::Extra => self.render_extra_zone(frame, zone_area, *zone_id),
             }
         }
         super::menu::render_menu(frame, area, &self.menu, &self.theme);
@@ -770,14 +961,11 @@ impl App {
                     continue;
                 }
 
-                let border_color = super::zones::zone_border_color(*zone_id, self.zones.focused, &self.theme);
-                let title = super::zones::zone_title(*zone_id, &self.theme);
-
                 match zone_id {
-                    ZoneId::Results => self.render_results_zone(frame, zone_area, border_color, title),
-                    ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, border_color, title),
-                    ZoneId::Log => self.render_log_zone(frame, zone_area, border_color, title),
-                    ZoneId::Extra => self.render_extra_zone(frame, zone_area, border_color, title),
+                    ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id),
+                    ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id),
+                    ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id),
+                    ZoneId::Extra => self.render_extra_zone(frame, zone_area, *zone_id),
                 }
             }
         }
@@ -849,14 +1037,10 @@ impl App {
         frame.render_widget(input, bar_area);
     }
 
-    fn render_results_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
-        let filter_info = if !self.zones.filter_input.is_empty() {
-            format!(" [F: {}] ({}/{})", self.zones.filter_input, self.filtered_indices.len(), self.results.len())
-        } else {
-            format!(" ({}/{})", self.filtered_indices.len(), self.results.len())
-        };
-
-        let block = self.themed_block(border_color).title(format!("{}{}", title, filter_info));
+    fn render_results_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId) {
+        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
+        let block = self.themed_block(border_color)
+            .title(super::zones::zone_title(id, &self.theme));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -866,7 +1050,6 @@ impl App {
                 Constraint::Length(1), // source tabs (btop proc-tab style)
                 Constraint::Length(1), // category tabs (B6's second row)
                 Constraint::Min(0),    // results table
-                Constraint::Length(1), // action hints
             ])
             .split(inner);
 
@@ -946,28 +1129,12 @@ impl App {
         }
         frame.render_stateful_widget(table, chunks[2], &mut state);
 
-        // --- action hint bar -------------------------------------------------
-        // Both tab rows are click targets as well as keys; the hint stays
-        // one line, so it names the keys and the rows carry the labels.
-        let action_spans = vec![
-            Span::styled("Enter", Style::default().fg(Color::Yellow)),
-            Span::raw(": play  "),
-            Span::styled("d", Style::default().fg(Color::Yellow)),
-            Span::raw(": download  "),
-            Span::styled("v", Style::default().fg(Color::Yellow)),
-            Span::raw(": info  "),
-            Span::styled("]", Style::default().fg(Color::Yellow)),
-            Span::raw(": source  "),
-            Span::styled("g", Style::default().fg(Color::Yellow)),
-            Span::raw(": category"),
-        ];
-        frame.render_widget(
-            Paragraph::new(Line::from(action_spans)).style(Style::default().fg(self.theme.inactive_fg.to_color())),
-            chunks[3],
-        );
+        // The keybind legend moved onto the frame with П.5, so the panel
+        // body ends at the table and every remaining line is data.
+        self.render_frame(frame, id, area);
     }
 
-    fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
+    fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId) {
         let s = &self.torrent_status;
 
         let progress_pct = (s.progress * 100.0) as u32;
@@ -1018,18 +1185,20 @@ impl App {
                 Span::styled("  Peers: ", Style::default().fg(Color::Yellow)),
                 Span::raw(s.peers.to_string()),
             ]),
-            Line::from(vec![
-                Span::styled("p: pause/resume  d: remove", Style::default().fg(Color::DarkGray)),
-            ]),
         ];
 
-        let block = self.themed_block(border_color).title(title);
+        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
+        let block = self.themed_block(border_color)
+            .title(super::zones::zone_title(id, &self.theme));
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
+
+        // "p: pause/resume  d: remove" is gone from the body: those two
+        // are frame buttons now, top-right and bottom-left.
+        self.render_frame(frame, id, area);
     }
 
-    fn render_log_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
-        let total = self.logs.len();
+    fn render_log_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId) {
         let visible = (area.height as usize).saturating_sub(2);
         let offset = self.log_scroll.saturating_sub(visible);
 
@@ -1040,22 +1209,24 @@ impl App {
             .map(|l| Line::from(l.as_str()))
             .collect();
 
-        let scroll_title = if total > 0 {
-            format!("{} ({}/{})", title, offset + visible.min(total), total)
-        } else {
-            title
-        };
-
-        let log_panel = Paragraph::new(visible_logs)
-            .block(self.themed_block(border_color).title(scroll_title));
+        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
+        let log_panel = Paragraph::new(visible_logs).block(
+            self.themed_block(border_color).title(super::zones::zone_title(id, &self.theme)),
+        );
 
         frame.render_widget(log_panel, area);
+        // The "(n/m)" scroll position moved from the title onto the
+        // frame, next to the `detail` button.
+        self.render_frame(frame, id, area);
     }
 
-    fn render_extra_zone(&self, frame: &mut Frame, area: Rect, border_color: Color, title: String) {
-        let block = self.themed_block(border_color).title(title);
+    fn render_extra_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId) {
+        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
+        let block = self.themed_block(border_color)
+            .title(super::zones::zone_title(id, &self.theme));
         let paragraph = Paragraph::new("Zone 4 — TBD").block(block);
         frame.render_widget(paragraph, area);
+        self.render_frame(frame, id, area);
     }
 
     fn render_full_log(&self, frame: &mut Frame, area: Rect) {

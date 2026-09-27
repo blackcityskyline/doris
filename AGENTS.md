@@ -105,10 +105,29 @@ list, the tab bar and the CLI all derive from it.
   - Hash, title, status (shows "(paused)" when client-side-paused)
   - btop-style braille/block/dot history sparkline (`ui/widgets/graph.rs`), not a plain fill bar
   - DL/UL speed, downloaded/total, seeds, peers
-  - `p`: pause/resume (TorrServer `drop`/`get`), `d`: remove -- both keyboard and click (the hint line itself is a click target)
+  - `p`: pause/resume (TorrServer `drop`/`get`), `d`: remove -- both keyboard and click (see the frame legend below)
 - **Zone 3 (Log)**: Short log panel
   - Scroll with mouse/j/k
 - **Zone 4 (Extra)**: TBD
+
+### Frame legend (btop-style)
+
+Keybinds for a zone are written **on its border**, not inside it (btop's
+`filter`/`pause`/`kill`/`signals` row). The word is `title` colour and the
+character that triggers it is `hi_fg` + bold -- the highlight marks the
+hotkey, not the alphabet, so `pause` leads with `p` only because that key is
+free here, while `source`/`info`/`play` trail their `]`/`v`/`⏎`.
+
+- Buttons come from `zone_buttons()` (`src/ui/zones.rs`), one table per zone;
+  `zone_title()` draws the superscript number in `hi_fg` + bold and the label
+  in `title`.
+- `App::frame_layout()` (`src/ui/app.rs`) is the single source of truth for
+  where each button lands: the renderer draws into those rects and
+  `click_at` tests them, so drawn == clickable. Anything that does not fit
+  is dropped rather than clipped (narrow zones lose the right-hand cluster,
+  exactly like btop's `if (width > 60 + sort_len)`).
+- Buttons `ui::App` can act on (filter, group, source) happen inside
+  `click_at`; the rest come back as a `UiAction` for the orchestrator.
 
 ### Menu System
 - ASCII art banner "T-HUNTER"

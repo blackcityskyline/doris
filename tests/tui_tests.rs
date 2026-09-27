@@ -6,6 +6,7 @@ use doris::ui::app::Modal;
 use doris::ui::modals::login::LoginField;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
+use doris::ui::zones::ZoneId;
 
 fn make_test_app() -> UiApp {
     UiApp::new(
@@ -720,4 +721,73 @@ fn test_render_draws_the_category_row_under_the_source_row() {
         row_text(results.y + 3).contains("Seeds"),
         "the table header sits one row lower now"
     );
+}
+
+// --- the frame legend actually reaches the border (П.5) --------------------
+
+fn row_text(terminal: &Terminal<TestBackend>, y: u16) -> String {
+    let buf = terminal.backend().buffer();
+    let width = buf.area.width;
+    (0..width)
+        .map(|x| buf[(x, y)].symbol().to_string())
+        .collect()
+}
+
+/// The buttons are positioned by `frame_layout` and drawn by
+/// `render_frame`; if either side stopped running, the border would go
+/// back to a bare box with no way to tell what the keys are.
+#[test]
+fn test_frame_legend_is_drawn_on_the_zone_borders() {
+    let mut app = make_test_app();
+    app.results = make_results(3);
+    app.update_filter();
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+
+    let results = app.zones.get_area(ZoneId::Results);
+    let top = row_text(&terminal, results.y);
+    assert!(top.contains("Filter"), "Results top border: {}", top);
+    assert!(top.contains("group"), "Results top border: {}", top);
+    assert!(top.contains("source"), "Results top border: {}", top);
+    assert!(top.contains("(3/3)"), "info text on the border: {}", top);
+
+    let bottom = row_text(&terminal, results.y + results.height - 1);
+    assert!(bottom.contains("play"), "Results bottom border: {}", bottom);
+    assert!(bottom.contains("download"), "Results bottom border: {}", bottom);
+    assert!(bottom.contains("info"), "Results bottom border: {}", bottom);
+
+    let torrent = app.zones.get_area(ZoneId::Torrent);
+    let t_top = row_text(&terminal, torrent.y);
+    assert!(t_top.contains("pause"), "Torrent top border: {}", t_top);
+    let t_bottom = row_text(&terminal, torrent.y + torrent.height - 1);
+    assert!(t_bottom.contains("delete"), "Torrent bottom border: {}", t_bottom);
+}
+
+/// The reason the legend exists: the keybind text used to sit inside the
+/// panels and had to be deleted from every one of them. Guard against it
+/// creeping back.
+#[test]
+fn test_keybind_text_is_gone_from_the_panel_bodies() {
+    let mut app = make_test_app();
+    app.results = make_results(3);
+    app.update_filter();
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+
+    let results = app.zones.get_area(ZoneId::Results);
+    let mut body = String::new();
+    for y in (results.y + 1)..(results.y + results.height - 1) {
+        body.push_str(&row_text(&terminal, y));
+    }
+    assert!(!body.contains("Enter: play"), "old hint row is back");
+    assert!(!body.contains("d: download"), "old hint row is back");
+
+    let torrent = app.zones.get_area(ZoneId::Torrent);
+    let mut body = String::new();
+    for y in (torrent.y + 1)..(torrent.y + torrent.height - 1) {
+        body.push_str(&row_text(&terminal, y));
+    }
+    assert!(!body.contains("p: pause/resume"), "old hint line is back");
 }

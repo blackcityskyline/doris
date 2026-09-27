@@ -15,7 +15,7 @@ use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, So
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, TorrentStatus, HeaderHint, TorrentClickAction};
+use crate::ui::app::{App as UiApp, AppState, Modal, TorrentStatus, HeaderHint, UiAction};
 use crate::ui::modals::settings::SettingsAction;
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
@@ -711,8 +711,34 @@ impl App {
                     }
                 } else if self.ui.modal == Modal::None {
                     match self.ui.click_at(mouse.row, mouse.column) {
-                        Some(TorrentClickAction::TogglePause) => self.toggle_pause_active_torrent().await,
-                        Some(TorrentClickAction::Remove) => self.remove_active_torrent().await,
+                        Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,
+                        Some(UiAction::Remove) => self.remove_active_torrent().await,
+                        Some(UiAction::Download) => self.download_selected_to_disk().await,
+                        Some(UiAction::Info) => self.show_selected_info(),
+                        Some(UiAction::Play) => {
+                            // The `play` frame button is Enter on the
+                            // Results panel: same decision tree as the
+                            // key, minus `input_mode` (a click can't have
+                            // been typed into the search box).
+                            match enter_action(
+                                false,
+                                !self.ui.search_input.is_empty(),
+                                self.ui.source_changed,
+                                self.ui.group_changed,
+                                self.ui.submit_selection().is_some(),
+                            ) {
+                                EnterAction::RestartSearch => {
+                                    self.ui.source_changed = false;
+                                    self.ui.group_changed = false;
+                                    if let Some(ref q) = self.ui.search_query.clone() {
+                                        let query = q.clone();
+                                        self.start_search(query).await;
+                                    }
+                                }
+                                EnterAction::Play => self.spawn_stream().await,
+                                EnterAction::SubmitQuery | EnterAction::DoNothing => {}
+                            }
+                        }
                         None => {}
                     }
                 }
