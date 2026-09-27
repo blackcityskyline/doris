@@ -982,6 +982,13 @@ impl App {
             return Ok(());
         }
 
+        if let Modal::Help(_) = self.ui.modal {
+            // The help page owns the keyboard while it is up, exactly
+            // like btop's `helpMenu` -- every key lands here.
+            self.ui.help_key(key);
+            return Ok(());
+        }
+
         if let Modal::Settings(_) = self.ui.modal {
             if let Some(action) = self.ui.settings_key(key) {
                 match action {
@@ -1353,6 +1360,14 @@ impl App {
             }
             KeyCode::Char('S') if !self.ui.input_mode => {
                 self.ui.open_settings(&self.config);
+            }
+            // The help page (btop binds `F1`/`?`/`h`); `h` stays free
+            // for future vim navigation, so the three triggers are `?`,
+            // `/` and F1.
+            KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1)
+                if !self.ui.input_mode =>
+            {
+                self.ui.open_help_modal();
             }
             KeyCode::Esc => {
                 if self.ui.detail_log_mode {
