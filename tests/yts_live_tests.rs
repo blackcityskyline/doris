@@ -6,8 +6,8 @@
 //! mirror list still has at least one live entry (it moved once already
 //! -- see the module doc of `search/yts.rs`).
 
-use doris::search::source::{SearchRequest, Source};
-use doris::search::yts::{YtsSearcher, HOSTS};
+use doris::sources::source::{SearchRequest, Source};
+use doris::sources::yts::{YtsSearcher, HOSTS};
 
 #[tokio::test]
 #[ignore = "requires network access to the YTS API"]

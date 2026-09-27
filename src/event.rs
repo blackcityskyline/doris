@@ -16,7 +16,7 @@ pub enum Event {
     SourceDone {
         source: String,
         generation: u64,
-        items: Vec<crate::search::models::TorrentItem>,
+        items: Vec<crate::sources::models::TorrentItem>,
         /// Whether *that* source has another page (B2). `App` remembers
         /// it per source so "Load more" only asks the ones that do.
         has_more: bool,

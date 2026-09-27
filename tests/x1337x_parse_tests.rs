@@ -18,10 +18,10 @@
 
 use std::sync::Arc;
 
-use doris::search::format::format_date;
-use doris::search::models::TorrentItem;
-use doris::search::source::{AuthContext, Group, LogFn, Source};
-use doris::search::x1337x::{
+use doris::sources::format::format_date;
+use doris::sources::models::TorrentItem;
+use doris::sources::source::{AuthContext, Group, LogFn, Source};
+use doris::sources::x1337x::{
     PAGE_SIZE, X1337xSearcher, browse_url, date_from_detail, filter_rows, magnet_from_detail,
     parse_rows, search_url, stamp_category, to_browse_page, to_page,
 };

@@ -8,7 +8,7 @@
 //! and `rem` forgetting it again -- so the check leaves the server the
 //! way it found it.
 
-use doris::search::rutor::RutorSearcher;
+use doris::sources::rutor::RutorSearcher;
 use doris::torrserver::api::TorrServer;
 
 const TORRSERVER: &str = "http://localhost:8090";

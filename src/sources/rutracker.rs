@@ -1,8 +1,8 @@
 use anyhow::Result;
 use crate::browser::cdp::Browser;
-use crate::search::models::TorrentItem;
-use crate::search::cookies::{self, Cookie};
-use crate::search::source::Group;
+use crate::sources::models::TorrentItem;
+use crate::sources::cookies::{self, Cookie};
+use crate::sources::source::Group;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

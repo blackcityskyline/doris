@@ -2,8 +2,8 @@
 //! so `cargo test` stays offline-safe. Run manually with:
 //! `cargo test --test subsplease_live_tests -- --ignored --nocapture`
 
-use doris::search::source::{SearchRequest, Source};
-use doris::search::subsplease::SubsPleaseSearcher;
+use doris::sources::source::{SearchRequest, Source};
+use doris::sources::subsplease::SubsPleaseSearcher;
 
 #[tokio::test]
 #[ignore = "requires network access to subsplease.org"]
@@ -35,7 +35,7 @@ async fn live_a_query_returns_one_best_resolution_row_per_release() {
         assert!(row.info_hash.chars().all(|c| c.is_ascii_hexdigit()), "{}", row.info_hash);
         assert_eq!(row.download_url, "", "magnet-only rows");
         assert!(row.magnet.is_some());
-        assert_eq!(row.group, Some(doris::search::source::Group::Anime));
+        assert_eq!(row.group, Some(doris::sources::source::Group::Anime));
     }
     // No episode may occupy two rows (480/720/1080 collapse).
     let mut titles: Vec<&str> = page.items.iter().map(|r| r.title.as_str()).collect();

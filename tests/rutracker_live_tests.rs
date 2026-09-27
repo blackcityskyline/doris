@@ -30,7 +30,7 @@ use std::path::Path;
 
 use doris::browser::cdp::{Browser, BrowserVisibility};
 use doris::browser::detect;
-use doris::search::source::Group;
+use doris::sources::source::Group;
 
 const HOME: &str = "https://rutracker.org/forum/";
 
@@ -200,7 +200,7 @@ async fn inject_saved_cookies(browser: &Browser, cookie_file: Option<&Path>) {
     let Some(path) = cookie_file else {
         return;
     };
-    let cookies = match doris::search::cookies::load_from_file(path) {
+    let cookies = match doris::sources::cookies::load_from_file(path) {
         Ok(cookies) => cookies,
         Err(e) => {
             println!("could not read cookies from {}: {}", path.display(), e);
@@ -237,7 +237,7 @@ async fn live_a_group_search_asks_for_its_forums_in_one_request() {
     fetch(&browser, HOME).await;
     inject_saved_cookies(&browser, Some(Path::new(&config.cookie_file))).await;
 
-    let url = doris::search::rutracker::search_url("gta", 0, Some(Group::Games));
+    let url = doris::sources::rutracker::search_url("gta", 0, Some(Group::Games));
     println!("asking: {} ({} bytes)", url, url.len());
     fetch(&browser, &url).await;
     let topics = result_topic_ids(&browser).await;

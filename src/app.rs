@@ -8,10 +8,10 @@ use tokio::sync::{Mutex, mpsc};
 use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
 use crate::event::{Event, EventHandler};
-use crate::search::cache::{CacheKey, SearchCache};
-use crate::search::orchestrator::{self, SourceStatus};
-use crate::search::ordering::{default_order, dedupe_by_hash};
-use crate::search::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
+use crate::sources::cache::{CacheKey, SearchCache};
+use crate::sources::orchestrator::{self, SourceStatus};
+use crate::sources::ordering::{default_order, dedupe_by_hash};
+use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
@@ -102,7 +102,7 @@ pub fn safe_filename(title: &str) -> String {
 /// A row with neither URL nor magnet also returns `None`: it then fails
 /// in the normal path with a message, which is the honest outcome --
 /// the alternative is writing an empty file that looks like a result.
-pub fn magnet_only_download(item: &crate::search::models::TorrentItem) -> Option<(String, String)> {
+pub fn magnet_only_download(item: &crate::sources::models::TorrentItem) -> Option<(String, String)> {
     if !item.download_url.is_empty() {
         return None;
     }
@@ -113,7 +113,7 @@ pub fn magnet_only_download(item: &crate::search::models::TorrentItem) -> Option
     ))
 }
 
-pub fn source_id_for(item: &crate::search::models::TorrentItem) -> &'static str {
+pub fn source_id_for(item: &crate::sources::models::TorrentItem) -> &'static str {
     source::get_source(&item.source).map(|s| s.id).unwrap_or("rutracker")
 }
 
@@ -128,7 +128,7 @@ pub fn source_id_for(item: &crate::search::models::TorrentItem) -> &'static str 
 /// already carry a magnet or a file never reach the `Source` call, so
 /// the other six sources are not touched by this at all.
 pub async fn fill_missing_magnet(
-    item: &mut crate::search::models::TorrentItem,
+    item: &mut crate::sources::models::TorrentItem,
     source: &dyn Source,
 ) -> Result<()> {
     if item.magnet.is_some() || !item.download_url.is_empty() {
@@ -218,7 +218,7 @@ pub fn apply_source_done(
     event_generation: u64,
     current_generation: u64,
     source: &str,
-    items: Vec<crate::search::models::TorrentItem>,
+    items: Vec<crate::sources::models::TorrentItem>,
     error: Option<&str>,
 ) -> bool {
     if event_generation != current_generation {
@@ -773,7 +773,7 @@ impl App {
     /// [`source_id_for`] + [`source_needs_browser`] at the call site.
     /// Shared by `spawn_stream` and `download_selected_to_disk`.
     async fn download_bytes_for(
-        item: &crate::search::models::TorrentItem,
+        item: &crate::sources::models::TorrentItem,
         source: &dyn Source,
     ) -> Result<Vec<u8>> {
         source.download_torrent(&item.download_url).await

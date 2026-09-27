@@ -1,5 +1,5 @@
-use doris::search::source::Group;
-use doris::search::rutracker::{search_url, GROUP_FORUMS, resolve_url};
+use doris::sources::source::Group;
+use doris::sources::rutracker::{search_url, GROUP_FORUMS, resolve_url};
 
 // Moved here from `models_tests.rs` together with `resolve_url` itself:
 // the function hardcodes rutracker's host, so it belongs to the

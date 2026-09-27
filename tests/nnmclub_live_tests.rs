@@ -12,8 +12,8 @@
 //! same reason `nyaa_live_tests` does: a network problem is not
 //! evidence about the parser.
 
-use doris::search::nnmclub::{NnmclubSearcher, PAGE_SIZE, search_url};
-use doris::search::source::{Group, SearchRequest, Source};
+use doris::sources::nnmclub::{NnmclubSearcher, PAGE_SIZE, search_url};
+use doris::sources::source::{Group, SearchRequest, Source};
 
 /// The tracker answering at all, or `None` when this network is the
 /// thing standing in the way (the caller then skips).

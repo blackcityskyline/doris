@@ -1,5 +1,5 @@
 use doris::config::*;
-use doris::search::source::KNOWN_SOURCES;
+use doris::sources::source::KNOWN_SOURCES;
 
 #[test]
 fn test_config_default() {

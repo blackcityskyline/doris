@@ -72,9 +72,9 @@ use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use crate::search::models::TorrentItem;
-use crate::search::net::{FetchOptions, browser_client, fetch_resilient};
-use crate::search::source::{Group, SearchPage};
+use crate::sources::models::TorrentItem;
+use crate::sources::net::{FetchOptions, browser_client, fetch_resilient};
+use crate::sources::source::{Group, SearchPage};
 
 /// The rubric id behind each group this source declares -- one table
 /// for both halves of B6: the id the search URL is asked with, and the

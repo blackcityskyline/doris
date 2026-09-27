@@ -7,10 +7,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use doris::event::Event;
-use doris::search::cache::{CacheKey, SearchCache, TTL};
-use doris::search::models::TorrentItem;
-use doris::search::orchestrator::{cached_fetch, cached_source_done};
-use doris::search::source::SearchPage;
+use doris::sources::cache::{CacheKey, SearchCache, TTL};
+use doris::sources::models::TorrentItem;
+use doris::sources::orchestrator::{cached_fetch, cached_source_done};
+use doris::sources::source::SearchPage;
 
 fn page(rows: usize, has_more: bool) -> SearchPage {
     SearchPage {

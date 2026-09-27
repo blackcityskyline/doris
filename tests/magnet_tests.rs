@@ -2,7 +2,7 @@
 //! plus the one case the port makes *load-bearing* here: a row whose
 //! magnet is malformed must not be handed to TorrServer.
 
-use doris::search::magnet::{
+use doris::sources::magnet::{
     TRACKERS, build_magnet, is_info_hash, normalize_info_hash, parse_input, parse_magnet,
 };
 

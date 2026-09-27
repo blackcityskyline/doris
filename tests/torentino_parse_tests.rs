@@ -3,10 +3,10 @@
 //! link, all against fixtures shaped like the live markup (probed
 //! 26.09.2026 -- see the module doc).
 
-use doris::search::torentino::{
+use doris::sources::torentino::{
     TorentinoSearcher, find_download_link, has_next_page, parse_date, parse_results,
 };
-use doris::search::source::Group;
+use doris::sources::source::Group;
 
 /// One results row, in the shape the live search page answers with.
 const ROW: &str = concat!(

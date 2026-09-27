@@ -6,8 +6,8 @@
 //! search answers rows, and a row's item page hands over a real
 //! `.torrent` through the two-step download.
 
-use doris::search::source::Group;
-use doris::search::torentino::TorentinoSearcher;
+use doris::sources::source::Group;
+use doris::sources::torentino::TorentinoSearcher;
 
 #[tokio::test]
 #[ignore = "requires network access to torentino.org"]

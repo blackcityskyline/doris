@@ -4,8 +4,8 @@ use ratatui::widgets::*;
 use doris::ui::app::App as UiApp;
 use doris::ui::app::Modal;
 use doris::ui::app::LoginField;
-use doris::search::models::TorrentItem;
-use doris::search::source::Group;
+use doris::sources::models::TorrentItem;
+use doris::sources::source::Group;
 
 fn make_test_app() -> UiApp {
     UiApp::new(

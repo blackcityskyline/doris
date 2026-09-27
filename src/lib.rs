@@ -6,7 +6,7 @@ pub mod app;
 pub mod event;
 pub mod tui;
 pub mod browser;
-pub mod search;
+pub mod sources;
 pub mod torrserver;
 pub mod torrent;
 pub mod bridge;

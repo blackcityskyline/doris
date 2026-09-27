@@ -6,8 +6,8 @@
 //! should pin the *fields we rely on*, so a fixture that carries a
 //! server's whole payload only adds noise to diff.
 
-use doris::search::source::{self, SourceEnv};
-use doris::search::yts::{PAGE_SIZE, list_movies_url, parse_page};
+use doris::sources::source::{self, SourceEnv};
+use doris::sources::yts::{PAGE_SIZE, list_movies_url, parse_page};
 
 /// One movie in three shapes: two hashed torrents plus one without a
 /// hash, a movie with no torrents at all, and a movie whose torrent
@@ -72,7 +72,7 @@ const PAGE_ONE: &str = r#"{
   }
 }"#;
 
-fn page(offset: usize) -> doris::search::source::SearchPage {
+fn page(offset: usize) -> doris::sources::source::SearchPage {
     parse_page(PAGE_ONE, offset).expect("the fixture parses")
 }
 
@@ -127,7 +127,7 @@ fn test_rows_are_magnet_only_and_attributed_to_yts_movies() {
 
     for item in &page.items {
         assert_eq!(item.source, "yts");
-        assert_eq!(item.group, Some(doris::search::source::Group::Movies));
+        assert_eq!(item.group, Some(doris::sources::source::Group::Movies));
         assert_eq!(
             item.download_url, "",
             "YTS publishes magnets, not files -- this is what routes the \
@@ -226,7 +226,7 @@ fn test_yts_is_registered_as_an_implemented_browser_free_source() {
     let info = source::get_source("yts").expect("yts must be in KNOWN_SOURCES");
     assert!(info.implemented);
     assert_eq!(info.label, "YTS");
-    assert_eq!(info.groups, &[doris::search::source::Group::Movies]);
+    assert_eq!(info.groups, &[doris::sources::source::Group::Movies]);
     assert!(!info.requires_browser, "a JSON API needs no browser");
     assert!(info.home_url.starts_with("http"), "{}", info.home_url);
 

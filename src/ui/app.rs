@@ -1,8 +1,8 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use crate::search::models::TorrentItem;
+use crate::sources::models::TorrentItem;
 use crate::config::Config;
-use crate::search::source::{Group, KNOWN_SOURCES, SourceInfo, GROUP_ORDER};
+use crate::sources::source::{Group, KNOWN_SOURCES, SourceInfo, GROUP_ORDER};
 use std::collections::VecDeque;
 use super::theme::Theme;
 use super::zones::{ZoneId, ZoneLayout};
@@ -1370,7 +1370,7 @@ impl App {
 
         let cookie_path = std::path::Path::new("cookies.txt");
         if cookie_path.exists() {
-            match crate::search::cookies::load_from_file(cookie_path) {
+            match crate::sources::cookies::load_from_file(cookie_path) {
                 Ok(c) if !c.is_empty() => results.push(format!("{} Cookie file: {} cookies", "\u{2714}", c.len())),
                 _ => results.push(format!("{} Cookie file: empty/invalid", "\u{26a0}")),
             }
@@ -1378,7 +1378,7 @@ impl App {
             results.push(format!("{} Cookie file: not found", "\u{26a0}"));
         }
 
-        let sources_line = crate::search::source::KNOWN_SOURCES.iter()
+        let sources_line = crate::sources::source::KNOWN_SOURCES.iter()
             .map(|s| if s.implemented {
                 format!("{}{}", "\u{2714} ", s.label)
             } else {

@@ -1,6 +1,6 @@
 use doris::config::Config;
-use doris::search::models::TorrentItem;
-use doris::search::source::Group;
+use doris::sources::models::TorrentItem;
+use doris::sources::source::Group;
 use doris::ui::app::{App as UiApp, HeaderHint, TorrentClickAction};
 use doris::ui::zones::ZoneId;
 use ratatui::layout::Rect;
@@ -285,7 +285,7 @@ fn test_unimplemented_sources_never_get_a_tab() {
     // has to satisfy -- the bar is derived from the registry, so a
     // planned id cannot appear there by accident.
     let tabs = doris::ui::app::source_tabs(&Config::default());
-    for info in doris::search::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
+    for info in doris::sources::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
         assert!(!tabs.contains(&info.id), "{} is planned and has a tab", info.id);
     }
     assert!(tabs.contains(&"nnmclub"), "wave 3's first source does");

@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use doris::event::Event;
-use doris::search::models::TorrentItem;
-use doris::search::orchestrator::{self, SourceStatus};
-use doris::search::source::{
+use doris::sources::models::TorrentItem;
+use doris::sources::orchestrator::{self, SourceStatus};
+use doris::sources::source::{
     AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, KNOWN_SOURCES,
 };
 use tokio::sync::mpsc;
