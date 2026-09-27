@@ -4,7 +4,7 @@ use crate::sources::models::TorrentItem;
 use crate::ui::modals::login::LoginState;
 use crate::ui::modals::settings::{SettingsState, group_tabs};
 use crate::config::Config;
-use crate::sources::source::{Group, KNOWN_SOURCES, SourceInfo, GROUP_ORDER};
+use crate::sources::source::{Group, KNOWN_SOURCES};
 use std::collections::VecDeque;
 use super::theme::Theme;
 use super::zones::{ZoneId, ZoneLayout};

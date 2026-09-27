@@ -4,7 +4,6 @@
 //! being the whole UI in one place; this is the modal's own state and
 //! rendering, nothing else.
 
-use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Rect};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
