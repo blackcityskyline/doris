@@ -73,11 +73,12 @@ src/
 └── ui/
     ├── mod.rs       # UI module declarations
     ├── app.rs       # TUI state + non-modal rendering (zones, menu, main view, modal dispatcher)
-    ├── modals/      # the three modals, split out in Phase 10 (see ROADMAP.md)
+    ├── modals/      # modal dialogs; split out in Phase 10 (see ROADMAP.md)
     │   ├── mod.rs
     │   ├── settings.rs # typed descriptor table: Options modal (pagination, keys, item builders)
     │   ├── login.rs   # login modal: resource tabs, Ctrl+S save, saved-indicator
-    │   └── health.rs  # health check modal: browser/TorrServer/credentials/cookies/sources
+    │   ├── health.rs  # health check modal: browser/TorrServer/credentials/cookies/sources
+    │   └── help.rs    # help page (btop's `helpMenu`): Key:/Description: table + paging
     ├── menu.rs      # btop-style main menu
     ├── theme.rs     # Theme system (colors, gradients)
     ├── zones.rs     # Zone layout system (toggle, focus, presets)
@@ -170,7 +171,10 @@ free here, while `source`/`info`/`play` trail their `]`/`v`/`⏎`.
 - `]`: cycle the source tab
 - `p`/`d`: pause-or-resume / remove the tracked torrent, when the Torrent zone is focused
 - `Esc`: close modal / exit input mode / exit filter mode
-- Mouse: click any zone to focus it, click any header hint (s/S/L/F) to trigger it, click the Torrent panel's pause/remove hint, scroll wheel over any zone to scroll/navigate it -- see ROADMAP.md Phase 9
+- `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)
+- Mouse: click any zone to focus it, click a frame button or a header hint to
+  trigger it, scroll wheel over any zone to scroll/navigate it -- see
+  ROADMAP.md Phase 9
 
 ## Dependencies
 

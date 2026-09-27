@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use crate::sources::models::TorrentItem;
+use crate::ui::modals::help::HelpState;
 use crate::ui::modals::login::LoginState;
 use crate::ui::modals::settings::{SettingsState, group_tabs};
 use crate::config::Config;
@@ -50,6 +51,7 @@ pub enum Modal {
     Login(LoginState),
     Settings(SettingsState),
     HealthCheck(Vec<String>),
+    Help(HelpState),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1271,6 +1273,10 @@ impl App {
             self.render_settings_modal(frame, area);
         } else if let Modal::HealthCheck(_) = self.modal {
             self.render_health_modal(frame, area);
+        } else if matches!(self.modal, Modal::Help(_)) {
+            // `&mut self`: the page publishes its own page count for
+            // `help_key` while it draws.
+            self.render_help_modal(frame, area);
         }
     }
 }
