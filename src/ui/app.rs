@@ -98,6 +98,7 @@ pub enum SettingsAction {
     ToggleCloseBrowserOnExit,
     ToggleSaveCookies,
     ToggleSaveCredentials,
+    ToggleEnableTorrserver,
     EditCredentials,
     CheckTorrserverStatus,
     /// Turn one source on or off, carrying the id straight from
@@ -355,6 +356,131 @@ pub fn source_settings_items(config: &Config) -> Vec<SettingsItem> {
             },
         })
         .collect()
+}
+
+/// The Options "streaming" category's items, built from the config the
+/// same way [`source_settings_items`] builds the sources list -- one
+/// place, so a test can assert what the category offers without a
+/// rendered modal. `browser_hidden` is the runtime UI state the
+/// "Browser visible" row displays (it is not a config field), and
+/// `mode_str` is the "Play mode" row's value, computed by the caller.
+pub fn streaming_settings_items(
+    config: &Config,
+    browser_hidden: bool,
+    mode_str: &str,
+) -> Vec<SettingsItem> {
+    let visibility_str = if browser_hidden {
+        "Hidden".to_string()
+    } else {
+        "Visible".to_string()
+    };
+    let mut items: Vec<SettingsItem> = vec![
+                        SettingsItem {
+                            label: "Browser visible".into(),
+                            value: visibility_str,
+                            description: vec![
+                                "Show or hide the automated".into(),
+                                "browser window.".into(),
+                                "".into(),
+                                "\"Hidden\" (default) runs it in".into(),
+                                "the background.".into(),
+                                "\"Visible\" shows the real".into(),
+                                "browser window.".into(),
+                                "".into(),
+                                "Applies the next time a".into(),
+                                "browser is launched.".into(),
+                            ],
+                            action: SettingsAction::ToggleBrowserVisibility,
+                        },
+                        SettingsItem {
+                            label: "Prioritize browser".into(),
+                            value: config.browser_priority.first().cloned().unwrap_or_else(|| "auto".into()),
+                            description: vec![
+                                "Which installed browser to".into(),
+                                "try first.".into(),
+                                "".into(),
+                                "Cycles chrome / chromium /".into(),
+                                "brave / helium. Whichever is".into(),
+                                "actually installed wins; this".into(),
+                                "only changes probe order.".into(),
+                            ],
+                            action: SettingsAction::CyclePrioritizeBrowser,
+                        },
+                        SettingsItem {
+                            label: "Play mode".into(),
+                            value: mode_str.to_string(),
+                            description: vec![
+                                "Set playback mode.".into(),
+                                "".into(),
+                                "\"Streaming\" uses TorrServer,".into(),
+                                "\"Download\" saves .torrent files.".into(),
+                            ],
+                            action: SettingsAction::ToggleMode,
+                        },
+                        SettingsItem {
+                            label: "Close browser on exit".into(),
+                            value: bool_str(config.close_browser_on_exit),
+                            description: vec![
+                                "Kill the automated browser".into(),
+                                "when Doris exits.".into(),
+                                "".into(),
+                                "Set to False to leave it".into(),
+                                "running after Doris closes.".into(),
+                            ],
+                            action: SettingsAction::ToggleCloseBrowserOnExit,
+                        },
+                        SettingsItem {
+                            label: "Save cookies".into(),
+                            value: bool_str(config.save_cookies),
+                            description: vec![
+                                "Persist session cookies to".into(),
+                                "the cookie file so logins".into(),
+                                "survive a restart.".into(),
+                            ],
+                            action: SettingsAction::ToggleSaveCookies,
+                        },
+                        SettingsItem {
+                            label: "Save credentials".into(),
+                            value: bool_str(config.save_credentials),
+                            description: vec![
+                                "Remember username/password".into(),
+                                "(encrypted) after a login.".into(),
+                            ],
+                            action: SettingsAction::ToggleSaveCredentials,
+                        },
+                        SettingsItem {
+                            label: "Edit credentials".into(),
+                            value: "press Enter".into(),
+                            description: vec![
+                                "Open the login panel to".into(),
+                                "view or change saved logins.".into(),
+                            ],
+                            action: SettingsAction::EditCredentials,
+                        },
+                        SettingsItem {
+                            label: "Enable TorrServer".into(),
+                            value: bool_str(config.enable_torrserver),
+                            description: vec![
+                                "Stream through TorrServer.".into(),
+                                "".into(),
+                                "Off means Doris never".into(),
+                                "reaches for it, and says".into(),
+                                "so instead of failing.".into(),
+                            ],
+                            action: SettingsAction::ToggleEnableTorrserver,
+                        },
+                        SettingsItem {
+                            label: "TorrServer".into(),
+                            value: "press Enter to check".into(),
+                            description: vec![
+                                "Check whether TorrServer is".into(),
+                                "reachable right now.".into(),
+                            ],
+                            action: SettingsAction::CheckTorrserverStatus,
+                        },
+                    ];
+    items.extend(source_settings_items(config));
+    items
 }
 
 impl App {
@@ -756,6 +882,7 @@ impl App {
         self.modal = Modal::Login(LoginState::new());
     }
 
+
     /// Build the Settings modal from real, current state. Every `value`
     /// here is computed from `self`/`config`, never a hardcoded literal --
     /// see ROADMAP.md bug B5, where roughly half of these used to be
@@ -986,104 +1113,7 @@ impl App {
                 },
                 SettingsCategory {
                     name: "streaming".into(),
-                    items: vec![
-                        SettingsItem {
-                            label: "Browser visible".into(),
-                            value: visibility_str,
-                            description: vec![
-                                "Show or hide the automated".into(),
-                                "browser window.".into(),
-                                "".into(),
-                                "\"Hidden\" (default) runs it in".into(),
-                                "the background.".into(),
-                                "\"Visible\" shows the real".into(),
-                                "browser window.".into(),
-                                "".into(),
-                                "Applies the next time a".into(),
-                                "browser is launched.".into(),
-                            ],
-                            action: SettingsAction::ToggleBrowserVisibility,
-                        },
-                        SettingsItem {
-                            label: "Prioritize browser".into(),
-                            value: config.browser_priority.first().cloned().unwrap_or_else(|| "auto".into()),
-                            description: vec![
-                                "Which installed browser to".into(),
-                                "try first.".into(),
-                                "".into(),
-                                "Cycles chrome / chromium /".into(),
-                                "brave / helium. Whichever is".into(),
-                                "actually installed wins; this".into(),
-                                "only changes probe order.".into(),
-                            ],
-                            action: SettingsAction::CyclePrioritizeBrowser,
-                        },
-                        SettingsItem {
-                            label: "Play mode".into(),
-                            value: mode_str,
-                            description: vec![
-                                "Set playback mode.".into(),
-                                "".into(),
-                                "\"Streaming\" uses TorrServer,".into(),
-                                "\"Download\" saves .torrent files.".into(),
-                            ],
-                            action: SettingsAction::ToggleMode,
-                        },
-                        SettingsItem {
-                            label: "Close browser on exit".into(),
-                            value: bool_str(config.close_browser_on_exit),
-                            description: vec![
-                                "Kill the automated browser".into(),
-                                "when Doris exits.".into(),
-                                "".into(),
-                                "Set to False to leave it".into(),
-                                "running after Doris closes.".into(),
-                            ],
-                            action: SettingsAction::ToggleCloseBrowserOnExit,
-                        },
-                        SettingsItem {
-                            label: "Save cookies".into(),
-                            value: bool_str(config.save_cookies),
-                            description: vec![
-                                "Persist session cookies to".into(),
-                                "the cookie file so logins".into(),
-                                "survive a restart.".into(),
-                            ],
-                            action: SettingsAction::ToggleSaveCookies,
-                        },
-                        SettingsItem {
-                            label: "Save credentials".into(),
-                            value: bool_str(config.save_credentials),
-                            description: vec![
-                                "Remember username/password".into(),
-                                "(encrypted) after a login.".into(),
-                            ],
-                            action: SettingsAction::ToggleSaveCredentials,
-                        },
-                        SettingsItem {
-                            label: "Edit credentials".into(),
-                            value: "press Enter".into(),
-                            description: vec![
-                                "Open the login panel to".into(),
-                                "view or change saved logins.".into(),
-                            ],
-                            action: SettingsAction::EditCredentials,
-                        },
-                        SettingsItem {
-                            label: "TorrServer".into(),
-                            value: "press Enter to check".into(),
-                            description: vec![
-                                "Check whether TorrServer is".into(),
-                                "reachable right now.".into(),
-                                "".into(),
-                                "Starting/stopping the service".into(),
-                                "from here is planned but not".into(),
-                                "yet implemented -- see".into(),
-                                "ROADMAP.md Phase 6.".into(),
-                            ],
-                            action: SettingsAction::CheckTorrserverStatus,
-                        },
-                    ].into_iter().chain(source_settings_items(config)).collect(),
+                    items: streaming_settings_items(config, self.browser_hidden, &mode_str),
                 },
                 SettingsCategory {
                     name: "download".into(),

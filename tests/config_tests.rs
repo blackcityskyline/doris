@@ -6,6 +6,7 @@ fn test_config_default() {
     let config = Config::default();
     assert_eq!(config.browser_visibility, "hidden");
     assert_eq!(config.torrserver_url, "http://127.0.0.1:8090");
+    assert!(config.enable_torrserver);
     assert_eq!(config.bridge_port, 14141);
     assert_eq!(config.cookie_file, "cookies.txt");
     assert!(config.browser.is_none());
@@ -76,6 +77,7 @@ fn test_config_save_and_load_round_trip() {
     config.vim_keys = false;
     config.update_ms = 2500;
     config.rounded_corners = false;
+    config.enable_torrserver = false;
 
     save(&config, Some(&path)).unwrap();
     let loaded = load(Some(&path)).unwrap();
@@ -84,6 +86,7 @@ fn test_config_save_and_load_round_trip() {
     assert!(!loaded.vim_keys);
     assert_eq!(loaded.update_ms, 2500);
     assert!(!loaded.rounded_corners);
+    assert!(!loaded.enable_torrserver);
     // Untouched fields should still round-trip with their defaults.
     assert!(loaded.truecolor);
     assert_eq!(loaded.browser_visibility, "hidden");
