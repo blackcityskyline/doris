@@ -14,8 +14,8 @@
 //! They skip when the mirror cannot be reached, because an unreachable
 //! host says nothing about the parser.
 
-use doris::search::source::{Group, SearchRequest, Source};
-use doris::search::x1337x::{HOSTS, PAGE_SIZE, X1337xSearcher, search_url};
+use doris::sources::source::{Group, SearchRequest, Source};
+use doris::sources::x1337x::{HOSTS, PAGE_SIZE, X1337xSearcher, search_url};
 
 /// The user agent the probes ran with.
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \

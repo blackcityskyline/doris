@@ -6,8 +6,8 @@
 //! reads only one spelling zeroes the other silently, which is exactly
 //! the kind of bug a single-fixture test never catches.
 
-use doris::search::source::{self, Group, SourceEnv};
-use doris::search::tpb::{TOP_MOVIES_URL, TOP_TV_URL, parse_rows, search_url};
+use doris::sources::source::{self, Group, SourceEnv};
+use doris::sources::tpb::{TOP_MOVIES_URL, TOP_TV_URL, parse_rows, search_url};
 
 /// `q.php` shape: strings everywhere, `info_hash` uppercase, and the
 /// "No results" placeholder as a third row (that is how apibay answers

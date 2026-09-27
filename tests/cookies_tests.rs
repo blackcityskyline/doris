@@ -1,4 +1,4 @@
-use doris::search::cookies::*;
+use doris::sources::cookies::*;
 use serial_test::serial;
 
 /// The payload `Browser::add_cookies` wants, in a form Chrome accepts.

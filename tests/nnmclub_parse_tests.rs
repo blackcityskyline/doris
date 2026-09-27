@@ -13,13 +13,13 @@
 
 use std::sync::Arc;
 
-use doris::search::format::unescape_entities;
-use doris::search::models::TorrentItem;
-use doris::search::nnmclub::{
+use doris::sources::format::unescape_entities;
+use doris::sources::models::TorrentItem;
+use doris::sources::nnmclub::{
     GROUP_FORUMS, NnmclubSearcher, PAGE_SIZE, browse_url, group_for_forum, parse_rows,
     search_url, to_page,
 };
-use doris::search::source::{AuthContext, Group, LogFn, Source};
+use doris::sources::source::{AuthContext, Group, LogFn, Source};
 
 /// One results table, four result rows, and the header/footer the
 /// site wraps them in.

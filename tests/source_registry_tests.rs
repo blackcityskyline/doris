@@ -1,8 +1,8 @@
 use doris::config::Config;
-use doris::search::orchestrator;
-use doris::search::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
-use doris::search::rutor::RutorSearcher;
-use doris::search::x1337x::X1337xSearcher;
+use doris::sources::orchestrator;
+use doris::sources::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
+use doris::sources::rutor::RutorSearcher;
+use doris::sources::x1337x::X1337xSearcher;
 use doris::ui::app::{SettingsAction, source_settings_items, streaming_settings_items};
 
 #[test]

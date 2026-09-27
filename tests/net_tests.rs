@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use doris::search::net::{
+use doris::sources::net::{
     FetchOptions, backoff_delay, fetch_resilient, first_ok, is_retryable, parse_retry_after,
 };
 

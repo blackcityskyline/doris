@@ -2,8 +2,8 @@
 //! cases ROADMAP.md B4 specifies (including the deliberate deviation:
 //! rows with an empty info hash are never collapsed).
 
-use doris::search::models::TorrentItem;
-use doris::search::ordering::{
+use doris::sources::models::TorrentItem;
+use doris::sources::ordering::{
     SORT_CYCLE, Sort, SortDir, SortField, default_order, dedupe_by_hash, next_sort, sort_results,
 };
 

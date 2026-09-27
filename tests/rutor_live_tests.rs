@@ -1,7 +1,7 @@
 //! Live-network checks for the rutor source -- ignored by default so
 //! `cargo test` stays offline-safe. Run manually with:
 //! `cargo test --test rutor_live_tests -- --ignored --nocapture`
-use doris::search::rutor::RutorSearcher;
+use doris::sources::rutor::RutorSearcher;
 
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
@@ -83,7 +83,7 @@ async fn live_download_returns_torrent_bytes() {
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
 async fn live_trait_search_has_more_agrees_with_the_next_page() {
-    use doris::search::source::{SearchRequest, Source};
+    use doris::sources::source::{SearchRequest, Source};
 
     let rutor = RutorSearcher::new();
     let query = "фильм";
@@ -115,7 +115,7 @@ async fn live_trait_search_has_more_agrees_with_the_next_page() {
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
 async fn live_a_selected_category_answers_with_only_that_category() {
-    use doris::search::source::{Group, SearchRequest, Source};
+    use doris::sources::source::{Group, SearchRequest, Source};
 
     let rutor = RutorSearcher::new();
     let mut req = SearchRequest::new("2026", 0);

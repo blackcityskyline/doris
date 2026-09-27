@@ -11,13 +11,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use doris::search::models::TorrentItem;
-use doris::search::net::fetch_resilient;
-use doris::search::format::unescape_entities;
-use doris::search::nyaa::{
+use doris::sources::models::TorrentItem;
+use doris::sources::net::fetch_resilient;
+use doris::sources::format::unescape_entities;
+use doris::sources::nyaa::{
     NyaaSearcher, fetch_options, feed_url, parse_items, to_page,
 };
-use doris::search::source::{Group, SearchRequest, Source};
+use doris::sources::source::{Group, SearchRequest, Source};
 
 /// What `ddos-guard` served this network all day: no body, no hint.
 const FIVE_OH_FOUR: &str = concat!(
@@ -264,7 +264,7 @@ fn test_the_page_claims_only_one_page_and_no_cursor() {
     assert!(!page.has_more, "no 'load more' into a URL nobody has seen");
     assert_eq!(page.next_offset, None);
     assert_eq!(page.items.len(), 4);
-    assert_eq!(doris::search::nyaa::page_items(), 75, "the live page size");
+    assert_eq!(doris::sources::nyaa::page_items(), 75, "the live page size");
 }
 
 #[tokio::test]

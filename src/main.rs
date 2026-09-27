@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use doris::search::source::{AuthContext, LogFn, SearchRequest};
+use doris::sources::source::{AuthContext, LogFn, SearchRequest};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +27,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     // otherwise every enabled implemented source -- the same list the
     // `all` tab is built from, so CLI and TUI cannot disagree about what
     // "all sources" means.
-    let selected = doris::search::source::cli_sources(
+    let selected = doris::sources::source::cli_sources(
         args.source.as_deref(),
         &config.enabled_sources,
     )?;
@@ -91,9 +91,9 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
 
         // Same registry path as the TUI (B2): the instance from
         // `build_source`, every operation through `dyn Source`.
-        let source = doris::search::source::build_source(
+        let source = doris::sources::source::build_source(
             info.id,
-            doris::search::source::SourceEnv {
+            doris::sources::source::SourceEnv {
                 browser: browser.clone(),
             },
         )?;

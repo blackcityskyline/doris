@@ -5,8 +5,8 @@
 //! is repetitive: magnets keep their `xt` (hash), `dn`, `xl` (size)
 //! and one tracker, because those four are what the parser reads.
 
-use doris::search::source::{self, Group, SourceEnv};
-use doris::search::subsplease::{api_url, parse_rows};
+use doris::sources::source::{self, Group, SourceEnv};
+use doris::sources::subsplease::{api_url, parse_rows};
 
 /// One episode in three resolutions (the 1080/720/480 set), one with a
 /// single named resolution, one whose magnet is missing entirely, and
@@ -66,7 +66,7 @@ const BODY: &str = r#"{
   }
 }"#;
 
-fn rows() -> Vec<doris::search::models::TorrentItem> {
+fn rows() -> Vec<doris::sources::models::TorrentItem> {
     parse_rows(BODY).expect("the fixture parses")
 }
 

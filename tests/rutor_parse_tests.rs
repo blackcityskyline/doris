@@ -1,9 +1,9 @@
-use doris::search::models::TorrentItem;
-use doris::search::rutor::{
+use doris::sources::models::TorrentItem;
+use doris::sources::rutor::{
     BROWSE_URL, GROUP_IDS, RutorSearcher, count_title_links, group_ids, parse_results,
     split_query, title_has_word, to_page,
 };
-use doris::search::source::Group;
+use doris::sources::source::Group;
 
 // A reconstructed snippet matching the row shape confirmed by fetching
 // live rutor search results pages while writing the parser (see the

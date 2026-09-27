@@ -2,8 +2,8 @@
 //! so `cargo test` stays offline-safe. Run manually with:
 //! `cargo test --test tpb_live_tests -- --ignored --nocapture`
 
-use doris::search::source::{SearchRequest, Source};
-use doris::search::tpb::TpbSearcher;
+use doris::sources::source::{SearchRequest, Source};
+use doris::sources::tpb::TpbSearcher;
 
 #[tokio::test]
 #[ignore = "requires network access to apibay.org"]
@@ -67,7 +67,7 @@ async fn live_browse_reads_both_top100_lists() {
     // Both lists are fetched, so the answer spans more than one list's
     // worth of rows and carries both declared groups.
     assert!(page.items.len() > 100, "expected movies + episodes, got {}", page.items.len());
-    assert!(page.items.iter().any(|r| r.group == Some(doris::search::source::Group::Movies)));
-    assert!(page.items.iter().any(|r| r.group == Some(doris::search::source::Group::TV)));
+    assert!(page.items.iter().any(|r| r.group == Some(doris::sources::source::Group::Movies)));
+    assert!(page.items.iter().any(|r| r.group == Some(doris::sources::source::Group::TV)));
     assert!(!page.has_more, "the top-100 lists are fixed");
 }

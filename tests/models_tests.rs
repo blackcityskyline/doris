@@ -1,5 +1,5 @@
-use doris::search::format::parse_size;
-use doris::search::models::*;
+use doris::sources::format::parse_size;
+use doris::sources::models::*;
 
 #[test]
 fn test_torrent_item_full_json() {
@@ -137,7 +137,7 @@ fn test_b1_fields_deserialize_when_present() {
         "added": 1788652800
     }"#;
     let item: TorrentItem = serde_json::from_str(json).unwrap();
-    assert_eq!(item.group, Some(doris::search::source::Group::Movies));
+    assert_eq!(item.group, Some(doris::sources::source::Group::Movies));
     assert_eq!(item.info_hash, "06555d165746e815b0ab5b16de37ed24f9142595");
     assert!(item.magnet.as_deref().unwrap().starts_with("magnet:?xt=urn:btih:"));
     assert_eq!(item.size_bytes, 4_521_000_000);
@@ -171,7 +171,7 @@ fn test_fill_from_display_leaves_unparseable_values_at_zero() {
 
 #[test]
 fn test_format_bytes_matches_torios_format_bytes() {
-    use doris::search::format::format_bytes;
+    use doris::sources::format::format_bytes;
 
     assert_eq!(format_bytes(0), "0 B", "unknown size must still look like a size");
     assert_eq!(format_bytes(511), "511 B");
@@ -188,7 +188,7 @@ fn test_format_bytes_matches_torios_format_bytes() {
 
 #[test]
 fn test_format_date_renders_utc_and_refuses_the_epoch() {
-    use doris::search::format::format_date;
+    use doris::sources::format::format_date;
 
     assert_eq!(format_date(1_705_959_944), "2024-01-22");
     assert_eq!(format_date(0), "", "the zero value means unknown, not 1970");
@@ -201,7 +201,7 @@ fn test_format_date_renders_utc_and_refuses_the_epoch() {
 /// unmappable value must cost that field, never the page.
 #[test]
 fn test_flex_num_reads_numbers_and_numeric_strings() {
-    use doris::search::models::FlexNum;
+    use doris::sources::models::FlexNum;
     use serde::Deserialize;
 
     #[derive(Deserialize)]

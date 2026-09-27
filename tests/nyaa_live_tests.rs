@@ -15,9 +15,9 @@
 //! them through; everything else is already locked down offline in
 //! `nyaa_parse_tests.rs`.
 
-use doris::search::models::TorrentItem;
-use doris::search::nyaa::{NyaaSearcher, feed_url, parse_items};
-use doris::search::source::{Group, SearchRequest, Source};
+use doris::sources::models::TorrentItem;
+use doris::sources::nyaa::{NyaaSearcher, feed_url, parse_items};
+use doris::sources::source::{Group, SearchRequest, Source};
 
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
                   (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";

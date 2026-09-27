@@ -2,7 +2,7 @@
 //! reaching into `rutracker.rs` by name (see ROADMAP.md, "Architecture
 //! problems" A2). Adding a new content source is meant to be:
 //!
-//! 1. Write `src/search/<name>.rs` implementing [`Source`].
+//! 1. Write `src/sources/<name>.rs` implementing [`Source`].
 //! 2. Add one entry to [`KNOWN_SOURCES`].
 //!
 //! Nothing else in the orchestrator, browser layer, or Options UI should
@@ -598,7 +598,7 @@ pub fn cli_sources(
             }
             Ok(vec![info])
         }
-        None => Ok(crate::search::orchestrator::selected_sources(
+        None => Ok(crate::sources::orchestrator::selected_sources(
             "all", enabled, None, false,
         )),
     }

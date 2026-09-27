@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::search::source::KNOWN_SOURCES;
+use crate::sources::source::KNOWN_SOURCES;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]

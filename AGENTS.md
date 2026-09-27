@@ -21,7 +21,7 @@ This tree reflects the current, refactored layout (see ROADMAP.md for the
 full audit + phase history of how it got here from the original "FIXED"
 version of this document). It's still the intended shape going forward,
 just no longer frozen — Phase 3/10 of that refactor deliberately restructured
-`search/` toward a `Source`-trait model and split `ui/app.rs`'s widgets out,
+`sources/` toward a `Source`-trait model and split `ui/app.rs`'s widgets out,
 and more of that kind of evolution is expected as sources/features are added.
 
 ```
@@ -39,7 +39,7 @@ src/
 │   ├── cdp.rs       # Browser automation (chromedriver, fantoccini)
 │   ├── detect.rs    # BrowserKind (chrome/chromium/brave/helium) + priority-ordered detection
 │   └── cloudflare.rs # Cloudflare bypass patches
-├── search/
+├── sources/
 │   ├── mod.rs
 │   ├── source.rs    # Source trait + KNOWN_SOURCES registry (add new sources here)
 │   ├── orchestrator.rs # Concurrent dispatch: selected_sources, per-source cursors, cache wiring
@@ -80,7 +80,7 @@ src/
         └── graph.rs # btop-style history sparkline (braille/block/dot)
 ```
 
-The single list of sources is `KNOWN_SOURCES` in `search/source.rs` (one
+The single list of sources is `KNOWN_SOURCES` in `sources/source.rs` (one
 entry per source: implemented flag, groups, browser need, home URL) -- add
 new sources there, not in a second hand-written list; the Options sources
 list, the tab bar and the CLI all derive from it.

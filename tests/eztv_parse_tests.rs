@@ -5,8 +5,8 @@
 //! a *string* while `seeds`/`peers` arrive as numbers, and both
 //! spellings of every numeric field must read.
 
-use doris::search::source::{self, Group, SearchRequest, Source, SourceEnv};
-use doris::search::eztv::{EztvSearcher, PAGE_SIZE, parse_page, torrents_url};
+use doris::sources::source::{self, Group, SearchRequest, Source, SourceEnv};
+use doris::sources::eztv::{EztvSearcher, PAGE_SIZE, parse_page, torrents_url};
 
 /// Two usable rows (one with a shipped magnet, one rebuilt from an
 /// uppercase hash; `size_bytes` once as a string and once as a number)
@@ -59,7 +59,7 @@ const BODY: &str = r#"{
   ]
 }"#;
 
-fn page(offset: usize) -> doris::search::source::SearchPage {
+fn page(offset: usize) -> doris::sources::source::SearchPage {
     parse_page(BODY, offset).expect("the fixture parses")
 }
 

@@ -4,8 +4,8 @@ use doris::app::{
     source_needs_browser, source_outcome_line,
 };
 use doris::config::Config;
-use doris::search::models::TorrentItem;
-use doris::search::source::{
+use doris::sources::models::TorrentItem;
+use doris::sources::source::{
     AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, SourceEnv, build_source,
 };
 use doris::ui::app::App as UiApp;
