@@ -21,8 +21,9 @@ This tree reflects the current, refactored layout (see ROADMAP.md for the
 full audit + phase history of how it got here from the original "FIXED"
 version of this document). It's still the intended shape going forward,
 just no longer frozen — Phase 3/10 of that refactor deliberately restructured
-`sources/` toward a `Source`-trait model and split `ui/app.rs`'s widgets out,
-and more of that kind of evolution is expected as sources/features are added.
+`sources/` toward a `Source`-trait model, split `ui/app.rs`'s widgets out, and
+-- in Phase 10's last step -- split its three modals into `ui/modals/*`, so
+`ui/app.rs` is now the non-modal UI only.
 
 ```
 src/
@@ -71,7 +72,12 @@ src/
 │   └── mod.rs       # AES-128-GCM credential encryption, keyed by resource id
 └── ui/
     ├── mod.rs       # UI module declarations
-    ├── app.rs       # TUI state + rendering (zones, modals) -- large; see ROADMAP.md Phase 10 for the planned ui/modals/* split, not yet done
+    ├── app.rs       # TUI state + non-modal rendering (zones, menu, main view, modal dispatcher)
+    ├── modals/      # the three modals, split out in Phase 10 (see ROADMAP.md)
+    │   ├── mod.rs
+    │   ├── settings.rs # typed descriptor table: Options modal (pagination, keys, item builders)
+    │   ├── login.rs   # login modal: resource tabs, Ctrl+S save, saved-indicator
+    │   └── health.rs  # health check modal: browser/TorrServer/credentials/cookies/sources
     ├── menu.rs      # btop-style main menu
     ├── theme.rs     # Theme system (colors, gradients)
     ├── zones.rs     # Zone layout system (toggle, focus, presets)
