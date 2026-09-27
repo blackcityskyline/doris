@@ -25,6 +25,12 @@ const KEY_LEN: usize = 16;
 /// the only source that exists today.
 const DEFAULT_RESOURCE: &str = "rutracker";
 
+/// The resource ids the login modal manages, in tab order. Today that is
+/// rutracker alone -- the store is keyed by id, so a future source with
+/// a session of its own adds its tab here and the modal picks it up
+/// without a UI change.
+pub const LOGIN_RESOURCES: &[&str] = &[DEFAULT_RESOURCE];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Credential {
     pub username: String,

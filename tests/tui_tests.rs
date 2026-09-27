@@ -371,8 +371,94 @@ fn test_login_modal_enter_submits() {
     );
     let result = app.login_modal_key(key);
 
-    assert_eq!(result, Some(("user".into(), "pass123".into())));
+    assert_eq!(result, Some(("rutracker", "user".into(), "pass123".into())));
     assert_eq!(app.modal, Modal::None);
+}
+
+/// The resource tab is part of what Enter submits: the credentials
+/// belong to the selected resource, so the tuple carries its id.
+#[test]
+fn test_login_modal_enter_submits_the_selected_resource() {
+    let mut app = make_test_app();
+    app.open_login_modal();
+
+    if let Modal::Login(ref state) = app.modal {
+        assert_eq!(state.resource, "rutracker", "the first tab is selected");
+    }
+
+    // With one resource the tab wraps onto itself; the point is that
+    // the id travels with the credentials.
+    let right = crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Right,
+        crossterm::event::KeyModifiers::NONE,
+    );
+    app.login_modal_key(right);
+    let left = crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Left,
+        crossterm::event::KeyModifiers::NONE,
+    );
+    app.login_modal_key(left);
+
+    if let Modal::Login(ref state) = app.modal {
+        assert_eq!(state.resource, "rutracker", "one tab wraps onto itself");
+    }
+}
+
+/// Ctrl+S saves the current tab's credentials without logging in: the
+/// modal stays open and says so. The store write is real, so the test
+/// backs up whatever was saved and puts it back -- an offline test must
+/// not clobber the user's login.
+#[test]
+fn test_login_modal_ctrl_s_saves_without_logging_in() {
+    let mut app = make_test_app();
+    app.open_login_modal();
+
+    for c in "saved-user".chars() {
+        app.login_modal_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char(c),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+    }
+    app.login_modal_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Tab,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    for c in "secret".chars() {
+        app.login_modal_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char(c),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+    }
+
+    let before = doris::credentials::load_credential("rutracker");
+
+    let ctrl_s = crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('s'),
+        crossterm::event::KeyModifiers::CONTROL,
+    );
+    let result = app.login_modal_key(ctrl_s);
+
+    assert_eq!(result, None, "saving does not close the modal");
+    assert!(matches!(app.modal, Modal::Login(_)), "the modal stays open");
+    if let Modal::Login(ref state) = app.modal {
+        assert_eq!(state.message.as_deref(), Some("Saved"));
+    }
+
+    // And the store really holds them, under the tab's resource.
+    let saved = doris::credentials::load_credential("rutracker")
+        .expect("Ctrl+S must write the store");
+    assert_eq!(saved.0, "saved-user");
+    assert_eq!(saved.1, "secret");
+
+    // Put back exactly what was there before.
+    match before {
+        Some((user, pass)) => {
+            let _ = doris::credentials::save_credential("rutracker", &user, &pass);
+        }
+        None => {
+            let _ = doris::credentials::delete_credential("rutracker");
+        }
+    }
 }
 
 #[test]
