@@ -168,6 +168,31 @@ pub struct App {
 }
 
 
+/// Width of the `Src` column in the results table. Fixed on purpose:
+/// the longest source id in `KNOWN_SOURCES` is 10 characters, so the
+/// columns never shift as the results change -- see
+/// `test_every_known_source_fits_the_badge_column`.
+pub const SOURCE_BADGE_WIDTH: u16 = 10;
+
+/// The `Src` cell for one result: the source id, or `-` when it is
+/// missing.
+///
+/// `TorrentItem::source` is `#[serde(default)]`, so rows persisted
+/// before the field existed (or produced by a path that never filled it
+/// in) arrive empty. A blank cell would read as "the column is empty
+/// here" rather than "nobody knows", hence the explicit placeholder.
+///
+/// Most useful on the `all` tab, where a single page mixes results from
+/// several trackers and the row itself is the only place that says who
+/// returned it.
+pub fn source_badge(item: &TorrentItem) -> String {
+    if item.source.is_empty() {
+        "-".to_string()
+    } else {
+        item.source.clone()
+    }
+}
+
 /// The Results bar's tabs for this config: every implemented source
 /// that is switched on, in registry order, then `all` (search every
 /// enabled+implemented source at once and merge).
@@ -180,6 +205,10 @@ pub struct App {
 ///
 /// `all` stays even with every source off, so the bar always has
 /// somewhere to be.
+///
+/// Drawn as `[rutracker] rutor yts ...` with the active tab in `hi_fg`
+/// and bold; derived from the same field `source_tab_at` walks, so what
+/// is drawn is exactly what a click tests.
 pub fn source_tabs(config: &Config) -> Vec<&'static str> {
     let mut tabs: Vec<&'static str> = KNOWN_SOURCES
         .iter()
@@ -1093,14 +1122,27 @@ impl App {
         frame.render_widget(Paragraph::new(Line::from(group_spans)), chunks[1]);
 
         // --- results table ---------------------------------------------------
+        // `Src` sits between the metadata and the title: on the `all`
+        // tab a single page mixes trackers, and the row is the only
+        // place that says who returned it.
         let header = Row::new(vec![
             Cell::from("Seeds"),
             Cell::from("Size"),
             Cell::from("Date"),
+            Cell::from("Src"),
             Cell::from("Title"),
         ])
         .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
 
+        // Muted, but not `inactive_fg`: the tab bar gets away with that
+        // one because a tab is also spelled out in the title. Here the
+        // badge is the only thing saying who returned the row, and on
+        // the `all` tab that is the point of the column -- so it takes
+        // the informational mid-bright `graph_text` instead (≈6.7:1 on
+        // `main_bg`, versus ≈2.3:1 for `inactive_fg`). It also survives
+        // the row's REVERSED highlight: swapping the two leaves dark
+        // text on a light blue chip.
+        let badge_style = Style::default().fg(self.theme.graph_text.to_color());
         let rows: Vec<Row> = self.filtered_indices.iter()
             .filter_map(|&idx| self.results.get(idx))
             .map(|item| {
@@ -1108,6 +1150,7 @@ impl App {
                     Cell::from(item.seeds.as_str()),
                     Cell::from(item.size.as_str()),
                     Cell::from(item.date.as_str()),
+                    Cell::from(source_badge(item)).style(badge_style),
                     Cell::from(item.title.as_str()),
                 ])
             })
@@ -1119,6 +1162,7 @@ impl App {
                 Constraint::Length(6),
                 Constraint::Length(8),
                 Constraint::Length(8),
+                Constraint::Length(SOURCE_BADGE_WIDTH),
                 Constraint::Min(20),
             ],
         )

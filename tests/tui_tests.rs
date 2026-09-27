@@ -791,3 +791,91 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
     }
     assert!(!body.contains("p: pause/resume"), "old hint line is back");
 }
+
+// --- the `Src` column (П.6) ------------------------------------------------
+
+/// Every drawn row as text, for assertions about what reached the screen
+/// rather than about state.
+fn render_rows(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
+    let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    let buf = terminal.backend().buffer();
+    (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol().to_string())
+                .collect()
+        })
+        .collect()
+}
+
+/// `TorrentItem::source` is `#[serde(default)]`, so pre-field rows
+/// arrive empty. Blank would read as "no column here"; the placeholder
+/// says "nobody knows".
+#[test]
+fn test_source_badge_marks_missing_sources_with_a_dash() {
+    let mut item = TorrentItem::default();
+    assert_eq!(doris::ui::app::source_badge(&item), "-");
+
+    item.source = "nyaa".into();
+    assert_eq!(doris::ui::app::source_badge(&item), "nyaa");
+}
+
+/// The badge column has a fixed width so the table never re-flows as
+/// the results change -- which only holds while every source id fits.
+#[test]
+fn test_every_known_source_fits_the_badge_column() {
+    for info in doris::sources::source::KNOWN_SOURCES.iter() {
+        assert!(
+            (info.id.chars().count() as u16) <= doris::ui::app::SOURCE_BADGE_WIDTH,
+            "source '{}' is {} chars and would be clipped in the Src column",
+            info.id,
+            info.id.chars().count()
+        );
+    }
+}
+
+/// On the `all` tab one page mixes trackers, and the row itself is the
+/// only place that says who returned it -- so each row has to carry its
+/// own source, and rows without one have to be visibly marked.
+#[test]
+fn test_results_table_shows_which_source_returned_each_row() {
+    let mut app = make_test_app();
+    app.results = vec![
+        TorrentItem {
+            title: "First".into(),
+            source: "rutracker".into(),
+            ..Default::default()
+        },
+        TorrentItem {
+            title: "Second".into(),
+            source: "nyaa".into(),
+            ..Default::default()
+        },
+        TorrentItem {
+            title: "Third".into(),
+            ..Default::default()
+        },
+    ];
+    app.update_filter();
+
+    let rows = render_rows(&mut app, 120, 30);
+
+    let header = rows.iter().find(|r| r.contains("Seeds"))
+        .expect("the table header is drawn");
+    assert!(header.contains("Src"), "header: {}", header);
+
+    for (title, source) in [("First", "rutracker"), ("Second", "nyaa")] {
+        let row = rows.iter().find(|r| r.contains(title))
+            .unwrap_or_else(|| panic!("the '{}' row is drawn", title));
+        assert!(row.contains(source), "'{}' row should name '{}': {}", title, source, row);
+    }
+
+    let unknown = rows.iter().find(|r| r.contains("Third"))
+        .expect("the third row is drawn");
+    assert!(
+        unknown.contains('-'),
+        "a row with no source is marked, not left blank: {}",
+        unknown
+    );
+}
