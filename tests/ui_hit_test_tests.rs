@@ -1,7 +1,7 @@
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
-use doris::ui::app::{App as UiApp, HeaderHint, TorrentClickAction};
+use doris::ui::app::{App as UiApp, HeaderHint, UiAction};
 use doris::ui::zones::ZoneId;
 use ratatui::layout::Rect;
 
@@ -205,7 +205,7 @@ fn test_click_at_tab_row_switches_active_source() {
     let rutor_col = results_area.x + 1 + "[rutracker]".chars().count() as u16 + 2;
     let action = app.click_at(tab_row, rutor_col);
     assert_eq!(app.active_source, "rutor");
-    assert_eq!(action, None); // switching source isn't a TorrentClickAction
+    assert_eq!(action, None); // switching source isn't a UiAction
 }
 
 #[test]
@@ -228,36 +228,88 @@ fn test_cycle_source_wraps_through_all_tabs() {
 }
 
 #[test]
-fn test_click_at_returns_none_outside_the_torrent_hint_line() {
+fn test_click_at_returns_none_on_the_zone_title() {
     let mut app = make_app("chrome", "http://127.0.0.1:8090");
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    // Click the Torrent zone's border/top row, not its pause/remove hint line.
+    // The top-left corner carries the zone title, not a frame button.
     let action = app.click_at(torrent_area.y, torrent_area.x);
     assert_eq!(action, None);
 }
 
+/// The frame legend is drawn from `frame_layout`, and `click_at` tests
+/// those very rects -- so a click on the drawn `pause` word has to come
+/// back as the pause action, not fall through to "clicked the panel".
 #[test]
-fn test_click_at_torrent_pause_hint_returns_toggle_pause() {
+fn test_click_at_torrent_pause_button_returns_toggle_pause() {
     let mut app = make_app("chrome", "http://127.0.0.1:8090");
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    // Hint line is 1 (border) + 4 (content lines above it) rows down.
-    let hint_row = torrent_area.y + 1 + 4;
-    let action = app.click_at(hint_row, torrent_area.x + 1); // inside "p: pause/resume"
-    assert_eq!(action, Some(TorrentClickAction::TogglePause));
+    let layout = app.frame_layout(ZoneId::Torrent, torrent_area);
+    let rect = layout.buttons.iter()
+        .find(|(b, _)| b.key == 'p')
+        .map(|(_, r)| *r)
+        .expect("the Torrent frame has a pause button");
+
+    assert_eq!(app.click_at(rect.y, rect.x), Some(UiAction::TogglePause));
+    // And the last column of the word too, not just its first.
+    assert_eq!(
+        app.click_at(rect.y, rect.x + rect.width - 1),
+        Some(UiAction::TogglePause)
+    );
 }
 
 #[test]
-fn test_click_at_torrent_remove_hint_returns_remove() {
+fn test_click_at_torrent_delete_button_returns_remove() {
     let mut app = make_app("chrome", "http://127.0.0.1:8090");
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    let hint_row = torrent_area.y + 1 + 4;
-    // "p: pause/resume" is 15 chars + a 2-char gap before "d: remove".
-    let remove_col = torrent_area.x + 1 + 15 + 2;
-    let action = app.click_at(hint_row, remove_col);
-    assert_eq!(action, Some(TorrentClickAction::Remove));
+    let layout = app.frame_layout(ZoneId::Torrent, torrent_area);
+    let rect = layout.buttons.iter()
+        .find(|(b, _)| b.key == 'd')
+        .map(|(_, r)| *r)
+        .expect("the Torrent frame has a delete button");
+
+    assert_eq!(app.click_at(rect.y, rect.x), Some(UiAction::Remove));
+}
+
+/// Between the two buttons there is a gap: landing in it must do
+/// nothing, or the legend would be a single imprecise hot zone.
+#[test]
+fn test_click_between_two_frame_buttons_does_nothing() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let results_area = app.zones.get_area(ZoneId::Results);
+    let layout = app.frame_layout(ZoneId::Results, results_area);
+    // `group` and `source` are the two right-aligned buttons; the gap
+    // between them is at least one column wide.
+    let group = layout.buttons.iter().find(|(b, _)| b.key == 'g')
+        .map(|(_, r)| *r).expect("group button");
+    let source = layout.buttons.iter().find(|(b, _)| b.key == ']')
+        .map(|(_, r)| *r).expect("source button");
+    assert!(source.x > group.x + group.width);
+
+    let gap_col = group.x + group.width;
+    assert!(app.click_at(group.y, gap_col).is_none());
+}
+
+/// The buttons `ui::App` can act on itself happen right here rather than
+/// being handed to the orchestrator.
+#[test]
+fn test_clicking_the_filter_button_enters_filter_mode() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    assert!(!app.zones.filter_mode);
+
+    let results_area = app.zones.get_area(ZoneId::Results);
+    let layout = app.frame_layout(ZoneId::Results, results_area);
+    let rect = layout.buttons.iter()
+        .find(|(b, _)| b.key == 'F')
+        .map(|(_, r)| *r)
+        .expect("the Results frame has a filter button");
+
+    assert_eq!(app.click_at(rect.y, rect.x), None);
+    assert!(app.zones.filter_mode, "the click entered filter mode");
 }
 
 // --- the tab bar is derived from config, not written down -------------------
@@ -491,4 +543,79 @@ fn test_keeping_the_category_leaves_the_selection_alone() {
 
     assert_eq!(app.active_group, Some(Group::Movies));
     assert!(!app.group_changed, "re-deriving is not a switch");
+}
+
+// --- the frame legend's geometry ------------------------------------------
+
+/// `frame_layout` is what both the renderer and `click_at` go through,
+/// so a button that escaped its own zone would be drawn on top of
+/// somebody else's border and click through to it. Checked at several
+/// terminal sizes, including ones small enough that btop would have
+/// dropped the right-hand cluster entirely.
+#[test]
+fn test_every_frame_button_stays_on_its_own_border() {
+    for (w, h) in [(80u16, 24u16), (40, 12), (20, 8), (10, 4), (6, 3)] {
+        let mut app = make_app("chrome", "http://127.0.0.1:8090");
+        app.zones.update_areas(Rect::new(0, 0, w, h));
+        app.zones.set_fullscreen(Some(ZoneId::Results));
+        let area = app.zones.get_area(ZoneId::Results);
+        let layout = app.frame_layout(ZoneId::Results, area);
+
+        for (button, rect) in &layout.buttons {
+            assert!(rect.x > area.x, "{:?} at {} touches the left border", button, w);
+            assert!(
+                rect.x + rect.width < area.x + area.width,
+                "{:?} at {} overruns the right border",
+                button,
+                w
+            );
+            assert!(
+                rect.y == area.y || rect.y + 1 == area.y + area.height,
+                "{:?} at {}x{} is not on a border row",
+                button,
+                w,
+                h
+            );
+        }
+        if layout.info.width > 0 {
+            assert_eq!(layout.info.y, area.y, "info stays on the top border");
+            assert!(layout.info.x + layout.info.width < area.x + area.width);
+        }
+    }
+}
+
+/// Two buttons must never share a column, or a click would be a guess
+/// about which of them the user meant.
+#[test]
+fn test_frame_buttons_do_not_overlap() {
+    let mut app = make_app("chrome", "http://127.0.0.1:8090");
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    for &id in ZoneId::all() {
+        let area = app.zones.get_area(id);
+        let layout = app.frame_layout(id, area);
+        for (i, (a, ra)) in layout.buttons.iter().enumerate() {
+            for (b, rb) in layout.buttons.iter().skip(i + 1) {
+                assert!(
+                    ra.y != rb.y || ra.x + ra.width <= rb.x || rb.x + rb.width <= ra.x,
+                    "{:?} and {:?} overlap on {:?}",
+                    a,
+                    b,
+                    id
+                );
+            }
+        }
+        if layout.info.width > 0 {
+            for (_, rect) in &layout.buttons {
+                if rect.y != layout.info.y {
+                    continue;
+                }
+                assert!(
+                    rect.x + rect.width <= layout.info.x
+                        || layout.info.x + layout.info.width <= rect.x,
+                    "info text overlaps a button on {:?}",
+                    id
+                );
+            }
+        }
+    }
 }

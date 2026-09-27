@@ -23,7 +23,7 @@ impl ZoneId {
         }
     }
 
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> &'static str {
         match self {
             ZoneId::Results => "Results",
             ZoneId::Torrent => "Torrent",
@@ -240,10 +240,152 @@ pub fn superscript_digit(n: u8) -> &'static str {
     }
 }
 
-pub fn zone_title(id: ZoneId, _theme: &Theme) -> String {
-    let num = id as u8;
-    let sup = superscript_digit(num);
-    format!(" {} {} ", sup, id.label())
+/// Which edge of a zone's frame carries a button.
+///
+/// btop draws every panel action on the border line itself instead of
+/// inside the box: `filter` right after the box title
+/// (`btop_draw.cpp:1902`), `pause`/`per-core`/`reverse`/`tree` right
+/// aligned on the top border (`:1915`-`:1940`), and
+/// `terminate`/`kill`/`signals`/`Nice`/`follow` running along the
+/// bottom one (`:1956`-`:1979`). The border doubles as the keybind
+/// legend, which is why the zone body itself can stay clean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameSlot {
+    /// Top border, left, immediately after the zone title.
+    TopLeft,
+    /// Top border, right aligned (clipped away when the zone is narrow,
+    /// exactly like btop's `if (width > 60 + sort_len)` guards).
+    TopRight,
+    /// Bottom border, left aligned.
+    BottomLeft,
+}
+
+/// One function drawn on a zone's frame.
+///
+/// The word is `title` colour and the character that triggers it is
+/// `hi_fg` + bold: the highlight marks the hotkey, not the alphabet --
+/// btop spells it "pa**u**se" (`:1923`) precisely because `p` was taken,
+/// and renders "info ⏎" (`:1956`) where the key is a glyph rather than a
+/// letter. Clicking the word fires the same action as pressing the key
+/// (btop registers both: the spans above and `Input::mouse_mappings`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameButton {
+    pub slot: FrameSlot,
+    /// The character that triggers it. A glyph such as `⏎` stands in for
+    /// a non-text key, so this is always exactly one column wide.
+    pub key: char,
+    /// The word shown on the frame, e.g. "filter".
+    pub label: &'static str,
+}
+
+impl FrameButton {
+    /// What actually gets drawn: `label` when it already contains the
+    /// hotkey, otherwise `label` followed by the key.
+    pub fn text(&self) -> String {
+        if self.label.contains(self.key) {
+            self.label.to_string()
+        } else {
+            format!("{} {}", self.label, self.key)
+        }
+    }
+
+    /// Byte offset of the hotkey inside [`FrameButton::text`].
+    pub fn hotkey_index(&self) -> usize {
+        self.text().find(self.key).unwrap_or(0)
+    }
+
+    /// Drawn width in columns.
+    pub fn width(&self) -> u16 {
+        self.text().chars().count() as u16
+    }
+}
+
+/// Frame buttons per zone.
+///
+/// The keys are the bindings in AGENTS.md; a word is picked so its first
+/// letter is free for the hotkey whenever possible (`f` belongs to
+/// fullscreen, so filter has to take `F`; `v`/`]`/`⏎` are not letters at
+/// all and end up trailing the word). Kept next to `zone_title` so the
+/// legend and the bindings it advertises are edited together.
+const RESULTS_BUTTONS: &[FrameButton] = &[
+    // Capital `F` because the key is shift-F: `f` already belongs to
+    // fullscreen, and btop capitalises the word the same way when the
+    // hotkey is uppercase (`Nice`, `Follow`).
+    FrameButton { slot: FrameSlot::TopLeft, key: 'F', label: "Filter" },
+    FrameButton { slot: FrameSlot::TopRight, key: 'g', label: "group" },
+    FrameButton { slot: FrameSlot::TopRight, key: ']', label: "source" },
+    FrameButton { slot: FrameSlot::BottomLeft, key: '⏎', label: "play" },
+    FrameButton { slot: FrameSlot::BottomLeft, key: 'd', label: "download" },
+    FrameButton { slot: FrameSlot::BottomLeft, key: 'v', label: "info" },
+];
+
+const TORRENT_BUTTONS: &[FrameButton] = &[
+    FrameButton { slot: FrameSlot::TopRight, key: 'p', label: "pause" },
+    FrameButton { slot: FrameSlot::BottomLeft, key: 'd', label: "delete" },
+];
+
+/// The Log panel's only real action: jump to the full-screen detail log.
+const LOG_BUTTONS: &[FrameButton] = &[FrameButton {
+    slot: FrameSlot::TopRight,
+    key: 'L',
+    label: "detail",
+}];
+
+/// The buttons drawn on `id`'s frame; empty for zones with no actions.
+pub fn zone_buttons(id: ZoneId) -> &'static [FrameButton] {
+    match id {
+        ZoneId::Results => RESULTS_BUTTONS,
+        ZoneId::Torrent => TORRENT_BUTTONS,
+        ZoneId::Log => LOG_BUTTONS,
+        ZoneId::Extra => &[],
+    }
+}
+
+/// The zone's own title, btop `createBox` style: superscript number in
+/// `hi_fg` + bold, label in `title` (`btop_draw.cpp:290` for the
+/// numbering colour, `:332` for where it is drawn).
+pub fn zone_title(id: ZoneId, theme: &Theme) -> Line<'static> {
+    let word = Style::default().fg(theme.title.to_color());
+    let number = Style::default()
+        .fg(theme.hi_fg.to_color())
+        .add_modifier(Modifier::BOLD);
+    Line::from(vec![
+        Span::styled(" ", word),
+        Span::styled(superscript_digit(id as u8), number),
+        Span::styled(" ", word),
+        Span::styled(id.label(), word),
+        Span::styled(" ", word),
+    ])
+}
+
+/// Columns [`zone_title`] occupies, so the frame row starts right after
+/// it: space + superscript + space + label + space.
+pub fn zone_title_width(id: ZoneId) -> u16 {
+    (4 + id.label().chars().count()) as u16
+}
+
+/// Spans for one button: `title` for the word, `hi_fg` + bold for the
+/// hotkey. `active` bolds the whole word, which is how btop marks a
+/// toggle that is currently on (`Fx::b` around `pause` when
+/// `pause_proc_list`, around `tree` when `proc_tree`, ...).
+pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Span<'static>> {
+    let text = button.text();
+    let idx = button.hotkey_index();
+    let key_len = button.key.len_utf8();
+
+    let mut word_style = Style::default().fg(theme.title.to_color());
+    if active {
+        word_style = word_style.add_modifier(Modifier::BOLD);
+    }
+    let hotkey_style = Style::default()
+        .fg(theme.hi_fg.to_color())
+        .add_modifier(Modifier::BOLD);
+
+    vec![
+        Span::styled(text[..idx].to_string(), word_style),
+        Span::styled(text[idx..idx + key_len].to_string(), hotkey_style),
+        Span::styled(text[idx + key_len..].to_string(), word_style),
+    ]
 }
 
 pub fn zone_border_color(id: ZoneId, focused: ZoneId, theme: &Theme) -> Color {

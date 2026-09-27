@@ -1,5 +1,7 @@
-use doris::ui::zones::{ZoneId, ZoneLayout};
+use doris::ui::theme::Theme;
+use doris::ui::zones::{button_spans, zone_buttons, zone_title, zone_title_width, ZoneId, ZoneLayout};
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 
 #[test]
 fn test_zone_id_key_char_and_from_key_round_trip() {
@@ -216,5 +218,127 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
     zones.update_areas(area); // must not panic
     for &id in ZoneId::all() {
         assert_eq!(zones.get_area(id), Rect::default());
+    }
+}
+
+// --- the frame legend (btop's buttons drawn on the border) ----------------
+
+/// btop's box title: superscript number in `hi_fg` + bold, the label in
+/// `title` (`btop_draw.cpp:290` + `:332`). Ours used to be one flat
+/// string, so nothing distinguished the zone number from its name.
+#[test]
+fn test_zone_title_marks_the_number_hi_fg_and_the_label_title() {
+    let theme = Theme::dark();
+    let line = zone_title(ZoneId::Results, &theme);
+    let spans = line.spans;
+
+    assert_eq!(spans.len(), 5);
+    assert_eq!(spans[1].content.to_string(), "\u{00B9}");
+
+    let number = spans[1].style;
+    assert_eq!(number.fg, Some(theme.hi_fg.to_color()));
+    assert!(number.add_modifier.contains(Modifier::BOLD));
+
+    assert_eq!(spans[3].content.to_string(), "Results");
+    let label = spans[3].style;
+    assert_eq!(label.fg, Some(theme.title.to_color()));
+    assert!(!label.add_modifier.contains(Modifier::BOLD));
+}
+
+/// `zone_title_width` is what positions the whole frame legend, so it has
+/// to describe the line that is actually drawn -- off by one and every
+/// button would start one column late.
+#[test]
+fn test_zone_title_width_matches_the_drawn_title() {
+    for &id in ZoneId::all() {
+        let theme = Theme::dark();
+        let drawn: usize = zone_title(id, &theme)
+            .spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum();
+        assert_eq!(drawn as u16, zone_title_width(id), "{:?}", id);
+    }
+}
+
+/// The highlight marks the hotkey, not the alphabet: btop spells it
+/// "pa**u**se" because `p` was taken, so the styled span has to land on
+/// exactly the character that triggers the button, and the three spans
+/// have to reassemble the word unchanged.
+#[test]
+fn test_button_spans_put_the_hotkey_on_the_key_character() {
+    let theme = Theme::dark();
+    for &id in ZoneId::all() {
+        for button in zone_buttons(id) {
+            let text = button.text();
+            let spans = button_spans(&theme, button, false);
+
+            assert_eq!(spans.len(), 3, "{}: {}", id.label(), text);
+            let joined: String = spans.iter().map(|s| s.content.to_string()).collect();
+            assert_eq!(joined, text, "{}: the spans reassemble the word", text);
+            assert_eq!(
+                spans[1].content.to_string(),
+                button.key.to_string(),
+                "{}: the hotkey span must be the key itself",
+                text
+            );
+            assert_eq!(
+                spans[1].style.fg,
+                Some(theme.hi_fg.to_color()),
+                "{}: hotkey is hi_fg",
+                text
+            );
+        }
+    }
+}
+
+/// A pressed toggle is drawn bold, the whole word -- btop wraps `pause`
+/// in `Fx::b` while `pause_proc_list` is on.
+#[test]
+fn test_active_button_bolds_the_whole_word() {
+    let theme = Theme::dark();
+    let button = zone_buttons(ZoneId::Torrent)
+        .iter()
+        .find(|b| b.key == 'p')
+        .expect("Torrent has a pause button");
+
+    let idle = button_spans(&theme, button, false);
+    let active = button_spans(&theme, button, true);
+    // Idle: only the hotkey is bold, the word around it is not.
+    assert!(!idle[0].style.add_modifier.contains(Modifier::BOLD));
+    assert!(!idle[2].style.add_modifier.contains(Modifier::BOLD));
+    assert!(idle[1].style.add_modifier.contains(Modifier::BOLD));
+    // Active: the whole word goes bold.
+    assert!(active[0].style.add_modifier.contains(Modifier::BOLD));
+    assert!(active[2].style.add_modifier.contains(Modifier::BOLD));
+    // The hotkey stays bold either way -- it is the key either way.
+    assert!(active[1].style.add_modifier.contains(Modifier::BOLD));
+}
+
+/// The convention the plan asks for: primary functions use their first
+/// letter for the hotkey, as long as it isn't already taken. The words
+/// that cannot (`source` is `]`, `play` is Enter, `info` is `v`) trail
+/// the key instead -- see `FrameButton::text`.
+#[test]
+fn test_primary_buttons_lead_with_their_hotkey() {
+    let primary = [
+        (ZoneId::Results, 'F'),
+        (ZoneId::Results, 'd'),
+        (ZoneId::Results, 'g'),
+        (ZoneId::Torrent, 'p'),
+        (ZoneId::Torrent, 'd'),
+    ];
+    for (id, key) in primary {
+        let button = zone_buttons(id)
+            .iter()
+            .find(|b| b.key == key)
+            .unwrap_or_else(|| panic!("{:?} has no '{}' button", id, key));
+        let first = button.label.chars().next().expect("label is not empty");
+        assert_eq!(
+            first.to_ascii_lowercase(),
+            key.to_ascii_lowercase(),
+            "{} should lead with its hotkey so the border reads as a mnemonic",
+            button.label
+        );
     }
 }
