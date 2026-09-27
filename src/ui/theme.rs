@@ -169,12 +169,24 @@ impl Theme {
     }
 
     pub fn load_themes() -> Vec<Self> {
+        let user_dir = dirs::home_dir().map(|h| h.join(".config").join("doris").join("themes"));
+        Self::load_themes_from(user_dir.as_deref())
+    }
+
+    /// `load_themes()` with the user themes directory made explicit, so
+    /// tests can point it at a temp dir instead of `$HOME`.
+    ///
+    /// This split is what keeps externally generated themes out of the
+    /// binary: noctalia writes `~/.config/doris/themes/noctalia.toml` from
+    /// its own template (`noctalia msg templates-apply`) and it shows up
+    /// here like any bundled theme, with no `BUNDLED_THEMES` entry for it.
+    pub fn load_themes_from(user_dir: Option<&std::path::Path>) -> Vec<Self> {
         let mut themes: Vec<Self> = BUNDLED_THEMES.iter()
             .filter_map(|content| Self::from_config_str(content))
             .collect();
 
-        if let Some(user_dir) = dirs::home_dir().map(|h| h.join(".config").join("doris").join("themes")) {
-            if let Ok(entries) = std::fs::read_dir(&user_dir) {
+        if let Some(user_dir) = user_dir {
+            if let Ok(entries) = std::fs::read_dir(user_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().and_then(|e| e.to_str()) == Some("toml") {
