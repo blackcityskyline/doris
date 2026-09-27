@@ -114,7 +114,6 @@ const BUNDLED_THEMES: &[&str] = &[
     include_str!("../../themes/matcha-dark-sea.toml"),
     include_str!("../../themes/monokai.toml"),
     include_str!("../../themes/night-owl.toml"),
-    include_str!("../../themes/noctalia.toml"),
     include_str!("../../themes/nord.toml"),
     include_str!("../../themes/onedark.toml"),
     include_str!("../../themes/orange.toml"),
