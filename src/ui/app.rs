@@ -551,18 +551,23 @@ impl App {
     }
 
     /// Border+background styling for modal popups (Settings, Login,
-    /// HealthCheck): always opaque, regardless of "Theme background" --
-    /// see the doc comment on `themed_block` for why that toggle doesn't
-    /// apply here. Still respects rounded corners and truecolor/false_tty
-    /// degradation like every other themed block.
+    /// HealthCheck). Respects "Theme background": when true, fills with
+    /// the theme's `main_bg` (as before); when false, omits the `bg`
+    /// style so the `Clear` rendered before the block (present in all
+    /// three modals) hides the content underneath while the terminal's
+    /// background color shows through. Still respects rounded corners and
+    /// truecolor/false_tty degradation like every other themed block.
     pub(crate) fn modal_block(&self, border_color: Color) -> Block<'static> {
         let border_color = self.resolve_color(border_color);
         let border_type = if self.rounded_corners && !self.false_tty { BorderType::Rounded } else { BorderType::Plain };
-        Block::default()
+        let mut block = Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
-            .border_style(Style::default().fg(border_color))
-            .style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())))
+            .border_style(Style::default().fg(border_color));
+        if self.theme_background {
+            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())));
+        }
+        block
     }
 
     /// Degrade an RGB color per the "Truecolor"/"False tty" toggles; see
