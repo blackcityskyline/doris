@@ -6,8 +6,7 @@
 //! `impl App` blocks for just this modal's piece, the same pattern
 //! `ui/modals/login.rs` and `health.rs` use.
 
-use crossterm::event::{KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui::Frame;
@@ -306,7 +305,6 @@ fn center_str(s: &str, width: usize) -> String {
 
 impl App {
     pub fn open_settings(&mut self, config: &Config) {
-        let visibility_str = if self.browser_hidden { "Hidden".to_string() } else { "Visible".to_string() };
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
         let theme_name = self.theme.name.clone();
         // Value shown between the cycle arrows must be the theme's own
