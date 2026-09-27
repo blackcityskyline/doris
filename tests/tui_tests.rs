@@ -3,7 +3,7 @@ use ratatui::backend::TestBackend;
 use ratatui::widgets::*;
 use doris::ui::app::App as UiApp;
 use doris::ui::app::Modal;
-use doris::ui::app::LoginField;
+use doris::ui::modals::login::LoginField;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
 
