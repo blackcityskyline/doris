@@ -1183,8 +1183,8 @@ impl App {
         }
 
         if self.ui.modal != Modal::None {
-            if let Some((username, password)) = self.ui.login_modal_key(key) {
-                self.do_login(&username, &password).await;
+            if let Some((resource, username, password)) = self.ui.login_modal_key(key) {
+                self.do_login(resource, &username, &password).await;
             }
             return Ok(());
         }
@@ -1428,16 +1428,18 @@ impl App {
         Ok(())
     }
 
-    async fn do_login(&mut self, username: &str, password: &str) {
+    /// Log in with the credentials the modal collected, for the resource
+    /// its tab had selected. The login itself still targets rutracker --
+    /// it is the only source with a session to establish (rutor's
+    /// `ensure_logged_in` is a no-op) -- so the target id is fixed
+    /// rather than read off the tab.
+    async fn do_login(&mut self, resource: &str, username: &str, password: &str) {
         self.ui.add_log(&format!("Logging in as '{}'...", username));
 
         if self.config.save_credentials {
-            let _ = crate::credentials::save_credentials(username, password);
+            let _ = crate::credentials::save_credential(resource, username, password);
         }
 
-        // The login modal is rutracker's -- it's the only source with a
-        // session to establish (rutor's `ensure_logged_in` is a no-op) --
-        // so the target id is fixed rather than read off the tab.
         let source = match self.get_source("rutracker").await {
             Ok(s) => s,
             Err(e) => {
