@@ -172,6 +172,9 @@ free here, while `info`/`play` trail their `v`/`⏎`.
 - `f`: toggle fullscreen for focused zone
 - `m`: open main menu
 - `1-5`: toggle zone visibility
+- `Shift+P`: cycle the layout preset -- `Horizontal` (every zone full width, equal
+  heights; the default) or `Split` (Results on top at full width, then Torrent down
+  the left and Log + Sources stacked down the right)
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
 - `g`/`G`: cycle the category row (forward/back; an empty query is browse mode, not a category)

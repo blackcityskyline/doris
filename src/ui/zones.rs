@@ -8,6 +8,11 @@ use super::theme::Theme;
 /// the zones can never drift under the box.
 pub const SEARCH_BAR_HEIGHT: u16 = 3;
 
+/// Smallest height the split layout gives the Results band. A third of
+/// a short terminal is often less than a legend and a row, and a zone
+/// that short is a box with nothing in it.
+const MIN_SPLIT_ROWS: u16 = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneId {
     Results = 1,
@@ -87,6 +92,38 @@ pub struct ZoneLayout {
     pub fullscreen: Option<ZoneId>,
     pub filter_mode: bool,
     pub filter_input: String,
+    /// How the visible zones are arranged below the search bar. Session
+    /// only -- nothing in Config asks for a layout yet, so there is
+    /// nothing to persist.
+    pub preset: LayoutPreset,
+}
+
+/// How the visible zones share the screen below the search bar.
+///
+/// The search bar itself is not part of any preset: it is always the top
+/// [`SEARCH_BAR_HEIGHT`] rows at full width, which is what "the search
+/// is always there" means in practice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutPreset {
+    /// Every visible zone spans the full width and the height is shared
+    /// equally -- the layout there has been since the zones existed.
+    #[default]
+    Horizontal,
+    /// Results on top at full width, then two columns: Torrent on the
+    /// left, Log and Sources stacked on the right. A zone that is turned
+    /// off gives its space to whatever shares its column.
+    Split,
+}
+
+impl LayoutPreset {
+    /// The next preset, for the key that cycles them. Two presets today,
+    /// so this is a toggle -- a third one would only need its own arm.
+    pub fn next(self) -> Self {
+        match self {
+            LayoutPreset::Horizontal => LayoutPreset::Split,
+            LayoutPreset::Split => LayoutPreset::Horizontal,
+        }
+    }
 }
 
 impl ZoneLayout {
@@ -99,11 +136,19 @@ impl ZoneLayout {
                 Zone::new(ZoneId::Extra, false),
                 Zone::new(ZoneId::Sources, true),
             ],
+            preset: LayoutPreset::default(),
             focused: ZoneId::Results,
             fullscreen: None,
             filter_mode: false,
             filter_input: String::new(),
         }
+    }
+
+    /// Switch to the next layout preset (`P`). The areas are recomputed
+    /// on the next `update_areas`, which every render starts with, so
+    /// this is a one-line change with no render of its own.
+    pub fn cycle_preset(&mut self) {
+        self.preset = self.preset.next();
     }
 
     pub fn toggle(&mut self, id: ZoneId) {
@@ -190,6 +235,16 @@ impl ZoneLayout {
             return;
         }
 
+        match self.preset {
+            LayoutPreset::Horizontal => self.layout_horizontal(area),
+            LayoutPreset::Split => self.layout_split(area),
+        }
+    }
+
+    /// The default layout: every visible zone at full width, sharing the
+    /// height equally, the first `remainder` of them one row taller so
+    /// no row of the terminal is wasted.
+    fn layout_horizontal(&mut self, area: Rect) {
         let visible_zones: Vec<ZoneId> = self.zones.iter()
             .filter(|z| z.visible)
             .map(|z| z.id)
@@ -215,6 +270,72 @@ impl ZoneLayout {
             let zone_area = Rect::new(area.x, y, area.width, h);
             self.set_area(id, zone_area);
             y += h;
+        }
+
+        for zone in &mut self.zones {
+            if !zone.visible {
+                zone.area = Rect::default();
+            }
+        }
+    }
+
+    /// The split layout: Results on top at full width, then two columns
+    /// -- Torrent on the left, Log and Sources stacked on the right.
+    ///
+    /// A zone that is turned off gives its space to whatever shares its
+    /// column, and a column whose zones are all off gives its width to
+    /// the other one, so hiding something never leaves a hole.
+    fn layout_split(&mut self, area: Rect) {
+        let mut y = area.y + SEARCH_BAR_HEIGHT;
+        let mut remaining = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
+
+        // Results first: about a third of what is there, full width. The
+        // floor keeps a legend and a row or two on screen at terminal
+        // heights where a third of nothing is nothing.
+        if self.is_visible(ZoneId::Results) {
+            let h = ((remaining / 3).max(MIN_SPLIT_ROWS)).min(remaining);
+            self.set_area(ZoneId::Results, Rect::new(area.x, y, area.width, h));
+            y += h;
+            remaining -= h;
+        }
+
+        let left_visible = self.is_visible(ZoneId::Torrent);
+        let right_visible =
+            self.is_visible(ZoneId::Log) || self.is_visible(ZoneId::Sources);
+        let half = area.width / 2;
+        let (left_w, right_w) = match (left_visible, right_visible) {
+            (true, true) => (half, area.width - half),
+            (true, false) => (area.width, 0),
+            (false, true) => (0, area.width),
+            (false, false) => (0, 0),
+        };
+
+        if left_visible {
+            self.set_area(ZoneId::Torrent, Rect::new(area.x, y, left_w, remaining));
+        }
+
+        if right_visible {
+            let right_x = area.x + left_w;
+            // Log and Sources share the column; with one of them hidden
+            // the other takes the whole of it.
+            let column: Vec<ZoneId> = [ZoneId::Log, ZoneId::Sources]
+                .into_iter()
+                .filter(|id| self.is_visible(*id))
+                .collect();
+            let count = column.len() as u16;
+            let h = remaining / count;
+            let mut ry = y;
+            for (i, id) in column.iter().enumerate() {
+                // The last one takes the remainder, so the column adds
+                // up to exactly `remaining` rows.
+                let zh = if i == column.len() - 1 {
+                    remaining - h * (count - 1)
+                } else {
+                    h
+                };
+                self.set_area(*id, Rect::new(right_x, ry, right_w, zh));
+                ry += zh;
+            }
         }
 
         for zone in &mut self.zones {
