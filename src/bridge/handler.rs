@@ -23,7 +23,9 @@ impl BridgeServer {
         let addr = format!("127.0.0.1:{}", self.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
+            if let Err(e) = axum::serve(listener, app).await {
+                crate::log::log("bridge", &format!("bridge server stopped: {}", e));
+            }
         });
 
         Ok(())
