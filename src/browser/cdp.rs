@@ -144,44 +144,7 @@ impl Browser {
         // its default switch list) and Chrome has no counter-switch, so idle
         // throttling can never be relied upon. Unloading the page instead
         // (`Browser::park`) is the only fix that actually works.
-        let mut chrome_args: Vec<String> = vec![
-            "--no-sandbox".into(),
-            "--disable-dev-shm-usage".into(),
-            "--disable-blink-features=AutomationControlled".into(),
-            "--no-first-run".into(),
-            "--no-default-browser-check".into(),
-            "--lang=ru-RU".into(),
-            // Chrome's own background services (component updater, domain
-            // reliability reporting, metrics, component-extension background
-            // pages) keep working while Doris sits idle, for no benefit to
-            // us -- all off.
-            "--disable-component-update".into(),
-            "--disable-component-extensions-with-background-pages".into(),
-            "--disable-domain-reliability".into(),
-            "--metrics-recording-only".into(),
-            "--no-pings".into(),
-            // rutrk.org is rutracker's ad CDN: the looping <video>/GIF
-            // banners that keep the compositor producing frames at full
-            // speed for as long as a page stays open -- by far the biggest
-            // idle-CPU source measured (VizCompositor pegged at ~66% of a
-            // core). No parsing depends on ad creatives, so block the host;
-            // drop this line if a page ever legitimately needs it.
-            "--host-resolver-rules=MAP rutrk.org ~NOTFOUND".into(),
-        ];
-
-        if mode == BrowserVisibility::Hidden && !use_xvfb {
-            chrome_args.push("--headless=new".into());
-        }
-
-        if use_xvfb {
-            chrome_args.push("--ozone-platform=x11".into());
-        }
-
-        chrome_args.push("--window-size=1920,1080".into());
-
-        if let Some(ref dir) = temp_profile {
-            chrome_args.push(format!("--user-data-dir={}", dir.display()));
-        }
+        let chrome_args = build_chrome_args(mode, use_xvfb, temp_profile.as_deref());
 
         let mut capabilities = serde_json::Map::new();
         let chrome_opts = serde_json::json!({
@@ -1082,4 +1045,100 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
 
     let _ = std::fs::remove_file(&tmp_copy);
     Ok(cookies)
+}
+
+/// The `--flag` list handed to Chrome via `goog:chromeOptions`.
+///
+/// Pure data: visibility picks `--headless=new`, Xvfb picks
+/// `--ozone-platform=x11` (and suppresses headless), the temp profile
+/// picks `--user-data-dir`. Extracted from `launch` (REFACTOR_PLAN
+/// Phase 5) so the list is testable without spawning chromedriver.
+fn build_chrome_args(
+    mode: BrowserVisibility,
+    use_xvfb: bool,
+    temp_profile: Option<&Path>,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "--no-sandbox".into(),
+        "--disable-dev-shm-usage".into(),
+        "--disable-blink-features=AutomationControlled".into(),
+        "--no-first-run".into(),
+        "--no-default-browser-check".into(),
+        "--lang=ru-RU".into(),
+        // Chrome's own background services (component updater, domain
+        // reliability reporting, metrics, component-extension background
+        // pages) keep working while Doris sits idle, for no benefit to
+        // us -- all off.
+        "--disable-component-update".into(),
+        "--disable-component-extensions-with-background-pages".into(),
+        "--disable-domain-reliability".into(),
+        "--metrics-recording-only".into(),
+        "--no-pings".into(),
+        // rutrk.org is rutracker's ad CDN: the looping <video>/GIF
+        // banners that keep the compositor producing frames at full
+        // speed for as long as a page stays open -- by far the biggest
+        // idle-CPU source measured (VizCompositor pegged at ~66% of a
+        // core). No parsing depends on ad creatives, so block the host;
+        // drop this line if a page ever legitimately needs it.
+        "--host-resolver-rules=MAP rutrk.org ~NOTFOUND".into(),
+    ];
+
+    if mode == BrowserVisibility::Hidden && !use_xvfb {
+        args.push("--headless=new".into());
+    }
+    if use_xvfb {
+        args.push("--ozone-platform=x11".into());
+    }
+    args.push("--window-size=1920,1080".into());
+    if let Some(dir) = temp_profile {
+        args.push(format!("--user-data-dir={}", dir.display()));
+    }
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Phase 5 (REFACTOR_PLAN.md): the 40-line chrome-args wall inside
+    // `launch` is data, not control flow -- pin its contract so the
+    // extraction can't silently drop a flag.
+    fn arg(args: &[String], prefix: &str) -> bool {
+        args.iter().any(|a| a.starts_with(prefix))
+    }
+
+    #[test]
+    fn base_args_always_present() {
+        let a = build_chrome_args(BrowserVisibility::Visible, false, None);
+        assert!(arg(&a, "--no-sandbox"));
+        assert!(arg(&a, "--disable-dev-shm-usage"));
+        assert!(arg(&a, "--disable-blink-features=AutomationControlled"));
+        assert!(arg(&a, "--host-resolver-rules=MAP rutrk.org"));
+        assert!(arg(&a, "--window-size=1920,1080"));
+        // Visible mode must never go headless.
+        assert!(!arg(&a, "--headless"));
+        assert!(!arg(&a, "--ozone-platform"));
+        assert!(!arg(&a, "--user-data-dir"));
+    }
+
+    #[test]
+    fn hidden_without_xvfb_goes_headless() {
+        let a = build_chrome_args(BrowserVisibility::Hidden, false, None);
+        assert!(arg(&a, "--headless=new"));
+        assert!(!arg(&a, "--ozone-platform"));
+    }
+
+    #[test]
+    fn hidden_with_xvfb_is_not_headless_and_uses_x11() {
+        let a = build_chrome_args(BrowserVisibility::Hidden, true, None);
+        assert!(!arg(&a, "--headless"));
+        assert!(arg(&a, "--ozone-platform=x11"));
+    }
+
+    #[test]
+    fn temp_profile_lands_in_user_data_dir() {
+        let dir = std::path::Path::new("/tmp/doris-hidden-1");
+        let a = build_chrome_args(BrowserVisibility::Hidden, true, Some(dir));
+        assert!(a.iter().any(|x| x == "--user-data-dir=/tmp/doris-hidden-1"));
+    }
 }
