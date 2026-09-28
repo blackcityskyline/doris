@@ -1,8 +1,8 @@
 use doris::app::{
-    EnterAction, apply_source_done, cycle_index, enter_action, fill_missing_magnet, finish_search,
-    magnet_only_download, resolve_cookie_file, safe_filename, source_id_for,
-    source_needs_browser, source_outcome_line,
+    EnterAction, cycle_index, enter_action, fill_missing_magnet, magnet_only_download,
+    safe_filename, source_id_for, source_needs_browser,
 };
+use doris::search::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::{
