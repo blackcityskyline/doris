@@ -2,9 +2,12 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 /// Every browser Doris knows how to drive. All four are Chromium-based and
-/// speak the same CDP/WebDriver protocol (see `browser::cdp`), so adding a
-/// fifth Chromium-family browser is just a new arm here plus a new entry in
-/// `BROWSER_BINARIES` — nothing else in the browser layer needs to change.
+/// speak the same CDP/WebDriver protocol (see `browser::cdp`).
+///
+/// Adding a fifth means appending one [`BROWSER_ROWS`] entry (key, extra
+/// accepted keys, binary names, label) and one enum variant -- nothing else
+/// in the browser layer changes. The four methods below read the row, so
+/// the table is the only place a browser's details live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BrowserKind {
     Chrome,
@@ -13,45 +16,67 @@ pub enum BrowserKind {
     Helium,
 }
 
+/// `(config key, extra accepted keys, binary names to probe, display label)`.
+type BrowserRow = (
+    &'static str,
+    &'static [&'static str],
+    &'static [&'static str],
+    &'static str,
+);
+
+/// One row per [`BrowserKind`]: `(kind, (key, extra accepted keys, binaries
+/// to probe, label))`. The single source of truth for `BrowserKind`'s
+/// methods -- see the guard test in `tests/browser_detect_tests.rs`.
+const BROWSER_ROWS: &[(BrowserKind, BrowserRow)] = &[
+    (BrowserKind::Chrome, ("chrome", &["google-chrome"],
+        &["google-chrome", "google-chrome-stable"], "Chrome")),
+    (BrowserKind::Chromium, ("chromium", &[],
+        &["chromium", "chromium-browser"], "Chromium")),
+    (BrowserKind::Brave, ("brave", &[], &["brave", "brave-browser"], "Brave")),
+    (BrowserKind::Helium, ("helium", &[], &["helium-browser", "helium"], "Helium")),
+];
+
+/// The table row for `self` (key, aliases, binaries, label).
+///
+/// Invariant: every variant appears exactly once in `BROWSER_ROWS` -- pinned
+/// by the guard test in `tests/browser_detect_tests.rs`, which is why the
+/// `.expect()` below is safe.
+fn row(kind: BrowserKind) -> BrowserRow {
+    let &(_, row) = BROWSER_ROWS
+        .iter()
+        .find(|(k, ..)| *k == kind)
+        .expect("BrowserKind variant missing from BROWSER_ROWS");
+    row
+}
+
 impl BrowserKind {
     /// Stable lowercase identifier used in config files and CLI flags.
     pub fn config_key(&self) -> &'static str {
-        match self {
-            BrowserKind::Chrome => "chrome",
-            BrowserKind::Chromium => "chromium",
-            BrowserKind::Brave => "brave",
-            BrowserKind::Helium => "helium",
-        }
+        row(*self).0
     }
 
     pub fn from_config_key(key: &str) -> Option<Self> {
-        match key.to_lowercase().as_str() {
-            "chrome" | "google-chrome" => Some(BrowserKind::Chrome),
-            "chromium" => Some(BrowserKind::Chromium),
-            "brave" => Some(BrowserKind::Brave),
-            "helium" => Some(BrowserKind::Helium),
-            _ => None,
-        }
+        let key = key.to_lowercase();
+        BROWSER_ROWS
+            .iter()
+            .find(|(_, (main, aliases, ..))| *main == key || aliases.iter().any(|a| *a == key))
+            .map(|(kind, ..)| *kind)
     }
 
-    fn binaries(&self) -> &'static [&'static str] {
-        match self {
-            BrowserKind::Helium => &["helium-browser", "helium"],
-            BrowserKind::Brave => &["brave", "brave-browser"],
-            BrowserKind::Chrome => &["google-chrome", "google-chrome-stable"],
-            BrowserKind::Chromium => &["chromium", "chromium-browser"],
-        }
+    /// Binaries to probe with `which`, in preference order.
+    pub fn binaries(&self) -> &'static [&'static str] {
+        row(*self).2
+    }
+
+    /// Human-facing name (menus, health check).
+    pub fn label(&self) -> &'static str {
+        row(*self).3
     }
 }
 
 impl std::fmt::Display for BrowserKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BrowserKind::Chrome => write!(f, "Chrome"),
-            BrowserKind::Chromium => write!(f, "Chromium"),
-            BrowserKind::Brave => write!(f, "Brave"),
-            BrowserKind::Helium => write!(f, "Helium"),
-        }
+        f.write_str(self.label())
     }
 }
 
