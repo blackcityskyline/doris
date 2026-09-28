@@ -193,8 +193,8 @@ pub async fn coordinate(
 /// on the active Results tab (`"all"` means every one of them). This is
 /// the registry-driven replacement for `app.rs`'s two hardcoded
 /// branches -- a source registered later needs no orchestrator change.
-/// Which sources a dispatch should ask: the Results tab, the Options
-/// checklist, and -- since B6 -- the selected category.
+/// Which sources a dispatch should ask: the Sources panel's checkboxes,
+/// and -- since B6 -- the selected category.
 ///
 /// A source that does not serve the category is *not asked* rather than
 /// asked and filtered afterwards: it would answer with rows that claim
@@ -211,8 +211,11 @@ pub async fn coordinate(
 /// query with no terms is not asked, because its "browse" would be a
 /// search for the empty string and read as a broken page rather than as
 /// the freshest rows the user asked for.
+///
+/// There is no "one source at a time" mode any more (П.4): the panel's
+/// checkboxes *are* the selection, so asking a single source means
+/// checking only it.
 pub fn selected_sources(
-    active_tab: &str,
     enabled: &[String],
     group: Option<Group>,
     browse: bool,
@@ -221,7 +224,6 @@ pub fn selected_sources(
         .iter()
         .filter(|info| info.implemented)
         .filter(|info| enabled.iter().any(|e| e == info.id))
-        .filter(|info| active_tab == "all" || active_tab == info.id)
         .filter(|info| match group {
             None => true,
             Some(group) => info.category_filter && info.groups.contains(&group),
@@ -233,26 +235,28 @@ pub fn selected_sources(
 /// The log line for a category search that selected nobody, phrased by
 /// what would actually change the outcome.
 ///
-/// Two cases, and only one of them is fixed in Options: a tab whose
-/// source declares the group but cannot filter by it (rutracker, until
-/// its `c[]` probe passes) is told so -- the sources checklist would
-/// show it enabled and its groups unchanged, so sending the user there
-/// would send them in a circle. Everything else keeps the older line,
-/// where enabling or switching a source is the real fix.
-pub fn nothing_to_ask_reason(tab: &str, group: Group) -> String {
+/// Two cases, and only one of them is fixed in the panel: a source that
+/// declares the group but cannot filter by it (rutracker, until its `c[]`
+/// probe passes) is told so -- the panel shows it enabled and its groups
+/// unchanged, so sending the user there would send them in a circle.
+/// Everything else keeps the older line, where checking another source
+/// is the real fix.
+pub fn nothing_to_ask_reason(enabled: &[String], group: Group) -> String {
     let blocked = KNOWN_SOURCES.iter().find(|info| {
-        info.id == tab && !info.category_filter && info.groups.contains(&group)
+        enabled.iter().any(|e| e == info.id)
+            && !info.category_filter
+            && info.groups.contains(&group)
     });
     match blocked {
         Some(info) => format!(
             "{} cannot filter by '{}' yet (its category slot is \
-             unverified) -- try the 'all' tab.",
+             unverified) -- uncheck it or check another source.",
             info.label,
             group.label()
         ),
         None => format!(
-            "No source on this tab serves '{}' -- see Options -> \
-             streaming -> Sources.",
+            "No checked source serves '{}' -- check one in the Sources \
+             panel (5).",
             group.label()
         ),
     }

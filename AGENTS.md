@@ -98,7 +98,7 @@ list, the tab bar and the CLI all derive from it.
 - Search input: top bar (always visible, not a zone)
 - Zones below search bar
 
-### Zone System (4 zones)
+### Zone System (5 zones)
 - **Zone 1 (Results)**: Table with torrent results (seeds, size, date, title)
   - Navigation: j/k, PgUp/PgDn, Enter to play
   - F key: filter results by title (type filter text, Enter to apply, Esc to clear)
@@ -110,6 +110,11 @@ list, the tab bar and the CLI all derive from it.
 - **Zone 3 (Log)**: Short log panel
   - Scroll with mouse/j/k
 - **Zone 4 (Extra)**: TBD
+- **Zone 5 (Sources)**: the sources checklist -- `[x] all` on top, then one row per
+  registered source. j/k move the cursor (wrapping), Enter switches the row, clicking
+  a row switches it. This is the only place sources are switched: the Results tab
+  bar it replaced now just *displays* the selection on its frame (`[all]`,
+  `[rutracker, yts]`, `[none]`)
 
 ### Frame legend (btop-style)
 
@@ -117,7 +122,7 @@ Keybinds for a zone are written **on its border**, not inside it (btop's
 `filter`/`pause`/`kill`/`signals` row). The word is `title` colour and the
 character that triggers it is `hi_fg` + bold -- the highlight marks the
 hotkey, not the alphabet, so `pause` leads with `p` only because that key is
-free here, while `source`/`info`/`play` trail their `]`/`v`/`⏎`.
+free here, while `info`/`play` trail their `v`/`⏎`.
 
 - Buttons come from `zone_buttons()` (`src/ui/zones.rs`), one table per zone;
   `zone_title()` draws the superscript number in `hi_fg` + bold and the label
@@ -127,7 +132,7 @@ free here, while `source`/`info`/`play` trail their `]`/`v`/`⏎`.
   `click_at` tests them, so drawn == clickable. Anything that does not fit
   is dropped rather than clipped (narrow zones lose the right-hand cluster,
   exactly like btop's `if (width > 60 + sort_len)`).
-- Buttons `ui::App` can act on (filter, group, source) happen inside
+- Buttons `ui::App` can act on (filter, group) happen inside
   `click_at`; the rest come back as a `UiAction` for the orchestrator.
 
 ### Menu System
@@ -153,28 +158,28 @@ free here, while `source`/`info`/`play` trail their `]`/`v`/`⏎`.
 ### Zone Controls
 - Tab/Shift+Tab: cycle focus between visible zones
 - F: toggle fullscreen for focused zone
-- 1-4: toggle zone visibility
+- 1-5: toggle zone visibility
 
 ## Key Bindings
 - `s`/`i`: enter search input mode
-- `Enter`: search (in input mode) or play (in results mode)
-- `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the `all` tab and category with it)
+- `Enter`: search (in input mode), play (in results mode), or switch the row under the cursor (in the sources panel)
+- `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the all-category with it)
 - `S`: open settings modal (login is now here too: streaming -> Edit credentials -- there's no top-level login keybind anymore)
 - `L`: toggle detailed log view
 - `F`: enter filter mode (type to filter results)
 - `f`: toggle fullscreen for focused zone
 - `m`: open main menu
-- `1-4`: toggle zone visibility
+- `1-5`: toggle zone visibility
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
 - `g`/`G`: cycle the category row (forward/back; an empty query is browse mode, not a category)
-- `]`: cycle the source tab
 - `p`/`d`: pause-or-resume / remove the tracked torrent, when the Torrent zone is focused
 - `Esc`: close modal / exit input mode / exit filter mode
 - `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)
 - Mouse: click any zone to focus it, click a frame button to
-  trigger it, click the search box to start typing, scroll wheel over any
-  zone to scroll/navigate it -- see ROADMAP.md Phase 9
+  trigger it, click a Sources checkbox to switch that source, click the
+  search box to start typing, scroll wheel over any zone to
+  scroll/navigate it -- see ROADMAP.md Phase 9
 
 ## Dependencies
 

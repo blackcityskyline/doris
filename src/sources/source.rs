@@ -598,8 +598,10 @@ pub fn cli_sources(
             }
             Ok(vec![info])
         }
+        // No `all` tab any more (П.4): the panel's checkboxes are the
+        // selection, so "everything" is simply every checked source.
         None => Ok(crate::sources::orchestrator::selected_sources(
-            "all", enabled, None, false,
+            enabled, None, false,
         )),
     }
 }

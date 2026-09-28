@@ -72,12 +72,13 @@ fn test_apply_preset_shows_exactly_the_named_zones() {
     assert!(!zones.is_visible(ZoneId::Torrent));
     assert!(zones.is_visible(ZoneId::Log));
     assert!(!zones.is_visible(ZoneId::Extra));
+    assert!(!zones.is_visible(ZoneId::Sources));
 }
 
 #[test]
-fn test_apply_preset_all_four() {
+fn test_apply_preset_all_five() {
     let mut zones = ZoneLayout::new();
-    zones.apply_preset("1,2,3,4");
+    zones.apply_preset("1,2,3,4,5");
     for &id in ZoneId::all() {
         assert!(zones.is_visible(id), "{:?} should be visible", id);
     }
@@ -91,6 +92,7 @@ fn test_apply_preset_ignores_unknown_characters() {
     assert!(zones.is_visible(ZoneId::Log));
     assert!(!zones.is_visible(ZoneId::Torrent));
     assert!(!zones.is_visible(ZoneId::Extra));
+    assert!(!zones.is_visible(ZoneId::Sources));
 }
 
 #[test]
@@ -113,12 +115,14 @@ fn test_apply_preset_keeps_focus_if_still_visible() {
 #[test]
 fn test_focus_next_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
-    // Default visible order: Results, Torrent, Log (Extra hidden).
+    // Default visible order: Results, Torrent, Log, Sources (Extra hidden).
     zones.focused = ZoneId::Results;
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Torrent);
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Log);
+    zones.focus_next();
+    assert_eq!(zones.focused, ZoneId::Sources);
     zones.focus_next(); // wraps back to Results, skipping hidden Extra
     assert_eq!(zones.focused, ZoneId::Results);
 }
@@ -127,8 +131,8 @@ fn test_focus_next_skips_hidden_zones_and_wraps() {
 fn test_focus_prev_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
     zones.focused = ZoneId::Results;
-    zones.focus_prev(); // wraps to the last visible zone (Log), skipping Extra
-    assert_eq!(zones.focused, ZoneId::Log);
+    zones.focus_prev(); // wraps to the last visible zone (Sources), skipping Extra
+    assert_eq!(zones.focused, ZoneId::Sources);
 }
 
 #[test]

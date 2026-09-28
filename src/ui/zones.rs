@@ -14,11 +14,22 @@ pub enum ZoneId {
     Torrent = 2,
     Log = 3,
     Extra = 4,
+    /// The sources checklist (П.4): which sources the search asks.
+    /// Last so the four panels that were already there keep their
+    /// numbers -- a saved preset or a muscle-memory `1`-`4` must not
+    /// move anything.
+    Sources = 5,
 }
 
 impl ZoneId {
     pub fn all() -> &'static [ZoneId] {
-        &[ZoneId::Results, ZoneId::Torrent, ZoneId::Log, ZoneId::Extra]
+        &[
+            ZoneId::Results,
+            ZoneId::Torrent,
+            ZoneId::Log,
+            ZoneId::Extra,
+            ZoneId::Sources,
+        ]
     }
 
     pub fn key_char(&self) -> char {
@@ -27,6 +38,7 @@ impl ZoneId {
             ZoneId::Torrent => '2',
             ZoneId::Log => '3',
             ZoneId::Extra => '4',
+            ZoneId::Sources => '5',
         }
     }
 
@@ -36,6 +48,7 @@ impl ZoneId {
             ZoneId::Torrent => "Torrent",
             ZoneId::Log => "Log",
             ZoneId::Extra => "Extra",
+            ZoneId::Sources => "Sources",
         }
     }
 
@@ -45,6 +58,7 @@ impl ZoneId {
             '2' => Some(ZoneId::Torrent),
             '3' => Some(ZoneId::Log),
             '4' => Some(ZoneId::Extra),
+            '5' => Some(ZoneId::Sources),
             _ => None,
         }
     }
@@ -83,6 +97,7 @@ impl ZoneLayout {
                 Zone::new(ZoneId::Torrent, true),
                 Zone::new(ZoneId::Log, true),
                 Zone::new(ZoneId::Extra, false),
+                Zone::new(ZoneId::Sources, true),
             ],
             focused: ZoneId::Results,
             fullscreen: None,
@@ -310,7 +325,7 @@ impl FrameButton {
 ///
 /// The keys are the bindings in AGENTS.md; a word is picked so its first
 /// letter is free for the hotkey whenever possible (`f` belongs to
-/// fullscreen, so filter has to take `F`; `v`/`]`/`⏎` are not letters at
+/// fullscreen, so filter has to take `F`; `v`/`⏎` are not letters at
 /// all and end up trailing the word). Kept next to `zone_title` so the
 /// legend and the bindings it advertises are edited together.
 const RESULTS_BUTTONS: &[FrameButton] = &[
@@ -319,7 +334,6 @@ const RESULTS_BUTTONS: &[FrameButton] = &[
     // hotkey is uppercase (`Nice`, `Follow`).
     FrameButton { slot: FrameSlot::TopLeft, key: 'F', label: "Filter" },
     FrameButton { slot: FrameSlot::TopRight, key: 'g', label: "group" },
-    FrameButton { slot: FrameSlot::TopRight, key: ']', label: "source" },
     FrameButton { slot: FrameSlot::BottomLeft, key: '⏎', label: "play" },
     FrameButton { slot: FrameSlot::BottomLeft, key: 'd', label: "download" },
     FrameButton { slot: FrameSlot::BottomLeft, key: 'v', label: "info" },
@@ -338,12 +352,17 @@ const LOG_BUTTONS: &[FrameButton] = &[FrameButton {
 }];
 
 /// The buttons drawn on `id`'s frame; empty for zones with no actions.
+///
+/// The Sources panel has none on purpose: its rows are the actions, and
+/// a frame legend would only repeat what `j`/`k` and Enter already say
+/// (btop's proc panel draws its actions on the border because the rows
+/// there are data, not controls).
 pub fn zone_buttons(id: ZoneId) -> &'static [FrameButton] {
     match id {
         ZoneId::Results => RESULTS_BUTTONS,
         ZoneId::Torrent => TORRENT_BUTTONS,
         ZoneId::Log => LOG_BUTTONS,
-        ZoneId::Extra => &[],
+        ZoneId::Extra | ZoneId::Sources => &[],
     }
 }
 
