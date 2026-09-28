@@ -13,12 +13,16 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use std::collections::{HashMap, VecDeque};
 
+/// Where the search is. Failures deliberately have no variant: an error
+/// belongs to one source, not to the whole app, so it lives in
+/// [`App::source_status`] (drawn in the Sources panel) and in the log's
+/// per-source outcome line -- one source failing never stops the ones
+/// that answered, and the panel must not claim otherwise.
 #[derive(PartialEq)]
 pub enum AppState {
     Idle,
     Searching,
     Streaming,
-    Error(String),
 }
 
 /// What a frame-button click (or the equivalent key) needs the
@@ -1316,16 +1320,30 @@ impl App {
         }
     }
 
+    /// Whether the search's answer was "the network said no" rather
+    /// than "nobody has it": every source that was dispatched ended in
+    /// an error or a deadline. `Ok(0)` is an answer, not a failure.
+    fn all_sources_failed(&self) -> bool {
+        !self.source_status.is_empty()
+            && self
+                .source_status
+                .values()
+                .all(|s| matches!(s, SourceStatus::Error(_) | SourceStatus::Timeout))
+    }
+
     /// What the Results panel says in place of an empty table.
     ///
-    /// A blank table is four different situations wearing the same face
+    /// A blank table is five different situations wearing the same face
     /// -- nothing asked for yet, a search still running, a query that
-    /// came back empty, and a filter that hid every row -- and the log
-    /// was the only place that told them apart. The panel answers its
-    /// own "why is this blank?".
+    /// came back empty, every source down, and a filter that hid every
+    /// row -- and the log was the only place that told them apart. The
+    /// panel answers its own "why is this blank?".
     fn results_placeholder(&self) -> String {
         if self.state == AppState::Searching {
             return "Searching...".to_string();
+        }
+        if self.results.is_empty() && self.all_sources_failed() {
+            return "Every source failed -- see the Sources panel".to_string();
         }
         if !self.zones.filter_input.is_empty() && !self.results.is_empty() {
             return format!(

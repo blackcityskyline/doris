@@ -6,6 +6,7 @@
 
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
+use doris::sources::orchestrator::SourceStatus;
 use doris::ui::app::App as UiApp;
 use doris::ui::app::AppState;
 use ratatui::backend::TestBackend;
@@ -98,6 +99,45 @@ fn test_filter_that_hides_everything_says_so() {
     assert!(
         text.contains("matches none of the 2 rows"),
         "a filter that hides every row must name itself:\n{text}"
+    );
+}
+
+#[test]
+fn test_all_sources_down_is_not_worded_as_no_matches() {
+    let mut app = make_app();
+    app.search_query = Some("batman".to_string());
+    app.state = AppState::Idle;
+    app.source_status
+        .insert("rutor".into(), SourceStatus::Error("HTTP 503".into()));
+    app.source_status
+        .insert("yts".into(), SourceStatus::Timeout);
+
+    let text = shown(&mut app);
+    assert!(
+        text.contains("Every source failed"),
+        "a network outage must not read as 'nobody has it':\n{text}"
+    );
+    assert!(
+        !text.contains("No results for 'batman'"),
+        "the outage wording replaces the empty-answer wording:\n{text}"
+    );
+}
+
+#[test]
+fn test_one_source_answering_keeps_the_empty_answer_wording() {
+    let mut app = make_app();
+    app.search_query = Some("batman".to_string());
+    app.state = AppState::Idle;
+    app.source_status
+        .insert("rutor".into(), SourceStatus::Ok(0));
+    app.source_status
+        .insert("yts".into(), SourceStatus::Error("HTTP 503".into()));
+
+    let text = shown(&mut app);
+    assert!(
+        text.contains("No results for 'batman'"),
+        "one source that answered makes this a query result, not an \
+         outage:\n{text}"
     );
 }
 
