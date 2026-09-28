@@ -1527,9 +1527,17 @@ impl App {
             .collect();
 
         // The panel can be turned off (`5`) and the terminal can be too
-        // short for the roster, so rows past the end are simply not
-        // drawn -- the frame legend already warns about being narrow.
-        frame.render_widget(Paragraph::new(rows), inner);
+        // short for the roster, so the window follows the cursor -- the
+        // rule the detail modal's file list already uses. Without it the
+        // rows past the end were simply not drawn while `j`/`k` kept
+        // walking every one of them, and the cursor could stand on a row
+        // nobody could see.
+        let visible = inner.height as usize;
+        let offset = self
+            .sources_cursor
+            .saturating_sub(visible.saturating_sub(1));
+        let shown: Vec<Line> = rows.into_iter().skip(offset).take(visible).collect();
+        frame.render_widget(Paragraph::new(shown), inner);
 
         self.render_frame(frame, id, area, config);
     }
