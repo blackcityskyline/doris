@@ -1,4 +1,6 @@
-use doris::browser::detect::{BrowserKind, DEFAULT_PRIORITY, detect_browser_with_priority, parse_priority};
+use doris::browser::detect::{
+    BrowserKind, DEFAULT_PRIORITY, detect_browser_with_priority, parse_priority,
+};
 
 #[test]
 fn test_config_key_and_from_config_key_round_trip() {
@@ -85,4 +87,34 @@ fn test_detect_browser_with_unknown_requested_name_errors() {
     // actually installed on the machine running this test.
     let result = detect_browser_with_priority(Some("firefox"), DEFAULT_PRIORITY);
     assert!(result.is_err());
+}
+
+// Phase 9 (REFACTOR_PLAN.md): BrowserKind's four properties (config key,
+// aliases, binary names, label) now come from one table row each. This is
+// the guard that makes "add a browser = append one row" safe: a row with a
+// missing or duplicate key, or an empty binary list, fails here instead of
+// at detect time on the user's machine.
+#[test]
+fn test_every_kind_has_one_complete_unique_row() {
+    let all = [
+        BrowserKind::Chrome,
+        BrowserKind::Chromium,
+        BrowserKind::Brave,
+        BrowserKind::Helium,
+    ];
+    let mut keys: Vec<&str> = all.iter().map(|k| k.config_key()).collect();
+    for kind in &all {
+        assert!(!kind.binaries().is_empty(), "{kind} has no binaries");
+        for b in kind.binaries() {
+            assert!(!b.is_empty(), "{kind} has an empty binary name");
+        }
+        assert!(!kind.to_string().is_empty(), "{kind} has no label");
+        // from_config_key must accept its own key (already covered above,
+        // but through the table this catches an alias/row mix-up).
+        assert_eq!(BrowserKind::from_config_key(kind.config_key()), Some(*kind));
+    }
+    keys.sort_unstable();
+    let unique = keys.len();
+    keys.dedup();
+    assert_eq!(keys.len(), unique, "duplicate config keys");
 }
