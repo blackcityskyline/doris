@@ -26,14 +26,17 @@ pub fn init() {
         .append(true)
         .open(&log_path)
     {
-        *LOG_FILE.lock().unwrap() = Some(file);
+        // Poisoned lock still holds a usable file: recover instead of
+        // panicking inside the logger (which would take the app down).
+        *LOG_FILE.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
     }
 }
 
 pub fn log(module: &str, msg: &str) {
     let ts = chrono::Local::now().format("%H:%M:%S%.3f");
     let line = format!("[{}] [{}] {}\n", ts, module, msg);
-    if let Some(ref mut file) = *LOG_FILE.lock().unwrap() {
+    let mut guard = LOG_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref mut file) = *guard {
         let _ = file.write_all(line.as_bytes());
         let _ = file.flush();
     }

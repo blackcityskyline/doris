@@ -902,7 +902,8 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
     }
 
     let status = std::process::Command::new("unzip")
-        .args(["-o", zip_str, "-d", data_dir.to_str().unwrap()])
+        .args(["-o", zip_str, "-d"])
+        .arg(data_dir)
         .stdout(std::process::Stdio::null())
         .status()
         .map_err(|e| anyhow::anyhow!("unzip failed: {}", e))?;
