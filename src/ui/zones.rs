@@ -26,6 +26,22 @@ pub enum ZoneId {
     Sources = 5,
 }
 
+/// `(digit key, label)` per zone. One row per [`ZoneId`] -- the three
+/// lookups below all read it, so adding a zone means appending a variant
+/// and a row instead of editing three matches (REFACTOR_PLAN Phase 10).
+/// The render/navigation dispatch on `ZoneId` in `ui/app.rs` cannot be
+/// table-driven: each zone draws different state.
+const ZONE_ROWS: &[(ZoneId, char, &str)] = &[
+    (ZoneId::Results, '1', "Results"),
+    (ZoneId::Torrent, '2', "Torrent"),
+    (ZoneId::Log, '3', "Log"),
+    (ZoneId::Extra, '4', "Extra"),
+    // Last so the four panels that were already there keep their
+    // numbers -- a saved preset or a muscle-memory `1`-`4` must not
+    // move anything.
+    (ZoneId::Sources, '5', "Sources"),
+];
+
 impl ZoneId {
     pub fn all() -> &'static [ZoneId] {
         &[
@@ -38,34 +54,24 @@ impl ZoneId {
     }
 
     pub fn key_char(&self) -> char {
-        match self {
-            ZoneId::Results => '1',
-            ZoneId::Torrent => '2',
-            ZoneId::Log => '3',
-            ZoneId::Extra => '4',
-            ZoneId::Sources => '5',
-        }
+        ZONE_ROWS
+            .iter()
+            .find(|(id, ..)| id == self)
+            .map_or('\0', |&(_, c, _)| c)
     }
 
     pub fn label(&self) -> &'static str {
-        match self {
-            ZoneId::Results => "Results",
-            ZoneId::Torrent => "Torrent",
-            ZoneId::Log => "Log",
-            ZoneId::Extra => "Extra",
-            ZoneId::Sources => "Sources",
-        }
+        ZONE_ROWS
+            .iter()
+            .find(|(id, ..)| id == self)
+            .map_or("", |&(_, _, label)| label)
     }
 
     pub fn from_key(c: char) -> Option<ZoneId> {
-        match c {
-            '1' => Some(ZoneId::Results),
-            '2' => Some(ZoneId::Torrent),
-            '3' => Some(ZoneId::Log),
-            '4' => Some(ZoneId::Extra),
-            '5' => Some(ZoneId::Sources),
-            _ => None,
-        }
+        ZONE_ROWS
+            .iter()
+            .find(|&(_, key, _)| *key == c)
+            .map(|&(id, ..)| id)
     }
 }
 
