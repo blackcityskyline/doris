@@ -84,7 +84,8 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         username,
         password,
     };
-    let log: LogFn = std::sync::Arc::new(|msg: &str| println!("[log] {}", msg));
+    // Progress chatter, not results: stderr keeps `doris q | grep` clean.
+    let log: LogFn = std::sync::Arc::new(|msg: &str| eprintln!("[log] {}", msg));
 
     for info in &selected {
         println!("\n=== {} ===", info.label);
@@ -101,7 +102,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         match source.ensure_logged_in(&auth, &log).await {
             Ok(true) => println!("Logged in successfully."),
             Ok(false) => println!("Not logged in."),
-            Err(e) => println!("Login error: {}", e),
+            Err(e) => eprintln!("Login error: {}", e),
         }
 
         match source.search(&SearchRequest::new(query, 0)).await {
@@ -121,7 +122,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
                 }
             }
             Err(e) => {
-                println!("Search failed: {}", e);
+                eprintln!("Search failed: {}", e);
             }
         }
     }
