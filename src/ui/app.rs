@@ -1380,9 +1380,8 @@ impl App {
         // badge is the only thing saying who returned the row, and on
         // the `all` tab that is the point of the column -- so it takes
         // the informational mid-bright `graph_text` instead (≈6.7:1 on
-        // `main_bg`, versus ≈2.3:1 for `inactive_fg`). It also survives
-        // the row's REVERSED highlight: swapping the two leaves dark
-        // text on a light blue chip.
+        // `main_bg`, versus ≈2.3:1 for `inactive_fg`), which the cursor
+        // row then writes in the theme's `selected_fg`.
         let badge_style = Style::default().fg(self.theme.graph_text.to_color());
         let rows: Vec<Row> = self
             .filtered_indices
@@ -1422,7 +1421,7 @@ impl App {
             ],
         )
         .header(header)
-        .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        .row_highlight_style(self.theme.selection_style());
 
         let mut state = TableState::default();
         if let Some(local_pos) = self
@@ -1474,7 +1473,7 @@ impl App {
                 };
                 let cursor = index == self.sources_cursor;
                 if cursor {
-                    style = style.add_modifier(Modifier::REVERSED);
+                    style = self.theme.selection_style();
                 }
                 let mut spans = vec![Span::styled(
                     format!("[{}] {:<width$}", mark, row.id(), width = id_width),
@@ -1482,10 +1481,11 @@ impl App {
                 )];
                 if let SourceRow::One(source_id) = row {
                     if let Some(status) = self.source_status.get(source_id) {
-                        let mut status_style = source_status_style(status, &self.theme);
-                        if cursor {
-                            status_style = status_style.add_modifier(Modifier::REVERSED);
-                        }
+                        let status_style = if cursor {
+                            self.theme.selection_style()
+                        } else {
+                            source_status_style(status, &self.theme)
+                        };
                         spans.push(Span::styled(
                             format!(" {}", source_status_text(status)),
                             status_style,

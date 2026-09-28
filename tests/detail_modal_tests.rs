@@ -303,7 +303,7 @@ fn test_the_modal_shows_the_row_and_says_the_list_is_coming() {
 /// Once the source answers, the files are listed with the cursor
 /// reversed -- the same way the selected result row is.
 #[test]
-fn test_the_file_list_is_drawn_with_the_cursor_reversed() {
+fn test_the_file_list_marks_the_cursor_row() {
     let mut app = make_app();
     open_detail(&mut app);
     if let Modal::TorrentDetail(ref mut state) = app.modal {
@@ -318,8 +318,8 @@ fn test_the_file_list_is_drawn_with_the_cursor_reversed() {
     assert!(text.contains("file_01.mkv"), "{}", text);
     assert!(text.contains("file_02.mkv"), "{}", text);
 
-    // The cursor row is the reversed one: find the row with the file
-    // names and check the modifier on its first text cell.
+    // The cursor row is the marked one: find it by its file name and
+    // check it carries the theme's selection background.
     let buf = {
         let mut terminal = Terminal::new(TestBackend::new(90, 30)).unwrap();
         terminal
@@ -327,23 +327,21 @@ fn test_the_file_list_is_drawn_with_the_cursor_reversed() {
             .unwrap();
         terminal.backend().buffer().clone()
     };
-    let mut reversed = 0;
+    let theme = doris::ui::theme::Theme::default();
+    let mut painted = 0;
     for y in 0..buf.area.height {
         let line: String = (0..buf.area.width)
             .map(|x| buf[(x, y)].symbol().to_string())
             .collect();
         if line.contains("file_01.mkv") {
             for x in 0..buf.area.width {
-                if buf[(x, y)]
-                    .modifier
-                    .contains(ratatui::style::Modifier::REVERSED)
-                {
-                    reversed += 1;
+                if buf[(x, y)].bg == theme.selected_bg.to_color() {
+                    painted += 1;
                 }
             }
         }
     }
-    assert!(reversed > 0, "the cursor row is drawn reversed");
+    assert!(painted > 0, "the cursor row is drawn in selected_bg");
 }
 
 /// A source that cannot list files gets an honest line instead of a blank
