@@ -1240,6 +1240,31 @@ impl App {
         frame.render_widget(input, bar_area);
     }
 
+    /// What the Results panel says in place of an empty table.
+    ///
+    /// A blank table is four different situations wearing the same face
+    /// -- nothing asked for yet, a search still running, a query that
+    /// came back empty, and a filter that hid every row -- and the log
+    /// was the only place that told them apart. The panel answers its
+    /// own "why is this blank?".
+    fn results_placeholder(&self) -> String {
+        if self.state == AppState::Searching {
+            return "Searching...".to_string();
+        }
+        if !self.zones.filter_input.is_empty() && !self.results.is_empty() {
+            return format!(
+                "Filter '{}' matches none of the {} rows",
+                self.zones.filter_input,
+                self.results.len()
+            );
+        }
+        match &self.search_query {
+            None => "Nothing searched yet -- press `s` to search".to_string(),
+            Some(q) if q.is_empty() => "No fresh rows in this category".to_string(),
+            Some(q) => format!("No results for '{q}'"),
+        }
+    }
+
     fn render_results_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let block = self
@@ -1297,6 +1322,18 @@ impl App {
                 ])
             })
             .collect();
+
+        // Nothing to tabulate: say why instead of drawing the header
+        // over an empty body, which read as a broken table. The block is
+        // already on screen, so this only fills its inner area.
+        if rows.is_empty() {
+            let placeholder = Paragraph::new(self.results_placeholder())
+                .style(Style::default().fg(self.theme.graph_text.to_color()))
+                .wrap(Wrap { trim: true });
+            frame.render_widget(placeholder, inner);
+            self.render_frame(frame, id, area, config);
+            return;
+        }
 
         let table = Table::new(
             rows,
