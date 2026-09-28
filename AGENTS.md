@@ -34,11 +34,15 @@ src/
 ├── event.rs         # Event enum + EventHandler
 ├── tui.rs           # Terminal init/restore
 ├── log.rs           # File logger
+├── player_log.rs    # MPV stderr keyword filter (should_log)
+├── search.rs        # search-domain free fns: source_outcome_line,
+│                    #   apply_source_done, finish_search, resolve_cookie_file
 ├── app.rs           # App orchestrator (event loop, spawn)
 ├── browser/
 │   ├── mod.rs
 │   ├── cdp.rs       # Browser automation (chromedriver, fantoccini)
-│   ├── detect.rs    # BrowserKind (chrome/chromium/brave/helium) + priority-ordered detection
+│   ├── detect.rs    # BrowserKind + priority-ordered detection; one BROWSER_ROWS
+│   │                  #   entry per browser (key, aliases, binaries, label)
 │   └── cloudflare.rs # Cloudflare bypass patches
 ├── sources/
 │   ├── mod.rs
@@ -82,7 +86,8 @@ src/
     │   └── detail.rs  # torrent detail modal (П.7): row facts + the file list its source reads
     ├── menu.rs      # btop-style main menu
     ├── theme.rs     # Theme system (colors, gradients)
-    ├── zones.rs     # Zone layout system (toggle, focus, presets)
+    ├── zones.rs     # Zone layout system (toggle, focus, presets);
+    │                  #   key_char/label/from_key read one ZONE_ROWS entry
     └── widgets/
         ├── mod.rs
         └── graph.rs # btop-style history sparkline (braille/block/dot)
