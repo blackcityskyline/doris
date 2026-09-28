@@ -1349,10 +1349,10 @@ impl App {
             KeyCode::Char('m') if !self.ui.input_mode => {
                 self.ui.show_menu = !self.ui.show_menu;
             }
-            KeyCode::Char('F') if !self.ui.input_mode => {
+            KeyCode::Char('f') if !self.ui.input_mode => {
                 self.ui.zones.filter_mode = true;
             }
-            KeyCode::Char('f') if !self.ui.input_mode => {
+            KeyCode::Char('F') if !self.ui.input_mode => {
                 if self.ui.zones.fullscreen.is_some() {
                     self.ui.zones.set_fullscreen(None);
                 } else {
@@ -1429,6 +1429,17 @@ impl App {
             // from the plain Enter below on purpose -- that one plays
             // or re-searches, and a modifier is the only thing that can
             // tell the two apart.
+            //
+            // `D` is the fallback: most terminals send Shift+Enter as a
+            // plain Enter with no modifier (crossterm only reports the
+            // shift when the terminal opts into the kitty keyboard
+            // protocol, which 0.28 has no API to request), so on those
+            // Shift+Enter falls through to play and the modal never
+            // opens. `D` is the same action on a key every terminal
+            // sends distinctly.
+            KeyCode::Char('D') if !self.ui.input_mode => {
+                self.open_detail_modal().await;
+            }
             KeyCode::Enter
                 if key.modifiers.contains(KeyModifiers::SHIFT)
                     && !self.ui.input_mode =>

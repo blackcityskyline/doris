@@ -102,7 +102,7 @@ list, the tab bar and the CLI all derive from it.
 ### Zone System (5 zones)
 - **Zone 1 (Results)**: Table with torrent results (seeds, size, date, title)
   - Navigation: j/k, PgUp/PgDn, Enter to play
-  - F key: filter results by title (type filter text, Enter to apply, Esc to clear)
+  - f key: filter results (matches title, size, source, category; type filter text, Enter to apply, Esc to clear)
 - **Zone 2 (Torrent)**: Live status of the tracked torrent, polled from TorrServer by `torrent::Manager` (not static/decorative -- see ROADMAP.md bug B3)
   - Hash, title, status (shows "(paused)" when client-side-paused)
   - btop-style braille/block/dot history sparkline (`ui/widgets/graph.rs`), not a plain fill bar
@@ -164,12 +164,12 @@ free here, while `info`/`play` trail their `v`/`⏎`.
 ## Key Bindings
 - `s`/`i`: enter search input mode
 - `Enter`: search (in input mode), play (in results mode), or switch the row under the cursor (in the sources panel)
-- `Shift+Enter`: open the selected row's details (title, source, size, hash, magnet, page, and the file list its source can read)
+- `Shift+Enter`/`D`: open the selected row's details (title, source, size, hash, magnet, page, and the file list its source can read)
 - `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the all-category with it)
 - `S`: open settings modal (login is now here too: streaming -> Edit credentials -- there's no top-level login keybind anymore)
 - `L`: toggle detailed log view
-- `F`: enter filter mode (type to filter results)
-- `f`: toggle fullscreen for focused zone
+- `f`: enter filter mode (type to filter results — matches title, size, source, category)
+- `F`: toggle fullscreen for focused zone
 - `m`: open main menu
 - `1-5`: toggle zone visibility
 - `Shift+P`: cycle the layout preset -- `Horizontal` (every zone full width, equal

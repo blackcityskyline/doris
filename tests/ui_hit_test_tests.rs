@@ -2,6 +2,7 @@ use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
 use doris::ui::app::{App as UiApp, UiAction};
+use doris::ui::modals::help::HELP_TEXT;
 use doris::ui::zones::ZoneId;
 use ratatui::layout::Rect;
 
@@ -421,7 +422,7 @@ fn test_click_between_two_frame_buttons_does_nothing() {
     // `Filter` is the only top-left button now the source tabs moved to
     // their own panel; `group` is the only top-right one. The gap
     // between them is at least one column wide.
-    let filter = layout.buttons.iter().find(|(b, _)| b.key == 'F')
+    let filter = layout.buttons.iter().find(|(b, _)| b.key == 'f')
         .map(|(_, r)| *r).expect("filter button");
     let group = layout.buttons.iter().find(|(b, _)| b.key == 'g')
         .map(|(_, r)| *r).expect("group button");
@@ -443,7 +444,7 @@ fn test_clicking_the_filter_button_enters_filter_mode() {
     let results_area = app.zones.get_area(ZoneId::Results);
     let layout = app.frame_layout(ZoneId::Results, results_area, &config);
     let rect = layout.buttons.iter()
-        .find(|(b, _)| b.key == 'F')
+        .find(|(b, _)| b.key == 'f')
         .map(|(_, r)| *r)
         .expect("the Results frame has a filter button");
 
@@ -594,7 +595,13 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
             .map(|(b, r)| (b.clone(), *r))
             .expect("the Results frame has a category button")
     };
-    assert_eq!(button.text(), "◀ all ▶", "a fresh app is on the all category");
+    // The name is padded to the widest category, so the arrows stay in
+    // the same columns whatever is showing: `◀ all   ▶` and
+    // `◀ Movies ▶` are the same width.
+    let text = button.text();
+    assert!(text.starts_with("◀ "), "the left arrow: {text}");
+    assert!(text.ends_with(" ▶"), "the right arrow: {text}");
+    assert!(text.contains("all"), "a fresh app is on the all category: {text}");
 
     // The right arrow steps forward through the category row.
     let right_arrow = rect.x + rect.width - 1;
@@ -737,4 +744,93 @@ fn test_frame_buttons_do_not_overlap() {
             }
         }
     }
+}
+
+// --- the filter matches every field, not just the title -------------------
+
+/// The filter prompt answers to a size, a source, a word from the title
+/// or the category -- the user should not have to know which column a
+/// term lives in.
+#[test]
+fn test_the_filter_matches_size_source_word_and_category() {
+    let mut app = make_app();
+    app.results = vec![
+        TorrentItem {
+            title: "Dune".into(),
+            size: "1.4 GB".into(),
+            source: "rutracker".into(),
+            group: Some(Group::Movies),
+            ..Default::default()
+        },
+        TorrentItem {
+            title: "Some Anime".into(),
+            size: "350 MB".into(),
+            source: "subsplease".into(),
+            group: Some(Group::Anime),
+            ..Default::default()
+        },
+    ];
+
+    for (filter, expected) in [
+        ("dune", 1),        // a word from the title
+        ("1.4", 1),         // the size
+        ("rutracker", 1),   // the source
+        ("anime", 1),       // the category
+        ("350", 1),         // the other row's size
+        ("dune\nanime", 0), // AND is not the rule: no row has both
+    ] {
+        app.zones.filter_input = filter.to_string();
+        app.update_filter();
+        assert_eq!(
+            app.filtered_indices.len(),
+            expected,
+            "filter '{filter}' should match {expected} row(s)"
+        );
+    }
+}
+
+// --- the category button keeps its arrows in the same columns --------------
+
+/// The name is padded to the widest category, so `◀ TV ▶` and
+/// `◀ Movies ▶` are the same width and the arrows never move.
+#[test]
+fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    app.zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = app.zones.get_area(ZoneId::Results);
+
+    let mut arrow_positions = Vec::new();
+    for group in [None, Some(Group::TV), Some(Group::Movies), Some(Group::Games)] {
+        app.active_group = group;
+        let layout = app.frame_layout(ZoneId::Results, area, &config);
+        let (_, rect) = layout.buttons.iter()
+            .find(|(b, _)| b.is_category())
+            .expect("the category button");
+        arrow_positions.push((rect.x, rect.x + rect.width - 1));
+    }
+
+    let first = arrow_positions[0];
+    for (i, pos) in arrow_positions.iter().enumerate() {
+        assert_eq!(
+            *pos, first,
+            "the arrows must not move between categories (index {i})"
+        );
+    }
+}
+
+// --- `D` opens the detail modal (Shift+Enter's fallback) ------------------
+
+/// Most terminals send Shift+Enter as a plain Enter with no modifier, so
+/// `D` is the same action on a key every terminal sends distinctly. It
+/// has to be documented next to Shift+Enter, or the fallback is
+/// undiscoverable.
+#[test]
+fn test_the_help_page_documents_d_as_the_detail_fallback() {
+    let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
+    assert!(
+        keys.iter().any(|k| k.contains('D')),
+        "HELP_TEXT should name 'D' as the detail fallback: {:?}",
+        keys
+    );
 }

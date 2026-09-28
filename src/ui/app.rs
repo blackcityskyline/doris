@@ -722,12 +722,21 @@ impl App {
         // (previous / next category). The `g`/`G` keys stay the
         // keyboard way in, exactly as they were when the category was a
         // row inside the panel.
+        //
+        // The name is padded to the widest category so the arrows stay
+        // in the same columns no matter which one is showing -- `◀ TV ▶`
+        // and `◀ Movies ▶` line up, instead of the right arrow sliding
+        // four columns to the right on the longer name.
         if id == ZoneId::Results {
+            let width = self.group_tabs.iter()
+                .map(|g| g.map_or("all", Group::label).chars().count())
+                .max()
+                .unwrap_or(3);
             let name = self.active_group.map_or("all", Group::label);
             buttons.push(FrameButton {
                 slot: FrameSlot::TopRight,
                 key: 'g',
-                label: format!("◀ {} ▶", name),
+                label: format!("◀ {:<width$} ▶", name, width = width),
             });
         }
 
@@ -783,7 +792,7 @@ impl App {
     /// `pause_proc_list`, around `tree` while `proc_tree`, ...).
     fn frame_button_active(&self, id: ZoneId, button: &FrameButton) -> bool {
         match (id, button.key) {
-            (ZoneId::Results, 'F') => {
+            (ZoneId::Results, 'f') => {
                 self.zones.filter_mode || !self.zones.filter_input.is_empty()
             }
             (ZoneId::Torrent, 'p') => self.torrent_paused,
@@ -836,7 +845,7 @@ impl App {
             return None;
         }
         match (id, button.key) {
-            (ZoneId::Results, 'F') => {
+            (ZoneId::Results, 'f') => {
                 self.zones.filter_mode = true;
                 None
             }
@@ -981,8 +990,6 @@ impl App {
     /// see ROADMAP.md bug B5, where roughly half of these used to be
     /// decorative strings with no backing field at all.
 
-
-
     /// One keypress in the login modal. Returns the credentials to log
 
     pub fn enter_input_mode(&mut self) {
@@ -1105,13 +1112,31 @@ impl App {
     pub fn update_filter(&mut self) {
         let filter = self.zones.filter_input.clone();
         let lower = filter.to_lowercase();
+        // The filter matches any field a result carries, not just the
+        // title: a size ("1.4 GB"), a source ("rutracker"), a word from
+        // the title, or the category all answer to the same prompt --
+        // the user should not have to know which column a term lives
+        // in. The category is matched by name, so "movies" finds the
+        // Movies view's rows.
         self.filtered_indices = self.results.iter()
             .enumerate()
             .filter(|(_, item)| match self.active_group {
                 None => true,
                 Some(group) => item.group == Some(group),
             })
-            .filter(|(_, item)| filter.is_empty() || item.title.to_lowercase().contains(&lower))
+            .filter(|(_, item)| {
+                if filter.is_empty() {
+                    return true;
+                }
+                let haystack = format!(
+                    "{} {} {} {}",
+                    item.title,
+                    item.size,
+                    item.source,
+                    item.group.map_or("", Group::label),
+                );
+                haystack.to_lowercase().contains(&lower)
+            })
             .map(|(i, _)| i)
             .collect();
         if !self.filtered_indices.is_empty() && !self.filtered_indices.contains(&self.selected) {
