@@ -136,12 +136,10 @@ pub fn sort_results(items: &[TorrentItem], sort: Sort) -> Vec<TorrentItem> {
     match sort {
         Sort::None => return out,
         Sort::Field(SortField::Size, dir) => out.sort_by(|a, b| {
-            with_dir(a.size_bytes.cmp(&b.size_bytes), dir)
-                .then_with(|| b.seeds_n.cmp(&a.seeds_n))
+            with_dir(a.size_bytes.cmp(&b.size_bytes), dir).then_with(|| b.seeds_n.cmp(&a.seeds_n))
         }),
         Sort::Field(SortField::Seeds, dir) => out.sort_by(|a, b| {
-            with_dir(a.seeds_n.cmp(&b.seeds_n), dir)
-                .then_with(|| b.added.cmp(&a.added))
+            with_dir(a.seeds_n.cmp(&b.seeds_n), dir).then_with(|| b.added.cmp(&a.added))
         }),
         Sort::Field(SortField::Source, dir) => out.sort_by(|a, b| {
             with_dir(a.source.cmp(&b.source), dir).then_with(|| b.seeds_n.cmp(&a.seeds_n))

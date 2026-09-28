@@ -39,7 +39,11 @@ fn files(n: usize) -> Vec<FileEntry> {
     (0..n)
         .map(|i| FileEntry {
             name: format!("file_{:02}.mkv", i),
-            size: if i == 0 { "1.2 GB".into() } else { "64 MB".into() },
+            size: if i == 0 {
+                "1.2 GB".into()
+            } else {
+                "64 MB".into()
+            },
         })
         .collect()
 }
@@ -68,10 +72,18 @@ fn test_the_cursor_moves_and_clamps_at_both_ends() {
     }
 
     assert_eq!(app.detail_key(key(KeyCode::Down), true), None);
-    assert_eq!(app.detail_key(key(KeyCode::Up), true), None, "clamped at the top");
+    assert_eq!(
+        app.detail_key(key(KeyCode::Up), true),
+        None,
+        "clamped at the top"
+    );
     assert_eq!(app.detail_key(key(KeyCode::Char('j')), true), None);
     assert_eq!(app.detail_key(key(KeyCode::Char('j')), true), None);
-    assert_eq!(app.detail_key(key(KeyCode::Char('j')), true), None, "clamped at the bottom");
+    assert_eq!(
+        app.detail_key(key(KeyCode::Char('j')), true),
+        None,
+        "clamped at the bottom"
+    );
     assert_eq!(app.detail_key(key(KeyCode::Char('k')), true), None);
     assert_eq!(app.detail_key(key(KeyCode::Up), true), None);
 }
@@ -83,7 +95,12 @@ fn test_the_cursor_stays_put_when_there_are_no_files() {
     let mut app = make_app();
     open_detail(&mut app);
 
-    for k in [key(KeyCode::Down), key(KeyCode::Up), key(KeyCode::Char('j')), key(KeyCode::Char('k'))] {
+    for k in [
+        key(KeyCode::Down),
+        key(KeyCode::Up),
+        key(KeyCode::Char('j')),
+        key(KeyCode::Char('k')),
+    ] {
         assert_eq!(app.detail_key(k, true), None);
     }
     if let Modal::TorrentDetail(ref state) = app.modal {
@@ -96,8 +113,14 @@ fn test_enter_and_d_ask_for_the_orchestrators_actions() {
     let mut app = make_app();
     open_detail(&mut app);
 
-    assert_eq!(app.detail_key(key(KeyCode::Enter), true), Some(DetailAction::Play));
-    assert_eq!(app.detail_key(key(KeyCode::Char('d')), true), Some(DetailAction::Download));
+    assert_eq!(
+        app.detail_key(key(KeyCode::Enter), true),
+        Some(DetailAction::Play)
+    );
+    assert_eq!(
+        app.detail_key(key(KeyCode::Char('d')), true),
+        Some(DetailAction::Download)
+    );
 }
 
 /// Esc and q close the modal; the cursor and the list stay behind, so
@@ -141,7 +164,10 @@ fn test_the_answer_lands_in_the_modal_that_asked_for_it() {
             assert_eq!(state.files.len(), 2);
             assert!(state.error.is_none());
         }
-        other => panic!("expected the detail modal, got {:?}", std::mem::discriminant(&other)),
+        other => panic!(
+            "expected the detail modal, got {:?}",
+            std::mem::discriminant(&other)
+        ),
     }
 }
 
@@ -161,10 +187,16 @@ fn test_a_late_answer_for_another_row_is_dropped() {
 
     match app.modal {
         Modal::TorrentDetail(ref state) => {
-            assert!(state.pending, "the new modal is still waiting for its own answer");
+            assert!(
+                state.pending,
+                "the new modal is still waiting for its own answer"
+            );
             assert!(state.files.is_empty());
         }
-        other => panic!("expected the detail modal, got {:?}", std::mem::discriminant(&other)),
+        other => panic!(
+            "expected the detail modal, got {:?}",
+            std::mem::discriminant(&other)
+        ),
     }
 }
 
@@ -189,12 +221,7 @@ fn test_an_error_is_shown_and_the_cursor_clamped() {
         state.cursor = 4;
     }
 
-    doris::app::apply_detail_loaded(
-        &mut app,
-        "viewtopic.php?t=123",
-        files(2),
-        Some("HTTP 503"),
-    );
+    doris::app::apply_detail_loaded(&mut app, "viewtopic.php?t=123", files(2), Some("HTTP 503"));
 
     match app.modal {
         Modal::TorrentDetail(ref state) => {
@@ -202,7 +229,10 @@ fn test_an_error_is_shown_and_the_cursor_clamped() {
             assert_eq!(state.error.as_deref(), Some("HTTP 503"));
             assert_eq!(state.cursor, 1, "clamped to the shorter list");
         }
-        other => panic!("expected the detail modal, got {:?}", std::mem::discriminant(&other)),
+        other => panic!(
+            "expected the detail modal, got {:?}",
+            std::mem::discriminant(&other)
+        ),
     }
 }
 
@@ -261,7 +291,12 @@ fn test_the_modal_shows_the_row_and_says_the_list_is_coming() {
         "reading the torrent's page",
         "Enter: play",
     ] {
-        assert!(text.contains(expected), "the modal should say '{}':\n{}", expected, text);
+        assert!(
+            text.contains(expected),
+            "the modal should say '{}':\n{}",
+            expected,
+            text
+        );
     }
 }
 

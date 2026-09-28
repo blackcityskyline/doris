@@ -1,4 +1,4 @@
-use axum::{Router, routing::get, extract::Query, Json};
+use axum::{extract::Query, routing::get, Json, Router};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 

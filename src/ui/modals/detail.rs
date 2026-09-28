@@ -12,8 +12,8 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::config::Config;
-use crate::ui::app::{centered_rect, App, Modal};
 use crate::sources::source::Group;
+use crate::ui::app::{centered_rect, App, Modal};
 
 impl App {
     /// Draw the detail modal: `Label: value` rows for the row itself,
@@ -26,7 +26,9 @@ impl App {
         let popup = centered_rect(70, 80, area);
         frame.render_widget(Clear, popup);
 
-        let block = self.modal_block(Color::Cyan, config).title(" Torrent details ");
+        let block = self
+            .modal_block(Color::Cyan, config)
+            .title(" Torrent details ");
 
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
@@ -43,7 +45,11 @@ impl App {
             Line::from(vec![
                 Span::styled("Source:  ", label),
                 Span::styled(
-                    if state.item.source.is_empty() { "-" } else { state.item.source.as_str() },
+                    if state.item.source.is_empty() {
+                        "-"
+                    } else {
+                        state.item.source.as_str()
+                    },
                     value,
                 ),
             ]),
@@ -61,29 +67,31 @@ impl App {
             ]),
             Line::from(vec![
                 Span::styled("Group:   ", label),
-                Span::styled(
-                    state.item.group.map_or("-", Group::label),
-                    value,
-                ),
+                Span::styled(state.item.group.map_or("-", Group::label), value),
             ]),
             Line::from(vec![
                 Span::styled("Hash:    ", label),
                 Span::styled(
-                    if state.item.info_hash.is_empty() { "-" } else { state.item.info_hash.as_str() },
+                    if state.item.info_hash.is_empty() {
+                        "-"
+                    } else {
+                        state.item.info_hash.as_str()
+                    },
                     value,
                 ),
             ]),
             Line::from(vec![
                 Span::styled("Magnet:  ", label),
-                Span::styled(
-                    state.item.magnet.as_deref().unwrap_or("-"),
-                    value,
-                ),
+                Span::styled(state.item.magnet.as_deref().unwrap_or("-"), value),
             ]),
             Line::from(vec![
                 Span::styled("Page:    ", label),
                 Span::styled(
-                    if state.item.page_url.is_empty() { "-" } else { state.item.page_url.as_str() },
+                    if state.item.page_url.is_empty() {
+                        "-"
+                    } else {
+                        state.item.page_url.as_str()
+                    },
                     value,
                 ),
             ]),

@@ -82,7 +82,10 @@ pub fn parse_magnet(input: &str) -> Option<ParsedMagnet> {
     // then take the hash-shaped run after it.
     let prefix = "xt=urn:btih:";
     let at = s.to_ascii_lowercase().find(prefix)? + prefix.len();
-    let run: String = s[at..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+    let run: String = s[at..]
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
 
     let info_hash = if run.len() >= 40 && run[..40].chars().all(|c| c.is_ascii_hexdigit()) {
         run[..40].to_string()

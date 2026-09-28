@@ -3,7 +3,7 @@
 //! magnet is malformed must not be handed to TorrServer.
 
 use doris::sources::magnet::{
-    TRACKERS, build_magnet, is_info_hash, normalize_info_hash, parse_input, parse_magnet,
+    build_magnet, is_info_hash, normalize_info_hash, parse_input, parse_magnet, TRACKERS,
 };
 
 const HEX_HASH: &str = "abcdef0123456789abcdef0123456789abcdef01";
@@ -18,16 +18,16 @@ fn test_parse_magnet_keeps_a_full_40_char_hex_hash_and_decodes_dn() {
 
     assert_eq!(parsed.info_hash, HEX_HASH);
     assert_eq!(parsed.info_hash.len(), 40);
-    assert_eq!(parsed.name, "Cool Movie", "`+` is a space, like URLSearchParams");
+    assert_eq!(
+        parsed.name, "Cool Movie",
+        "`+` is a space, like URLSearchParams"
+    );
 }
 
 #[test]
 fn test_parse_magnet_decodes_a_32_char_base32_hash_to_hex() {
-    let parsed = parse_magnet(&format!(
-        "magnet:?xt=urn:btih:{}&dn=X",
-        BASE32_HASH
-    ))
-    .expect("base32 hashes parse too");
+    let parsed = parse_magnet(&format!("magnet:?xt=urn:btih:{}&dn=X", BASE32_HASH))
+        .expect("base32 hashes parse too");
 
     assert_eq!(parsed.info_hash.len(), 40);
     assert!(
@@ -89,7 +89,11 @@ fn test_build_magnet_encodes_the_name_and_appends_trackers() {
     assert!(out.contains("xt=urn:btih:abc123"), "{}", out);
     assert!(out.contains("dn=My%20Movie%202024"), "{}", out);
     assert!(out.contains("&tr="), "{}", out);
-    assert_eq!(out.matches("&tr=").count(), TRACKERS.len(), "all 7 trackers");
+    assert_eq!(
+        out.matches("&tr=").count(),
+        TRACKERS.len(),
+        "all 7 trackers"
+    );
 }
 
 #[test]
@@ -108,7 +112,10 @@ fn test_build_magnet_escapes_parameter_separators_in_the_name() {
 fn test_is_info_hash_accepts_bare_hashes_only() {
     assert!(is_info_hash(&"a".repeat(40)), "bare 40-char hex");
     assert!(is_info_hash(BASE32_HASH), "bare 32-char base32");
-    assert!(is_info_hash(&format!("  {}  ", HEX_HASH)), "whitespace trimmed");
+    assert!(
+        is_info_hash(&format!("  {}  ", HEX_HASH)),
+        "whitespace trimmed"
+    );
 }
 
 #[test]
@@ -149,7 +156,9 @@ fn test_parse_input_decodes_a_bare_base32_hash_and_trims_it() {
         "expected 40 hex chars, got {}",
         parsed.info_hash
     );
-    assert!(parsed.magnet.contains(&format!("xt=urn:btih:{}", parsed.info_hash)));
+    assert!(parsed
+        .magnet
+        .contains(&format!("xt=urn:btih:{}", parsed.info_hash)));
 }
 
 #[test]

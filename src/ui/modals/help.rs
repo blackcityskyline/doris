@@ -32,7 +32,10 @@ const KEY_WIDTH: usize = 20;
 /// `help_text` (`btop_menu.cpp:174`). Kept public so a test can check
 /// it still names every keybind AGENTS.md documents.
 pub const HELP_TEXT: &[(&str, &str)] = &[
-    ("Mouse 1", "Clicks zones, frame buttons, tabs, the search box."),
+    (
+        "Mouse 1",
+        "Clicks zones, frame buttons, tabs, the search box.",
+    ),
     ("Mouse scroll", "Scrolls what is under the cursor."),
     ("s, i", "Enters search input mode."),
     ("Enter", "Searches / plays; in Sources, switches the row."),
@@ -46,7 +49,10 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("1, 2, 3, 4, 5", "Toggles that zone's visibility."),
     ("Shift+P", "Cycles the layout preset (horizontal / split)."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
-    ("j, k, Up, Down", "Moves in the focused zone (j/k: Vim keys)."),
+    (
+        "j, k, Up, Down",
+        "Moves in the focused zone (j/k: Vim keys).",
+    ),
     ("g, G", "Cycles the category forward / back."),
     ("d", "Downloads a row / removes the torrent."),
     ("v", "Logs the selected result's details."),
@@ -119,11 +125,7 @@ impl App {
         );
         let prev = matches!(
             key.code,
-            KeyCode::Up
-                | KeyCode::Char('k')
-                | KeyCode::PageUp
-                | KeyCode::BackTab
-                | KeyCode::Home
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::PageUp | KeyCode::BackTab | KeyCode::Home
         );
         if next {
             state.page = (state.page + 1) % state.pages;
@@ -163,11 +165,7 @@ impl App {
                 Modal::Help(state) => state.page,
                 _ => 0,
             };
-            block = block.title_bottom(Line::from(format!(
-                " ↑ page {}/{} ↓",
-                page + 1,
-                pages
-            )));
+            block = block.title_bottom(Line::from(format!(" ↑ page {}/{} ↓", page + 1, pages)));
         }
         frame.render_widget(block, popup);
 

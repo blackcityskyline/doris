@@ -21,11 +21,7 @@ pub fn init() {
         }
     }
 
-    if let Ok(file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    if let Ok(file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         // Poisoned lock still holds a usable file: recover instead of
         // panicking inside the logger (which would take the app down).
         *LOG_FILE.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);

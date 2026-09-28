@@ -27,10 +27,8 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     // otherwise every enabled implemented source -- the same list the
     // `all` tab is built from, so CLI and TUI cannot disagree about what
     // "all sources" means.
-    let selected = doris::sources::source::cli_sources(
-        args.source.as_deref(),
-        &config.enabled_sources,
-    )?;
+    let selected =
+        doris::sources::source::cli_sources(args.source.as_deref(), &config.enabled_sources)?;
     if selected.is_empty() {
         anyhow::bail!("no enabled sources in Options -> streaming -> Sources");
     }
@@ -47,20 +45,23 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
             browser_choice,
             &browser_priority,
         )?;
-        let visibility_str = args.browser_visibility
+        let visibility_str = args
+            .browser_visibility
             .clone()
             .unwrap_or_else(|| config.browser_visibility.clone());
         let visibility: doris::browser::cdp::BrowserVisibility = visibility_str.parse()?;
-        println!("Using browser: {} [{}] ({})", kind, visibility, path.display());
+        println!(
+            "Using browser: {} [{}] ({})",
+            kind,
+            visibility,
+            path.display()
+        );
 
         // One browser shared by every source, the same sharing the TUI
         // does; it starts on the first source's home page.
-        let launched = doris::browser::cdp::Browser::launch(
-            &path,
-            visibility,
-            selected[0].home_url,
-            true,
-        ).await?;
+        let launched =
+            doris::browser::cdp::Browser::launch(&path, visibility, selected[0].home_url, true)
+                .await?;
         Some(std::sync::Arc::new(tokio::sync::Mutex::new(launched)))
     } else {
         None
@@ -114,7 +115,10 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
                     println!("Found {} results (sorted by seeds):\n", results.len());
                     for (i, item) in results.iter().take(20).enumerate() {
                         println!("{}. {}", i + 1, item.title);
-                        println!("   Size: {} | Seeds: {} | Date: {}", item.size, item.seeds, item.date);
+                        println!(
+                            "   Size: {} | Seeds: {} | Date: {}",
+                            item.size, item.seeds, item.date
+                        );
                         println!("   Page: {}", item.page_url);
                         println!("   Download: {}", item.download_url);
                         println!();

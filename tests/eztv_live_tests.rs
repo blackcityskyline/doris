@@ -2,8 +2,8 @@
 //! `cargo test` stays offline-safe. Run manually with:
 //! `cargo test --test eztv_live_tests -- --ignored --nocapture`
 
-use doris::sources::source::{SearchRequest, Source};
 use doris::sources::eztv::EztvSearcher;
+use doris::sources::source::{SearchRequest, Source};
 
 #[tokio::test]
 #[ignore = "requires network access to eztvx.to"]

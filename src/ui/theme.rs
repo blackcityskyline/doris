@@ -181,7 +181,8 @@ impl Theme {
     /// its own template (`noctalia msg templates-apply`) and it shows up
     /// here like any bundled theme, with no `BUNDLED_THEMES` entry for it.
     pub fn load_themes_from(user_dir: Option<&std::path::Path>) -> Vec<Self> {
-        let mut themes: Vec<Self> = BUNDLED_THEMES.iter()
+        let mut themes: Vec<Self> = BUNDLED_THEMES
+            .iter()
             .filter_map(|content| Self::from_config_str(content))
             .collect();
 

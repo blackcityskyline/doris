@@ -1,5 +1,5 @@
 use anyhow::Result;
-use fantoccini::{ClientBuilder, Client};
+use fantoccini::{Client, ClientBuilder};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -34,7 +34,10 @@ impl std::str::FromStr for BrowserVisibility {
             // Legacy aliases kept so old configs/CLI flags keep working.
             "visible" | "gui" | "window" => Ok(BrowserVisibility::Visible),
             "hidden" | "headless" | "bg" => Ok(BrowserVisibility::Hidden),
-            _ => anyhow::bail!("Unknown browser visibility '{}'. Use 'visible' or 'hidden'", s),
+            _ => anyhow::bail!(
+                "Unknown browser visibility '{}'. Use 'visible' or 'hidden'",
+                s
+            ),
         }
     }
 }
@@ -56,7 +59,12 @@ impl Browser {
     /// profile — it must be a page on the same domain those cookies belong
     /// to. Callers pass the active search source's home page; this module
     /// stays source-agnostic on purpose (see ROADMAP.md Phase 3).
-    pub async fn launch(binary: &Path, mode: BrowserVisibility, cookie_injection_url: &str, close_on_drop: bool) -> Result<Self> {
+    pub async fn launch(
+        binary: &Path,
+        mode: BrowserVisibility,
+        cookie_injection_url: &str,
+        close_on_drop: bool,
+    ) -> Result<Self> {
         // A run killed outright (closed terminal, `kill -9`) never reaches
         // `Drop`: its temp profile, its Xvfb and any browser process that
         // outlived chromedriver stay behind, the browser keeping a page
@@ -77,16 +85,25 @@ impl Browser {
         let temp_profile = if mode == BrowserVisibility::Hidden {
             let tmp = std::env::temp_dir().join(format!("doris-hidden-{}", std::process::id()));
             std::fs::create_dir_all(&tmp)?;
-            crate::log::log("browser", &format!("hidden mode: temp profile {}", tmp.display()));
+            crate::log::log(
+                "browser",
+                &format!("hidden mode: temp profile {}", tmp.display()),
+            );
 
             if let Some(ref native) = native_profile {
                 match extract_cookies_from_native_profile(native) {
                     Ok(cookies) => {
-                        crate::log::log("browser", &format!("extracted {} cookies from native profile", cookies.len()));
+                        crate::log::log(
+                            "browser",
+                            &format!("extracted {} cookies from native profile", cookies.len()),
+                        );
                         injected_cookies = cookies;
                     }
                     Err(e) => {
-                        crate::log::log("browser", &format!("could not extract native cookies: {}", e));
+                        crate::log::log(
+                            "browser",
+                            &format!("could not extract native cookies: {}", e),
+                        );
                     }
                 }
             }
@@ -162,12 +179,19 @@ impl Browser {
             .connect(&webdriver_url)
             .await?;
 
-        crate::log::log("browser", &format!("{} via patched chromedriver on port {}", mode, port));
+        crate::log::log(
+            "browser",
+            &format!("{} via patched chromedriver on port {}", mode, port),
+        );
 
         let browser = Self {
             client: Some(client),
             child: Some(child),
-            temp_profile: if mode == BrowserVisibility::Hidden { temp_profile } else { None },
+            temp_profile: if mode == BrowserVisibility::Hidden {
+                temp_profile
+            } else {
+                None
+            },
             xvfb_child,
             close_on_drop,
         };
@@ -176,7 +200,13 @@ impl Browser {
             crate::log::log("browser", "navigating to domain for cookie injection...");
             browser.navigate(cookie_injection_url).await.ok();
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            crate::log::log("browser", &format!("injecting {} cookies into hidden session", injected_cookies.len()));
+            crate::log::log(
+                "browser",
+                &format!(
+                    "injecting {} cookies into hidden session",
+                    injected_cookies.len()
+                ),
+            );
             browser.add_cookies(&injected_cookies).await?;
             // Cookies live in the profile, not in the tab: don't leave the
             // source's home page (ads and all) loaded before Doris has even
@@ -253,7 +283,10 @@ impl Browser {
             }
         }
         if let Some(path) = self.temp_profile.take() {
-            crate::log::log("browser", &format!("cleanup temp profile {}", path.display()));
+            crate::log::log(
+                "browser",
+                &format!("cleanup temp profile {}", path.display()),
+            );
             let _ = std::fs::remove_dir_all(path);
         }
     }
@@ -269,7 +302,10 @@ impl Browser {
 
     pub async fn eval_js(&self, script: &str) -> Result<serde_json::Value> {
         let trimmed = script.trim_start();
-        let wrapped = if trimmed.starts_with("return ") || trimmed.starts_with("throw ") || trimmed.starts_with("async ") {
+        let wrapped = if trimmed.starts_with("return ")
+            || trimmed.starts_with("throw ")
+            || trimmed.starts_with("async ")
+        {
             script.to_string()
         } else {
             let s = script.trim_end().trim_end_matches(';');
@@ -299,8 +335,16 @@ impl Browser {
     pub async fn add_cookies(&self, cookies: &[serde_json::Value]) -> Result<()> {
         let client = self.client()?;
         for c in cookies {
-            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = c
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let value = c
+                .get("value")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let mut builder = fantoccini::cookies::Cookie::build((name, value));
             if let Some(d) = c.get("domain").and_then(|v| v.as_str()) {
                 builder = builder.domain(d.to_string());
@@ -377,14 +421,20 @@ fn sweep_profile(profile_dir: &Path) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
     loop {
         if find_pids_by_profile(profile_dir).is_empty() {
-            crate::log::log("browser", &format!("swept {} orphaned processes", pids.len()));
+            crate::log::log(
+                "browser",
+                &format!("swept {} orphaned processes", pids.len()),
+            );
             return;
         }
         if std::time::Instant::now() >= deadline {
             for pid in &pids {
                 send_signal(*pid, true);
             }
-            crate::log::log("browser", &format!("SIGKILLed {} orphaned processes", pids.len()));
+            crate::log::log(
+                "browser",
+                &format!("SIGKILLed {} orphaned processes", pids.len()),
+            );
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -517,8 +567,11 @@ fn start_xvfb(display_num: u32) -> Option<std::process::Child> {
     let child = std::process::Command::new("Xvfb")
         .args([
             &format!(":{}", display_num),
-            "-screen", "0", "1920x1080x24",
-            "-nolisten", "tcp",
+            "-screen",
+            "0",
+            "1920x1080x24",
+            "-nolisten",
+            "tcp",
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -547,7 +600,10 @@ fn graceful_shutdown_if_running(profile_dir: &Path) {
     for pid in &pids {
         send_signal(*pid, false);
     }
-    crate::log::log("browser", &format!("sent SIGTERM to {} processes", pids.len()));
+    crate::log::log(
+        "browser",
+        &format!("sent SIGTERM to {} processes", pids.len()),
+    );
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
@@ -572,10 +628,11 @@ fn find_pids_by_profile(profile_dir: &Path) -> Vec<u32> {
     let profile_str = profile_dir.to_string_lossy();
     let output = match std::process::Command::new("pgrep")
         .args(["-f", &format!("user-data-dir={}", profile_str)])
-        .output() {
-            Ok(o) => o,
-            Err(_) => return vec![],
-        };
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return vec![],
+    };
 
     String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -587,16 +644,24 @@ fn detect_user_data_dir(binary: &Path) -> Option<PathBuf> {
     let bin_name = binary.file_name()?.to_str()?;
     let home = dirs::home_dir()?;
 
-    let profile_names = ["helium", "brave", "chromium", "google-chrome", "google-chrome-stable"];
+    let profile_names = [
+        "helium",
+        "brave",
+        "chromium",
+        "google-chrome",
+        "google-chrome-stable",
+    ];
 
     for profile_name in &profile_names {
         if !bin_name.contains(profile_name) {
             continue;
         }
         let dirs_to_check = [
-            home.join(".config").join(format!("net.imput.{}", profile_name)),
+            home.join(".config")
+                .join(format!("net.imput.{}", profile_name)),
             home.join(".config").join(*profile_name),
-            home.join(".config").join(format!("{}-browser", profile_name)),
+            home.join(".config")
+                .join(format!("{}-browser", profile_name)),
         ];
         for config_dir in &dirs_to_check {
             if config_dir.join("Default").exists() {
@@ -635,7 +700,10 @@ async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
         std::fs::set_permissions(&patched_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    crate::log::log("browser", &format!("patched chromedriver -> {}", patched_path.display()));
+    crate::log::log(
+        "browser",
+        &format!("patched chromedriver -> {}", patched_path.display()),
+    );
     Ok(patched_path)
 }
 
@@ -803,13 +871,22 @@ fn patch_chromedriver_binary(content: &[u8]) -> Vec<u8> {
                 let actual_len = end - abs_pos;
                 let patch: Vec<u8> = replacement
                     .iter()
-                    .chain(std::iter::repeat_n(&b' ', actual_len.saturating_sub(replacement.len())))
+                    .chain(std::iter::repeat_n(
+                        &b' ',
+                        actual_len.saturating_sub(replacement.len()),
+                    ))
                     .take(actual_len)
                     .copied()
                     .collect();
                 result[abs_pos..end].copy_from_slice(&patch);
                 search_start = abs_pos + actual_len;
-                crate::log::log("browser", &format!("patched cdc block at offset {}, length {}", abs_pos, actual_len));
+                crate::log::log(
+                    "browser",
+                    &format!(
+                        "patched cdc block at offset {}, length {}",
+                        abs_pos, actual_len
+                    ),
+                );
             } else {
                 search_start += pos + 1;
             }
@@ -860,7 +937,10 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
         }
         crate::log::log(
             "browser",
-            &format!("ignoring {} -- built for another browser major", path.display()),
+            &format!(
+                "ignoring {} -- built for another browser major",
+                path.display()
+            ),
         );
     }
 
@@ -883,7 +963,10 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
         return Ok(adopted);
     }
 
-    crate::log::log("browser", &format!("downloading chromedriver for Chromium {}...", browser_major));
+    crate::log::log(
+        "browser",
+        &format!("downloading chromedriver for Chromium {}...", browser_major),
+    );
 
     let url = download_chromedriver_url(browser_major).await?;
 
@@ -921,7 +1004,10 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
         std::fs::set_permissions(&downloaded, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    crate::log::log("browser", &format!("chromedriver downloaded -> {}", downloaded.display()));
+    crate::log::log(
+        "browser",
+        &format!("chromedriver downloaded -> {}", downloaded.display()),
+    );
     Ok(downloaded)
 }
 
@@ -936,7 +1022,10 @@ async fn download_chromedriver_url(browser_major: u32) -> Result<String> {
 
     for v in versions.iter().rev() {
         let version_str = v["version"].as_str().unwrap_or("");
-        let major = version_str.split('.').next().and_then(|s| s.parse::<u32>().ok());
+        let major = version_str
+            .split('.')
+            .next()
+            .and_then(|s| s.parse::<u32>().ok());
         if major != Some(browser_major) {
             continue;
         }
@@ -967,7 +1056,11 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let version_str = if !stdout.trim().is_empty() { stdout } else { stderr };
+    let version_str = if !stdout.trim().is_empty() {
+        stdout
+    } else {
+        stderr
+    };
 
     let version_str = version_str.trim();
 
@@ -994,10 +1087,13 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
         profile_dir.join("Default/Network/Cookies-journal"),
     ];
 
-    let cookie_db = cookie_paths.iter().find(|p| p.exists() && p.file_name().map(|n| n == "Cookies").unwrap_or(false))
+    let cookie_db = cookie_paths
+        .iter()
+        .find(|p| p.exists() && p.file_name().map(|n| n == "Cookies").unwrap_or(false))
         .ok_or_else(|| anyhow::anyhow!("No Cookies database found in profile"))?;
 
-    let tmp_copy = std::env::temp_dir().join(format!("doris-cookies-{}.sqlite", std::process::id()));
+    let tmp_copy =
+        std::env::temp_dir().join(format!("doris-cookies-{}.sqlite", std::process::id()));
     std::fs::copy(cookie_db, &tmp_copy)?;
 
     let conn = rusqlite::Connection::open(&tmp_copy)?;

@@ -32,7 +32,11 @@ impl Manager {
     /// sent) rather than an error -- TorrServer commonly isn't running
     /// until the user actually starts a stream, and that's not a problem
     /// worth logging on every poll.
-    pub fn spawn(torrserver: TorrServer, update_ms: u64, event_tx: UnboundedSender<Event>) -> tokio::task::JoinHandle<()> {
+    pub fn spawn(
+        torrserver: TorrServer,
+        update_ms: u64,
+        event_tx: UnboundedSender<Event>,
+    ) -> tokio::task::JoinHandle<()> {
         let period = std::time::Duration::from_millis(update_ms.max(100));
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(period);

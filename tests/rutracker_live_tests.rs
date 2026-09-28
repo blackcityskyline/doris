@@ -48,8 +48,8 @@ async fn live_category_param_selects_disjoint_sections() {
     // match, an unrelated defect this test walked straight into.
     let config = doris::config::load(None).unwrap_or_default();
     let priority = detect::parse_priority(&config.browser_priority);
-    let (_, path) = detect::detect_browser_with_priority(None, &priority)
-        .expect("a browser to probe with");
+    let (_, path) =
+        detect::detect_browser_with_priority(None, &priority).expect("a browser to probe with");
     let mut browser = Browser::launch(&path, BrowserVisibility::Hidden, HOME, true)
         .await
         .expect("browser session");
@@ -112,10 +112,7 @@ async fn live_category_param_selects_disjoint_sections() {
         2,
         "at least two of the offered categories must answer with topics"
     );
-    let overlap: Vec<&String> = answered[0]
-        .2
-        .intersection(&answered[1].2)
-        .collect();
+    let overlap: Vec<&String> = answered[0].2.intersection(&answered[1].2).collect();
     assert!(
         overlap.is_empty(),
         "a topic lives in one forum, yet {:?} answered under both {}={} and {}={}",
@@ -228,8 +225,8 @@ async fn inject_saved_cookies(browser: &Browser, cookie_file: Option<&Path>) {
 async fn live_a_group_search_asks_for_its_forums_in_one_request() {
     let config = doris::config::load(None).unwrap_or_default();
     let priority = detect::parse_priority(&config.browser_priority);
-    let (_, path) = detect::detect_browser_with_priority(None, &priority)
-        .expect("a browser to probe with");
+    let (_, path) =
+        detect::detect_browser_with_priority(None, &priority).expect("a browser to probe with");
     let mut browser = Browser::launch(&path, BrowserVisibility::Hidden, HOME, true)
         .await
         .expect("browser session");
@@ -286,8 +283,5 @@ async fn describe(browser: &Browser) -> String {
         });
     })()"#;
     let value = browser.eval_js(script).await.expect("describe the page");
-    value
-        .as_str()
-        .expect("the script returns JSON")
-        .to_string()
+    value.as_str().expect("the script returns JSON").to_string()
 }

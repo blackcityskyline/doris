@@ -48,7 +48,8 @@ fn test_parse_netscape_basic() {
 
 #[test]
 fn test_parse_netscape_skips_comments() {
-    let content = "# This is a comment\n# Another comment\n.rutracker.org\tTRUE\t/\tTRUE\t0\tsession\tval\n";
+    let content =
+        "# This is a comment\n# Another comment\n.rutracker.org\tTRUE\t/\tTRUE\t0\tsession\tval\n";
     let cookies = parse_netscape(content);
     assert_eq!(cookies.len(), 1);
     assert_eq!(cookies[0].name, "session");

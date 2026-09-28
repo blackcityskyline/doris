@@ -222,15 +222,21 @@ fn test_known_sources_are_never_re_enabled() {
 
 #[test]
 fn test_migration_is_idempotent() {
-    let mut config = from_toml("enabled_sources = [ \"rutracker\", \"rutor\" ]")
-        .expect("legacy config parses");
+    let mut config =
+        from_toml("enabled_sources = [ \"rutracker\", \"rutor\" ]").expect("legacy config parses");
     let after_once = config.enabled_sources.clone();
     let known_once = config.known_sources.clone();
 
     config.migrate_sources();
 
-    assert_eq!(config.enabled_sources, after_once, "second run changed the list");
-    assert_eq!(config.known_sources, known_once, "second run changed what is known");
+    assert_eq!(
+        config.enabled_sources, after_once,
+        "second run changed the list"
+    );
+    assert_eq!(
+        config.known_sources, known_once,
+        "second run changed what is known"
+    );
 }
 
 /// A fresh config already knows everything, so `Config::default()` must

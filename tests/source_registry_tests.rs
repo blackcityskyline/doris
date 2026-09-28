@@ -1,16 +1,22 @@
 use doris::config::Config;
 use doris::sources::orchestrator;
-use doris::sources::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
 use doris::sources::rutor::RutorSearcher;
+use doris::sources::source::{
+    self, Group, Source, SourceEnv, SourceInfo, GROUP_ORDER, KNOWN_SOURCES,
+};
 use doris::sources::x1337x::X1337xSearcher;
-use doris::ui::modals::settings::{SettingsAction, streaming_settings_items};
+use doris::ui::modals::settings::{streaming_settings_items, SettingsAction};
 
 #[test]
 fn test_rutracker_and_rutor_are_registered_and_implemented() {
     for id in ["rutracker", "rutor"] {
         let source = KNOWN_SOURCES.iter().find(|s| s.id == id);
         assert!(source.is_some(), "{} must be in KNOWN_SOURCES", id);
-        assert!(source.unwrap().implemented, "{} should be marked implemented", id);
+        assert!(
+            source.unwrap().implemented,
+            "{} should be marked implemented",
+            id
+        );
     }
 }
 
@@ -20,10 +26,7 @@ fn test_future_sources_are_listed_but_not_implemented() {
     // groups, no browser, no category filter, no browse. Torentino used
     // to be the example here and B8 wave 3 moved it out; with the list
     // empty this is the invariant the next planned source has to satisfy.
-    let planned: Vec<&SourceInfo> = KNOWN_SOURCES
-        .iter()
-        .filter(|s| !s.implemented)
-        .collect();
+    let planned: Vec<&SourceInfo> = KNOWN_SOURCES.iter().filter(|s| !s.implemented).collect();
     for source in planned {
         assert!(
             source.groups.is_empty(),
@@ -54,7 +57,11 @@ fn test_all_source_ids_are_unique() {
     let original_len = ids.len();
     ids.sort_unstable();
     ids.dedup();
-    assert_eq!(ids.len(), original_len, "duplicate source id found in KNOWN_SOURCES");
+    assert_eq!(
+        ids.len(),
+        original_len,
+        "duplicate source id found in KNOWN_SOURCES"
+    );
 }
 
 #[test]
@@ -62,8 +69,17 @@ fn test_source_ids_are_lowercase_no_spaces() {
     // Source ids double as credential-store keys and Options checklist
     // keys -- they need to be simple, stable identifiers.
     for source in KNOWN_SOURCES {
-        assert_eq!(source.id, source.id.to_lowercase(), "{} should be lowercase", source.id);
-        assert!(!source.id.contains(' '), "{} should not contain spaces", source.id);
+        assert_eq!(
+            source.id,
+            source.id.to_lowercase(),
+            "{} should be lowercase",
+            source.id
+        );
+        assert!(
+            !source.id.contains(' '),
+            "{} should not contain spaces",
+            source.id
+        );
         assert!(!source.id.is_empty());
         assert!(!source.label.is_empty());
     }
@@ -71,7 +87,10 @@ fn test_source_ids_are_lowercase_no_spaces() {
 
 #[test]
 fn test_at_least_one_source_is_usable_today() {
-    assert!(KNOWN_SOURCES.iter().any(|s| s.implemented), "at least one source must actually work");
+    assert!(
+        KNOWN_SOURCES.iter().any(|s| s.implemented),
+        "at least one source must actually work"
+    );
 }
 
 // --- B2: registry metadata --------------------------------------------------
@@ -246,7 +265,10 @@ fn test_registry_metadata_matches_the_buildable_implementation() {
     assert!(x_info.implemented);
     // B9: the trait's browse answer and the registry's must agree, or a
     // browse would ask a source that answers with a broken page.
-    assert!(rutor.supports_browse(), "rutor's homepage answers an empty query");
+    assert!(
+        rutor.supports_browse(),
+        "rutor's homepage answers an empty query"
+    );
     assert_eq!(rutor.supports_browse(), info.supports_browse);
     assert!(x.supports_browse(), "1337x's /home/ answers an empty query");
     assert_eq!(x.supports_browse(), x_info.supports_browse);
@@ -275,11 +297,21 @@ fn test_get_source_and_sources_by_group_view_the_same_registry() {
     // A planned source has no rows yet, so it belongs to no group
     // view -- and the group list is the claim it may not make.
     for planned in KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
-        assert!(planned.groups.is_empty(), "{} is planned: no rows, no groups", planned.id);
-        assert!(!planned.home_url.is_empty(), "{} still says where it will live", planned.id);
+        assert!(
+            planned.groups.is_empty(),
+            "{} is planned: no rows, no groups",
+            planned.id
+        );
+        assert!(
+            !planned.home_url.is_empty(),
+            "{} still says where it will live",
+            planned.id
+        );
         for group in [Group::Games, Group::Movies, Group::TV, Group::Anime] {
             assert!(
-                source::sources_by_group(group).iter().all(|s| s.id != planned.id),
+                source::sources_by_group(group)
+                    .iter()
+                    .all(|s| s.id != planned.id),
                 "{} must not be in the {:?} view",
                 planned.id,
                 group
@@ -314,7 +346,10 @@ fn test_build_source_builds_every_browser_free_implemented_source() {
     // Whatever is marked implemented and needs no browser must actually
     // be constructible offline -- otherwise `implemented` is a lie the
     // Options checklist happily prints.
-    for info in KNOWN_SOURCES.iter().filter(|s| s.implemented && !s.requires_browser) {
+    for info in KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented && !s.requires_browser)
+    {
         assert!(
             build_ok(info.id),
             "implemented browser-free source '{}' does not build",
@@ -336,7 +371,11 @@ fn test_build_source_refuses_browser_backed_sources_without_a_browser() {
         Err(e) => e,
     };
     let msg = err.to_string();
-    assert!(msg.contains("browser"), "expected a browser complaint, got: {}", msg);
+    assert!(
+        msg.contains("browser"),
+        "expected a browser complaint, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -377,8 +416,7 @@ fn test_the_registry_says_which_sources_can_browse() {
         ("nyaa", false),
         ("rutracker", false),
     ] {
-        let info = source::get_source(id)
-            .unwrap_or_else(|| panic!("{id} is registered"));
+        let info = source::get_source(id).unwrap_or_else(|| panic!("{id} is registered"));
         assert_eq!(info.supports_browse, can, "{id}");
     }
 }

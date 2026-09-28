@@ -101,7 +101,9 @@ fn test_rendered_noctalia_theme_parses() {
     write_theme(&dir, "noctalia.toml", NOCTALIA_RENDERED);
 
     let themes = Theme::load_themes_from(Some(&dir));
-    let noctalia = themes.iter().find(|t| t.name == "noctalia")
+    let noctalia = themes
+        .iter()
+        .find(|t| t.name == "noctalia")
         .expect("rendered noctalia theme must be loaded");
 
     assert_eq!(noctalia.main_bg.r, 14);
@@ -122,8 +124,10 @@ fn test_user_theme_dir_layers_on_bundled() {
     let layered = Theme::load_themes_from(Some(&dir));
 
     assert_eq!(layered.len(), bundled_only.len() + 1);
-    assert!(layered.iter().any(|t| t.name == "default"),
-        "bundled themes must survive next to user themes");
+    assert!(
+        layered.iter().any(|t| t.name == "default"),
+        "bundled themes must survive next to user themes"
+    );
     assert!(layered.iter().any(|t| t.name == "noctalia"));
 
     let names: Vec<&str> = layered.iter().map(|t| t.name.as_str()).collect();
@@ -144,7 +148,9 @@ fn test_user_theme_overrides_bundled_same_name() {
     let layered = Theme::load_themes_from(Some(&dir));
 
     assert_eq!(layered.len(), bundled_only.len());
-    let default_theme = layered.iter().find(|t| t.name == "default")
+    let default_theme = layered
+        .iter()
+        .find(|t| t.name == "default")
         .expect("default theme must still be present");
     // Bundled default has main_bg 10/22/40, the override has 14/21/19.
     assert_eq!(default_theme.main_bg.r, 14);
@@ -176,12 +182,15 @@ fn test_generated_noctalia_theme_on_disk_is_valid() {
     let Some(home) = dirs::home_dir() else {
         return;
     };
-    let path = home.join(".config").join("doris").join("themes").join("noctalia.toml");
+    let path = home
+        .join(".config")
+        .join("doris")
+        .join("themes")
+        .join("noctalia.toml");
     if !path.exists() {
         return;
     }
 
-    let theme = Theme::from_config(&path)
-        .expect("noctalia-generated theme must parse as a Theme");
+    let theme = Theme::from_config(&path).expect("noctalia-generated theme must parse as a Theme");
     assert_eq!(theme.name, "noctalia");
 }

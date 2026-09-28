@@ -1,11 +1,11 @@
-use anyhow::Result;
 use crate::browser::cdp::Browser;
-use crate::sources::models::TorrentItem;
 use crate::sources::cookies::{self, Cookie};
+use crate::sources::models::TorrentItem;
 use crate::sources::source::Group;
+use anyhow::Result;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Resolve a rutracker download URL against the forum root. Lives here,
@@ -53,52 +53,43 @@ pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
     (
         Group::Movies,
         &[
-            22, 941, 1666, 376, 106, 7, 187, 2090, 2221, 2091, 2092, 2093,
-            2200, 1950, 252, 2540, 934, 505, 212, 2459, 1235, 166, 185,
-            124, 1543, 709, 1577, 511, 1493, 93, 905, 101, 100, 877, 1576,
-            572, 2220, 1670, 2198, 2199, 313, 312, 1247, 2201, 2339, 140,
-            194, 718, 775, 1457, 1940, 272, 271, 352, 549, 1213, 2109, 514,
-            2097, 4, 84, 2343, 930, 2365, 1900, 2258, 521, 208, 539, 2183,
-            209, 484, 822, 181, 921, 815, 816, 1460, 498,
+            22, 941, 1666, 376, 106, 7, 187, 2090, 2221, 2091, 2092, 2093, 2200, 1950, 252, 2540,
+            934, 505, 212, 2459, 1235, 166, 185, 124, 1543, 709, 1577, 511, 1493, 93, 905, 101,
+            100, 877, 1576, 572, 2220, 1670, 2198, 2199, 313, 312, 1247, 2201, 2339, 140, 194, 718,
+            775, 1457, 1940, 272, 271, 352, 549, 1213, 2109, 514, 2097, 4, 84, 2343, 930, 2365,
+            1900, 2258, 521, 208, 539, 2183, 209, 484, 822, 181, 921, 815, 816, 1460, 498,
         ],
     ),
     (
         Group::TV,
         &[
-            9, 812, 81, 920, 80, 1535, 188, 91, 990, 1408, 175, 79, 104,
-            189, 842, 235, 242, 819, 1531, 721, 1102, 1120, 1214, 489, 387,
-            1359, 184, 1417, 1449, 504, 372, 110, 121, 507, 536, 1144, 195,
-            2366, 1803, 266, 193, 1690, 1459, 1463, 825, 1248, 1288, 265,
-            2404, 2405, 2370, 2396, 2398, 1498, 119, 1171, 1669, 2393, 625,
-            1949, 173, 273, 911, 325, 534, 594, 1301, 607, 1574, 1539, 694,
-            781, 704, 1537, 2100, 820, 915, 1242, 717, 1939, 2412, 2102, 19,
-            670, 1475, 2107, 1453, 294, 46, 103, 671, 2177, 656, 2538, 2159,
-            251, 98, 97, 851, 2178, 821, 2076, 56, 2123, 876, 2139, 2380,
-            1467, 1469, 672, 249, 552, 500, 2112, 1327, 1468, 1280, 752,
-            1114, 2168, 2160, 2176, 314, 2323, 1278, 1281, 2110, 979, 2169,
-            2166, 2164, 2163, 85, 24, 1959, 939, 1481, 113, 115, 882, 1482,
-            393, 1569, 373, 1186, 137, 2537, 532, 827, 1484, 1485, 114,
-            1332, 1495,
+            9, 812, 81, 920, 80, 1535, 188, 91, 990, 1408, 175, 79, 104, 189, 842, 235, 242, 819,
+            1531, 721, 1102, 1120, 1214, 489, 387, 1359, 184, 1417, 1449, 504, 372, 110, 121, 507,
+            536, 1144, 195, 2366, 1803, 266, 193, 1690, 1459, 1463, 825, 1248, 1288, 265, 2404,
+            2405, 2370, 2396, 2398, 1498, 119, 1171, 1669, 2393, 625, 1949, 173, 273, 911, 325,
+            534, 594, 1301, 607, 1574, 1539, 694, 781, 704, 1537, 2100, 820, 915, 1242, 717, 1939,
+            2412, 2102, 19, 670, 1475, 2107, 1453, 294, 46, 103, 671, 2177, 656, 2538, 2159, 251,
+            98, 97, 851, 2178, 821, 2076, 56, 2123, 876, 2139, 2380, 1467, 1469, 672, 249, 552,
+            500, 2112, 1327, 1468, 1280, 752, 1114, 2168, 2160, 2176, 314, 2323, 1278, 1281, 2110,
+            979, 2169, 2166, 2164, 2163, 85, 24, 1959, 939, 1481, 113, 115, 882, 1482, 393, 1569,
+            373, 1186, 137, 2537, 532, 827, 1484, 1485, 114, 1332, 1495,
         ],
     ),
     (
         Group::Games,
         &[
-            5, 635, 127, 2203, 647, 646, 50, 53, 1008, 900, 128, 2204, 278,
-            52, 54, 51, 2226, 2118, 1310, 2410, 2205, 2225, 2206, 1007, 2228,
-            139, 2478, 2480, 2481, 2142, 2060, 2145, 2146, 2143, 2012, 960,
-            537, 637, 899, 1992, 2059, 548, 908, 357, 886, 973, 546, 1352,
-            1116, 595, 887, 510, 773, 774, 1605, 968, 129, 2185, 2487,
-            2182, 2181, 2180, 2179, 2186, 700, 1926, 650, 2149, 2420, 1004,
-            1002, 240, 2415,
+            5, 635, 127, 2203, 647, 646, 50, 53, 1008, 900, 128, 2204, 278, 52, 54, 51, 2226, 2118,
+            1310, 2410, 2205, 2225, 2206, 1007, 2228, 139, 2478, 2480, 2481, 2142, 2060, 2145,
+            2146, 2143, 2012, 960, 537, 637, 899, 1992, 2059, 548, 908, 357, 886, 973, 546, 1352,
+            1116, 595, 887, 510, 773, 774, 1605, 968, 129, 2185, 2487, 2182, 2181, 2180, 2179,
+            2186, 700, 1926, 650, 2149, 2420, 1004, 1002, 240, 2415,
         ],
     ),
     (
         Group::Anime,
         &[
-            33, 1106, 1105, 599, 1389, 1391, 2491, 2544, 1642, 1390, 404,
-            1277, 809, 2484, 1386, 1387, 862, 2461, 2462, 2463, 2464, 2473,
-            281, 2465, 2458,
+            33, 1106, 1105, 599, 1389, 1391, 2491, 2544, 1642, 1390, 404, 1277, 809, 2484, 1386,
+            1387, 862, 2461, 2462, 2463, 2464, 2473, 281, 2465, 2458,
         ],
     ),
 ];
@@ -160,7 +151,10 @@ impl RutrackerSearcher {
     pub const PAGE_SIZE: usize = 50;
 
     pub fn new(browser: Arc<Mutex<Browser>>) -> Self {
-        Self { browser, logged_in: AtomicBool::new(false) }
+        Self {
+            browser,
+            logged_in: AtomicBool::new(false),
+        }
     }
 
     /// Park the tab on `about:blank` between operations.
@@ -213,7 +207,9 @@ impl RutrackerSearcher {
             return Err(e);
         }
         log("AUTH: patching Cloudflare detection...");
-        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        crate::browser::cloudflare::patch_cdp_detection(&browser)
+            .await
+            .ok();
         log("AUTH: waiting for Cloudflare challenge...");
         Self::wait_cloudflare(&browser).await;
 
@@ -241,10 +237,17 @@ impl RutrackerSearcher {
                         }
                     }
                     Ok(_) => {
-                        log(&format!("AUTH: cookie file exists but empty: {}", cf.display()));
+                        log(&format!(
+                            "AUTH: cookie file exists but empty: {}",
+                            cf.display()
+                        ));
                     }
                     Err(e) => {
-                        log(&format!("AUTH: failed to read cookie file {}: {}", cf.display(), e));
+                        log(&format!(
+                            "AUTH: failed to read cookie file {}: {}",
+                            cf.display(),
+                            e
+                        ));
                     }
                 }
             } else {
@@ -254,12 +257,16 @@ impl RutrackerSearcher {
             log("AUTH: no cookie file specified");
         }
 
-        let current_url = browser.eval_js("location.href").await
+        let current_url = browser
+            .eval_js("location.href")
+            .await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
         log(&format!("AUTH: current URL: {}", current_url));
 
-        let page_title = browser.eval_js("document.title").await
+        let page_title = browser
+            .eval_js("document.title")
+            .await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
         log(&format!("AUTH: page title: {}", page_title));
@@ -287,7 +294,11 @@ impl RutrackerSearcher {
                             match self.get_cookies().await {
                                 Ok(c) => {
                                     let _ = cookies::save_to_file(cf, &c);
-                                    log(&format!("AUTH: saved {} cookies to {}", c.len(), cf.display()));
+                                    log(&format!(
+                                        "AUTH: saved {} cookies to {}",
+                                        c.len(),
+                                        cf.display()
+                                    ));
                                 }
                                 Err(e) => log(&format!("AUTH: failed to save cookies: {}", e)),
                             }
@@ -313,43 +324,81 @@ impl RutrackerSearcher {
 
     async fn log_session_state(&self, browser: &Browser, log: &Arc<dyn Fn(&str) + Send + Sync>) {
         let cookies = browser.get_cookies().await.unwrap_or_default();
-        let rutracker_cookies: Vec<_> = cookies.iter().filter(|c| {
-            c.get("domain").and_then(|v| v.as_str()).unwrap_or("").contains("rutracker")
-        }).collect();
+        let rutracker_cookies: Vec<_> = cookies
+            .iter()
+            .filter(|c| {
+                c.get("domain")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .contains("rutracker")
+            })
+            .collect();
 
-        log(&format!("AUTH: total cookies: {}, rutracker cookies: {}", cookies.len(), rutracker_cookies.len()));
+        log(&format!(
+            "AUTH: total cookies: {}, rutracker cookies: {}",
+            cookies.len(),
+            rutracker_cookies.len()
+        ));
         for c in &rutracker_cookies {
             let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             let val = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
             let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("?");
-            log(&format!("AUTH:   cookie: {}={} (domain: {}, len: {})", name, &val[..val.len().min(20)], domain, val.len()));
+            log(&format!(
+                "AUTH:   cookie: {}={} (domain: {}, len: {})",
+                name,
+                &val[..val.len().min(20)],
+                domain,
+                val.len()
+            ));
         }
 
         let html = browser.get_page_source().await.unwrap_or_default();
-        let has_login_form = html.contains("login_username") || html.contains("login_password") || html.contains("Введите ваше имя");
+        let has_login_form = html.contains("login_username")
+            || html.contains("login_password")
+            || html.contains("Введите ваше имя");
         let has_logout = html.contains("logout.php");
-        log(&format!("AUTH: HTML has login_form={} has_logout={}", has_login_form, has_logout));
+        log(&format!(
+            "AUTH: HTML has login_form={} has_logout={}",
+            has_login_form, has_logout
+        ));
 
         if html.len() < 5000 {
-            log(&format!("AUTH: page HTML ({} bytes): {}", html.len(), &html[..html.len().min(300)]));
+            log(&format!(
+                "AUTH: page HTML ({} bytes): {}",
+                html.len(),
+                &html[..html.len().min(300)]
+            ));
         }
     }
 
-    async fn login(&self, username: &str, password: &str, log: Arc<dyn Fn(&str) + Send + Sync>) -> Result<bool> {
+    async fn login(
+        &self,
+        username: &str,
+        password: &str,
+        log: Arc<dyn Fn(&str) + Send + Sync>,
+    ) -> Result<bool> {
         let browser = self.browser.lock().await;
 
         log("AUTH LOGIN: navigating to login.php...");
-        browser.navigate("https://rutracker.org/forum/login.php").await?;
-        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        browser
+            .navigate("https://rutracker.org/forum/login.php")
+            .await?;
+        crate::browser::cloudflare::patch_cdp_detection(&browser)
+            .await
+            .ok();
         log("AUTH LOGIN: waiting for Cloudflare...");
         Self::wait_cloudflare(&browser).await;
 
-        let url = browser.eval_js("location.href").await
+        let url = browser
+            .eval_js("location.href")
+            .await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
         log(&format!("AUTH LOGIN: current URL: {}", url));
 
-        let title = browser.eval_js("document.title").await
+        let title = browser
+            .eval_js("document.title")
+            .await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
         log(&format!("AUTH LOGIN: page title: {}", title));
@@ -358,18 +407,31 @@ impl RutrackerSearcher {
         let form_check = browser.eval_js(
             "JSON.stringify({inputs: document.querySelectorAll('input').length, forms: document.querySelectorAll('form').length, loginUser: !!document.querySelector(\"input[name='login_username'], input[name='username'], #top_username, #login-username\"), loginPass: !!document.querySelector(\"input[name='login_password'], input[name='password'], #top_password, #login-password\")})"
         ).await?;
-        log(&format!("AUTH LOGIN: form check: {}", form_check.as_str().unwrap_or("?")));
+        log(&format!(
+            "AUTH LOGIN: form check: {}",
+            form_check.as_str().unwrap_or("?")
+        ));
 
         // Check all forms and their actions
         let forms_info = browser.eval_js(
             "JSON.stringify(Array.from(document.querySelectorAll('form')).map((f,i)=>({idx:i,action:f.action,method:f.method,inputNames:Array.from(f.querySelectorAll('input')).map(i=>i.name).join(',')})))"
         ).await?;
-        log(&format!("AUTH LOGIN: forms detail: {}", forms_info.as_str().unwrap_or("?")));
+        log(&format!(
+            "AUTH LOGIN: forms detail: {}",
+            forms_info.as_str().unwrap_or("?")
+        ));
 
-        if form_check.as_str().unwrap_or("").contains("loginUser\":false") {
+        if form_check
+            .as_str()
+            .unwrap_or("")
+            .contains("loginUser\":false")
+        {
             log("AUTH LOGIN: ERROR - username input NOT FOUND on page");
-            let snippet = browser.eval_js("document.body ? document.body.innerText.substring(0, 500) : 'no body'")
-                .await.map(|v| v.as_str().unwrap_or("").to_string()).unwrap_or_default();
+            let snippet = browser
+                .eval_js("document.body ? document.body.innerText.substring(0, 500) : 'no body'")
+                .await
+                .map(|v| v.as_str().unwrap_or("").to_string())
+                .unwrap_or_default();
             log(&format!("AUTH LOGIN: page text: {}", snippet));
             return Ok(false);
         }
@@ -418,7 +480,10 @@ impl RutrackerSearcher {
 
         if let Some(u_val) = result_str.split("\"uVal\":\"").nth(1) {
             let u_val: &str = u_val.split('"').next().unwrap_or("?");
-            log(&format!("AUTH LOGIN: username field value starts with: '{}'", u_val));
+            log(&format!(
+                "AUTH LOGIN: username field value starts with: '{}'",
+                u_val
+            ));
         }
         if let Some(p_len) = result_str.split("\"pLen\":").nth(1) {
             let p_len: &str = p_len.split(',').next().unwrap_or("?");
@@ -426,7 +491,9 @@ impl RutrackerSearcher {
         }
 
         // If still on login.php after form.submit(), try direct POST
-        let still_on_login = browser.eval_js("location.href").await
+        let still_on_login = browser
+            .eval_js("location.href")
+            .await
             .map(|v| v.as_str().unwrap_or("").contains("login.php"))
             .unwrap_or(false);
 
@@ -465,11 +532,16 @@ impl RutrackerSearcher {
                 username_escaped, password_escaped
             );
             let post_result = browser.eval_js(&post_script).await?;
-            log(&format!("AUTH LOGIN: direct POST result: {}", post_result.as_str().unwrap_or("?")));
+            log(&format!(
+                "AUTH LOGIN: direct POST result: {}",
+                post_result.as_str().unwrap_or("?")
+            ));
 
             for i in 0..10 {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                let url = browser.eval_js("location.href").await
+                let url = browser
+                    .eval_js("location.href")
+                    .await
                     .map(|v| v.as_str().unwrap_or("").to_string())
                     .unwrap_or_default();
                 let cookies = browser.get_cookies().await.unwrap_or_default();
@@ -477,9 +549,16 @@ impl RutrackerSearcher {
                     let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
                     let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-                    domain.contains("rutracker") && (name == "bb_data" || name == "bb_session") && !value.is_empty()
+                    domain.contains("rutracker")
+                        && (name == "bb_data" || name == "bb_session")
+                        && !value.is_empty()
                 });
-                log(&format!("AUTH LOGIN POST: [{}s] URL={} session={}", i+1, &url[..url.len().min(80)], has_session));
+                log(&format!(
+                    "AUTH LOGIN POST: [{}s] URL={} session={}",
+                    i + 1,
+                    &url[..url.len().min(80)],
+                    has_session
+                ));
                 if has_session {
                     log("AUTH LOGIN: SESSION FOUND via direct POST!");
                     return Ok(true);
@@ -492,7 +571,9 @@ impl RutrackerSearcher {
         for i in 0..15 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-            let url = browser.eval_js("location.href").await
+            let url = browser
+                .eval_js("location.href")
+                .await
                 .map(|v| v.as_str().unwrap_or("").to_string())
                 .unwrap_or_default();
 
@@ -507,13 +588,27 @@ impl RutrackerSearcher {
                 Some(c) => {
                     let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                     let val = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                    log(&format!("AUTH LOGIN: [{}s] session cookie FOUND: {} (len={})", i+1, name, val.len()));
+                    log(&format!(
+                        "AUTH LOGIN: [{}s] session cookie FOUND: {} (len={})",
+                        i + 1,
+                        name,
+                        val.len()
+                    ));
                     return Ok(true);
                 }
                 None => {
-                    log(&format!("AUTH LOGIN: [{}s] URL={} cookies(rutr={})", i+1,
+                    log(&format!(
+                        "AUTH LOGIN: [{}s] URL={} cookies(rutr={})",
+                        i + 1,
                         &url[..url.len().min(80)],
-                        cookies.iter().filter(|c| c.get("domain").and_then(|v| v.as_str()).unwrap_or("").contains("rutracker")).count()
+                        cookies
+                            .iter()
+                            .filter(|c| c
+                                .get("domain")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .contains("rutracker"))
+                            .count()
                     ));
                 }
             }
@@ -521,10 +616,16 @@ impl RutrackerSearcher {
             if url.contains("index.php") || url.contains("tracker.php") {
                 let html = browser.get_page_source().await.unwrap_or_default();
                 if html.contains("logout.php") {
-                    log(&format!("AUTH LOGIN: [{}s] on forum page with logout link - LOGIN OK", i+1));
+                    log(&format!(
+                        "AUTH LOGIN: [{}s] on forum page with logout link - LOGIN OK",
+                        i + 1
+                    ));
                     return Ok(true);
                 } else {
-                    log(&format!("AUTH LOGIN: [{}s] on forum page but NO logout link", i+1));
+                    log(&format!(
+                        "AUTH LOGIN: [{}s] on forum page but NO logout link",
+                        i + 1
+                    ));
                 }
             }
         }
@@ -539,7 +640,9 @@ impl RutrackerSearcher {
                 let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
                 let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-                domain.contains("rutracker") && (name == "bb_data" || name == "bb_session") && !value.is_empty()
+                domain.contains("rutracker")
+                    && (name == "bb_data" || name == "bb_session")
+                    && !value.is_empty()
             });
             if has_session {
                 return true;
@@ -582,10 +685,14 @@ impl RutrackerSearcher {
         let search_url = search_url(query, start, category);
 
         browser.navigate(&search_url).await?;
-        crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+        crate::browser::cloudflare::patch_cdp_detection(&browser)
+            .await
+            .ok();
         Self::wait_cloudflare(&browser).await;
 
-        let url = browser.eval_js("location.href").await
+        let url = browser
+            .eval_js("location.href")
+            .await
             .map(|v| v.as_str().unwrap_or("").to_string())
             .unwrap_or_default();
 
@@ -660,7 +767,9 @@ impl RutrackerSearcher {
             .unwrap_or(false);
         if !on_source {
             browser.navigate(Self::HOME_URL).await?;
-            crate::browser::cloudflare::patch_cdp_detection(&browser).await.ok();
+            crate::browser::cloudflare::patch_cdp_detection(&browser)
+                .await
+                .ok();
             Self::wait_cloudflare_if_needed(&browser).await;
         }
 
@@ -694,10 +803,7 @@ impl RutrackerSearcher {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Browser fetch returned non-string"))?;
 
-        let bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            b64,
-        )?;
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)?;
 
         if bytes.starts_with(b"<!DOCTYPE")
             || bytes[..200.min(bytes.len())]
@@ -705,9 +811,7 @@ impl RutrackerSearcher {
                 .windows(5)
                 .any(|w| w == b"html")
         {
-            anyhow::bail!(
-                "Downloaded HTML instead of .torrent. Session may not be logged in."
-            );
+            anyhow::bail!("Downloaded HTML instead of .torrent. Session may not be logged in.");
         }
 
         Ok(bytes)
@@ -719,11 +823,27 @@ impl RutrackerSearcher {
         let mut result = Vec::new();
         for c in raw_cookies {
             result.push(Cookie {
-                domain: c.get("domain").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                path: c.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                domain: c
+                    .get("domain")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                path: c
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 secure: c.get("secure").and_then(|v| v.as_bool()).unwrap_or(false),
-                name: c.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                value: c.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                name: c
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                value: c
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
             });
         }
         Ok(result)

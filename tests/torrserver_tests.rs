@@ -58,10 +58,18 @@ fn test_torrent_info_missing_fields_default_instead_of_failing() {
 
 #[test]
 fn test_progress_clamped_and_no_division_by_zero() {
-    let t = TorrentInfo { total_size: 0, loaded_size: 500, ..Default::default() };
+    let t = TorrentInfo {
+        total_size: 0,
+        loaded_size: 500,
+        ..Default::default()
+    };
     assert_eq!(t.progress(), 0.0);
 
-    let t = TorrentInfo { total_size: 100, loaded_size: 200, ..Default::default() };
+    let t = TorrentInfo {
+        total_size: 100,
+        loaded_size: 200,
+        ..Default::default()
+    };
     assert_eq!(t.progress(), 1.0);
 }
 
@@ -80,8 +88,13 @@ fn test_progress_clamped_and_no_division_by_zero() {
 /// port. Good enough to exercise a client's request/response handling
 /// without needing to actually parse the incoming request -- none of the
 /// TorrServer client methods branch on anything in the request itself.
-async fn spawn_mock_server(status_line: &'static str, body: &'static str) -> (String, tokio::task::JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind mock server");
+async fn spawn_mock_server(
+    status_line: &'static str,
+    body: &'static str,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock server");
     let addr = listener.local_addr().expect("mock server local addr");
     let handle = tokio::spawn(async move {
         loop {
@@ -199,7 +212,10 @@ async fn test_pause_reports_a_refused_status_instead_of_success() {
     let (url, handle) =
         spawn_mock_server("HTTP/1.1 500 Internal Server Error", r#"{"error":"busy"}"#).await;
     let client = TorrServer::new(&url);
-    let err = client.pause("somehash").await.expect_err("500 must be an Err");
+    let err = client
+        .pause("somehash")
+        .await
+        .expect_err("500 must be an Err");
     let msg = err.to_string();
     assert!(msg.contains("pause"), "which call failed is lost: {}", msg);
     assert!(msg.contains("500"), "the status is lost: {}", msg);
@@ -224,7 +240,10 @@ async fn test_resume_reports_a_refused_status_instead_of_success() {
 async fn test_remove_reports_a_refused_status_instead_of_success() {
     let (url, handle) = spawn_mock_server("HTTP/1.1 500 Internal Server Error", "{}").await;
     let client = TorrServer::new(&url);
-    let err = client.remove("somehash").await.expect_err("500 must be an Err");
+    let err = client
+        .remove("somehash")
+        .await
+        .expect_err("500 must be an Err");
     let msg = err.to_string();
     assert!(msg.contains("remove"), "which call failed is lost: {}", msg);
     assert!(msg.contains("500"), "the status is lost: {}", msg);
@@ -270,7 +289,11 @@ async fn test_is_reachable_and_list_torrents_share_a_client_correctly() {
 async fn spawn_recording_server(
     status_line: &'static str,
     response_body: &'static str,
-) -> (String, Arc<Mutex<Option<String>>>, tokio::task::JoinHandle<()>) {
+) -> (
+    String,
+    Arc<Mutex<Option<String>>>,
+    tokio::task::JoinHandle<()>,
+) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -355,7 +378,11 @@ async fn test_add_by_link_posts_the_documented_body_and_returns_the_hash() {
         .expect("a 200 with a hash is success");
 
     assert_eq!(hash, "deadbeef");
-    let recorded = record.lock().expect("record lock").clone().expect("one request");
+    let recorded = record
+        .lock()
+        .expect("record lock")
+        .clone()
+        .expect("one request");
     let (request_line, body) = recorded.split_once('\n').expect("head + body");
     assert_eq!(request_line, "POST /torrents HTTP/1.1");
 
@@ -456,7 +483,10 @@ fn test_parses_the_tagged_shape_a_modern_torrserver_actually_sends() {
     assert_eq!(list.len(), 2);
 
     let first = &list[0];
-    assert_eq!(first.name, "Колония - Gunche - Colony (2026) WEB-DL 1080p.mkv");
+    assert_eq!(
+        first.name,
+        "Колония - Gunche - Colony (2026) WEB-DL 1080p.mkv"
+    );
     assert_eq!(first.hash, "b2fb4854cf32921561786c987642e007cb9f279f");
     assert_eq!(first.total_size, 7626028452);
     assert_eq!(first.status_string, "Torrent in db");

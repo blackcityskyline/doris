@@ -20,14 +20,14 @@
 //! link) returns 403/202 to a non-browser client -- so `page_url` stays
 //! empty instead of claiming a link nobody here has seen load.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::format::{format_bytes, format_date};
 use super::magnet::{build_magnet, normalize_info_hash};
 use super::models::{FlexNum, TorrentItem};
-use super::net::{FetchOptions, browser_client, fetch_resilient};
+use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// The endpoint that answers (see the module doc for why not `eztv.re`).
@@ -70,8 +70,8 @@ pub fn torrents_url(offset: usize) -> String {
 /// exercise the real parser with no network, as with the other wave-1
 /// sources.
 pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
-    let response: EztvResponse = serde_json::from_str(body)
-        .map_err(|e| anyhow!("EZTV response did not parse: {}", e))?;
+    let response: EztvResponse =
+        serde_json::from_str(body).map_err(|e| anyhow!("EZTV response did not parse: {}", e))?;
     let page_number = (offset / PAGE_SIZE) + 1;
 
     let items: Vec<TorrentItem> = response
@@ -173,7 +173,9 @@ impl EztvSearcher {
         // The shared browser-like client (B5): the HTML side of this
         // host 403s anything that does not look like a browser, and the
         // API sits behind the same edge.
-        Self { client: browser_client() }
+        Self {
+            client: browser_client(),
+        }
     }
 }
 

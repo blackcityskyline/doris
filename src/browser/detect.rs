@@ -28,12 +28,32 @@ type BrowserRow = (
 /// to probe, label))`. The single source of truth for `BrowserKind`'s
 /// methods -- see the guard test in `tests/browser_detect_tests.rs`.
 const BROWSER_ROWS: &[(BrowserKind, BrowserRow)] = &[
-    (BrowserKind::Chrome, ("chrome", &["google-chrome"],
-        &["google-chrome", "google-chrome-stable"], "Chrome")),
-    (BrowserKind::Chromium, ("chromium", &[],
-        &["chromium", "chromium-browser"], "Chromium")),
-    (BrowserKind::Brave, ("brave", &[], &["brave", "brave-browser"], "Brave")),
-    (BrowserKind::Helium, ("helium", &[], &["helium-browser", "helium"], "Helium")),
+    (
+        BrowserKind::Chrome,
+        (
+            "chrome",
+            &["google-chrome"],
+            &["google-chrome", "google-chrome-stable"],
+            "Chrome",
+        ),
+    ),
+    (
+        BrowserKind::Chromium,
+        (
+            "chromium",
+            &[],
+            &["chromium", "chromium-browser"],
+            "Chromium",
+        ),
+    ),
+    (
+        BrowserKind::Brave,
+        ("brave", &[], &["brave", "brave-browser"], "Brave"),
+    ),
+    (
+        BrowserKind::Helium,
+        ("helium", &[], &["helium-browser", "helium"], "Helium"),
+    ),
 ];
 
 /// The table row for `self` (key, aliases, binaries, label).
@@ -97,7 +117,10 @@ pub const DEFAULT_PRIORITY: &[BrowserKind] = &[
 /// result would otherwise be empty, so a typo'd config can never leave the
 /// app with no browsers to try.
 pub fn parse_priority(raw: &[String]) -> Vec<BrowserKind> {
-    let parsed: Vec<BrowserKind> = raw.iter().filter_map(|s| BrowserKind::from_config_key(s)).collect();
+    let parsed: Vec<BrowserKind> = raw
+        .iter()
+        .filter_map(|s| BrowserKind::from_config_key(s))
+        .collect();
     if parsed.is_empty() {
         DEFAULT_PRIORITY.to_vec()
     } else {
@@ -118,14 +141,22 @@ pub fn detect_browser_with_priority(
     priority: &[BrowserKind],
 ) -> Result<(BrowserKind, PathBuf)> {
     if let Some(req) = requested {
-        let kind = BrowserKind::from_config_key(req)
-            .ok_or_else(|| anyhow::anyhow!("Unknown browser '{}'. Supported: chrome, chromium, brave, helium", req))?;
+        let kind = BrowserKind::from_config_key(req).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown browser '{}'. Supported: chrome, chromium, brave, helium",
+                req
+            )
+        })?;
         for binary in kind.binaries() {
             if let Ok(path) = which::which(binary) {
                 return Ok((kind, path));
             }
         }
-        anyhow::bail!("Browser '{}' not found. Tried: {}", req, kind.binaries().join(", "));
+        anyhow::bail!(
+            "Browser '{}' not found. Tried: {}",
+            req,
+            kind.binaries().join(", ")
+        );
     }
 
     for &kind in priority {

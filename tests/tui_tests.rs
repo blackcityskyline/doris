@@ -1,12 +1,12 @@
 use doris::config::Config;
-use ratatui::prelude::*;
-use ratatui::backend::TestBackend;
+use doris::sources::models::TorrentItem;
+use doris::sources::source::Group;
 use doris::ui::app::App as UiApp;
 use doris::ui::app::Modal;
 use doris::ui::modals::login::LoginField;
-use doris::sources::models::TorrentItem;
-use doris::sources::source::Group;
 use doris::ui::zones::ZoneId;
+use ratatui::backend::TestBackend;
+use ratatui::prelude::*;
 
 fn make_test_app() -> UiApp {
     UiApp::new("http://127.0.0.1:8090".into(), None)
@@ -435,8 +435,8 @@ fn test_login_modal_ctrl_s_saves_without_logging_in() {
     }
 
     // And the store really holds them, under the tab's resource.
-    let saved = doris::credentials::load_credential("rutracker")
-        .expect("Ctrl+S must write the store");
+    let saved =
+        doris::credentials::load_credential("rutracker").expect("Ctrl+S must write the store");
     assert_eq!(saved.0, "saved-user");
     assert_eq!(saved.1, "secret");
 
@@ -564,7 +564,9 @@ fn test_render_does_not_panic() {
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -572,7 +574,9 @@ fn test_render_empty_state() {
     let mut app = make_test_app();
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -583,7 +587,9 @@ fn test_render_with_many_results() {
     app.selected = 50;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -595,7 +601,9 @@ fn test_render_log_scroll() {
     app.log_scroll = 30;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -605,7 +613,9 @@ fn test_render_input_mode() {
     app.search_input = "test query".into();
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -615,7 +625,9 @@ fn test_render_with_modal() {
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -624,7 +636,9 @@ fn test_state_searching() {
     app.state = doris::ui::app::AppState::Searching;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 #[test]
@@ -636,7 +650,9 @@ fn test_state_streaming() {
     app.selected = 1;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 }
 
 /// B6's instant half: picking a category re-derives the view from the
@@ -685,11 +701,16 @@ fn test_render_draws_the_table_header_under_the_frame() {
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
     let buf = terminal.backend().buffer();
     let row_text = |y: u16| -> String {
         (0..buf.area.width)
-            .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().chars().next().unwrap_or(' ')))
+            .filter_map(|x| {
+                buf.cell((x, y))
+                    .map(|c| c.symbol().chars().next().unwrap_or(' '))
+            })
             .collect()
     };
 
@@ -705,8 +726,14 @@ fn test_render_draws_the_table_header_under_the_frame() {
     assert!(frame_row.contains('◀'), "the category button: {frame_row}");
     assert!(frame_row.contains('▶'), "the category button: {frame_row}");
     // The name is padded to the widest category, so the arrows line up.
-    assert!(frame_row.contains("all"), "the current category: {frame_row}");
-    assert!(frame_row.contains("group"), "next to the group button: {frame_row}");
+    assert!(
+        frame_row.contains("all"),
+        "the current category: {frame_row}"
+    );
+    assert!(
+        frame_row.contains("group"),
+        "next to the group button: {frame_row}"
+    );
 }
 
 // --- the frame legend actually reaches the border (П.5) --------------------
@@ -729,7 +756,9 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     app.update_filter();
     let backend = TestBackend::new(100, 30);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 
     let results = app.zones.get_area(ZoneId::Results);
     let top = row_text(&terminal, results.y);
@@ -755,7 +784,11 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     let t_top = row_text(&terminal, torrent.y);
     assert!(t_top.contains("pause"), "Torrent top border: {}", t_top);
     let t_bottom = row_text(&terminal, torrent.y + torrent.height - 1);
-    assert!(t_bottom.contains("delete"), "Torrent bottom border: {}", t_bottom);
+    assert!(
+        t_bottom.contains("delete"),
+        "Torrent bottom border: {}",
+        t_bottom
+    );
 }
 
 /// The reason the legend exists: the keybind text used to sit inside the
@@ -768,7 +801,9 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
     app.update_filter();
     let backend = TestBackend::new(100, 30);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
 
     let results = app.zones.get_area(ZoneId::Results);
     let mut body = String::new();
@@ -792,7 +827,9 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
 /// rather than about state.
 fn render_rows(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
     let buf = terminal.backend().buffer();
     (0..buf.area.height)
         .map(|y| {
@@ -855,17 +892,29 @@ fn test_results_table_shows_which_source_returned_each_row() {
 
     let rows = render_rows(&mut app, 120, 30);
 
-    let header = rows.iter().find(|r| r.contains("Seeds"))
+    let header = rows
+        .iter()
+        .find(|r| r.contains("Seeds"))
         .expect("the table header is drawn");
     assert!(header.contains("Src"), "header: {}", header);
 
     for (title, source) in [("First", "rutracker"), ("Second", "nyaa")] {
-        let row = rows.iter().find(|r| r.contains(title))
+        let row = rows
+            .iter()
+            .find(|r| r.contains(title))
             .unwrap_or_else(|| panic!("the '{}' row is drawn", title));
-        assert!(row.contains(source), "'{}' row should name '{}': {}", title, source, row);
+        assert!(
+            row.contains(source),
+            "'{}' row should name '{}': {}",
+            title,
+            source,
+            row
+        );
     }
 
-    let unknown = rows.iter().find(|r| r.contains("Third"))
+    let unknown = rows
+        .iter()
+        .find(|r| r.contains("Third"))
         .expect("the third row is drawn");
     assert!(
         unknown.contains('-'),
@@ -890,7 +939,9 @@ fn test_the_split_preset_draws_two_columns() {
 
     let backend = TestBackend::new(100, 30);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
     let buf = terminal.backend().buffer();
 
     let row_text = |y: u16| -> String {

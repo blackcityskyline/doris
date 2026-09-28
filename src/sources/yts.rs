@@ -21,14 +21,14 @@
 //!   so `download_url` stays empty and the row streams over its magnet
 //!   (B7); `download_torrent` says as much rather than failing obscurely.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::format::{format_bytes, format_date};
 use super::magnet::build_magnet;
 use super::models::TorrentItem;
-use super::net::{FetchOptions, browser_client, fetch_resilient, first_ok};
+use super::net::{browser_client, fetch_resilient, first_ok, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// Mirror hosts, first live-verified answer first (see the module doc).
@@ -37,8 +37,7 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 /// path. `yts.mx` is last: unreachable from this network, but it is
 /// still YTS's own domain and may well resolve elsewhere, which is
 /// exactly the case failover exists for.
-pub const HOSTS: [&str; 4] =
-    ["yts.gg", "movies-api.accel.li", "yts.am", "yts.mx"];
+pub const HOSTS: [&str; 4] = ["yts.gg", "movies-api.accel.li", "yts.am", "yts.mx"];
 
 /// The API's `limit`: movies per page. This is *not* a row count --
 /// each movie contributes one row per quality it ships, which is why
@@ -104,8 +103,8 @@ pub fn list_movies_url(base: &str, query: &str, offset: usize) -> String {
 /// One API page -> one [`SearchPage`]. Split out of [`YtsSearcher::search`]
 /// so the fixture tests can exercise the real parser with no network.
 pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
-    let parsed: YtsResponse = serde_json::from_str(body)
-        .map_err(|e| anyhow!("YTS response did not parse: {}", e))?;
+    let parsed: YtsResponse =
+        serde_json::from_str(body).map_err(|e| anyhow!("YTS response did not parse: {}", e))?;
     if let Some(status) = parsed.status.as_deref() {
         if status != "ok" {
             // Surfacing it (instead of rendering an empty page) is what
@@ -256,12 +255,7 @@ impl Source for YtsSearcher {
                     ..FetchOptions::default()
                 };
                 let url = list_movies_url(&host, &query, offset);
-                let response = fetch_resilient(
-                    &url,
-                    || client.get(&url),
-                    &options,
-                )
-                .await?;
+                let response = fetch_resilient(&url, || client.get(&url), &options).await?;
                 // `fetch_resilient` hands back non-retryable statuses as-is
                 // (a 404 is not worth retrying) -- so "did this host work"
                 // is decided here, and a "no" moves to the next one.

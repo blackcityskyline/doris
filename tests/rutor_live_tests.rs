@@ -12,17 +12,29 @@ async fn live_search_returns_results() {
     for it in items.iter().take(3) {
         println!(
             "  title={} size_bytes={} seeds_n={} leechers={} added={} hash={} url={}",
-            it.title, it.size_bytes, it.seeds_n, it.leechers, it.added,
-            it.info_hash, it.download_url
+            it.title,
+            it.size_bytes,
+            it.seeds_n,
+            it.leechers,
+            it.added,
+            it.info_hash,
+            it.download_url
         );
     }
     assert!(!items.is_empty(), "live rutor search returned zero items");
     // Seeds used to be empty on every real row (the &nbsp; regex bug).
     assert!(items[0].seeds.parse::<u64>().is_ok(), "seeds not numeric");
     // B1: numeric and hash fields must come back filled from real rows.
-    assert!(items[0].size_bytes > 0, "size_bytes not derived from the display size");
+    assert!(
+        items[0].size_bytes > 0,
+        "size_bytes not derived from the display size"
+    );
     assert!(items[0].added > 0, "added not parsed from the date cell");
-    assert_eq!(items[0].info_hash.len(), 40, "info hash not read from the magnet link");
+    assert_eq!(
+        items[0].info_hash.len(),
+        40,
+        "info hash not read from the magnet link"
+    );
 }
 
 /// The reported bug: queries whose words rutor's index lacks -- here the
@@ -73,7 +85,11 @@ async fn live_download_returns_torrent_bytes() {
     assert!(bytes.len() > 100, "suspiciously small download");
     // bencode torrent files start with the dict marker `d`; an HTML login
     // page starts with `<`.
-    assert!(!head.starts_with('<'), "got HTML instead of a .torrent: {}", head);
+    assert!(
+        !head.starts_with('<'),
+        "got HTML instead of a .torrent: {}",
+        head
+    );
 }
 
 /// B2: `SearchPage.has_more` is what the Results panel now trusts instead
@@ -91,13 +107,21 @@ async fn live_trait_search_has_more_agrees_with_the_next_page() {
     let page1 = Source::search(&rutor, &SearchRequest::new(query, 0))
         .await
         .expect("page 1");
-    println!("page1: {} items, has_more={}", page1.items.len(), page1.has_more);
+    println!(
+        "page1: {} items, has_more={}",
+        page1.items.len(),
+        page1.has_more
+    );
     assert!(!page1.items.is_empty(), "query '{}' found nothing", query);
 
     let page2 = Source::search(&rutor, &SearchRequest::new(query, 100))
         .await
         .expect("page 2");
-    println!("page2: {} items, has_more={}", page2.items.len(), page2.has_more);
+    println!(
+        "page2: {} items, has_more={}",
+        page2.items.len(),
+        page2.has_more
+    );
 
     assert_eq!(
         page1.has_more,

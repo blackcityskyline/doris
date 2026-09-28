@@ -85,7 +85,10 @@ fn test_one_row_per_episode_taking_the_best_resolution() {
         "the 1080 entry's `xl`, not the 480 one's"
     );
     assert_eq!(best.size, "13.66 GB");
-    assert_eq!(best.page_url, "https://subsplease.org/shows/sousou-no-frieren-s2/");
+    assert_eq!(
+        best.page_url,
+        "https://subsplease.org/shows/sousou-no-frieren-s2/"
+    );
 }
 
 /// The wave-1 decision, stated as the rows: three resolutions in, one
@@ -218,13 +221,19 @@ fn test_dates_come_from_the_rfc2822_release_date() {
         .expect("row");
 
     assert_eq!(best.added, 1_780_074_335);
-    assert_eq!(best.date, "2026-05-29", "rendered in UTC, not the local zone");
+    assert_eq!(
+        best.date, "2026-05-29",
+        "rendered in UTC, not the local zone"
+    );
 }
 
 #[test]
 fn test_an_empty_query_browses_latest_and_a_query_searches() {
     assert_eq!(api_url(""), "https://subsplease.org/api/?tz=UTC&f=latest");
-    assert_eq!(api_url("   "), "https://subsplease.org/api/?tz=UTC&f=latest");
+    assert_eq!(
+        api_url("   "),
+        "https://subsplease.org/api/?tz=UTC&f=latest"
+    );
     assert_eq!(
         api_url("frieren"),
         "https://subsplease.org/api/?tz=UTC&f=search&s=frieren"

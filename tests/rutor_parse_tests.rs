@@ -1,7 +1,7 @@
 use doris::sources::models::TorrentItem;
 use doris::sources::rutor::{
-    BROWSE_URL, GROUP_IDS, RutorSearcher, count_title_links, group_ids, parse_results,
-    split_query, title_has_word, to_page,
+    count_title_links, group_ids, parse_results, split_query, title_has_word, to_page,
+    RutorSearcher, BROWSE_URL, GROUP_IDS,
 };
 use doris::sources::source::Group;
 
@@ -126,7 +126,10 @@ fn test_non_numeric_torrent_id_is_ignored() {
 #[test]
 fn test_count_title_links_matches_parse_results_count_on_valid_rows() {
     assert_eq!(count_title_links(SAMPLE_ROW), 2);
-    assert_eq!(count_title_links(SAMPLE_ROW), parse_results(SAMPLE_ROW).len());
+    assert_eq!(
+        count_title_links(SAMPLE_ROW),
+        parse_results(SAMPLE_ROW).len()
+    );
 }
 
 #[test]
@@ -134,7 +137,8 @@ fn test_count_title_links_zero_on_challenge_or_error_page() {
     // Simulates what search_page's diagnostic check is looking for: a
     // non-search-results page (e.g. a block/challenge page) has no
     // /torrent/ links at all.
-    let challenge_page = "<html><body><h1>Access denied</h1><p>Please verify you are human.</p></body></html>";
+    let challenge_page =
+        "<html><body><h1>Access denied</h1><p>Please verify you are human.</p></body></html>";
     assert_eq!(count_title_links(challenge_page), 0);
 }
 
@@ -488,18 +492,28 @@ fn test_group_ids_cover_the_declared_groups_and_nobody_elses_rubrics() {
 #[test]
 fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     let rows_of = |count: usize, prefix: &str| -> Vec<TorrentItem> {
-        (0..count).map(|i| row(&format!("{}{}", prefix, i))).collect()
+        (0..count)
+            .map(|i| row(&format!("{}{}", prefix, i)))
+            .collect()
     };
     let full = RutorSearcher::PAGE_SIZE;
 
     // One rubric answered a full page -> more exists, one page forward.
-    let page = to_page(vec![rows_of(full, "a"), rows_of(1, "b")], Some(Group::Games), 0);
+    let page = to_page(
+        vec![rows_of(full, "a"), rows_of(1, "b")],
+        Some(Group::Games),
+        0,
+    );
     assert!(page.has_more, "one id answered a full page");
     assert_eq!(page.next_offset, Some(full), "one page, not N merged rows");
 
     // 60 + 60 rows in total, but neither rubric's page is full: a
     // merged count would promise a next page the site does not have.
-    let page = to_page(vec![rows_of(60, "a"), rows_of(60, "b")], Some(Group::Games), 0);
+    let page = to_page(
+        vec![rows_of(60, "a"), rows_of(60, "b")],
+        Some(Group::Games),
+        0,
+    );
     assert!(!page.has_more, "four partial pages are still partial");
     assert_eq!(page.next_offset, None);
 
@@ -517,7 +531,12 @@ fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     );
     assert_eq!(page.items.len(), 3, "one torrent listed twice is one row");
     for item in &page.items {
-        assert_eq!(item.group, Some(Group::TV), "{} claims its category", item.title);
+        assert_eq!(
+            item.group,
+            Some(Group::TV),
+            "{} claims its category",
+            item.title
+        );
     }
     assert!(!page.has_more, "two rows per id is not a full page");
 
@@ -531,7 +550,11 @@ fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     let mut attributed = row("999");
     attributed.group = Some(Group::Anime);
     let page = to_page(vec![vec![attributed]], Some(Group::Movies), 0);
-    assert_eq!(page.items[0].group, Some(Group::Anime), "the row outranks the URL");
+    assert_eq!(
+        page.items[0].group,
+        Some(Group::Anime),
+        "the row outranks the URL"
+    );
 }
 
 /// B9: browse is the homepage index, not a search URL -- live

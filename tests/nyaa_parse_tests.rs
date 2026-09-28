@@ -7,16 +7,14 @@
 //! (never CDATA), `nyaa:size` as a human string, `<guid isPermaLink>`
 //! with an attribute, and a `-0000` offset on `<pubDate>`.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use doris::sources::format::unescape_entities;
 use doris::sources::models::TorrentItem;
 use doris::sources::net::fetch_resilient;
-use doris::sources::format::unescape_entities;
-use doris::sources::nyaa::{
-    NyaaSearcher, fetch_options, feed_url, parse_items, to_page,
-};
+use doris::sources::nyaa::{feed_url, fetch_options, parse_items, to_page, NyaaSearcher};
 use doris::sources::source::{Group, SearchRequest, Source};
 
 /// What `ddos-guard` served this network all day: no body, no hint.
@@ -159,8 +157,14 @@ fn test_every_field_the_live_feed_shipped_is_on_the_row() {
     assert_eq!(first.size_bytes, (6.6 * 1024.0_f64.powi(3)).round() as u64);
     assert_eq!(first.size, "6.60 GB");
     assert_eq!(first.date, "2026-09-12");
-    assert!(first.added > 0, "the -0000 offset must still give an instant");
-    assert_eq!(first.download_url, "https://nyaa.si/download/2160092.torrent");
+    assert!(
+        first.added > 0,
+        "the -0000 offset must still give an instant"
+    );
+    assert_eq!(
+        first.download_url,
+        "https://nyaa.si/download/2160092.torrent"
+    );
     assert_eq!(first.page_url, "https://nyaa.si/view/2160092");
     assert_eq!(first.source, "nyaa");
 
@@ -194,8 +198,14 @@ fn test_entities_come_out_as_text_not_as_markup() {
         unescape_entities("&#34;quoted&#34; &quot;too&quot; &lt;tag&gt;"),
         "\"quoted\" \"too\" <tag>"
     );
-    assert_eq!(unescape_entities("dash &#8211; and &#8212;"), "dash - and -");
-    assert_eq!(unescape_entities("curly &#8217;s &#8220;q&#8221;"), "curly 's \"q\"");
+    assert_eq!(
+        unescape_entities("dash &#8211; and &#8212;"),
+        "dash - and -"
+    );
+    assert_eq!(
+        unescape_entities("curly &#8217;s &#8220;q&#8221;"),
+        "curly 's \"q\""
+    );
 }
 
 #[test]
@@ -322,7 +332,11 @@ async fn test_a_blocked_host_is_named_in_one_attempt_inside_the_window() {
         "the budget is one attempt, and the mock must see exactly that"
     );
     let text = err.to_string();
-    assert!(text.contains("HTTP 504"), "the cause must survive: {}", text);
+    assert!(
+        text.contains("HTTP 504"),
+        "the cause must survive: {}",
+        text
+    );
     assert!(
         waited < Duration::from_secs(5),
         "backoff would have kept the user waiting: {:?}",

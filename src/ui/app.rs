@@ -1,16 +1,16 @@
-use ratatui::prelude::*;
-use ratatui::widgets::*;
-use crossterm::event::{KeyCode, KeyEvent};
+use super::menu::MenuState;
+use super::theme::Theme;
+use super::zones::{FrameButton, FrameSlot, ZoneId, ZoneLayout, SEARCH_BAR_HEIGHT};
+use crate::config::Config;
 use crate::sources::models::{FileEntry, TorrentItem};
+use crate::sources::source::{Group, KNOWN_SOURCES};
 use crate::ui::modals::help::HelpState;
 use crate::ui::modals::login::LoginState;
-use crate::ui::modals::settings::{SettingsState, group_tabs};
-use crate::config::Config;
-use crate::sources::source::{Group, KNOWN_SOURCES};
+use crate::ui::modals::settings::{group_tabs, SettingsState};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::prelude::*;
+use ratatui::widgets::*;
 use std::collections::VecDeque;
-use super::theme::Theme;
-use super::zones::{FrameButton, FrameSlot, SEARCH_BAR_HEIGHT, ZoneId, ZoneLayout};
-use super::menu::MenuState;
 
 #[derive(PartialEq)]
 pub enum AppState {
@@ -192,7 +192,6 @@ pub struct App {
     pub filtered_indices: Vec<usize>,
 }
 
-
 /// Width of the `Src` column in the results table. Fixed on purpose:
 /// the longest source id in `KNOWN_SOURCES` is 10 characters, so the
 /// columns never shift as the results change -- see
@@ -266,7 +265,10 @@ impl SourceRow {
                     .filter(|info| info.implemented)
                     .map(|info| info.id)
                     .collect();
-                !ids.is_empty() && ids.iter().all(|id| config.enabled_sources.iter().any(|e| e == id))
+                !ids.is_empty()
+                    && ids
+                        .iter()
+                        .all(|id| config.enabled_sources.iter().any(|e| e == id))
             }
             SourceRow::One(id) => config.enabled_sources.iter().any(|e| e == id),
         }
@@ -278,11 +280,7 @@ impl SourceRow {
 /// everywhere else, so a new entry lands here on its own.
 pub fn source_rows() -> Vec<SourceRow> {
     let mut rows = vec![SourceRow::All];
-    rows.extend(
-        KNOWN_SOURCES
-            .iter()
-            .map(|info| SourceRow::One(info.id)),
-    );
+    rows.extend(KNOWN_SOURCES.iter().map(|info| SourceRow::One(info.id)));
     rows
 }
 
@@ -306,10 +304,7 @@ pub fn sources_summary(config: &Config) -> String {
         .filter(|info| config.enabled_sources.iter().any(|e| e == info.id))
         .map(|info| info.id)
         .collect();
-    let implemented = KNOWN_SOURCES
-        .iter()
-        .filter(|info| info.implemented)
-        .count();
+    let implemented = KNOWN_SOURCES.iter().filter(|info| info.implemented).count();
     if ids.is_empty() {
         "none".to_string()
     } else if ids.len() == implemented {
@@ -599,8 +594,10 @@ impl App {
             if area.width == 0 || area.height == 0 {
                 continue;
             }
-            let inside = row >= area.y && row < area.y + area.height
-                && col >= area.x && col < area.x + area.width;
+            let inside = row >= area.y
+                && row < area.y + area.height
+                && col >= area.x
+                && col < area.x + area.width;
             if inside {
                 return Some(id);
             }
@@ -637,10 +634,7 @@ impl App {
                             .any(|info| info.implemented && info.id == **id)
                     })
                     .count();
-                let total = KNOWN_SOURCES
-                    .iter()
-                    .filter(|info| info.implemented)
-                    .count();
+                let total = KNOWN_SOURCES.iter().filter(|info| info.implemented).count();
                 format!(" ({}/{})", checked, total)
             }
             ZoneId::Log => {
@@ -698,7 +692,9 @@ impl App {
         // and `◀ Movies ▶` line up, instead of the right arrow sliding
         // four columns to the right on the longer name.
         if id == ZoneId::Results {
-            let width = self.group_tabs.iter()
+            let width = self
+                .group_tabs
+                .iter()
                 .map(|g| g.map_or("all", Group::label).chars().count())
                 .max()
                 .unwrap_or(3);
@@ -717,7 +713,8 @@ impl App {
             if !fits(x, b.width()) {
                 break;
             }
-            out.buttons.push((b.clone(), Rect::new(x, top, b.width(), 1)));
+            out.buttons
+                .push((b.clone(), Rect::new(x, top, b.width(), 1)));
             x += b.width() + FRAME_GAP;
         }
         if fits(x, info_width) {
@@ -727,7 +724,8 @@ impl App {
 
         // Top right: right aligned, dropped wholesale if it would run
         // into whatever sits on the left.
-        let right_items: Vec<FrameButton> = buttons.iter()
+        let right_items: Vec<FrameButton> = buttons
+            .iter()
             .filter(|b| b.slot == FrameSlot::TopRight)
             .cloned()
             .collect();
@@ -738,7 +736,8 @@ impl App {
             if start > x {
                 let mut cx = start;
                 for b in &right_items {
-                    out.buttons.push((b.clone(), Rect::new(cx, top, b.width(), 1)));
+                    out.buttons
+                        .push((b.clone(), Rect::new(cx, top, b.width(), 1)));
                     cx += b.width() + FRAME_GAP;
                 }
             }
@@ -750,7 +749,8 @@ impl App {
             if !fits(cx, b.width()) {
                 break;
             }
-            out.buttons.push((b.clone(), Rect::new(cx, bottom, b.width(), 1)));
+            out.buttons
+                .push((b.clone(), Rect::new(cx, bottom, b.width(), 1)));
             cx += b.width() + FRAME_GAP;
         }
 
@@ -762,9 +762,7 @@ impl App {
     /// `pause_proc_list`, around `tree` while `proc_tree`, ...).
     fn frame_button_active(&self, id: ZoneId, button: &FrameButton) -> bool {
         match (id, button.key) {
-            (ZoneId::Results, 'f') => {
-                self.zones.filter_mode || !self.zones.filter_input.is_empty()
-            }
+            (ZoneId::Results, 'f') => self.zones.filter_mode || !self.zones.filter_input.is_empty(),
             (ZoneId::Torrent, 'p') => self.torrent_paused,
             _ => false,
         }
@@ -910,13 +908,19 @@ impl App {
     /// temporary popup dialog is legible on top of whatever's behind it.
     fn themed_block(&self, border_color: Color, config: &Config) -> Block<'static> {
         let border_color = self.resolve_color(border_color, config);
-        let border_type = if config.rounded_corners && !config.false_tty { BorderType::Rounded } else { BorderType::Plain };
+        let border_type = if config.rounded_corners && !config.false_tty {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        };
         let mut block = Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
         if config.theme_background {
-            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)));
+            block = block.style(
+                Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)),
+            );
         }
         block
     }
@@ -930,13 +934,19 @@ impl App {
     /// truecolor/false_tty degradation like every other themed block.
     pub(crate) fn modal_block(&self, border_color: Color, config: &Config) -> Block<'static> {
         let border_color = self.resolve_color(border_color, config);
-        let border_type = if config.rounded_corners && !config.false_tty { BorderType::Rounded } else { BorderType::Plain };
+        let border_type = if config.rounded_corners && !config.false_tty {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        };
         let mut block = Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
         if config.theme_background {
-            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)));
+            block = block.style(
+                Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)),
+            );
         }
         block
     }
@@ -988,12 +998,20 @@ impl App {
     pub fn navigate_down(&mut self) -> bool {
         if !self.results.is_empty() && !self.input_mode && self.modal == Modal::None {
             let filtered_len = self.filtered_indices.len();
-            if filtered_len == 0 { return false; }
-            let local_idx = self.filtered_indices.iter().position(|&i| i == self.selected).unwrap_or(0);
+            if filtered_len == 0 {
+                return false;
+            }
+            let local_idx = self
+                .filtered_indices
+                .iter()
+                .position(|&i| i == self.selected)
+                .unwrap_or(0);
             if local_idx < filtered_len - 1 {
                 self.selected = self.filtered_indices[local_idx + 1];
                 true
-            } else { !self.all_loaded && self.state == AppState::Idle }
+            } else {
+                !self.all_loaded && self.state == AppState::Idle
+            }
         } else {
             false
         }
@@ -1009,7 +1027,11 @@ impl App {
 
     pub fn navigate_up(&mut self) -> bool {
         if !self.input_mode && self.modal == Modal::None {
-            let local_idx = self.filtered_indices.iter().position(|&i| i == self.selected).unwrap_or(0);
+            let local_idx = self
+                .filtered_indices
+                .iter()
+                .position(|&i| i == self.selected)
+                .unwrap_or(0);
             if local_idx > 0 {
                 self.selected = self.filtered_indices[local_idx - 1];
             }
@@ -1075,7 +1097,9 @@ impl App {
         // the user should not have to know which column a term lives
         // in. The category is matched by name, so "movies" finds the
         // Movies view's rows.
-        self.filtered_indices = self.results.iter()
+        self.filtered_indices = self
+            .results
+            .iter()
             .enumerate()
             .filter(|(_, item)| match self.active_group {
                 None => true,
@@ -1120,7 +1144,9 @@ impl App {
         self.render_search_bar(frame, area, config);
         for zone_id in ZoneId::all() {
             let zone_area = self.zones.get_area(*zone_id);
-            if zone_area.width == 0 || zone_area.height == 0 { continue; }
+            if zone_area.width == 0 || zone_area.height == 0 {
+                continue;
+            }
             match zone_id {
                 ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
                 ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
@@ -1147,17 +1173,11 @@ impl App {
                 }
 
                 match zone_id {
-                    ZoneId::Results => {
-                        self.render_results_zone(frame, zone_area, *zone_id, config)
-                    }
-                    ZoneId::Torrent => {
-                        self.render_torrent_zone(frame, zone_area, *zone_id, config)
-                    }
+                    ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
+                    ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Extra => self.render_extra_zone(frame, zone_area, *zone_id, config),
-                    ZoneId::Sources => {
-                        self.render_sources_zone(frame, zone_area, *zone_id, config)
-                    }
+                    ZoneId::Sources => self.render_sources_zone(frame, zone_area, *zone_id, config),
                 }
             }
         }
@@ -1200,17 +1220,18 @@ impl App {
             _ => "search".to_string(),
         };
 
-        let input_border = self.themed_block(
-            if self.input_mode {
-                Color::Yellow
-            } else if self.zones.filter_mode {
-                Color::Cyan
-            } else {
-                self.theme.div_line.to_color()
-            },
-            config,
-        )
-        .title(title);
+        let input_border = self
+            .themed_block(
+                if self.input_mode {
+                    Color::Yellow
+                } else if self.zones.filter_mode {
+                    Color::Cyan
+                } else {
+                    self.theme.div_line.to_color()
+                },
+                config,
+            )
+            .title(title);
 
         let input = Paragraph::new(self.search_input.as_str())
             .block(input_border)
@@ -1219,15 +1240,10 @@ impl App {
         frame.render_widget(input, bar_area);
     }
 
-    fn render_results_zone(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        id: ZoneId,
-        config: &Config,
-    ) {
+    fn render_results_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color, config)
+        let block = self
+            .themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -1252,7 +1268,11 @@ impl App {
             Cell::from("Src"),
             Cell::from("Title"),
         ])
-        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        .style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
 
         // Muted, but not `inactive_fg`: the tab bar gets away with that
         // one because a tab is also spelled out in the title. Here the
@@ -1263,7 +1283,9 @@ impl App {
         // the row's REVERSED highlight: swapping the two leaves dark
         // text on a light blue chip.
         let badge_style = Style::default().fg(self.theme.graph_text.to_color());
-        let rows: Vec<Row> = self.filtered_indices.iter()
+        let rows: Vec<Row> = self
+            .filtered_indices
+            .iter()
             .filter_map(|&idx| self.results.get(idx))
             .map(|item| {
                 Row::new(vec![
@@ -1290,7 +1312,11 @@ impl App {
         .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         let mut state = TableState::default();
-        if let Some(local_pos) = self.filtered_indices.iter().position(|&i| i == self.selected) {
+        if let Some(local_pos) = self
+            .filtered_indices
+            .iter()
+            .position(|&i| i == self.selected)
+        {
             state.select(Some(local_pos));
         }
         frame.render_stateful_widget(table, chunks[0], &mut state);
@@ -1305,15 +1331,10 @@ impl App {
     /// asks it. The row under the cursor is reversed, the same way the
     /// selected result row is -- the cursor is the panel's only state, and
     /// it has to be visible the same way.
-    fn render_sources_zone(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        id: ZoneId,
-        config: &Config,
-    ) {
+    fn render_sources_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color, config)
+        let block = self
+            .themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -1351,13 +1372,7 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    fn render_torrent_zone(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        id: ZoneId,
-        config: &Config,
-    ) {
+    fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let s = &self.torrent_status;
 
         let progress_pct = (s.progress * 100.0) as u32;
@@ -1375,7 +1390,8 @@ impl App {
         };
 
         let history: Vec<f64> = self.progress_history.iter().copied().collect();
-        let sparkline = super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
+        let sparkline =
+            super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
 
         let lines = vec![
             Line::from(vec![
@@ -1388,7 +1404,11 @@ impl App {
                 Span::styled("Progress: ", Style::default().fg(Color::Yellow)),
                 Span::styled(
                     format!("{} {}%", sparkline, progress_pct),
-                    Style::default().fg(if progress_pct >= 100 { Color::Green } else { Color::Cyan }),
+                    Style::default().fg(if progress_pct >= 100 {
+                        Color::Green
+                    } else {
+                        Color::Cyan
+                    }),
                 ),
             ]),
             Line::from(vec![
@@ -1411,7 +1431,8 @@ impl App {
         ];
 
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color, config)
+        let block = self
+            .themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
@@ -1421,17 +1442,12 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    fn render_log_zone(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        id: ZoneId,
-        config: &Config,
-    ) {
+    fn render_log_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let visible = (area.height as usize).saturating_sub(2);
         let offset = self.log_scroll.saturating_sub(visible);
 
-        let visible_logs: Vec<Line> = self.logs
+        let visible_logs: Vec<Line> = self
+            .logs
             .iter()
             .skip(offset)
             .take(visible)
@@ -1440,7 +1456,8 @@ impl App {
 
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let log_panel = Paragraph::new(visible_logs).block(
-            self.themed_block(border_color, config).title(super::zones::zone_title(id, &self.theme)),
+            self.themed_block(border_color, config)
+                .title(super::zones::zone_title(id, &self.theme)),
         );
 
         frame.render_widget(log_panel, area);
@@ -1449,15 +1466,10 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    fn render_extra_zone(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        id: ZoneId,
-        config: &Config,
-    ) {
+    fn render_extra_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color, config)
+        let block = self
+            .themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let paragraph = Paragraph::new("Zone 4 — TBD").block(block);
         frame.render_widget(paragraph, area);
@@ -1469,7 +1481,8 @@ impl App {
         let visible = (area.height as usize).saturating_sub(2);
         let scroll = self.detail_log_scroll.saturating_sub(visible);
 
-        let lines: Vec<Line> = self.detail_logs
+        let lines: Vec<Line> = self
+            .detail_logs
             .iter()
             .skip(scroll)
             .take(visible)
@@ -1486,11 +1499,14 @@ impl App {
             })
             .collect();
 
-        let title = format!(" Detailed Log ({}/{}) [L/Esc] close [j/k] scroll ", 
-            scroll + visible.min(total), total);
+        let title = format!(
+            " Detailed Log ({}/{}) [L/Esc] close [j/k] scroll ",
+            scroll + visible.min(total),
+            total
+        );
 
-        let log_panel = Paragraph::new(lines)
-            .block(self.themed_block(Color::Cyan, config).title(title));
+        let log_panel =
+            Paragraph::new(lines).block(self.themed_block(Color::Cyan, config).title(title));
 
         frame.render_widget(log_panel, area);
     }
@@ -1555,7 +1571,6 @@ impl App {
         }
     }
 }
-
 
 fn format_bytes(bytes: u64) -> String {
     if bytes < 1024 {

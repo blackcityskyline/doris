@@ -18,7 +18,7 @@ use std::future::Future;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, RETRY_AFTER, SERVER};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RETRY_AFTER, SERVER};
 use reqwest::{Client, RequestBuilder};
 
 /// torio's `DEFAULT_RETRIES`: attempts *after* the first one.
@@ -84,9 +84,7 @@ pub fn browser_client() -> Client {
     let mut headers = HeaderMap::new();
     headers.insert(
         ACCEPT,
-        HeaderValue::from_static(
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        ),
+        HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
     );
     headers.insert(
         ACCEPT_LANGUAGE,
@@ -175,12 +173,7 @@ where
                 // Transport-level failure (refused, reset, timeout):
                 // worth another try until the budget runs out.
                 if attempt >= opts.retries {
-                    anyhow::bail!(
-                        "GET {} failed after {} retries: {}",
-                        url,
-                        opts.retries,
-                        err
-                    );
+                    anyhow::bail!("GET {} failed after {} retries: {}", url, opts.retries, err);
                 }
                 let delay = opts.delay(attempt, None);
                 tokio::time::sleep(Duration::from_millis(delay)).await;

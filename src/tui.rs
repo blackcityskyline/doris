@@ -1,3 +1,4 @@
+use anyhow::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
@@ -5,7 +6,6 @@ use crossterm::{
 };
 use ratatui::prelude::CrosstermBackend;
 use std::io;
-use anyhow::Result;
 
 pub type Terminal = ratatui::Terminal<CrosstermBackend<io::Stdout>>;
 

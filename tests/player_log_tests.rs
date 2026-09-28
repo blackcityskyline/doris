@@ -15,7 +15,9 @@ fn keeps_mpv_relevant_lines() {
 #[test]
 fn drops_unrelated_lines() {
     assert!(!should_log("this is ordinary chatter"));
-    assert!(!should_log("MPV: some already-prefixed line without keywords"));
+    assert!(!should_log(
+        "MPV: some already-prefixed line without keywords"
+    ));
 }
 
 #[test]

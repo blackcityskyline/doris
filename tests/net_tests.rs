@@ -6,12 +6,12 @@
 //! how long: retrying is the whole feature, and retrying a challenge
 //! page (the one case that must not happen) is the whole risk.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use doris::sources::net::{
-    FetchOptions, backoff_delay, fetch_resilient, first_ok, is_retryable, parse_retry_after,
+    backoff_delay, fetch_resilient, first_ok, is_retryable, parse_retry_after, FetchOptions,
 };
 
 /// Serves each connection with the next entry of `script`; the last one
@@ -202,7 +202,11 @@ fn test_parse_retry_after_reads_an_http_date_relative_to_now() {
     let delay = parse_retry_after(Some(&future), now_ms).expect("a date parses");
 
     assert!(delay > 5000, "must be counted from now, got {}ms", delay);
-    assert!(delay <= 10_000, "must not overshoot the date, got {}ms", delay);
+    assert!(
+        delay <= 10_000,
+        "must not overshoot the date, got {}ms",
+        delay
+    );
 }
 
 #[test]
@@ -245,10 +249,14 @@ async fn ask(client: reqwest::Client, base: String) -> anyhow::Result<u16> {
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    anyhow::ensure!(resp.status().is_success(), "{}: HTTP {}", base, resp.status());
+    anyhow::ensure!(
+        resp.status().is_success(),
+        "{}: HTTP {}",
+        base,
+        resp.status()
+    );
     Ok(resp.status().as_u16())
 }
-
 
 #[tokio::test]
 async fn test_first_ok_falls_through_to_the_next_host() {
@@ -272,8 +280,12 @@ async fn test_first_ok_falls_through_to_the_next_host() {
 async fn test_first_ok_stops_at_the_first_success() {
     let (ok_url, ok_hits, ok_handle) =
         spawn_scripted(vec![response("HTTP/1.1 200 OK", &[], "ok")]).await;
-    let (never_url, never_hits, never_handle) =
-        spawn_scripted(vec![response("HTTP/1.1 500 Internal Server Error", &[], "")]).await;
+    let (never_url, never_hits, never_handle) = spawn_scripted(vec![response(
+        "HTTP/1.1 500 Internal Server Error",
+        &[],
+        "",
+    )])
+    .await;
     let client = reqwest::Client::new();
     let attempt = |base: &str| ask(client.clone(), base.to_string());
 

@@ -12,7 +12,7 @@
 //! same reason `nyaa_live_tests` does: a network problem is not
 //! evidence about the parser.
 
-use doris::sources::nnmclub::{NnmclubSearcher, PAGE_SIZE, search_url};
+use doris::sources::nnmclub::{search_url, NnmclubSearcher, PAGE_SIZE};
 use doris::sources::source::{Group, SearchRequest, Source};
 
 /// The tracker answering at all, or `None` when this network is the
@@ -61,7 +61,10 @@ async fn live_rows_carry_a_link_to_a_torrent_and_a_page_to_read() {
         page.has_more,
         page.next_offset
     );
-    assert!(!page.items.is_empty(), "live nnmclub search returned nothing");
+    assert!(
+        !page.items.is_empty(),
+        "live nnmclub search returned nothing"
+    );
 
     for row in &page.items {
         assert_eq!(row.source, "nnmclub");
@@ -107,7 +110,11 @@ async fn live_rows_carry_a_link_to_a_torrent_and_a_page_to_read() {
     // A narrow query is a short page, and a short page is the last one
     // -- that is what makes `has_more == false` honest rather than a
     // missing feature.
-    assert!(!page.has_more, "{} rows cannot be a full page", page.items.len());
+    assert!(
+        !page.has_more,
+        "{} rows cannot be a full page",
+        page.items.len()
+    );
     assert_eq!(page.next_offset, None);
 }
 

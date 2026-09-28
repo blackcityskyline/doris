@@ -16,7 +16,7 @@
 //! `nyaa_parse_tests.rs`.
 
 use doris::sources::models::TorrentItem;
-use doris::sources::nyaa::{NyaaSearcher, feed_url, parse_items};
+use doris::sources::nyaa::{feed_url, parse_items, NyaaSearcher};
 use doris::sources::source::{Group, SearchRequest, Source};
 
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
@@ -92,7 +92,10 @@ async fn live_rows_carry_every_field_the_source_promised() {
     };
     let rows = parse_items(&feed).expect("the live feed parses");
     println!("rows={}", rows.len());
-    assert!(!rows.is_empty(), "the live feed put no usable row on the page");
+    assert!(
+        !rows.is_empty(),
+        "the live feed put no usable row on the page"
+    );
 
     let mut bad = 0;
     for row in &rows {
@@ -104,8 +107,16 @@ async fn live_rows_carry_every_field_the_source_promised() {
     }
     // One odd row must not condemn the page, but a page of odd rows
     // would mean the markup moved.
-    assert!(bad * 10 <= rows.len(), "{} of {} rows look wrong", bad, rows.len());
-    assert!(rows.iter().all(|r| r.magnet.is_some()), "magnet from the hash");
+    assert!(
+        bad * 10 <= rows.len(),
+        "{} of {} rows look wrong",
+        bad,
+        rows.len()
+    );
+    assert!(
+        rows.iter().all(|r| r.magnet.is_some()),
+        "magnet from the hash"
+    );
 }
 
 #[tokio::test]
@@ -168,12 +179,24 @@ async fn live_the_torrent_link_the_feed_ships_actually_answers() {
         .unwrap_or("")
         .to_string();
     let bytes = response.bytes().await.expect("link body");
-    println!("status={} type={} bytes={}", status, content_type, bytes.len());
+    println!(
+        "status={} type={} bytes={}",
+        status,
+        content_type,
+        bytes.len()
+    );
 
-    assert!(!bytes.is_empty(), "an empty .torrent would reach TorrServer");
+    assert!(
+        !bytes.is_empty(),
+        "an empty .torrent would reach TorrServer"
+    );
     assert!(
         bytes.first() != Some(&b'<'),
         "a block page must never be handed over as a .torrent"
     );
-    assert_eq!(bytes.first(), Some(&b'd'), "a torrent file is a bencoded dict");
+    assert_eq!(
+        bytes.first(),
+        Some(&b'd'),
+        "a torrent file is a bencoded dict"
+    );
 }

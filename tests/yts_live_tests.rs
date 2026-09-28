@@ -54,7 +54,10 @@ async fn live_browse_returns_the_newest_movies_first() {
         .expect("live YTS browse");
 
     println!("browse: {} rows", page.items.len());
-    assert!(!page.items.is_empty(), "an empty query must browse, not stall");
+    assert!(
+        !page.items.is_empty(),
+        "an empty query must browse, not stall"
+    );
 
     // Not every YTS movie carries `date_uploaded_unix`, and what
     // `sort_by=date_added` orders by is YTS's own site-added date, which
@@ -63,7 +66,12 @@ async fn live_browse_returns_the_newest_movies_first() {
     // the API's order does climb between neighbours). What browse owes
     // the user is freshness: the newest row is days old, not months.
     let now = chrono::Utc::now().timestamp();
-    let dated: Vec<i64> = page.items.iter().map(|i| i.added).filter(|&d| d > 0).collect();
+    let dated: Vec<i64> = page
+        .items
+        .iter()
+        .map(|i| i.added)
+        .filter(|&d| d > 0)
+        .collect();
     assert!(!dated.is_empty(), "a date-sorted list must have dates");
     let newest = dated.iter().copied().max().expect("dated is not empty");
     assert!(

@@ -63,15 +63,21 @@ fn test_keys_are_isolated_per_source_page_and_category() {
     cache.put(key("matrix"), page(1, false));
 
     assert!(
-        cache.get(&CacheKey::new("rutor", "matrix", None, 100)).is_none(),
+        cache
+            .get(&CacheKey::new("rutor", "matrix", None, 100))
+            .is_none(),
         "another page of the same query must not share the entry"
     );
     assert!(
-        cache.get(&CacheKey::new("rutracker", "matrix", None, 0)).is_none(),
+        cache
+            .get(&CacheKey::new("rutracker", "matrix", None, 0))
+            .is_none(),
         "another source must not share the entry"
     );
     assert!(
-        cache.get(&CacheKey::new("rutor", "matrix", Some("Games"), 0)).is_none(),
+        cache
+            .get(&CacheKey::new("rutor", "matrix", Some("Games"), 0))
+            .is_none(),
         "another category must not share the entry"
     );
     assert!(cache.get(&key("other")).is_none());

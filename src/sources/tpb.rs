@@ -22,14 +22,14 @@
 //! Both search and browse are magnet-only (`download_url == ""`), which
 //! routes the download key to a `.magnet` file; see `magnet_only_download`.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::format::{format_bytes, format_date};
 use super::magnet::build_magnet;
 use super::models::{FlexNum, TorrentItem};
-use super::net::{FetchOptions, browser_client, fetch_resilient};
+use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// The API base. Single host: apibay *is* the service, so there is no
@@ -128,8 +128,8 @@ fn group_for_category(category: i64) -> Option<Group> {
 /// fixture tests can exercise the real parser with no network (the same
 /// split `yts::parse_page` has).
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
-    let items: Vec<ApibayItem> = serde_json::from_str(body)
-        .map_err(|e| anyhow!("apibay response did not parse: {}", e))?;
+    let items: Vec<ApibayItem> =
+        serde_json::from_str(body).map_err(|e| anyhow!("apibay response did not parse: {}", e))?;
     Ok(items.iter().filter_map(to_row).collect())
 }
 
@@ -197,7 +197,9 @@ impl TpbSearcher {
     pub fn new() -> Self {
         // The shared browser-like client (B5): apibay answers a
         // library UA with 403 (checked live) -- this is not paranoia.
-        Self { client: browser_client() }
+        Self {
+            client: browser_client(),
+        }
     }
 
     /// One apibay document -> its rows' source data, or a real error.

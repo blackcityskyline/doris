@@ -7,7 +7,7 @@
 //! server's whole payload only adds noise to diff.
 
 use doris::sources::source::{self, SourceEnv};
-use doris::sources::yts::{PAGE_SIZE, list_movies_url, parse_page};
+use doris::sources::yts::{list_movies_url, parse_page, PAGE_SIZE};
 
 /// One movie in three shapes: two hashed torrents plus one without a
 /// hash, a movie with no torrents at all, and a movie whose torrent
@@ -84,8 +84,7 @@ fn test_one_row_per_hashed_torrent_with_the_quality_tag_in_the_title() {
     let first = &page.items[0];
     assert_eq!(first.title, "Matrix: Generation (2024) [720p web]");
     assert_eq!(
-        first.info_hash,
-        "937c8886c8fd31240898b0de40de9e104a926f7e",
+        first.info_hash, "937c8886c8fd31240898b0de40de9e104a926f7e",
         "the API shouts the hash; info_hash promises lowercase hex"
     );
     assert_eq!(first.size_bytes, 511_568_773);
@@ -142,7 +141,8 @@ fn test_rows_are_magnet_only_and_attributed_to_yts_movies() {
         );
     }
     assert_eq!(
-        page.items[0].page_url, "https://yts.gg/movies/matrix-generation-2024"
+        page.items[0].page_url,
+        "https://yts.gg/movies/matrix-generation-2024"
     );
 }
 

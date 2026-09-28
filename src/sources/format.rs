@@ -64,7 +64,9 @@ fn js_parse_float(s: &str) -> Option<f64> {
         }
         out.push(c);
     }
-    out.parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0)
+    out.parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite() && *n >= 0.0)
 }
 
 /// Parse a human-readable size into bytes: `"1.45 GiB"`, `"82.73 MB"`,
