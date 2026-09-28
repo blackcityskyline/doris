@@ -1555,13 +1555,26 @@ impl App {
         let sparkline =
             super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
 
-        let lines = vec![
+        // TorrServer has not named the torrent yet: from Enter to the
+        // hash arriving there is real work in flight (session, magnet,
+        // add, upload) and no value to print, and an empty
+        // `Hash:   Status:` read as "nothing is happening".
+        let header = if s.hash.is_empty() && self.state == AppState::Streaming {
+            Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::Yellow)),
+                Span::raw("Starting stream..."),
+            ])
+        } else {
             Line::from(vec![
                 Span::styled("Hash: ", Style::default().fg(Color::Yellow)),
                 Span::raw(&s.hash),
                 Span::styled("  Status: ", Style::default().fg(Color::Yellow)),
                 Span::raw(status_display),
-            ]),
+            ])
+        };
+
+        let lines = vec![
+            header,
             Line::from(vec![
                 Span::styled("Progress: ", Style::default().fg(Color::Yellow)),
                 Span::styled(
