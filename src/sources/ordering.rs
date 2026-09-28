@@ -7,7 +7,7 @@
 //! `tests/ordering_tests.rs` mirror torio's `sort.test.ts` case by case.
 //!
 //! Applying any of them to `App::ui.results` happens once, when a search
-//! generation finishes (`app.rs::finish_search`): sorting per arriving
+//! generation finishes (`search.rs::finish_search`): sorting per arriving
 //! batch would reshuffle rows under the user's selection while sources
 //! are still answering.
 
