@@ -375,13 +375,11 @@ fn test_active_button_bolds_the_whole_word() {
 
 /// The convention the plan asks for: primary functions use their first
 /// letter for the hotkey, as long as it isn't already taken. The words
-/// that cannot (`source` is `]`, `play` is Enter, `info` is `v`) trail
-/// the key instead -- see `FrameButton::text`.
+/// that cannot trail the key instead -- see `FrameButton::text`.
 #[test]
 fn test_primary_buttons_lead_with_their_hotkey() {
     let primary = [
-        (ZoneId::Results, 'F'),
-        (ZoneId::Results, 'd'),
+        (ZoneId::Results, 'f'),
         (ZoneId::Results, 'g'),
         (ZoneId::Torrent, 'p'),
         (ZoneId::Torrent, 'd'),

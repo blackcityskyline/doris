@@ -112,7 +112,6 @@ pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
 /// same way [`group_tabs`] builds the category row -- one place, so a
 /// test can assert what the category offers without a rendered modal.
 /// `browser_hidden` is the runtime UI state the
-
 /// `mode_str` is the "Play mode" row's value, computed by the caller.
 pub fn streaming_settings_items(
     config: &Config,
@@ -678,23 +677,10 @@ impl App {
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
 
-            // Fill the whole inner area with the background before any
-            // content: the body below is many small paragraphs, each
-            // covering only its own rect, and the gaps between them would
-            // otherwise show whatever is behind the modal. With "Theme
-            // background" off `modal_block` paints no background at all,
-            // so those gaps read as the modal being see-through around
-            // the text blocks -- the patchwork this fixes.
-            frame.render_widget(
-                Paragraph::new("").style(Style::default().bg(self.theme.main_bg.to_color())),
-                inner,
-            );
-
             let hi_color = self.theme.hi_fg.to_color();
             let title_color = self.theme.title.to_color();
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
-            let bg_color = self.theme.main_bg.to_color();
 
             if let Modal::Settings(ref mut state) = self.modal {
                 let bw = inner.width as usize;
@@ -769,7 +755,7 @@ impl App {
                     }
                 }
                 frame.render_widget(
-                    Paragraph::new(Line::from(spans)).style(Style::default().bg(bg_color)),
+                    Paragraph::new(Line::from(spans)),
                     Rect::new(inner.x, tab_y, inner.width, 1),
                 );
 
@@ -784,14 +770,13 @@ impl App {
                 }
                 div_spans.push(Span::styled("┤", Style::default().fg(hi_color)));
                 frame.render_widget(
-                    Paragraph::new(Line::from(div_spans)).style(Style::default().bg(bg_color)),
+                    Paragraph::new(Line::from(div_spans)),
                     Rect::new(inner.x, div_y, inner.width, 1),
                 );
 
                 for row in 0..content_h {
                     frame.render_widget(
-                        Paragraph::new(Span::styled("│", Style::default().fg(div_color)))
-                            .style(Style::default().bg(bg_color)),
+                        Paragraph::new(Span::styled("│", Style::default().fg(div_color))),
                         Rect::new(inner.x + divider_col as u16, content_y + row as u16, 1, 1),
                     );
                 }
@@ -830,8 +815,7 @@ impl App {
                         };
                         let centered_label = center_str(&label, divider_col as usize - 2);
                         frame.render_widget(
-                            Paragraph::new(Span::styled(centered_label, label_style))
-                                .style(Style::default().bg(bg_color)),
+                            Paragraph::new(Span::styled(centered_label, label_style)),
                             Rect::new(left_x, y, divider_col as u16 - 1, 1),
                         );
 
@@ -843,8 +827,7 @@ impl App {
                         };
                         let centered_val = center_str(&val_display, divider_col as usize - 2);
                         frame.render_widget(
-                            Paragraph::new(Span::styled(centered_val, val_style))
-                                .style(Style::default().bg(bg_color)),
+                            Paragraph::new(Span::styled(centered_val, val_style)),
                             Rect::new(left_x, y + 1, divider_col as u16 - 1, 1),
                         );
                     }
@@ -855,8 +838,7 @@ impl App {
                     for (i, line) in item.description.iter().enumerate() {
                         if (content_y as usize + i) < (content_y as usize + content_h) {
                             frame.render_widget(
-                                Paragraph::new(Span::styled(line.as_str(), desc_style))
-                                    .style(Style::default().bg(bg_color)),
+                                Paragraph::new(Span::styled(line.as_str(), desc_style)),
                                 Rect::new(right_x, content_y + i as u16, right_w, 1),
                             );
                         }
@@ -875,7 +857,7 @@ impl App {
                             Span::styled(format!("page {}/{} ", page + 1, pages), Style::default().fg(title_color)),
                             Span::styled("↓", Style::default().fg(hi_color)),
                             Span::styled("└", Style::default().fg(hi_color)),
-                        ])).style(Style::default().bg(bg_color)),
+                        ])),
                         Rect::new(page_x.saturating_sub(1), page_y, page_line.len() as u16 + 4, 1),
                     );
                 }

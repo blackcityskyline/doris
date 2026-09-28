@@ -473,14 +473,18 @@ impl FrameButton {
 /// so they stay `const` -- only the category button has a dynamic label,
 /// and it is built in `frame_layout`, not here.
 const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
-    // Capital `F` because the key is shift-F: `f` already belongs to
-    // fullscreen, and btop capitalises the word the same way when the
-    // hotkey is uppercase (`Nice`, `Follow`).
-    (FrameSlot::TopLeft, 'F', "Filter"),
+    // Lowercase `f`: the filter is the Results panel's primary function,
+    // and the plan's "first letter where free" rule gives it `f` now
+    // that fullscreen has moved to `F` (btop capitalises a word when
+    // the hotkey is uppercase, but here the lowercase is the point --
+    // `f` is the key, not a shifted one).
+    (FrameSlot::TopLeft, 'f', "Filter"),
     (FrameSlot::TopRight, 'g', "group"),
-    (FrameSlot::BottomLeft, '⏎', "play"),
-    (FrameSlot::BottomLeft, 'd', "download"),
-    (FrameSlot::BottomLeft, 'v', "info"),
+    // The bottom action row (`play ⏎` / `download d` / `info v`) is
+    // gone: those three are keyboard-and-help-page actions now, and a
+    // frame legend that repeats them is a second place to document the
+    // same keys. The frame keeps the two that switch *state* (filter,
+    // group); the rest are in `?`.
 ];
 
 const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[

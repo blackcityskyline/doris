@@ -714,7 +714,10 @@ fn test_render_draws_the_table_header_under_the_frame() {
         row_text(results.y + 1)
     );
     let frame_row = row_text(results.y);
-    assert!(frame_row.contains("◀ all ▶"), "the category button: {frame_row}");
+    assert!(frame_row.contains('◀'), "the category button: {frame_row}");
+    assert!(frame_row.contains('▶'), "the category button: {frame_row}");
+    // The name is padded to the widest category, so the arrows line up.
+    assert!(frame_row.contains("all"), "the current category: {frame_row}");
     assert!(frame_row.contains("group"), "next to the group button: {frame_row}");
 }
 
@@ -744,15 +747,21 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     let top = row_text(&terminal, results.y);
     assert!(top.contains("Filter"), "Results top border: {}", top);
     assert!(top.contains("group"), "Results top border: {}", top);
-    // The source tabs left the frame for their own panel (П.4); what
-    // the border says instead is what the search is asking.
-    assert!(top.contains("[all]"), "Results top border: {}", top);
+    // The source tabs left the frame for their own panel (П.4), and
+    // play/download/info left for the help page -- what the border says
+    // now is the category button and the counts.
+    assert!(top.contains('◀'), "Results top border: {}", top);
+    assert!(top.contains('▶'), "Results top border: {}", top);
     assert!(top.contains("(3/3)"), "info text on the border: {}", top);
 
+    // The bottom action row is gone: play/download/info are
+    // keyboard-and-help-page actions, not frame buttons.
     let bottom = row_text(&terminal, results.y + results.height - 1);
-    assert!(bottom.contains("play"), "Results bottom border: {}", bottom);
-    assert!(bottom.contains("download"), "Results bottom border: {}", bottom);
-    assert!(bottom.contains("info"), "Results bottom border: {}", bottom);
+    assert!(
+        !bottom.contains("play") && !bottom.contains("download") && !bottom.contains("info"),
+        "Results bottom border should be empty: {}",
+        bottom
+    );
 
     let torrent = app.zones.get_area(ZoneId::Torrent);
     let t_top = row_text(&terminal, torrent.y);
