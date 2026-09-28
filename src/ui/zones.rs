@@ -410,22 +410,33 @@ pub enum FrameSlot {
 /// and renders "info ⏎" (`:1956`) where the key is a glyph rather than a
 /// letter. Clicking the word fires the same action as pressing the key
 /// (btop registers both: the spans above and `Input::mouse_mappings`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// `label` is a `String` rather than `&'static str` because one button
+/// -- the Results category -- names the thing it switches, and that
+/// changes as the category does.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameButton {
     pub slot: FrameSlot,
     /// The character that triggers it. A glyph such as `⏎` stands in for
     /// a non-text key, so this is always exactly one column wide.
     pub key: char,
     /// The word shown on the frame, e.g. "filter".
-    pub label: &'static str,
+    pub label: String,
 }
 
 impl FrameButton {
     /// What actually gets drawn: `label` when it already contains the
     /// hotkey, otherwise `label` followed by the key.
+    ///
+    /// The category button is the exception: it is mouse-only (its two
+    /// arrows are the targets), so no key is appended -- the `g` keybind
+    /// it shares with `group` is advertised on that button instead.
     pub fn text(&self) -> String {
+        if self.is_category() {
+            return self.label.clone();
+        }
         if self.label.contains(self.key) {
-            self.label.to_string()
+            self.label.clone()
         } else {
             format!("{} {}", self.label, self.key)
         }
@@ -440,6 +451,14 @@ impl FrameButton {
     pub fn width(&self) -> u16 {
         self.text().chars().count() as u16
     }
+
+    /// Whether this is the Results category button, which carries btop's
+    /// `◀ name ▶` sort-header arrows: the two arrow cells are separate
+    /// mouse targets (previous / next category) and the name between
+    /// them is not a target at all.
+    pub fn is_category(&self) -> bool {
+        self.label.starts_with('◀')
+    }
 }
 
 /// Frame buttons per zone.
@@ -449,28 +468,32 @@ impl FrameButton {
 /// fullscreen, so filter has to take `F`; `v`/`⏎` are not letters at
 /// all and end up trailing the word). Kept next to `zone_title` so the
 /// legend and the bindings it advertises are edited together.
-const RESULTS_BUTTONS: &[FrameButton] = &[
+///
+/// The tables are `(slot, key, label)` tuples rather than `FrameButton`s
+/// so they stay `const` -- only the category button has a dynamic label,
+/// and it is built in `frame_layout`, not here.
+const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // Capital `F` because the key is shift-F: `f` already belongs to
     // fullscreen, and btop capitalises the word the same way when the
     // hotkey is uppercase (`Nice`, `Follow`).
-    FrameButton { slot: FrameSlot::TopLeft, key: 'F', label: "Filter" },
-    FrameButton { slot: FrameSlot::TopRight, key: 'g', label: "group" },
-    FrameButton { slot: FrameSlot::BottomLeft, key: '⏎', label: "play" },
-    FrameButton { slot: FrameSlot::BottomLeft, key: 'd', label: "download" },
-    FrameButton { slot: FrameSlot::BottomLeft, key: 'v', label: "info" },
+    (FrameSlot::TopLeft, 'F', "Filter"),
+    (FrameSlot::TopRight, 'g', "group"),
+    (FrameSlot::BottomLeft, '⏎', "play"),
+    (FrameSlot::BottomLeft, 'd', "download"),
+    (FrameSlot::BottomLeft, 'v', "info"),
 ];
 
-const TORRENT_BUTTONS: &[FrameButton] = &[
-    FrameButton { slot: FrameSlot::TopRight, key: 'p', label: "pause" },
-    FrameButton { slot: FrameSlot::BottomLeft, key: 'd', label: "delete" },
+const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
+    (FrameSlot::TopRight, 'p', "pause"),
+    (FrameSlot::BottomLeft, 'd', "delete"),
 ];
 
 /// The Log panel's only real action: jump to the full-screen detail log.
-const LOG_BUTTONS: &[FrameButton] = &[FrameButton {
-    slot: FrameSlot::TopRight,
-    key: 'L',
-    label: "detail",
-}];
+const LOG_BUTTONS: &[(FrameSlot, char, &str)] = &[(
+    FrameSlot::TopRight,
+    'L',
+    "detail",
+)];
 
 /// The buttons drawn on `id`'s frame; empty for zones with no actions.
 ///
@@ -478,13 +501,17 @@ const LOG_BUTTONS: &[FrameButton] = &[FrameButton {
 /// a frame legend would only repeat what `j`/`k` and Enter already say
 /// (btop's proc panel draws its actions on the border because the rows
 /// there are data, not controls).
-pub fn zone_buttons(id: ZoneId) -> &'static [FrameButton] {
-    match id {
+pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
+    let table: &[(FrameSlot, char, &str)] = match id {
         ZoneId::Results => RESULTS_BUTTONS,
         ZoneId::Torrent => TORRENT_BUTTONS,
         ZoneId::Log => LOG_BUTTONS,
         ZoneId::Extra | ZoneId::Sources => &[],
-    }
+    };
+    table
+        .iter()
+        .map(|&(slot, key, label)| FrameButton { slot, key, label: label.to_string() })
+        .collect()
 }
 
 /// The zone's own title, btop `createBox` style: superscript number in
@@ -514,23 +541,41 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
 /// hotkey. `active` bolds the whole word, which is how btop marks a
 /// toggle that is currently on (`Fx::b` around `pause` when
 /// `pause_proc_list`, around `tree` when `proc_tree`, ...).
+///
+/// The category button is the exception: it has no single hotkey, but
+/// two arrow cells that are mouse targets, so both arrows take the
+/// `hi_fg` + bold treatment and the name between them stays `title` --
+/// btop draws its sortable column headers the same way (`◀ name ▶`).
 pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Span<'static>> {
     let text = button.text();
-    let idx = button.hotkey_index();
-    let key_len = button.key.len_utf8();
-
-    let mut word_style = Style::default().fg(theme.title.to_color());
-    if active {
-        word_style = word_style.add_modifier(Modifier::BOLD);
-    }
+    let word_style = Style::default().fg(theme.title.to_color());
     let hotkey_style = Style::default()
         .fg(theme.hi_fg.to_color())
         .add_modifier(Modifier::BOLD);
 
+    if button.is_category() {
+        // `◀ name ▶`: the arrows are the targets, the name is not. The
+        // spaces around the name are part of the label, so they stay.
+        let name = text.trim_start_matches('◀').trim_end_matches('▶').to_string();
+        return vec![
+            Span::styled("◀", hotkey_style),
+            Span::styled(name, word_style),
+            Span::styled("▶", hotkey_style),
+        ];
+    }
+
+    let idx = button.hotkey_index();
+    let key_len = button.key.len_utf8();
+
+    let mut style = word_style;
+    if active {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+
     vec![
-        Span::styled(text[..idx].to_string(), word_style),
+        Span::styled(text[..idx].to_string(), style),
         Span::styled(text[idx..idx + key_len].to_string(), hotkey_style),
-        Span::styled(text[idx + key_len..].to_string(), word_style),
+        Span::styled(text[idx + key_len..].to_string(), style),
     ]
 }
 

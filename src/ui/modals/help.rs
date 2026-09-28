@@ -46,7 +46,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("Shift+P", "Cycles the layout preset (horizontal / split)."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
     ("j, k, Up, Down", "Moves in the focused zone (j/k: Vim keys)."),
-    ("g, G", "Cycles the category row forward / back."),
+    ("g, G", "Cycles the category forward / back."),
     ("d", "Downloads a row / removes the torrent."),
     ("v", "Logs the selected result's details."),
     ("p", "Pauses / resumes the tracked torrent."),

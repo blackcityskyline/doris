@@ -348,10 +348,16 @@ pub struct FrameLayout {
 }
 
 impl FrameLayout {
-    /// Which button, if any, is under `(col, row)`.
-    pub fn button_at(&self, col: u16, row: u16) -> Option<FrameButton> {
+    /// Which button (and the rect it occupies), if any, is under
+    /// `(col, row)`. The rect comes back with it because the category
+    /// button's two arrow cells are separate targets, and telling them
+    /// apart needs to know where the click landed inside the button.
+    pub fn button_at(&self, col: u16, row: u16) -> Option<(FrameButton, Rect)> {
         let pos = ratatui::layout::Position::new(col, row);
-        self.buttons.iter().find(|(_, r)| r.contains(pos)).map(|(b, _)| *b)
+        self.buttons
+            .iter()
+            .find(|(_, r)| r.contains(pos))
+            .map(|(b, r)| (b.clone(), *r))
     }
 }
 
@@ -612,35 +618,6 @@ impl App {
         }
     }
 
-    /// Which category tab (if any) is under `(row, col)` -- the same
-    /// construction as [`UiApp::sources_row_at`], on the first line inside
-    /// the border, so a tab that is drawn can be clicked. The *outer*
-    /// `None` means "not on the category row"; the inner one is the "all"
-    /// tab, which is exactly what a category-less view is.
-    pub fn group_tab_at(&self, row: u16, col: u16) -> Option<Option<Group>> {
-        let area = self.zones.get_area(ZoneId::Results);
-        if area.width == 0 || area.height == 0 {
-            return None;
-        }
-        if row != area.y + 1 {
-            return None;
-        }
-        let mut x = area.x + 1;
-        for &group in &self.group_tabs {
-            let text = group.map_or("all", Group::label);
-            let label_len = if group == self.active_group {
-                text.chars().count() + 2
-            } else {
-                text.chars().count()
-            };
-            if col >= x && col < x + label_len as u16 {
-                return Some(group);
-            }
-            x += label_len as u16 + 2; // + "  " gap
-        }
-        None
-    }
-
     pub fn zone_at(&self, row: u16, col: u16) -> Option<ZoneId> {
         for &id in ZoneId::all() {
             if let Some(fs) = self.zones.fullscreen {
@@ -735,9 +712,24 @@ impl App {
         let bottom = area.y + area.height - 1;
         let fits = |x: u16, w: u16| w > 0 && x <= right && x + w - 1 <= right;
 
-        let buttons = super::zones::zone_buttons(id);
+        let mut buttons = super::zones::zone_buttons(id);
         out.info_text = self.frame_info(id, area, config);
         let info_width = out.info_text.chars().count() as u16;
+
+        // The category button is built here rather than in the static
+        // table because its label names the current category: btop's
+        // `◀ name ▶` sort header, with the two arrows as mouse targets
+        // (previous / next category). The `g`/`G` keys stay the
+        // keyboard way in, exactly as they were when the category was a
+        // row inside the panel.
+        if id == ZoneId::Results {
+            let name = self.active_group.map_or("all", Group::label);
+            buttons.push(FrameButton {
+                slot: FrameSlot::TopRight,
+                key: 'g',
+                label: format!("◀ {} ▶", name),
+            });
+        }
 
         // Top left: the title already claims `zone_title_width` columns
         // after the border, then the buttons, then the info text.
@@ -746,7 +738,7 @@ impl App {
             if !fits(x, b.width()) {
                 break;
             }
-            out.buttons.push((*b, Rect::new(x, top, b.width(), 1)));
+            out.buttons.push((b.clone(), Rect::new(x, top, b.width(), 1)));
             x += b.width() + FRAME_GAP;
         }
         if fits(x, info_width) {
@@ -758,7 +750,7 @@ impl App {
         // into whatever sits on the left.
         let right_items: Vec<FrameButton> = buttons.iter()
             .filter(|b| b.slot == FrameSlot::TopRight)
-            .copied()
+            .cloned()
             .collect();
         let right_total: u16 = right_items.iter().map(|b| b.width()).sum::<u16>()
             + FRAME_GAP * (right_items.len().saturating_sub(1) as u16);
@@ -767,7 +759,7 @@ impl App {
             if start > x {
                 let mut cx = start;
                 for b in &right_items {
-                    out.buttons.push((*b, Rect::new(cx, top, b.width(), 1)));
+                    out.buttons.push((b.clone(), Rect::new(cx, top, b.width(), 1)));
                     cx += b.width() + FRAME_GAP;
                 }
             }
@@ -779,7 +771,7 @@ impl App {
             if !fits(cx, b.width()) {
                 break;
             }
-            out.buttons.push((*b, Rect::new(cx, bottom, b.width(), 1)));
+            out.buttons.push((b.clone(), Rect::new(cx, bottom, b.width(), 1)));
             cx += b.width() + FRAME_GAP;
         }
 
@@ -789,7 +781,7 @@ impl App {
     /// Whether a button's word is drawn bold: btop marks a toggle that
     /// is currently on this way (`Fx::b` around `pause` while
     /// `pause_proc_list`, around `tree` while `proc_tree`, ...).
-    fn frame_button_active(&self, id: ZoneId, button: FrameButton) -> bool {
+    fn frame_button_active(&self, id: ZoneId, button: &FrameButton) -> bool {
         match (id, button.key) {
             (ZoneId::Results, 'F') => {
                 self.zones.filter_mode || !self.zones.filter_input.is_empty()
@@ -814,17 +806,35 @@ impl App {
             let spans = super::zones::button_spans(
                 &self.theme,
                 button,
-                self.frame_button_active(id, *button),
+                self.frame_button_active(id, button),
             );
             frame.render_widget(Paragraph::new(Line::from(spans)), *rect);
         }
     }
 
     /// Perform a frame button's effect. The ones `ui::App` owns -- the
-    /// filter prompt and the category row -- happen right here; the rest
-    /// come back as a [`UiAction`] for the orchestrator, which owns the
-    /// async work and the results list.
-    fn activate_frame_button(&mut self, id: ZoneId, button: FrameButton) -> Option<UiAction> {
+    /// filter prompt and the category arrows -- happen right here; the
+    /// rest come back as a [`UiAction`] for the orchestrator, which owns
+    /// the async work and the results list.
+    ///
+    /// `col` and `rect` are where the click landed: the category button's
+    /// left and right arrow cells are separate targets (previous / next
+    /// category), and the name between them is not a target at all.
+    fn activate_frame_button(
+        &mut self,
+        id: ZoneId,
+        button: &FrameButton,
+        col: u16,
+        rect: &Rect,
+    ) -> Option<UiAction> {
+        if id == ZoneId::Results && button.is_category() {
+            if col == rect.x {
+                self.cycle_group(false);
+            } else if col == rect.x + rect.width.saturating_sub(1) {
+                self.cycle_group(true);
+            }
+            return None;
+        }
         match (id, button.key) {
             (ZoneId::Results, 'F') => {
                 self.zones.filter_mode = true;
@@ -860,35 +870,30 @@ impl App {
 
         // The legend sits on the border, outside every other hit target
         // of the panel, so it can be tested first without shadowing one.
-        if let Some(button) = self.frame_layout(id, area, config).button_at(col, row) {
-            return self.activate_frame_button(id, button);
+        let layout = self.frame_layout(id, area, config);
+        if let Some((button, rect)) = layout.button_at(col, row) {
+            return self.activate_frame_button(id, &button, col, &rect);
         }
 
         match id {
             ZoneId::Results => {
-                if let Some(group) = self.group_tab_at(row, col) {
-                    // The category's own switch path: view re-derived
-                    // here, `group_changed` set for Enter. No request.
-                    self.set_group(group);
-                    return None;
-                }
                 // -1 for the panel border: `table_row` is the 0-based line
-                // inside the Results panel -- 0 = category row, 1 = the
-                // table's own header row, 2+ = data rows. This must stay
-                // in lockstep with render_results_zone's Layout
-                // (categories / table); 038c859 added the tab row and
-                // subtracted its line here but left `data_row`'s own -1,
-                // so every click used to select the row *below* the one
-                // under the cursor and a click on the header selected the
-                // first item -- the same class of off-by-one the category
-                // row would have brought back if only the draw side moved.
+                // inside the Results panel -- 0 = the table's own header
+                // row, 1+ = data rows. This must stay in lockstep with
+                // render_results_zone's Layout (table only now; the
+                // category row moved onto the frame); 038c859 added the
+                // tab row and subtracted its line here but left
+                // `data_row`'s own -1, so every click used to select the
+                // row *below* the one under the cursor and a click on the
+                // header selected the first item -- the same class of
+                // off-by-one the category row would have brought back if
+                // only the draw side moved.
                 let table_row = row.saturating_sub(area.y).saturating_sub(1);
-                if table_row < 2 {
-                    // Category row or header row ("Seeds  Size ..."): not a
-                    // data row.
+                if table_row < 1 {
+                    // Header row ("Seeds  Size ..."): not a data row.
                     return None;
                 }
-                let data_row = (table_row - 2) as usize;
+                let data_row = (table_row - 1) as usize;
                 if let Some(&idx) = self.filtered_indices.get(data_row) {
                     self.selected = idx;
                 }
@@ -1242,37 +1247,14 @@ impl App {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        // Two rows inside the border: the category tabs, then the table.
-        // The source tabs that used to sit above them moved to the
-        // Sources panel (П.4) -- which sources are asked is now read off
-        // the frame's info slot, so the row would have been a duplicate.
+        // One row inside the border: the table. The category row that
+        // used to sit above it moved onto the frame (П.4 follow-up) --
+        // the current category is read off the `◀ name ▶` button next to
+        // `group`, so a row here would have been a second copy of it.
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // category tabs (B6's row)
-                Constraint::Min(0),    // results table
-            ])
+            .constraints([Constraint::Min(0)]) // results table
             .split(inner);
-
-        // --- category tab bar ----------------------------------------------
-        // Read from the same `group_tabs` field `group_tab_at` walks, so
-        // drawn == clickable.
-        let mut group_spans = Vec::new();
-        for (i, &group) in self.group_tabs.iter().enumerate() {
-            let is_active = group == self.active_group;
-            let text = group.map_or("all", Group::label);
-            let label = if is_active { format!("[{}]", text) } else { text.to_string() };
-            let style = if is_active {
-                Style::default().fg(self.theme.hi_fg.to_color()).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(self.theme.inactive_fg.to_color())
-            };
-            group_spans.push(Span::styled(label, style));
-            if i < self.group_tabs.len() - 1 {
-                group_spans.push(Span::raw("  "));
-            }
-        }
-        frame.render_widget(Paragraph::new(Line::from(group_spans)), chunks[0]);
 
         // --- results table ---------------------------------------------------
         // `Src` sits between the metadata and the title: on the `all`
@@ -1326,7 +1308,7 @@ impl App {
         if let Some(local_pos) = self.filtered_indices.iter().position(|&i| i == self.selected) {
             state.select(Some(local_pos));
         }
-        frame.render_stateful_widget(table, chunks[1], &mut state);
+        frame.render_stateful_widget(table, chunks[0], &mut state);
 
         // The keybind legend moved onto the frame with П.5, so the panel
         // body ends at the table and every remaining line is data.

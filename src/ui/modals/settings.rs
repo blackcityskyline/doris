@@ -678,6 +678,18 @@ impl App {
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
 
+            // Fill the whole inner area with the background before any
+            // content: the body below is many small paragraphs, each
+            // covering only its own rect, and the gaps between them would
+            // otherwise show whatever is behind the modal. With "Theme
+            // background" off `modal_block` paints no background at all,
+            // so those gaps read as the modal being see-through around
+            // the text blocks -- the patchwork this fixes.
+            frame.render_widget(
+                Paragraph::new("").style(Style::default().bg(self.theme.main_bg.to_color())),
+                inner,
+            );
+
             let hi_color = self.theme.hi_fg.to_color();
             let title_color = self.theme.title.to_color();
             let div_color = self.theme.div_line.to_color();

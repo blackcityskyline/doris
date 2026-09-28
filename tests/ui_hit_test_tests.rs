@@ -124,10 +124,10 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     let before = app.selected;
-    // +1 for the border, +1 for the category row above the table's own
-    // header row -- see render_results_zone.
+    // +1 for the border, then the table's own header row -- see
+    // render_results_zone.
     let mut config = Config::default();
-    app.click_at(results_area.y + 2, results_area.x, &mut config); // table header row, not a data row
+    app.click_at(results_area.y + 1, results_area.x, &mut config); // table header row, not a data row
     assert_eq!(app.selected, before);
 }
 
@@ -139,13 +139,12 @@ fn test_click_at_results_data_row_selects_that_item() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    // y+1 = category tabs, y+2 = table header, y+3 = first data row
-    // (index 0).
+    // y+1 = table header, y+2 = first data row (index 0).
     let mut config = Config::default();
-    app.click_at(results_area.y + 3, results_area.x, &mut config);
+    app.click_at(results_area.y + 2, results_area.x, &mut config);
     assert_eq!(app.selected, 0);
 
-    app.click_at(results_area.y + 4, results_area.x, &mut config);
+    app.click_at(results_area.y + 3, results_area.x, &mut config);
     assert_eq!(app.selected, 1);
 }
 
@@ -159,7 +158,7 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     let mut config = Config::default();
-    app.click_at(results_area.y + 3, results_area.x, &mut config); // first visible (filtered) row
+    app.click_at(results_area.y + 2, results_area.x, &mut config); // first visible (filtered) row
     assert_eq!(app.selected, 3);
 }
 
@@ -577,46 +576,74 @@ fn test_cycle_group_walks_the_row_and_wraps() {
     assert_eq!(app.active_group, tabs[tabs.len() - 1]);
 }
 
-/// The row that is drawn is the row that is clickable: the hit-test
-/// walks the same `group_tabs` field the render does, on the first line
-/// inside the border.
+/// The category moved from a row inside the panel onto the frame, as
+/// btop's `◀ name ▶` sort header: the current category is named on the
+/// border next to `group`, and the two arrows are mouse targets for
+/// previous / next. The `g`/`G` keys stay the keyboard way in.
 #[test]
-fn test_group_tab_at_finds_each_tab_it_drew() {
-    let mut config = Config::default();
+fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     let mut app = make_app();
+    let mut config = Config::default();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let results = app.zones.get_area(ZoneId::Results);
-    let row = results.y + 1; // the first line inside the border
-    let first = results.x + 1;
+    let area = app.zones.get_area(ZoneId::Results);
 
-    // "[all]" is bracketed while selected: 5 cells, then two spaces.
-    assert_eq!(app.group_tab_at(row, first), Some(None), "the all tab");
-    assert_eq!(app.group_tab_at(row, first + 4), Some(None), "its bracket");
-    assert_eq!(
-        app.group_tab_at(row, first + 5 + 2),
-        Some(Some(Group::Movies))
-    );
-    // The border above and the table's header row below are not this
-    // row, however close their columns look.
-    assert_eq!(app.group_tab_at(results.y, first), None);
-    assert_eq!(app.group_tab_at(results.y + 2, first), None);
+    let (button, rect) = {
+        let layout = app.frame_layout(ZoneId::Results, area, &config);
+        layout.buttons.iter()
+            .find(|(b, _)| b.is_category())
+            .map(|(b, r)| (b.clone(), *r))
+            .expect("the Results frame has a category button")
+    };
+    assert_eq!(button.text(), "◀ all ▶", "a fresh app is on the all category");
 
-    // A click selects the tab, flags the owed search, and focuses the
-    // zone -- like every other Results click.
-    assert_eq!(app.click_at(row, first + 5 + 2, &mut config), None);
+    // The right arrow steps forward through the category row.
+    let right_arrow = rect.x + rect.width - 1;
+    assert_eq!(app.click_at(rect.y, right_arrow, &mut config), None);
+    assert_eq!(app.active_group, Some(Group::Movies), "the right arrow steps forward");
+    assert!(app.group_changed);
+
+    // ...and the left arrow steps back.
+    let rect = {
+        let layout = app.frame_layout(ZoneId::Results, area, &config);
+        layout.buttons.iter()
+            .find(|(b, _)| b.is_category())
+            .map(|(_, r)| *r)
+            .expect("the category button")
+    };
+    assert_eq!(app.click_at(rect.y, rect.x, &mut config), None);
+    assert_eq!(app.active_group, None, "the left arrow steps back to all");
+
+    // The name between the arrows is display-only, not a target.
+    let rect = {
+        let layout = app.frame_layout(ZoneId::Results, area, &config);
+        layout.buttons.iter()
+            .find(|(b, _)| b.is_category())
+            .map(|(_, r)| *r)
+            .expect("the category button")
+    };
+    assert_eq!(app.click_at(rect.y, rect.x + 2, &mut config), None);
+    assert_eq!(app.active_group, None, "clicking the name does nothing");
+}
+
+/// The `group` frame button is still there and still cycles the category
+/// forward -- the keyboard `g` and this click are the same action.
+#[test]
+fn test_the_group_button_still_cycles_the_category() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Results);
+
+    let rect = {
+        let layout = app.frame_layout(ZoneId::Results, area, &config);
+        layout.buttons.iter()
+            .find(|(b, _)| b.key == 'g' && !b.is_category())
+            .map(|(_, r)| *r)
+            .expect("the group button")
+    };
+    assert_eq!(app.click_at(rect.y, rect.x, &mut config), None);
     assert_eq!(app.active_group, Some(Group::Movies));
     assert!(app.group_changed);
-    assert_eq!(app.zones.focused, ZoneId::Results);
-
-    // Now "[all]" has lost its brackets and every label to its right
-    // moved left; the hit-test follows on its own because both sides
-    // derive from the same field.
-    assert_eq!(
-        app.group_tab_at(row, first + 4),
-        None,
-        "the bracket cell is a gap now"
-    );
-    assert_eq!(app.group_tab_at(row, first + 5), Some(Some(Group::Movies)));
 }
 
 /// Switching off the source that was the last one serving a category
