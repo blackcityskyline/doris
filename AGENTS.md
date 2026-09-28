@@ -177,7 +177,7 @@ free here, while `info`/`play` trail their `v`/`⏎`.
   the left and Log + Sources stacked down the right)
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
-- `g`/`G`: cycle the category row (forward/back; an empty query is browse mode, not a category)
+- `g`/`G`: cycle the category (forward/back; an empty query is browse mode, not a category) -- the `◀ name ▶` button on the Results frame does the same by mouse
 - `p`/`d`: pause-or-resume / remove the tracked torrent, when the Torrent zone is focused
 - `Esc`: close modal / exit input mode / exit filter mode
 - `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)

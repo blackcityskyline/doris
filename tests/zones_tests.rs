@@ -273,7 +273,8 @@ fn test_zone_title_width_matches_the_drawn_title() {
 fn test_button_spans_put_the_hotkey_on_the_key_character() {
     let theme = Theme::dark();
     for &id in ZoneId::all() {
-        for button in zone_buttons(id) {
+        let buttons = zone_buttons(id);
+        for button in &buttons {
             let text = button.text();
             let spans = button_spans(&theme, button, false);
 
@@ -296,12 +297,65 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
     }
 }
 
+/// The category button's arrows are the mouse targets, so both take the
+/// `hi_fg` + bold treatment and the name between them stays `title` --
+/// btop draws its sortable column headers the same way. The button is
+/// built in `frame_layout` (its label names the current category), so
+/// that is where the test reads it from.
+#[test]
+fn test_the_category_button_highlights_both_arrows() {
+    let theme = Theme::dark();
+    let mut app = doris::ui::app::App::new(
+        "http://127.0.0.1:8090".into(),
+        true,
+        true,
+        None,
+        "/tmp".into(),
+        "braille".into(),
+        true,
+        true,
+        true,
+        false,
+    );
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Results);
+    let config = doris::config::Config::default();
+
+    let layout = app.frame_layout(ZoneId::Results, area, &config);
+    let button = layout.buttons.iter()
+        .find(|(b, _)| b.is_category())
+        .map(|(b, _)| b)
+        .expect("the Results frame has a category button");
+
+    let spans = button_spans(&theme, button, false);
+    assert_eq!(spans.len(), 3, "arrow / name / arrow");
+    assert_eq!(spans[0].content.to_string(), "◀");
+    assert_eq!(spans[2].content.to_string(), "▶");
+    for arrow in [&spans[0], &spans[2]] {
+        assert_eq!(
+            arrow.style.fg,
+            Some(theme.hi_fg.to_color()),
+            "an arrow is a mouse target, drawn like a hotkey"
+        );
+        assert!(
+            arrow.style.add_modifier.contains(Modifier::BOLD),
+            "and bold"
+        );
+    }
+    assert_eq!(
+        spans[1].style.fg,
+        Some(theme.title.to_color()),
+        "the name is display-only"
+    );
+}
+
 /// A pressed toggle is drawn bold, the whole word -- btop wraps `pause`
 /// in `Fx::b` while `pause_proc_list` is on.
 #[test]
 fn test_active_button_bolds_the_whole_word() {
     let theme = Theme::dark();
-    let button = zone_buttons(ZoneId::Torrent)
+    let buttons = zone_buttons(ZoneId::Torrent);
+    let button = buttons
         .iter()
         .find(|b| b.key == 'p')
         .expect("Torrent has a pause button");
@@ -333,7 +387,8 @@ fn test_primary_buttons_lead_with_their_hotkey() {
         (ZoneId::Torrent, 'd'),
     ];
     for (id, key) in primary {
-        let button = zone_buttons(id)
+        let buttons = zone_buttons(id);
+        let button = buttons
             .iter()
             .find(|b| b.key == key)
             .unwrap_or_else(|| panic!("{:?} has no '{}' button", id, key));

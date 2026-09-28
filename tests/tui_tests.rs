@@ -686,14 +686,11 @@ fn test_switching_the_category_rederives_the_view_instantly() {
     );
 }
 
-/// The row exists on screen and not only in state: the table's own
-/// header moved down a line to make room for it.
-/// The category row is the first line inside the Results border: the
-/// source tabs that used to sit above it moved to the Sources panel
-/// (П.4), so the row below the frame is the category row and the one
-/// below that is the table header.
+/// The category row is gone from the panel body: the table's own header
+/// is the first line inside the Results border, and the current category
+/// lives on the frame as the `◀ all ▶` button next to `group`.
 #[test]
-fn test_render_draws_the_category_row_under_the_frame() {
+fn test_render_draws_the_table_header_under_the_frame() {
     let mut app = make_test_app();
     app.zones.update_areas(Rect::new(0, 0, 120, 40));
     let results = app.zones.get_area(doris::ui::zones::ZoneId::Results);
@@ -708,21 +705,17 @@ fn test_render_draws_the_category_row_under_the_frame() {
             .collect()
     };
 
-    // "all" is the selected category on a fresh app, so it is the
-    // bracketed one here -- the first line inside the border, and only it.
-    let category_row = row_text(results.y + 1);
-    assert!(category_row.contains("[all]"), "category row: {category_row}");
-    for group in ["Movies", "TV", "Games", "Anime"] {
-        assert!(category_row.contains(group), "missing {group}: {category_row}");
-    }
+    // The category row is gone: the first line inside the border is the
+    // table header, and the current category lives on the frame as the
+    // `◀ all ▶` button next to `group`.
     assert!(
-        !category_row.contains("rutracker"),
-        "the source tabs are a panel now, not a row in here: {category_row}"
+        row_text(results.y + 1).contains("Seeds"),
+        "the table header is the first line inside the border: {}",
+        row_text(results.y + 1)
     );
-    assert!(
-        row_text(results.y + 2).contains("Seeds"),
-        "the table header sits one row lower now"
-    );
+    let frame_row = row_text(results.y);
+    assert!(frame_row.contains("◀ all ▶"), "the category button: {frame_row}");
+    assert!(frame_row.contains("group"), "next to the group button: {frame_row}");
 }
 
 // --- the frame legend actually reaches the border (П.5) --------------------
