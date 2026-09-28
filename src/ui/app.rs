@@ -121,15 +121,7 @@ pub struct App {
     pub modal: Modal,
     pub search_query: Option<String>,
     pub all_loaded: bool,
-    /// True = browser runs hidden (background). False = visible window.
-    pub browser_hidden: bool,
-    /// Mirrors `Config::vim_keys`: the j/k bindings the detail modal's
-    /// file cursor uses, gated the same way every other j/k in the app
-    /// is. Held here (like `browser_hidden`) because the modal's keys
-    /// are `ui::App`'s, not the orchestrator's.
-    pub vim_keys: bool,
     pub stream_mode: bool,
-    pub download_dir: String,
     pub theme: Theme,
     pub zones: ZoneLayout,
     pub menu: MenuState,
@@ -193,14 +185,10 @@ pub struct App {
     /// TorrentListUpdate handler so a long session doesn't grow this
     /// unboundedly.
     pub progress_history: std::collections::VecDeque<f64>,
-    /// Mirrors config.graph_symbol -- see the doc comment on
-    /// `browser_hidden` for why runtime-relevant Options values get a
-    /// local copy here instead of ui::App holding a `&Config`.
-    pub graph_symbol: String,
-    pub rounded_corners: bool,
-    pub theme_background: bool,
-    pub truecolor: bool,
-    pub false_tty: bool,
+    /// Session copy of the runtime browser visibility, refreshed from
+    /// `App::browser_visibility` every time the settings modal opens. The
+    /// modal displays and toggles it; the orchestrator owns the value.
+    pub settings_browser_hidden: bool,
     pub filtered_indices: Vec<usize>,
 }
 
@@ -362,18 +350,7 @@ impl FrameLayout {
 }
 
 impl App {
-    pub fn new(
-        torrserver_url: String,
-        browser_hidden: bool,
-        vim_keys: bool,
-        theme_name: Option<&str>,
-        download_dir: String,
-        graph_symbol: String,
-        rounded_corners: bool,
-        theme_background: bool,
-        truecolor: bool,
-        false_tty: bool,
-    ) -> Self {
+    pub fn new(torrserver_url: String, theme_name: Option<&str>) -> Self {
         let theme = theme_name
             .and_then(|name| Theme::load_themes().into_iter().find(|t| t.name == name))
             .unwrap_or_else(Theme::default);
@@ -394,10 +371,7 @@ impl App {
             modal: Modal::None,
             search_query: None,
             all_loaded: false,
-            browser_hidden,
-            vim_keys,
             stream_mode: true,
-            download_dir,
             theme,
             zones: ZoneLayout::new(),
             menu: MenuState::new(),
@@ -418,11 +392,7 @@ impl App {
             source_changed: false,
             last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),
-            graph_symbol,
-            rounded_corners,
-            theme_background,
-            truecolor,
-            false_tty,
+            settings_browser_hidden: false,
             filtered_indices: Vec::new(),
         }
     }
@@ -938,15 +908,15 @@ impl App {
     /// background" is about letting terminal transparency show through
     /// the regular panels, which is a different concern from whether a
     /// temporary popup dialog is legible on top of whatever's behind it.
-    fn themed_block(&self, border_color: Color) -> Block<'static> {
-        let border_color = self.resolve_color(border_color);
-        let border_type = if self.rounded_corners && !self.false_tty { BorderType::Rounded } else { BorderType::Plain };
+    fn themed_block(&self, border_color: Color, config: &Config) -> Block<'static> {
+        let border_color = self.resolve_color(border_color, config);
+        let border_type = if config.rounded_corners && !config.false_tty { BorderType::Rounded } else { BorderType::Plain };
         let mut block = Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
-        if self.theme_background {
-            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())));
+        if config.theme_background {
+            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)));
         }
         block
     }
@@ -958,25 +928,25 @@ impl App {
     /// three modals) hides the content underneath while the terminal's
     /// background color shows through. Still respects rounded corners and
     /// truecolor/false_tty degradation like every other themed block.
-    pub(crate) fn modal_block(&self, border_color: Color) -> Block<'static> {
-        let border_color = self.resolve_color(border_color);
-        let border_type = if self.rounded_corners && !self.false_tty { BorderType::Rounded } else { BorderType::Plain };
+    pub(crate) fn modal_block(&self, border_color: Color, config: &Config) -> Block<'static> {
+        let border_color = self.resolve_color(border_color, config);
+        let border_type = if config.rounded_corners && !config.false_tty { BorderType::Rounded } else { BorderType::Plain };
         let mut block = Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
-        if self.theme_background {
-            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color())));
+        if config.theme_background {
+            block = block.style(Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)));
         }
         block
     }
 
     /// Degrade an RGB color per the "Truecolor"/"False tty" toggles; see
     /// `theme::degrade_color`. Named/basic colors pass through untouched.
-    fn resolve_color(&self, color: Color) -> Color {
-        if self.false_tty {
+    fn resolve_color(&self, color: Color, config: &Config) -> Color {
+        if config.false_tty {
             super::theme::degrade_color(color, false)
-        } else if !self.truecolor {
+        } else if !config.truecolor {
             super::theme::degrade_color(color, true)
         } else {
             color
@@ -1160,7 +1130,7 @@ impl App {
 
     fn render_menu_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         self.zones.update_areas(area);
-        self.render_search_bar(frame, area);
+        self.render_search_bar(frame, area, config);
         for zone_id in ZoneId::all() {
             let zone_area = self.zones.get_area(*zone_id);
             if zone_area.width == 0 || zone_area.height == 0 { continue; }
@@ -1179,9 +1149,9 @@ impl App {
         self.zones.update_areas(area);
 
         if self.detail_log_mode {
-            self.render_full_log(frame, area);
+            self.render_full_log(frame, area, config);
         } else {
-            self.render_search_bar(frame, area);
+            self.render_search_bar(frame, area, config);
 
             for zone_id in ZoneId::all() {
                 let zone_area = self.zones.get_area(*zone_id);
@@ -1206,7 +1176,7 @@ impl App {
         }
 
         if self.modal != Modal::None {
-            self.render_modal(frame, area);
+            self.render_modal(frame, area, config);
         }
     }
 
@@ -1227,7 +1197,7 @@ impl App {
         !covered && row < SEARCH_BAR_HEIGHT
     }
 
-    fn render_search_bar(&self, frame: &mut Frame, area: Rect) {
+    fn render_search_bar(&self, frame: &mut Frame, area: Rect, config: &Config) {
         let bar_area = Rect::new(area.x, area.y, area.width, SEARCH_BAR_HEIGHT);
 
         // A label, not a keybind cheat-sheet: where the keys live is
@@ -1243,14 +1213,17 @@ impl App {
             _ => "search".to_string(),
         };
 
-        let input_border = self.themed_block(if self.input_mode {
+        let input_border = self.themed_block(
+            if self.input_mode {
                 Color::Yellow
             } else if self.zones.filter_mode {
                 Color::Cyan
             } else {
                 self.theme.div_line.to_color()
-            })
-            .title(title);
+            },
+            config,
+        )
+        .title(title);
 
         let input = Paragraph::new(self.search_input.as_str())
             .block(input_border)
@@ -1267,7 +1240,7 @@ impl App {
         config: &Config,
     ) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color)
+        let block = self.themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -1353,7 +1326,7 @@ impl App {
         config: &Config,
     ) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color)
+        let block = self.themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -1415,7 +1388,7 @@ impl App {
         };
 
         let history: Vec<f64> = self.progress_history.iter().copied().collect();
-        let sparkline = super::widgets::graph::render_sparkline(&history, bar_width, &self.graph_symbol);
+        let sparkline = super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
 
         let lines = vec![
             Line::from(vec![
@@ -1451,7 +1424,7 @@ impl App {
         ];
 
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color)
+        let block = self.themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
@@ -1480,7 +1453,7 @@ impl App {
 
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let log_panel = Paragraph::new(visible_logs).block(
-            self.themed_block(border_color).title(super::zones::zone_title(id, &self.theme)),
+            self.themed_block(border_color, config).title(super::zones::zone_title(id, &self.theme)),
         );
 
         frame.render_widget(log_panel, area);
@@ -1497,14 +1470,14 @@ impl App {
         config: &Config,
     ) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self.themed_block(border_color)
+        let block = self.themed_block(border_color, config)
             .title(super::zones::zone_title(id, &self.theme));
         let paragraph = Paragraph::new("Zone 4 — TBD").block(block);
         frame.render_widget(paragraph, area);
         self.render_frame(frame, id, area, config);
     }
 
-    fn render_full_log(&self, frame: &mut Frame, area: Rect) {
+    fn render_full_log(&self, frame: &mut Frame, area: Rect, config: &Config) {
         let total = self.detail_logs.len();
         let visible = (area.height as usize).saturating_sub(2);
         let scroll = self.detail_log_scroll.saturating_sub(visible);
@@ -1530,28 +1503,28 @@ impl App {
             scroll + visible.min(total), total);
 
         let log_panel = Paragraph::new(lines)
-            .block(self.themed_block(Color::Cyan).title(title));
+            .block(self.themed_block(Color::Cyan, config).title(title));
 
         frame.render_widget(log_panel, area);
     }
 
-    fn render_modal(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         if self.modal == Modal::None {
             return;
         }
 
         if let Modal::Login(_) = self.modal {
-            self.render_login_modal(frame, area);
+            self.render_login_modal(frame, area, config);
         } else if matches!(self.modal, Modal::Settings(_)) {
-            self.render_settings_modal(frame, area);
+            self.render_settings_modal(frame, area, config);
         } else if let Modal::HealthCheck(_) = self.modal {
-            self.render_health_modal(frame, area);
+            self.render_health_modal(frame, area, config);
         } else if matches!(self.modal, Modal::Help(_)) {
             // `&mut self`: the page publishes its own page count for
             // `help_key` while it draws.
-            self.render_help_modal(frame, area);
+            self.render_help_modal(frame, area, config);
         } else if matches!(self.modal, Modal::TorrentDetail(_)) {
-            self.render_detail_modal(frame, area);
+            self.render_detail_modal(frame, area, config);
         }
     }
 
@@ -1560,18 +1533,18 @@ impl App {
     ///
     /// Returns the actions that belong to the orchestrator; everything
     /// the modal owns itself (the cursor, closing) happens right here.
-    pub fn detail_key(&mut self, key: KeyEvent) -> Option<DetailAction> {
+    pub fn detail_key(&mut self, key: KeyEvent, vim_keys: bool) -> Option<DetailAction> {
         let Modal::TorrentDetail(ref mut state) = self.modal else {
             return None;
         };
         match key.code {
-            KeyCode::Char('j') if self.vim_keys => {
+            KeyCode::Char('j') if vim_keys => {
                 if !state.files.is_empty() {
                     state.cursor = (state.cursor + 1).min(state.files.len() - 1);
                 }
                 None
             }
-            KeyCode::Char('k') if self.vim_keys => {
+            KeyCode::Char('k') if vim_keys => {
                 state.cursor = state.cursor.saturating_sub(1);
                 None
             }

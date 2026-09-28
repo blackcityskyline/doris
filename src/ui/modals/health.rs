@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use crate::config::Config;
 use crate::ui::app::{centered_rect, App, Modal};
 
 impl App {
@@ -98,12 +99,12 @@ impl App {
     /// The health check modal's own rendering: the results list,
     /// coloured by the mark each line carries. `&self` because it
     /// only reads the modal state and the theme.
-    pub fn render_health_modal(&self, frame: &mut Frame, area: Rect) {
+    pub fn render_health_modal(&self, frame: &mut Frame, area: Rect, config: &Config) {
         if let Modal::HealthCheck(ref lines) = self.modal {
             let popup = centered_rect(70, 80, area);
             frame.render_widget(Clear, popup);
 
-            let block = self.modal_block(Color::Green).title(" Health Check ");
+            let block = self.modal_block(Color::Green, config).title(" Health Check ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);

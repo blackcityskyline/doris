@@ -9,18 +9,7 @@ use doris::config::Config;
 use ratatui::Terminal;
 
 fn make_app() -> UiApp {
-    UiApp::new(
-        "http://127.0.0.1:8090".into(),
-        true,
-        true,
-        None,
-        "/tmp".into(),
-        "braille".into(),
-        true,
-        true,
-        true,
-        false,
-    )
+    UiApp::new("http://127.0.0.1:8090".into(), None)
 }
 
 fn key(code: KeyCode) -> KeyEvent {

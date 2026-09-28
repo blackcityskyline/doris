@@ -7,19 +7,8 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn make_app_in_settings() -> UiApp {
-    let mut app = UiApp::new(
-        "http://127.0.0.1:8090".into(),
-        true,
-        true,
-        None,
-        "/tmp".into(),
-        "braille".into(),
-        true,
-        true,
-        true,
-        false,
-    );
-    app.open_settings(&Config::default());
+    let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
+    app.open_settings(&Config::default(), false);
     app
 }
 

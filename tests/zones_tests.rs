@@ -305,18 +305,7 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
 #[test]
 fn test_the_category_button_highlights_both_arrows() {
     let theme = Theme::dark();
-    let mut app = doris::ui::app::App::new(
-        "http://127.0.0.1:8090".into(),
-        true,
-        true,
-        None,
-        "/tmp".into(),
-        "braille".into(),
-        true,
-        true,
-        true,
-        false,
-    );
+    let mut app = doris::ui::app::App::new("http://127.0.0.1:8090".into(), None);
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
     let config = doris::config::Config::default();

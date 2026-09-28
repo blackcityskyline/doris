@@ -10,18 +10,7 @@ use doris::sources::source::Group;
 use doris::ui::zones::ZoneId;
 
 fn make_test_app() -> UiApp {
-    UiApp::new(
-        "http://127.0.0.1:8090".into(),
-        true,
-        true,
-        None,
-        "/tmp".into(),
-        "braille".into(),
-        true,
-        true,
-        true,
-        false,
-    )
+    UiApp::new("http://127.0.0.1:8090".into(), None)
 }
 
 fn make_results(n: usize) -> Vec<TorrentItem> {
