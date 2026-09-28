@@ -1220,6 +1220,16 @@ impl App {
             _ => "search".to_string(),
         };
 
+        // The box holds whichever string is being edited: the query in
+        // search mode, the filter while `f` is open. Before, the filter
+        // only ever reached the border title, so the box kept showing
+        // the stale query while the text grew somewhere else.
+        let editing: &str = if self.zones.filter_mode {
+            self.zones.filter_input.as_str()
+        } else {
+            self.search_input.as_str()
+        };
+
         let input_border = self
             .themed_block(
                 if self.input_mode {
@@ -1233,11 +1243,23 @@ impl App {
             )
             .title(title);
 
-        let input = Paragraph::new(self.search_input.as_str())
+        let inner = input_border.inner(bar_area);
+        let input = Paragraph::new(editing)
             .block(input_border)
             .style(Style::default().fg(Color::White));
 
         frame.render_widget(input, bar_area);
+
+        // A text field without a caret is a text field you type into
+        // blind. The terminal hides it again on the next frame that
+        // does not ask for one, so an idle box stays clean.
+        if (self.input_mode || self.zones.filter_mode)
+            && self.modal == Modal::None
+            && !self.show_menu
+        {
+            let col = editing.chars().count() as u16;
+            frame.set_cursor_position((inner.x + col.min(inner.width.saturating_sub(1)), inner.y));
+        }
     }
 
     /// What the Results panel says in place of an empty table.

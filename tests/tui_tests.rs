@@ -696,6 +696,10 @@ fn test_switching_the_category_rederives_the_view_instantly() {
 #[test]
 fn test_render_draws_the_table_header_under_the_frame() {
     let mut app = make_test_app();
+    // A populated panel is the case that has a table to draw: an empty
+    // one answers with the empty state instead of a bare header.
+    app.results = make_results(3);
+    app.update_filter();
     app.zones.update_areas(Rect::new(0, 0, 120, 40));
     let results = app.zones.get_area(doris::ui::zones::ZoneId::Results);
 
