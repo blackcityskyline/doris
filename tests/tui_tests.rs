@@ -883,3 +883,49 @@ fn test_results_table_shows_which_source_returned_each_row() {
         unknown
     );
 }
+
+// --- layout presets (П.8) ----------------------------------------------------
+
+/// The split preset (`P`) puts Results on top at full width and stacks
+/// Torrent against Log + Sources in two columns below it. The render
+/// pass needs no change for that -- it draws into whatever rect
+/// `update_areas` handed out -- so this is a smoke test that the zones
+/// really land where the layout says.
+#[test]
+fn test_the_split_preset_draws_two_columns() {
+    let mut app = make_test_app();
+    app.results = make_results(3);
+    app.update_filter();
+    app.zones.cycle_preset();
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    let buf = terminal.backend().buffer();
+
+    let row_text = |y: u16| -> String {
+        (0..buf.area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    };
+
+    // Results spans the full width at the top.
+    let results = app.zones.get_area(ZoneId::Results);
+    assert_eq!(results.width, 100);
+    assert!(row_text(results.y).contains("Results"), "the Results frame");
+
+    // Torrent is the left column, Log and Sources the right one.
+    let torrent = app.zones.get_area(ZoneId::Torrent);
+    let log = app.zones.get_area(ZoneId::Log);
+    let sources = app.zones.get_area(ZoneId::Sources);
+    assert_eq!(torrent.x, 0);
+    assert_eq!(torrent.width, 50);
+    assert_eq!(log.x, 50);
+    assert_eq!(sources.x, 50);
+    assert!(log.y < sources.y, "Log is stacked above Sources");
+
+    // And each of them actually drew its own frame where it was placed.
+    assert!(row_text(torrent.y).contains("Torrent"), "the Torrent frame");
+    assert!(row_text(log.y).contains("Log"), "the Log frame");
+    assert!(row_text(sources.y).contains("Sources"), "the Sources frame");
+}

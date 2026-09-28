@@ -346,3 +346,127 @@ fn test_primary_buttons_lead_with_their_hotkey() {
         );
     }
 }
+
+// --- layout presets (П.8) ---------------------------------------------------
+
+/// The layout a fresh app starts in: the one that has always been there,
+/// so a terminal that has never heard of presets looks the same.
+#[test]
+fn test_the_default_preset_is_the_horizontal_one() {
+    let zones = ZoneLayout::new();
+    assert_eq!(zones.preset, doris::ui::zones::LayoutPreset::Horizontal);
+}
+
+/// `P` cycles the two presets and comes back around, like every other
+/// cycle in the app.
+#[test]
+fn test_the_preset_cycles_and_wraps() {
+    let mut zones = ZoneLayout::new();
+    zones.cycle_preset();
+    assert_eq!(zones.preset, doris::ui::zones::LayoutPreset::Split);
+    zones.cycle_preset();
+    assert_eq!(zones.preset, doris::ui::zones::LayoutPreset::Horizontal);
+}
+
+/// The split layout: Results on top at full width, then Torrent down
+/// the left and Log/Sources stacked down the right.
+#[test]
+fn test_the_split_layout_stacks_the_zones_in_two_columns() {
+    let mut zones = ZoneLayout::new();
+    zones.set_visible(ZoneId::Extra, false);
+    zones.cycle_preset();
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    let results = zones.get_area(ZoneId::Results);
+    let torrent = zones.get_area(ZoneId::Torrent);
+    let log = zones.get_area(ZoneId::Log);
+    let sources = zones.get_area(ZoneId::Sources);
+
+    // Results: full width, below the search bar, about a third of the
+    // 27 rows that are left.
+    assert_eq!(results, Rect::new(0, 3, 100, 9));
+
+    // Torrent: the left half, everything below Results.
+    assert_eq!(torrent, Rect::new(0, 12, 50, 18));
+
+    // Log and Sources: the right half, stacked, Log on top.
+    assert_eq!(log, Rect::new(50, 12, 50, 9));
+    assert_eq!(sources, Rect::new(50, 21, 50, 9));
+}
+
+/// Hiding a zone gives its space to whatever shares its column, so the
+/// layout never has a hole in it.
+#[test]
+fn test_hiding_a_zone_gives_its_space_to_its_column() {
+    let mut zones = ZoneLayout::new();
+    zones.set_visible(ZoneId::Extra, false);
+    zones.cycle_preset();
+
+    // Sources off: Log takes the whole right column.
+    zones.set_visible(ZoneId::Sources, false);
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 12, 50, 18));
+    assert_eq!(zones.get_area(ZoneId::Sources), Rect::default());
+
+    // Torrent off too: the right column is the only one left, so it
+    // takes the full width -- and Log, alone in it, all of its height.
+    zones.set_visible(ZoneId::Torrent, false);
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 12, 100, 18));
+    assert_eq!(zones.get_area(ZoneId::Sources), Rect::default());
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::default());
+}
+
+/// Fullscreen outranks any preset: one zone gets the whole frame, the
+/// others get nothing, whatever the preset says.
+#[test]
+fn test_fullscreen_overrides_the_preset() {
+    let mut zones = ZoneLayout::new();
+    zones.cycle_preset();
+    zones.set_fullscreen(Some(ZoneId::Torrent));
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 0, 100, 30));
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::default());
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::default());
+}
+
+/// The search bar is not part of any preset: it is always the top rows
+/// at full width, in both layouts.
+#[test]
+fn test_the_search_bar_is_outside_both_presets() {
+    for preset in [doris::ui::zones::LayoutPreset::Horizontal, doris::ui::zones::LayoutPreset::Split] {
+        let mut zones = ZoneLayout::new();
+        zones.preset = preset;
+        zones.update_areas(Rect::new(0, 0, 100, 30));
+        for &id in ZoneId::all() {
+            let area = zones.get_area(id);
+            if area.height == 0 {
+                continue;
+            }
+            assert!(
+                area.y >= doris::ui::zones::SEARCH_BAR_HEIGHT,
+                "{:?} starts inside the search bar in {:?}",
+                id,
+                preset
+            );
+        }
+    }
+}
+
+/// A terminal too short for the split still gets a layout: Results
+/// takes what there is and the columns get what is left, with nothing
+/// panicking and nothing drawn outside the frame.
+#[test]
+fn test_the_split_layout_survives_a_tiny_terminal() {
+    let mut zones = ZoneLayout::new();
+    zones.set_visible(ZoneId::Extra, false);
+    zones.cycle_preset();
+    zones.update_areas(Rect::new(0, 0, 40, 6));
+
+    for &id in ZoneId::all() {
+        let area = zones.get_area(id);
+        assert!(area.x + area.width <= 40, "{:?} runs off the right edge", id);
+        assert!(area.y + area.height <= 6, "{:?} runs off the bottom edge", id);
+    }
+}

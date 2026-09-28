@@ -43,6 +43,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("f", "Toggles fullscreen for the focused zone."),
     ("m", "Toggles the main menu."),
     ("1, 2, 3, 4, 5", "Toggles that zone's visibility."),
+    ("Shift+P", "Cycles the layout preset (horizontal / split)."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
     ("j, k, Up, Down", "Moves in the focused zone (j/k: Vim keys)."),
     ("g, G", "Cycles the category row forward / back."),

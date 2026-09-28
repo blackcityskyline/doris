@@ -1374,6 +1374,12 @@ impl App {
             KeyCode::Char('5') if !self.ui.input_mode => {
                 self.ui.zones.toggle(ZoneId::Sources);
             }
+            // Shift+P: cycle the layout preset (П.8). Lowercase `p` is
+            // pause/resume on the Torrent panel, so the capital is the
+            // free one -- the same reasoning as `F` for filter.
+            KeyCode::Char('P') if !self.ui.input_mode => {
+                self.ui.zones.cycle_preset();
+            }
             KeyCode::Char('p') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
                 self.toggle_pause_active_torrent().await;
             }
