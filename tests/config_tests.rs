@@ -72,12 +72,14 @@ fn test_config_save_and_load_round_trip() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("config.toml");
 
-    let mut config = Config::default();
-    config.theme_name = Some("dracula".to_string());
-    config.vim_keys = false;
-    config.update_ms = 2500;
-    config.rounded_corners = false;
-    config.enable_torrserver = false;
+    let config = Config {
+        theme_name: Some("dracula".to_string()),
+        vim_keys: false,
+        update_ms: 2500,
+        rounded_corners: false,
+        enable_torrserver: false,
+        ..Default::default()
+    };
 
     save(&config, Some(&path)).unwrap();
     let loaded = load(Some(&path)).unwrap();
@@ -161,7 +163,7 @@ fn test_config_parse_with_keybindings() {
 /// config, where every new tab answered "Selected source is disabled".
 #[test]
 fn test_a_config_from_before_wave1_gains_the_new_sources() {
-    let mut config = from_toml(
+    let config = from_toml(
         "enabled_sources = [\n    \"rutracker\",\n    \"rutor\",\n]\nsave_config_on_exit = true\n",
     )
     .expect("legacy config parses");
@@ -203,9 +205,11 @@ fn test_a_source_the_user_switched_off_before_wave1_stays_off() {
 /// saved -- is left exactly as the user configured it.
 #[test]
 fn test_known_sources_are_never_re_enabled() {
-    let mut config = Config::default();
-    config.known_sources = KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect();
-    config.enabled_sources = vec!["rutracker".to_string()];
+    let mut config = Config {
+        known_sources: KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect(),
+        enabled_sources: vec!["rutracker".to_string()],
+        ..Default::default()
+    };
 
     config.migrate_sources();
 
@@ -253,9 +257,11 @@ fn test_a_fresh_default_config_is_not_migrated() {
 /// shipped and the user's tab bar never mentioned it.
 #[test]
 fn test_a_planned_source_is_never_recorded_as_seen() {
-    let mut config = Config::default();
-    config.known_sources = KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect();
-    config.enabled_sources = vec!["rutracker".to_string()];
+    let mut config = Config {
+        known_sources: KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect(),
+        enabled_sources: vec!["rutracker".to_string()],
+        ..Default::default()
+    };
 
     config.migrate_sources();
 

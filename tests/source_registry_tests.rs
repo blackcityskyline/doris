@@ -324,7 +324,7 @@ fn test_build_source_builds_every_browser_free_implemented_source() {
 }
 
 fn build_ok(id: &str) -> bool {
-    matches!(source::build_source(id, SourceEnv { browser: None }), Ok(_))
+    source::build_source(id, SourceEnv { browser: None }).is_ok()
 }
 
 #[test]

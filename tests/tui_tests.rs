@@ -1,7 +1,6 @@
 use doris::config::Config;
 use ratatui::prelude::*;
 use ratatui::backend::TestBackend;
-use ratatui::widgets::*;
 use doris::ui::app::App as UiApp;
 use doris::ui::app::Modal;
 use doris::ui::modals::login::LoginField;
@@ -258,7 +257,7 @@ fn test_submit_selection() {
 
 #[test]
 fn test_submit_selection_empty() {
-    let mut app = make_test_app();
+    let app = make_test_app();
     assert_eq!(app.submit_selection(), None);
 }
 

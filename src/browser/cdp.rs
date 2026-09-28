@@ -515,7 +515,7 @@ fn find_free_display() -> u32 {
 
 fn start_xvfb(display_num: u32) -> Option<std::process::Child> {
     let child = std::process::Command::new("Xvfb")
-        .args(&[
+        .args([
             &format!(":{}", display_num),
             "-screen", "0", "1920x1080x24",
             "-nolisten", "tcp",
@@ -803,7 +803,7 @@ fn patch_chromedriver_binary(content: &[u8]) -> Vec<u8> {
                 let actual_len = end - abs_pos;
                 let patch: Vec<u8> = replacement
                     .iter()
-                    .chain(std::iter::repeat(&b' ').take(actual_len.saturating_sub(replacement.len())))
+                    .chain(std::iter::repeat_n(&b' ', actual_len.saturating_sub(replacement.len())))
                     .take(actual_len)
                     .copied()
                     .collect();
@@ -1017,15 +1017,11 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
 
     let mut cookies = Vec::new();
     for row in rows {
-        let (host, name, value, path, secure, http_only, encrypted_value) = row?;
+        let (host, name, value, path, secure, http_only, _encrypted_value) = row?;
 
-        let final_value = if !value.is_empty() {
-            value
-        } else if !encrypted_value.is_empty() {
-            continue;
-        } else {
-            continue;
-        };
+        // Only plain-text cookies are usable: an encrypted_value blob
+        // can't be decrypted outside Chrome's profile keyring.
+        let final_value = if !value.is_empty() { value } else { continue };
 
         let domain = if host.starts_with('.') {
             host.clone()

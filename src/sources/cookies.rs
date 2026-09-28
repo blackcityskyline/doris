@@ -50,7 +50,7 @@ pub fn save_to_file(path: &Path, cookies: &[Cookie]) -> Result<()> {
         let secure = if cookie.secure { "TRUE" } else { "FALSE" };
         content.push_str(&format!(
             "{}\t{}\t{}\t{}\t0\t{}\t{}\n",
-            domain, flag, &cookie.path, secure, cookie.name, cookie.value
+            domain, flag, cookie.path, secure, cookie.name, cookie.value
         ));
     }
 

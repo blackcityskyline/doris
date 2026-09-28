@@ -353,7 +353,7 @@ impl App {
     pub fn new(torrserver_url: String, theme_name: Option<&str>) -> Self {
         let theme = theme_name
             .and_then(|name| Theme::load_themes().into_iter().find(|t| t.name == name))
-            .unwrap_or_else(Theme::default);
+            .unwrap_or_default();
 
         Self {
             search_input: String::new(),
@@ -953,15 +953,6 @@ impl App {
         }
     }
 
-
-
-    /// Build the Settings modal from real, current state. Every `value`
-    /// here is computed from `self`/`config`, never a hardcoded literal --
-    /// see ROADMAP.md bug B5, where roughly half of these used to be
-    /// decorative strings with no backing field at all.
-
-    /// One keypress in the login modal. Returns the credentials to log
-
     pub fn enter_input_mode(&mut self) {
         self.input_mode = true;
     }
@@ -1002,11 +993,7 @@ impl App {
             if local_idx < filtered_len - 1 {
                 self.selected = self.filtered_indices[local_idx + 1];
                 true
-            } else if !self.all_loaded && self.state == AppState::Idle {
-                true
-            } else {
-                false
-            }
+            } else { !self.all_loaded && self.state == AppState::Idle }
         } else {
             false
         }

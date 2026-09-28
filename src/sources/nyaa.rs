@@ -226,6 +226,12 @@ pub struct NyaaSearcher {
     client: reqwest::Client,
 }
 
+impl Default for NyaaSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NyaaSearcher {
     pub const HOME_URL: &str = "https://nyaa.si";
 

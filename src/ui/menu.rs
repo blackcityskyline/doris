@@ -45,6 +45,12 @@ pub struct MenuState {
     pub show_help: bool,
 }
 
+impl Default for MenuState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MenuState {
     pub fn new() -> Self {
         Self {

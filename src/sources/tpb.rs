@@ -185,6 +185,12 @@ pub struct TpbSearcher {
     client: reqwest::Client,
 }
 
+impl Default for TpbSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TpbSearcher {
     pub const HOME_URL: &str = "https://thepiratebay.org";
 

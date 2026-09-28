@@ -223,8 +223,7 @@ fn test_cycle_index_single_item_stays_put() {
 
 #[test]
 fn test_cookie_file_disabled_when_save_cookies_off() {
-    let mut config = Config::default();
-    config.save_cookies = false;
+    let config = Config { save_cookies: false, ..Default::default() };
     assert_eq!(resolve_cookie_file(&config, Some(std::path::Path::new("/tmp/x.txt"))), None);
 }
 
@@ -233,17 +232,21 @@ fn test_cookie_file_falls_back_to_config_toml_setting() {
     // This is the actual regression: previously only the CLI flag was
     // ever read, so with no --cookie-file given, login always ran with
     // no cookie file at all regardless of what config.toml said.
-    let mut config = Config::default();
-    config.save_cookies = true;
-    config.cookie_file = "my-cookies.txt".to_string();
+    let config = Config {
+        save_cookies: true,
+        cookie_file: "my-cookies.txt".to_string(),
+        ..Default::default()
+    };
     assert_eq!(resolve_cookie_file(&config, None), Some(PathBuf::from("my-cookies.txt")));
 }
 
 #[test]
 fn test_cookie_file_cli_flag_takes_priority_over_config() {
-    let mut config = Config::default();
-    config.save_cookies = true;
-    config.cookie_file = "config-cookies.txt".to_string();
+    let config = Config {
+        save_cookies: true,
+        cookie_file: "config-cookies.txt".to_string(),
+        ..Default::default()
+    };
     let cli_path = PathBuf::from("/explicit/cli-cookies.txt");
     assert_eq!(resolve_cookie_file(&config, Some(&cli_path)), Some(cli_path));
 }

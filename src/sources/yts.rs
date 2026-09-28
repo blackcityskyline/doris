@@ -191,6 +191,12 @@ pub struct YtsSearcher {
     client: reqwest::Client,
 }
 
+impl Default for YtsSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl YtsSearcher {
     pub const HOME_URL: &str = "https://yts.gg";
 

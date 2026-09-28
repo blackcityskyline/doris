@@ -244,6 +244,10 @@ fn center_str(s: &str, width: usize) -> String {
 }
 
 impl App {
+    /// Build the Settings modal from real, current state. Every `value`
+    /// here is computed from `self`/`config`, never a hardcoded literal --
+    /// see ROADMAP.md bug B5, where roughly half of these used to be
+    /// decorative strings with no backing field at all.
     pub fn open_settings(&mut self, config: &Config, browser_hidden: bool) {
         self.settings_browser_hidden = browser_hidden;
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
@@ -698,12 +702,7 @@ impl App {
                 // corrupts once a name is long enough to fill it exactly --
                 // see the bug this replaces, below).
                 let slot_width = state.categories.iter()
-                    .enumerate()
-                    .map(|(i, cat)| if i == state.selected_category {
-                        cat.name.chars().count() + 2 // "[" + "]"
-                    } else {
-                        cat.name.chars().count() + 2 // "N:"
-                    })
+                    .map(|cat| cat.name.chars().count() + 2)
                     .max()
                     .unwrap_or(8)
                     + 2; // breathing room before the next tab
@@ -792,7 +791,7 @@ impl App {
 
                 let left_x = inner.x + 1;
                 let right_x = inner.x + divider_col as u16 + 2;
-                let right_w = bw.saturating_sub(divider_col as usize + 3) as u16;
+                let right_w = bw.saturating_sub(divider_col + 3) as u16;
 
                 for row_idx in 0..visible_items {
                     let item_idx = start_idx + row_idx;
@@ -814,7 +813,7 @@ impl App {
                         } else {
                             Style::default().fg(title_color)
                         };
-                        let centered_label = center_str(&label, divider_col as usize - 2);
+                        let centered_label = center_str(&label, divider_col - 2);
                         frame.render_widget(
                             Paragraph::new(Span::styled(centered_label, label_style)),
                             Rect::new(left_x, y, divider_col as u16 - 1, 1),
@@ -826,7 +825,7 @@ impl App {
                         } else {
                             item.value.clone()
                         };
-                        let centered_val = center_str(&val_display, divider_col as usize - 2);
+                        let centered_val = center_str(&val_display, divider_col - 2);
                         frame.render_widget(
                             Paragraph::new(Span::styled(centered_val, val_style)),
                             Rect::new(left_x, y + 1, divider_col as u16 - 1, 1),
@@ -846,7 +845,7 @@ impl App {
                     }
                 }
 
-                let pages = (cat.items.len() + visible_items - 1) / visible_items;
+                let pages = cat.items.len().div_ceil(visible_items);
                 if pages > 1 {
                     let page_line = format!("↑ page {}/{} ↓", page + 1, pages);
                     let page_y = content_y + content_h as u16;
