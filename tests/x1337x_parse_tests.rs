@@ -22,8 +22,8 @@ use doris::sources::format::format_date;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::{AuthContext, Group, LogFn, Source};
 use doris::sources::x1337x::{
-    PAGE_SIZE, X1337xSearcher, browse_url, date_from_detail, filter_rows, magnet_from_detail,
-    parse_rows, search_url, stamp_category, to_browse_page, to_page,
+    browse_url, date_from_detail, filter_rows, magnet_from_detail, parse_rows, search_url,
+    stamp_category, to_browse_page, to_page, X1337xSearcher, PAGE_SIZE,
 };
 
 /// The mirror every live probe answered on.
@@ -210,7 +210,11 @@ fn row(title: &str) -> TorrentItem {
 #[test]
 fn test_a_row_carries_every_column_from_the_search_page_alone() {
     let rows = parse_rows(SEARCH_PAGE, HOST).expect("the live search page parses");
-    assert_eq!(rows.len(), 3, "the header row has no torrent link and is not one");
+    assert_eq!(
+        rows.len(),
+        3,
+        "the header row has no torrent link and is not one"
+    );
 
     let first = &rows[0];
     assert_eq!(first.title, "Dune.2021.1080p.WEBRip.DD5.1.x264-SHITBOX");
@@ -222,7 +226,10 @@ fn test_a_row_carries_every_column_from_the_search_page_alone() {
     assert_eq!(first.seeds, "7312");
     assert_eq!(first.seeds_n, 7312);
     assert_eq!(first.leechers, 899);
-    assert_eq!(first.size, "10.6 GB", "the site's own display string, kept as written");
+    assert_eq!(
+        first.size, "10.6 GB",
+        "the site's own display string, kept as written"
+    );
     // Latin units are SI in this codebase (`GB` = 1e9), a torio
     // compatibility the row's display string makes visible for the
     // first time -- nnmclub handed over bytes and never had a unit.
@@ -243,8 +250,7 @@ fn test_a_row_carries_every_column_from_the_search_page_alone() {
 fn test_a_raw_ampersand_in_a_title_survives_decoding() {
     let rows = parse_rows(SEARCH_PAGE, HOST).expect("the live search page parses");
     assert_eq!(
-        rows[2].title,
-        "Dune.Part.Two.2024.REPACK.2160p.UPSCALE.WEB.HEVC.10Bit.AAC.2.0-R&H.mkv",
+        rows[2].title, "Dune.Part.Two.2024.REPACK.2160p.UPSCALE.WEB.HEVC.10Bit.AAC.2.0-R&H.mkv",
         "live titles carry raw `&`, and no entity table touches it"
     );
     // ...while the icon anchor in front of the link is still not part
@@ -256,7 +262,10 @@ fn test_a_raw_ampersand_in_a_title_survives_decoding() {
 fn test_a_row_with_zero_seeders_is_still_a_row() {
     let rows = parse_rows(BROWSE_PAGE, HOST).expect("the live /home/ page parses");
     let dead = &rows[1];
-    assert_eq!(dead.title, "Ice.Cream.Man.2026.1080p.AMZN.WEB-DL.H264-KyoGo");
+    assert_eq!(
+        dead.title,
+        "Ice.Cream.Man.2026.1080p.AMZN.WEB-DL.H264-KyoGo"
+    );
     assert_eq!(
         dead.seeds_n, 0,
         "4 of 201 live seed cells read 0; a dead row keeps its row"
@@ -268,8 +277,14 @@ fn test_a_row_with_zero_seeders_is_still_a_row() {
 fn test_a_freshest_row_keeps_its_row_and_waits_for_its_day() {
     let rows = parse_rows(BROWSE_PAGE, HOST).expect("the live /home/ page parses");
     let fresh = &rows[2];
-    assert_eq!(fresh.title, "Super.Troopers.3.2026.1080p.WEB-DL.HEVC.x265.5.1-BONE");
-    assert_eq!(fresh.seeds_n, 378, "a time in the date cell costs the row nothing else");
+    assert_eq!(
+        fresh.title,
+        "Super.Troopers.3.2026.1080p.WEB-DL.HEVC.x265.5.1-BONE"
+    );
+    assert_eq!(
+        fresh.seeds_n, 378,
+        "a time in the date cell costs the row nothing else"
+    );
     assert_eq!(fresh.size, "1.7 GB");
     // The list wrote a time, so the row has no day -- and *that* is
     // what tells `search` to go ask this row's own page for one. It is
@@ -343,9 +358,18 @@ fn test_a_page_without_the_results_table_is_an_error() {
 #[test]
 fn test_the_featured_links_above_the_table_are_not_rows() {
     let rows = parse_rows(BROWSE_PAGE, HOST).expect("the live /home/ page parses");
-    assert_eq!(rows.len(), 3, "the two nav links above `table-list` leaked in");
-    assert!(rows.iter().all(|r| r.title != "Legend.Of.The.White.Dragon.2026"));
-    assert_eq!(rows[0].title, "Reacher.S04E08.1080p.WEBRip.10Bit.DDP5.1.x265-NeoNoir");
+    assert_eq!(
+        rows.len(),
+        3,
+        "the two nav links above `table-list` leaked in"
+    );
+    assert!(rows
+        .iter()
+        .all(|r| r.title != "Legend.Of.The.White.Dragon.2026"));
+    assert_eq!(
+        rows[0].title,
+        "Reacher.S04E08.1080p.WEBRip.10Bit.DDP5.1.x265-NeoNoir"
+    );
 }
 
 #[test]
@@ -357,7 +381,11 @@ fn test_one_word_is_taken_exactly_as_the_site_answered_it() {
     // `frieren crack` matched through metadata that day).
     let items = vec![row("Hogwarts.Legacy.Deluxe.Edition-EMPRESS")];
     let kept = filter_rows(&items, "crack");
-    assert_eq!(kept.len(), 1, "a trusted answer is not re-checked against its own title");
+    assert_eq!(
+        kept.len(),
+        1,
+        "a trusted answer is not re-checked against its own title"
+    );
 }
 
 #[test]
@@ -494,7 +522,10 @@ fn test_a_category_picks_the_sites_category_paths() {
     for (group, label, popular) in expected {
         assert_eq!(
             search_url(HOST, "dune 1080p", 20, Some(group)),
-            format!("https://www.1337xx.to/category-search/dune+1080p/{}/2/", label),
+            format!(
+                "https://www.1337xx.to/category-search/dune+1080p/{}/2/",
+                label
+            ),
             "the site spells {:?} as {} in the path",
             group,
             label

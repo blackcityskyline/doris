@@ -118,12 +118,19 @@ fn the_un_keyed_download_moves_only_to_the_major_it_serves() {
     let root = scratch("adopt");
     let legacy_dir = root.join("chromedriver-linux64");
     fs::create_dir_all(&legacy_dir).expect("legacy dir");
-    let legacy = fake_driver(&legacy_dir, "chromedriver", "ChromeDriver 152.0.7977.82 (abc)");
+    let legacy = fake_driver(
+        &legacy_dir,
+        "chromedriver",
+        "ChromeDriver 152.0.7977.82 (abc)",
+    );
 
     // Another browser's major: nothing moves, and 152 keeps the file it
     // was downloaded for.
     assert!(adopt_legacy_download(&root, 154).is_none());
-    assert!(legacy.exists(), "the download must stay for its own browser");
+    assert!(
+        legacy.exists(),
+        "the download must stay for its own browser"
+    );
 
     // Its own major: moved under the keyed path, where `find_or_download`
     // will look for it, and still answering as 152 after the move.

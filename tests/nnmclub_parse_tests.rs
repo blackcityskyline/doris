@@ -16,8 +16,8 @@ use std::sync::Arc;
 use doris::sources::format::unescape_entities;
 use doris::sources::models::TorrentItem;
 use doris::sources::nnmclub::{
-    GROUP_FORUMS, NnmclubSearcher, PAGE_SIZE, browse_url, group_for_forum, parse_rows,
-    search_url, to_page,
+    browse_url, group_for_forum, parse_rows, search_url, to_page, NnmclubSearcher, GROUP_FORUMS,
+    PAGE_SIZE,
 };
 use doris::sources::source::{AuthContext, Group, LogFn, Source};
 
@@ -113,7 +113,10 @@ fn test_every_field_the_live_row_carried_is_on_the_item() {
         first.download_url,
         "https://nnmclub.to/forum/download.php?id=31201"
     );
-    assert_eq!(first.page_url, "https://nnmclub.to/forum/viewtopic.php?t=32097");
+    assert_eq!(
+        first.page_url,
+        "https://nnmclub.to/forum/viewtopic.php?t=32097"
+    );
     // The decision behind wave 3: no detail fan-out, so the row carries
     // no magnet and no hash -- the `.torrent` link carries both, and
     // `spawn_stream` already knows how to use it.
@@ -128,8 +131,7 @@ fn test_every_field_the_live_row_carried_is_on_the_item() {
 fn test_a_title_keeps_its_entities_out_of_the_way() {
     let rows = rows();
     assert_eq!(
-        rows[1].title,
-        "Frieren: Beyond Journey's End (2026)",
+        rows[1].title, "Frieren: Beyond Journey's End (2026)",
         "&#039; decoded, tags and the whitespace they break are collapsed"
     );
     assert_eq!(rows[1].size_bytes, 16_902_730_601);
@@ -261,11 +263,11 @@ fn test_a_selected_group_asks_for_exactly_its_own_forums_in_one_request() {
             .map(|id| format!("f%5B%5D={}", id))
             .collect::<Vec<_>>()
             .join("&");
-        let expected =
-            format!("https://nnmclub.to/forum/tracker.php?{}&nm=matrix", params);
+        let expected = format!("https://nnmclub.to/forum/tracker.php?{}&nm=matrix", params);
         let url = search_url("matrix", 0, Some(group));
         assert_eq!(
-            url, expected,
+            url,
+            expected,
             "{:?} must ask for its {} forums and no others",
             group,
             ids.len()
@@ -374,8 +376,7 @@ fn test_a_full_page_offers_the_next_one_and_a_short_one_does_not() {
     let page = to_page(full, 100);
     assert_eq!(page.next_offset, Some(150));
 
-    let short: Vec<TorrentItem> =
-        (0..PAGE_SIZE - 1).map(|_| template.clone()).collect();
+    let short: Vec<TorrentItem> = (0..PAGE_SIZE - 1).map(|_| template.clone()).collect();
     let page = to_page(short, 50);
     assert!(!page.has_more, "a short page is the last page");
     assert_eq!(page.next_offset, None);

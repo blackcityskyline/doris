@@ -67,7 +67,6 @@ pub struct TorrentItem {
     // All `#[serde(default)]`: Rutracker's JS-eval-produced JSON only sets
     // the display fields, and any source that cannot provide one of these
     // leaves it at the zero value rather than failing to deserialize.
-
     /// Content group this row belongs to, or `None` when the result
     /// cannot be attributed to one (searched with "all categories", or a
     /// source that doesn't filter server-side). Rows with `None` show up

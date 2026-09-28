@@ -5,8 +5,8 @@
 //! a *string* while `seeds`/`peers` arrive as numbers, and both
 //! spellings of every numeric field must read.
 
+use doris::sources::eztv::{parse_page, torrents_url, EztvSearcher, PAGE_SIZE};
 use doris::sources::source::{self, Group, SearchRequest, Source, SourceEnv};
-use doris::sources::eztv::{EztvSearcher, PAGE_SIZE, parse_page, torrents_url};
 
 /// Two usable rows (one with a shipped magnet, one rebuilt from an
 /// uppercase hash; `size_bytes` once as a string and once as a number)
@@ -69,7 +69,10 @@ fn test_rows_carry_title_hash_size_seeds_and_date() {
     assert_eq!(page.items.len(), 2, "three unusable rows must be skipped");
 
     let first = &page.items[0];
-    assert_eq!(first.title, "Hells Kitchen S25E01 1080p WEB H264-HOTDOGWATER EZTV");
+    assert_eq!(
+        first.title,
+        "Hells Kitchen S25E01 1080p WEB H264-HOTDOGWATER EZTV"
+    );
     assert_eq!(first.info_hash, "e5ffd046a810a0fedbf213cfdb717fb8ede83060");
     assert_eq!(first.size_bytes, 2_529_563_471, "read from \"2529563471\"");
     assert_eq!(first.size, "2.36 GB");
@@ -149,8 +152,14 @@ fn test_the_cursor_advances_by_whole_pages_not_by_rows_kept() {
     assert_eq!(page(100).next_offset, Some(200));
 
     assert_eq!(PAGE_SIZE, 100, "the API's limit and our page agree");
-    assert_eq!(torrents_url(0), "https://eztvx.to/api/get-torrents?limit=100&page=1");
-    assert_eq!(torrents_url(200), "https://eztvx.to/api/get-torrents?limit=100&page=3");
+    assert_eq!(
+        torrents_url(0),
+        "https://eztvx.to/api/get-torrents?limit=100&page=1"
+    );
+    assert_eq!(
+        torrents_url(200),
+        "https://eztvx.to/api/get-torrents?limit=100&page=3"
+    );
     // `eztv.re` only 301s (live), and `search=` is ignored (live) --
     // neither may appear in what we ask for.
     let url = torrents_url(0);
@@ -226,13 +235,16 @@ async fn test_a_query_is_refused_with_the_reason_instead_of_a_wrong_empty_page()
         "the message must explain *why*: {}",
         message
     );
-    assert!(message.contains("empty"), "and what to do instead: {}", message);
+    assert!(
+        message.contains("empty"),
+        "and what to do instead: {}",
+        message
+    );
 }
 
 #[test]
 fn test_an_unparseable_body_is_an_error_not_an_empty_page() {
-    let err = parse_page("<html>maintenance</html>", 0)
-        .expect_err("an HTML page is not JSON");
+    let err = parse_page("<html>maintenance</html>", 0).expect_err("an HTML page is not JSON");
     assert!(err.to_string().contains("did not parse"), "{}", err);
 }
 
@@ -253,5 +265,8 @@ fn test_eztv_is_registered_as_a_browser_free_source_declaring_tv() {
     assert_eq!(built.label(), info.label);
     assert_eq!(built.home_url(), info.home_url);
     assert_eq!(built.groups(), info.groups, "registry and impl must agree");
-    assert!(built.supports_browse(), "empty query -> the newest releases");
+    assert!(
+        built.supports_browse(),
+        "empty query -> the newest releases"
+    );
 }

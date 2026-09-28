@@ -2,10 +2,10 @@
 //! (`btop_menu.cpp:1743`) rebuilt as a modal.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use doris::config::Config;
 use doris::ui::app::App as UiApp;
 use doris::ui::modals::help::HELP_TEXT;
 use ratatui::backend::TestBackend;
-use doris::config::Config;
 use ratatui::Terminal;
 
 fn make_app() -> UiApp {
@@ -20,7 +20,9 @@ fn key(code: KeyCode) -> KeyEvent {
 /// count `help_key` clamps against -- and hand back the drawn rows.
 fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
     let buf = terminal.backend().buffer();
     (0..buf.area.height)
         .map(|y| {
@@ -38,9 +40,26 @@ fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
 fn test_help_text_names_the_documented_keybinds() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
     for expected in [
-        "s, i", "Enter", "Shift+Enter, D", "b", "S", "L", "F", "f", "m", "1, 2, 3, 4, 5",
-        "Shift+P", "Tab, Shift+Tab", "j, k, Up, Down", "g, G", "d", "v", "p", "Esc",
-        "q, ctrl + c", "? , /, F1",
+        "s, i",
+        "Enter",
+        "Shift+Enter, D",
+        "b",
+        "S",
+        "L",
+        "F",
+        "f",
+        "m",
+        "1, 2, 3, 4, 5",
+        "Shift+P",
+        "Tab, Shift+Tab",
+        "j, k, Up, Down",
+        "g, G",
+        "d",
+        "v",
+        "p",
+        "Esc",
+        "q, ctrl + c",
+        "? , /, F1",
     ] {
         assert!(
             keys.iter().any(|k| k == &expected),
@@ -73,7 +92,10 @@ fn test_help_opens_at_the_top() {
     app.open_help_modal();
     let state = match &app.modal {
         doris::ui::app::Modal::Help(s) => s.clone(),
-        other => panic!("expected the help modal, got {:?}", std::mem::discriminant(other)),
+        other => panic!(
+            "expected the help modal, got {:?}",
+            std::mem::discriminant(other)
+        ),
     };
     assert_eq!(state.page, 0);
 }
@@ -144,7 +166,8 @@ fn test_help_does_not_page_when_it_all_fits() {
     let rows = render(&mut app, 120, 50);
 
     assert!(
-        rows.iter().any(|r| r.contains("Key:") && r.contains("Description:")),
+        rows.iter()
+            .any(|r| r.contains("Key:") && r.contains("Description:")),
         "the header row is drawn"
     );
     assert!(
@@ -172,7 +195,9 @@ fn test_help_draws_the_header_and_the_keys() {
     app.open_help_modal();
     let rows = render(&mut app, 100, 40);
 
-    let header = rows.iter().find(|r| r.contains("Key:"))
+    let header = rows
+        .iter()
+        .find(|r| r.contains("Key:"))
         .expect("header row");
     header.find("Description:").expect("Description column");
 
@@ -187,9 +212,13 @@ fn test_help_draws_the_header_and_the_keys() {
     let key_col = header[..header.find("Key:").unwrap()].chars().count() - 8;
     let page = &rows[rows.iter().position(|r| r.contains("Key:")).unwrap()..];
     for expected in ["s, i", "Enter", "Esc", "? , /, F1"] {
-        let found = page
-            .iter()
-            .any(|r| r.chars().skip(key_col).take(20).collect::<String>().contains(expected));
+        let found = page.iter().any(|r| {
+            r.chars()
+                .skip(key_col)
+                .take(20)
+                .collect::<String>()
+                .contains(expected)
+        });
         assert!(found, "'{}' is not in the key column of page 1", expected);
     }
 }

@@ -15,7 +15,7 @@
 //! host says nothing about the parser.
 
 use doris::sources::source::{Group, SearchRequest, Source};
-use doris::sources::x1337x::{HOSTS, PAGE_SIZE, X1337xSearcher, search_url};
+use doris::sources::x1337x::{search_url, X1337xSearcher, HOSTS, PAGE_SIZE};
 
 /// The user agent the probes ran with.
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
@@ -25,7 +25,11 @@ const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
 /// thing standing in the way (the caller then skips).
 async fn require_host() -> Option<()> {
     let client = reqwest::Client::builder().user_agent(UA).build().ok()?;
-    match client.get(search_url(HOSTS[0], "frieren", 0, None)).send().await {
+    match client
+        .get(search_url(HOSTS[0], "frieren", 0, None))
+        .send()
+        .await
+    {
         Ok(response) if response.status().is_success() => Some(()),
         Ok(response) => {
             println!(
@@ -112,7 +116,11 @@ async fn live_a_selected_category_is_what_the_path_and_the_rows_say() {
         .search(&req)
         .await
         .expect("live 1337x category search");
-    println!("Movies rows={}, has_more={}", page.items.len(), page.has_more);
+    println!(
+        "Movies rows={}, has_more={}",
+        page.items.len(),
+        page.has_more
+    );
     assert!(!page.items.is_empty(), "the category path answered nothing");
     for row in &page.items {
         assert_eq!(
@@ -302,10 +310,7 @@ async fn live_the_rows_own_page_carries_the_playable_magnet() {
         magnet
     );
     let hash = &magnet["magnet:?xt=urn:btih:".len()..];
-    let hash: String = hash
-        .chars()
-        .take_while(|c| c.is_ascii_hexdigit())
-        .collect();
+    let hash: String = hash.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
     assert_eq!(
         hash.len(),
         40,

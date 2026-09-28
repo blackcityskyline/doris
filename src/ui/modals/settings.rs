@@ -12,7 +12,7 @@ use ratatui::widgets::*;
 use ratatui::Frame;
 
 use crate::config::Config;
-use crate::sources::source::{Group, KNOWN_SOURCES, GROUP_ORDER};
+use crate::sources::source::{Group, GROUP_ORDER, KNOWN_SOURCES};
 use crate::ui::app::{centered_rect, App, Modal};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -80,7 +80,11 @@ pub enum SettingsAction {
 }
 
 fn bool_str(b: bool) -> String {
-    if b { "True".into() } else { "False".into() }
+    if b {
+        "True".into()
+    } else {
+        "False".into()
+    }
 }
 
 /// The category row's tabs: "all", then -- in `GROUP_ORDER` -- every
@@ -124,110 +128,114 @@ pub fn streaming_settings_items(
         "Visible".to_string()
     };
     let items: Vec<SettingsItem> = vec![
-                        SettingsItem {
-                            label: "Browser visible".into(),
-                            value: visibility_str,
-                            description: vec![
-                                "Show or hide the automated".into(),
-                                "browser window.".into(),
-                                "".into(),
-                                "\"Hidden\" (default) runs it in".into(),
-                                "the background.".into(),
-                                "\"Visible\" shows the real".into(),
-                                "browser window.".into(),
-                                "".into(),
-                                "Applies the next time a".into(),
-                                "browser is launched.".into(),
-                            ],
-                            action: SettingsAction::ToggleBrowserVisibility,
-                        },
-                        SettingsItem {
-                            label: "Prioritize browser".into(),
-                            value: config.browser_priority.first().cloned().unwrap_or_else(|| "auto".into()),
-                            description: vec![
-                                "Which installed browser to".into(),
-                                "try first.".into(),
-                                "".into(),
-                                "Cycles chrome / chromium /".into(),
-                                "brave / helium. Whichever is".into(),
-                                "actually installed wins; this".into(),
-                                "only changes probe order.".into(),
-                            ],
-                            action: SettingsAction::CyclePrioritizeBrowser,
-                        },
-                        SettingsItem {
-                            label: "Play mode".into(),
-                            value: mode_str.to_string(),
-                            description: vec![
-                                "Set playback mode.".into(),
-                                "".into(),
-                                "\"Streaming\" uses TorrServer,".into(),
-                                "\"Download\" saves .torrent files.".into(),
-                            ],
-                            action: SettingsAction::ToggleMode,
-                        },
-                        SettingsItem {
-                            label: "Close browser on exit".into(),
-                            value: bool_str(config.close_browser_on_exit),
-                            description: vec![
-                                "Kill the automated browser".into(),
-                                "when Doris exits.".into(),
-                                "".into(),
-                                "Set to False to leave it".into(),
-                                "running after Doris closes.".into(),
-                            ],
-                            action: SettingsAction::ToggleCloseBrowserOnExit,
-                        },
-                        SettingsItem {
-                            label: "Save cookies".into(),
-                            value: bool_str(config.save_cookies),
-                            description: vec![
-                                "Persist session cookies to".into(),
-                                "the cookie file so logins".into(),
-                                "survive a restart.".into(),
-                            ],
-                            action: SettingsAction::ToggleSaveCookies,
-                        },
-                        SettingsItem {
-                            label: "Save credentials".into(),
-                            value: bool_str(config.save_credentials),
-                            description: vec![
-                                "Remember username/password".into(),
-                                "(encrypted) after a login.".into(),
-                            ],
-                            action: SettingsAction::ToggleSaveCredentials,
-                        },
-                        SettingsItem {
-                            label: "Edit credentials".into(),
-                            value: "press Enter".into(),
-                            description: vec![
-                                "Open the login panel to".into(),
-                                "view or change saved logins.".into(),
-                            ],
-                            action: SettingsAction::EditCredentials,
-                        },
-                        SettingsItem {
-                            label: "Enable TorrServer".into(),
-                            value: bool_str(config.enable_torrserver),
-                            description: vec![
-                                "Stream through TorrServer.".into(),
-                                "".into(),
-                                "Off means Doris never".into(),
-                                "reaches for it, and says".into(),
-                                "so instead of failing.".into(),
-                            ],
-                            action: SettingsAction::ToggleEnableTorrserver,
-                        },
-                        SettingsItem {
-                            label: "TorrServer".into(),
-                            value: "press Enter to check".into(),
-                            description: vec![
-                                "Check whether TorrServer is".into(),
-                                "reachable right now.".into(),
-                            ],
-                            action: SettingsAction::CheckTorrserverStatus,
-                        },
-                    ];
+        SettingsItem {
+            label: "Browser visible".into(),
+            value: visibility_str,
+            description: vec![
+                "Show or hide the automated".into(),
+                "browser window.".into(),
+                "".into(),
+                "\"Hidden\" (default) runs it in".into(),
+                "the background.".into(),
+                "\"Visible\" shows the real".into(),
+                "browser window.".into(),
+                "".into(),
+                "Applies the next time a".into(),
+                "browser is launched.".into(),
+            ],
+            action: SettingsAction::ToggleBrowserVisibility,
+        },
+        SettingsItem {
+            label: "Prioritize browser".into(),
+            value: config
+                .browser_priority
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "auto".into()),
+            description: vec![
+                "Which installed browser to".into(),
+                "try first.".into(),
+                "".into(),
+                "Cycles chrome / chromium /".into(),
+                "brave / helium. Whichever is".into(),
+                "actually installed wins; this".into(),
+                "only changes probe order.".into(),
+            ],
+            action: SettingsAction::CyclePrioritizeBrowser,
+        },
+        SettingsItem {
+            label: "Play mode".into(),
+            value: mode_str.to_string(),
+            description: vec![
+                "Set playback mode.".into(),
+                "".into(),
+                "\"Streaming\" uses TorrServer,".into(),
+                "\"Download\" saves .torrent files.".into(),
+            ],
+            action: SettingsAction::ToggleMode,
+        },
+        SettingsItem {
+            label: "Close browser on exit".into(),
+            value: bool_str(config.close_browser_on_exit),
+            description: vec![
+                "Kill the automated browser".into(),
+                "when Doris exits.".into(),
+                "".into(),
+                "Set to False to leave it".into(),
+                "running after Doris closes.".into(),
+            ],
+            action: SettingsAction::ToggleCloseBrowserOnExit,
+        },
+        SettingsItem {
+            label: "Save cookies".into(),
+            value: bool_str(config.save_cookies),
+            description: vec![
+                "Persist session cookies to".into(),
+                "the cookie file so logins".into(),
+                "survive a restart.".into(),
+            ],
+            action: SettingsAction::ToggleSaveCookies,
+        },
+        SettingsItem {
+            label: "Save credentials".into(),
+            value: bool_str(config.save_credentials),
+            description: vec![
+                "Remember username/password".into(),
+                "(encrypted) after a login.".into(),
+            ],
+            action: SettingsAction::ToggleSaveCredentials,
+        },
+        SettingsItem {
+            label: "Edit credentials".into(),
+            value: "press Enter".into(),
+            description: vec![
+                "Open the login panel to".into(),
+                "view or change saved logins.".into(),
+            ],
+            action: SettingsAction::EditCredentials,
+        },
+        SettingsItem {
+            label: "Enable TorrServer".into(),
+            value: bool_str(config.enable_torrserver),
+            description: vec![
+                "Stream through TorrServer.".into(),
+                "".into(),
+                "Off means Doris never".into(),
+                "reaches for it, and says".into(),
+                "so instead of failing.".into(),
+            ],
+            action: SettingsAction::ToggleEnableTorrserver,
+        },
+        SettingsItem {
+            label: "TorrServer".into(),
+            value: "press Enter to check".into(),
+            description: vec![
+                "Check whether TorrServer is".into(),
+                "reachable right now.".into(),
+            ],
+            action: SettingsAction::CheckTorrserverStatus,
+        },
+    ];
     items
 }
 
@@ -250,7 +258,11 @@ impl App {
     /// decorative strings with no backing field at all.
     pub fn open_settings(&mut self, config: &Config, browser_hidden: bool) {
         self.settings_browser_hidden = browser_hidden;
-        let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
+        let mode_str = if self.stream_mode {
+            "Streaming (TorrServer)".to_string()
+        } else {
+            "Download (.torrent file)".to_string()
+        };
         let theme_name = self.theme.name.clone();
         // Value shown between the cycle arrows must be the theme's own
         // name (matching the reference: "<- noctalia ->"), not a bare
@@ -259,7 +271,9 @@ impl App {
         // gets when selected ("Color theme 46/45"), not here.
         let theme_str = theme_name.clone();
 
-        let preset_str = config.presets.get(config.preset_index)
+        let preset_str = config
+            .presets
+            .get(config.preset_index)
             .cloned()
             .unwrap_or_else(|| "none".to_string());
         let preset_display = format!(
@@ -274,7 +288,12 @@ impl App {
         // doesn't silently reset scroll position back to the top item.
         let (prev_category, prev_selected, prev_page, prev_visible_items) =
             if let Modal::Settings(ref prev) = self.modal {
-                (prev.selected_category, prev.selected, prev.page, prev.visible_items)
+                (
+                    prev.selected_category,
+                    prev.selected,
+                    prev.page,
+                    prev.visible_items,
+                )
             } else {
                 (0, 0, 0, 1)
             };
@@ -361,9 +380,7 @@ impl App {
                         SettingsItem {
                             label: "Disable mouse".into(),
                             value: bool_str(config.disable_mouse),
-                            description: vec![
-                                "Disable all mouse events.".into(),
-                            ],
+                            description: vec!["Disable all mouse events.".into()],
                             action: SettingsAction::ToggleMouse,
                         },
                         SettingsItem {
@@ -378,7 +395,11 @@ impl App {
                         },
                         SettingsItem {
                             label: "Presets".into(),
-                            value: if config.disable_presets { "disabled".into() } else { preset_display },
+                            value: if config.disable_presets {
+                                "disabled".into()
+                            } else {
+                                preset_display
+                            },
                             description: vec![
                                 "Cycle through saved zone".into(),
                                 "layouts (which panels are".into(),
@@ -473,7 +494,11 @@ impl App {
                 },
                 SettingsCategory {
                     name: "streaming".into(),
-                    items: streaming_settings_items(config, self.settings_browser_hidden, &mode_str),
+                    items: streaming_settings_items(
+                        config,
+                        self.settings_browser_hidden,
+                        &mode_str,
+                    ),
                 },
                 SettingsCategory {
                     name: "download".into(),
@@ -501,7 +526,11 @@ impl App {
                         },
                         SettingsItem {
                             label: "Custom directory 1".into(),
-                            value: if config.download_dir_custom_1.is_empty() { "(not set)".into() } else { config.download_dir_custom_1.clone() },
+                            value: if config.download_dir_custom_1.is_empty() {
+                                "(not set)".into()
+                            } else {
+                                config.download_dir_custom_1.clone()
+                            },
                             description: vec![
                                 "Edit `download_dir_custom_1`".into(),
                                 "in config.toml.".into(),
@@ -513,7 +542,11 @@ impl App {
                         },
                         SettingsItem {
                             label: "Custom directory 2".into(),
-                            value: if config.download_dir_custom_2.is_empty() { "(not set)".into() } else { config.download_dir_custom_2.clone() },
+                            value: if config.download_dir_custom_2.is_empty() {
+                                "(not set)".into()
+                            } else {
+                                config.download_dir_custom_2.clone()
+                            },
                             description: vec![
                                 "Edit `download_dir_custom_2`".into(),
                                 "in config.toml.".into(),
@@ -522,7 +555,11 @@ impl App {
                         },
                         SettingsItem {
                             label: "Custom directory 3".into(),
-                            value: if config.download_dir_custom_3.is_empty() { "(not set)".into() } else { config.download_dir_custom_3.clone() },
+                            value: if config.download_dir_custom_3.is_empty() {
+                                "(not set)".into()
+                            } else {
+                                config.download_dir_custom_3.clone()
+                            },
                             description: vec![
                                 "Edit `download_dir_custom_3`".into(),
                                 "in config.toml.".into(),
@@ -543,7 +580,11 @@ impl App {
                         },
                         SettingsItem {
                             label: "Download speed limit".into(),
-                            value: if config.download_speed_limit_kbps == 0 { "unlimited".into() } else { format!("{} KB/s", config.download_speed_limit_kbps) },
+                            value: if config.download_speed_limit_kbps == 0 {
+                                "unlimited".into()
+                            } else {
+                                format!("{} KB/s", config.download_speed_limit_kbps)
+                            },
                             description: vec![
                                 "0 = unlimited.".into(),
                                 "".into(),
@@ -554,7 +595,11 @@ impl App {
                         },
                         SettingsItem {
                             label: "Upload speed limit".into(),
-                            value: if config.upload_speed_limit_kbps == 0 { "unlimited".into() } else { format!("{} KB/s", config.upload_speed_limit_kbps) },
+                            value: if config.upload_speed_limit_kbps == 0 {
+                                "unlimited".into()
+                            } else {
+                                format!("{} KB/s", config.upload_speed_limit_kbps)
+                            },
                             description: vec![
                                 "0 = unlimited.".into(),
                                 "".into(),
@@ -630,7 +675,8 @@ impl App {
                     }
                 }
                 crossterm::event::KeyCode::Tab => {
-                    state.selected_category = (state.selected_category + 1) % state.categories.len();
+                    state.selected_category =
+                        (state.selected_category + 1) % state.categories.len();
                     state.selected = 0;
                     state.page = 0;
                 }
@@ -668,7 +714,6 @@ impl App {
         None
     }
 
-
     /// The settings modal's own rendering: the descriptor table with
     /// its tab row, pagination and the item list. `&mut self` because
     /// the list is a `Selector` that mutates the modal state.
@@ -701,7 +746,9 @@ impl App {
                 // names are, instead of a hardcoded width that silently
                 // corrupts once a name is long enough to fill it exactly --
                 // see the bug this replaces, below).
-                let slot_width = state.categories.iter()
+                let slot_width = state
+                    .categories
+                    .iter()
                     .map(|cat| cat.name.chars().count() + 2)
                     .max()
                     .unwrap_or(8)
@@ -854,11 +901,19 @@ impl App {
                         Paragraph::new(Line::from(vec![
                             Span::styled("┘", Style::default().fg(hi_color)),
                             Span::styled("↑ ", Style::default().fg(hi_color)),
-                            Span::styled(format!("page {}/{} ", page + 1, pages), Style::default().fg(title_color)),
+                            Span::styled(
+                                format!("page {}/{} ", page + 1, pages),
+                                Style::default().fg(title_color),
+                            ),
                             Span::styled("↓", Style::default().fg(hi_color)),
                             Span::styled("└", Style::default().fg(hi_color)),
                         ])),
-                        Rect::new(page_x.saturating_sub(1), page_y, page_line.len() as u16 + 4, 1),
+                        Rect::new(
+                            page_x.saturating_sub(1),
+                            page_y,
+                            page_line.len() as u16 + 4,
+                            1,
+                        ),
                     );
                 }
             }

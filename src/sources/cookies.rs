@@ -46,7 +46,11 @@ pub fn save_to_file(path: &Path, cookies: &[Cookie]) -> Result<()> {
         } else {
             format!(".{}", cookie.domain)
         };
-        let flag = if domain.starts_with('.') { "TRUE" } else { "FALSE" };
+        let flag = if domain.starts_with('.') {
+            "TRUE"
+        } else {
+            "FALSE"
+        };
         let secure = if cookie.secure { "TRUE" } else { "FALSE" };
         content.push_str(&format!(
             "{}\t{}\t{}\t{}\t0\t{}\t{}\n",

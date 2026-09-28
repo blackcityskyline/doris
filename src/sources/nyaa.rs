@@ -38,7 +38,7 @@ use async_trait::async_trait;
 use super::format::{format_bytes, format_date, parse_size, unescape_entities};
 use super::magnet::{build_magnet, is_info_hash, normalize_info_hash};
 use super::models::TorrentItem;
-use super::net::{FetchOptions, browser_client, fetch_resilient};
+use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// The RSS endpoint: `page=rss` selects the feed, `c`/`f` scope it.
@@ -236,7 +236,9 @@ impl NyaaSearcher {
     pub const HOME_URL: &str = "https://nyaa.si";
 
     pub fn new() -> Self {
-        Self { client: browser_client() }
+        Self {
+            client: browser_client(),
+        }
     }
 }
 

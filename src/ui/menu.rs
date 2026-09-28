@@ -1,7 +1,7 @@
+use super::theme::Theme;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use unicode_width::UnicodeWidthStr;
-use super::theme::Theme;
 
 const BANNER: &[&str] = &[
     "██████╗  ██████╗ ██████╗ ██╗███████╗",
@@ -13,7 +13,11 @@ const BANNER: &[&str] = &[
 ];
 
 const MENU_ITEMS: &[&[&str]] = &[
-    &["┌─┐┌─┐╶┬╴╷┌─┐┌┐╷┌─┐", "│ │├─┘ │ ││ ││└┤└─┐", "└─┘╵   ╵ ╵└─┘╵ ╵└─┘"],
+    &[
+        "┌─┐┌─┐╶┬╴╷┌─┐┌┐╷┌─┐",
+        "│ │├─┘ │ ││ ││└┤└─┐",
+        "└─┘╵   ╵ ╵└─┘╵ ╵└─┘",
+    ],
     &["╷ ╷┌─╴╷  ┌─┐", "├─┤├╴ │  ├─┘", "╵ ╵└─╴└─╴╵  "],
     &["┌─┐╷ ╷╷╶┬╴", "│┐││ ││ │ ", "└┴┘└─┘╵ ╵ "],
 ];
@@ -122,10 +126,7 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
 
         for (j, line) in block.iter().enumerate() {
             let render_area = Rect::new(x, y + j as u16, mw, 1);
-            frame.render_widget(
-                Paragraph::new(Span::styled(*line, style)),
-                render_area,
-            );
+            frame.render_widget(Paragraph::new(Span::styled(*line, style)), render_area);
         }
     }
 }

@@ -5,7 +5,14 @@ use ratatui::style::Color;
 fn test_named_colors_pass_through_unchanged() {
     // Only Color::Rgb should ever be degraded -- named/basic colors (used
     // e.g. for focus highlights) are already safe on any terminal.
-    for c in [Color::Yellow, Color::Cyan, Color::Green, Color::Red, Color::White, Color::Reset] {
+    for c in [
+        Color::Yellow,
+        Color::Cyan,
+        Color::Green,
+        Color::Red,
+        Color::White,
+        Color::Reset,
+    ] {
         assert_eq!(degrade_color(c, true), c);
         assert_eq!(degrade_color(c, false), c);
     }
@@ -34,10 +41,20 @@ fn test_false_tty_never_returns_bright_variants() {
     let bright_pastel = Color::Rgb(255, 200, 200);
     let degraded = degrade_color(bright_pastel, false);
     let basic_only = [
-        Color::Black, Color::Red, Color::Green, Color::Yellow,
-        Color::Blue, Color::Magenta, Color::Cyan, Color::Gray,
+        Color::Black,
+        Color::Red,
+        Color::Green,
+        Color::Yellow,
+        Color::Blue,
+        Color::Magenta,
+        Color::Cyan,
+        Color::Gray,
     ];
-    assert!(basic_only.contains(&degraded), "expected a basic color, got {:?}", degraded);
+    assert!(
+        basic_only.contains(&degraded),
+        "expected a basic color, got {:?}",
+        degraded
+    );
 }
 
 #[test]

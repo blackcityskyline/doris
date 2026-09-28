@@ -12,7 +12,7 @@
 //! (Phase 3's original note about rewiring `app.rs`/`main.rs` onto this
 //! trait is what ROADMAP.md phase B2 closes.)
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -21,14 +21,14 @@ use std::sync::Arc;
 use crate::browser::cdp::Browser;
 use tokio::sync::Mutex;
 
-use super::models::{FileEntry, TorrentItem};
-use super::rutracker::RutrackerSearcher;
-use super::torentino::TorentinoSearcher;
-use super::rutor::RutorSearcher;
 use super::eztv::EztvSearcher;
+use super::models::{FileEntry, TorrentItem};
 use super::nnmclub::NnmclubSearcher;
 use super::nyaa::NyaaSearcher;
+use super::rutor::RutorSearcher;
+use super::rutracker::RutrackerSearcher;
 use super::subsplease::SubsPleaseSearcher;
+use super::torentino::TorentinoSearcher;
 use super::tpb::TpbSearcher;
 use super::x1337x::X1337xSearcher;
 use super::yts::YtsSearcher;
@@ -88,7 +88,11 @@ pub struct SearchRequest {
 impl SearchRequest {
     /// An "all categories" request -- what the Results tabs issue today.
     pub fn new(query: impl Into<String>, offset: usize) -> Self {
-        Self { query: query.into(), offset, category: None }
+        Self {
+            query: query.into(),
+            offset,
+            category: None,
+        }
     }
 }
 
@@ -240,8 +244,7 @@ const NYAA_GROUPS: &[Group] = &[Group::Anime];
 /// group of its own forum (`nnmclub::group_for_forum`), and the same
 /// four groups are what `nnmclub::GROUP_FORUMS` asks the tracker for;
 /// a test keeps the two declarations equal.
-const NNMCLUB_GROUPS: &[Group] =
-    &[Group::Movies, Group::TV, Group::Games, Group::Anime];
+const NNMCLUB_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// EZTV is TV-only, and its rows say `Group::TV` to match (B8 wave 1).
 const EZTV_GROUPS: &[Group] = &[Group::TV];
@@ -295,7 +298,11 @@ impl Source for RutrackerSearcher {
         // The forum pages `tracker.php?start=` by 50, so a short page is
         // the last one and a full one may have more behind it.
         let has_more = items.len() >= RutrackerSearcher::PAGE_SIZE;
-        Ok(SearchPage { items, has_more, next_offset: None })
+        Ok(SearchPage {
+            items,
+            has_more,
+            next_offset: None,
+        })
     }
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
@@ -553,9 +560,9 @@ pub struct SourceEnv {
 pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
     match id {
         "rutracker" => {
-            let browser = env.browser.ok_or_else(|| {
-                anyhow!("source '{}' needs a running browser session", id)
-            })?;
+            let browser = env
+                .browser
+                .ok_or_else(|| anyhow!("source '{}' needs a running browser session", id))?;
             Ok(Arc::new(RutrackerSearcher::new(browser)))
         }
         "rutor" => Ok(Arc::new(RutorSearcher::new())),
@@ -580,7 +587,10 @@ pub fn get_source(id: &str) -> Option<&'static SourceInfo> {
 /// Which sources belong to a group, for B6's category -> source mapping
 /// and for the Options UI grouping rows by what they can filter.
 pub fn sources_by_group(group: Group) -> Vec<&'static SourceInfo> {
-    KNOWN_SOURCES.iter().filter(|s| s.groups.contains(&group)).collect()
+    KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.groups.contains(&group))
+        .collect()
 }
 
 /// Whether orchestrating `id` needs a browser session launched first.
@@ -604,8 +614,7 @@ pub fn cli_sources(
 ) -> Result<Vec<&'static SourceInfo>> {
     match requested {
         Some(id) => {
-            let info = get_source(id)
-                .ok_or_else(|| anyhow::anyhow!("unknown source '{}'", id))?;
+            let info = get_source(id).ok_or_else(|| anyhow::anyhow!("unknown source '{}'", id))?;
             if !info.implemented {
                 anyhow::bail!("source '{}' is not implemented yet", id);
             }

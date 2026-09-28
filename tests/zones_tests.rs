@@ -1,5 +1,7 @@
 use doris::ui::theme::Theme;
-use doris::ui::zones::{button_spans, zone_buttons, zone_title, zone_title_width, ZoneId, ZoneLayout};
+use doris::ui::zones::{
+    button_spans, zone_buttons, zone_title, zone_title_width, ZoneId, ZoneLayout,
+};
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 
@@ -120,7 +122,10 @@ fn test_apply_preset_moves_focus_off_a_now_hidden_zone() {
     let mut zones = ZoneLayout::new();
     zones.focused = ZoneId::Torrent;
     zones.apply_preset("1,3"); // hides Torrent
-    assert!(zones.is_visible(zones.focused), "focus must land on a visible zone");
+    assert!(
+        zones.is_visible(zones.focused),
+        "focus must land on a visible zone"
+    );
     assert_ne!(zones.focused, ZoneId::Torrent);
 }
 
@@ -187,10 +192,19 @@ fn test_all_zones_visible_never_exceeds_terminal_height() {
             assert!(
                 bottom <= h,
                 "{:?} area {:?} extends to row {} but terminal is only {} rows tall",
-                id, zone_area, bottom, h
+                id,
+                zone_area,
+                bottom,
+                h
             );
             let right = zone_area.x + zone_area.width;
-            assert!(right <= w, "{:?} area {:?} extends past terminal width {}", id, zone_area, w);
+            assert!(
+                right <= w,
+                "{:?} area {:?} extends past terminal width {}",
+                id,
+                zone_area,
+                w
+            );
         }
     }
 }
@@ -331,7 +345,9 @@ fn test_the_category_button_highlights_both_arrows() {
     let config = doris::config::Config::default();
 
     let layout = app.frame_layout(ZoneId::Results, area, &config);
-    let button = layout.buttons.iter()
+    let button = layout
+        .buttons
+        .iter()
         .find(|(b, _)| b.is_category())
         .map(|(b, _)| b)
         .expect("the Results frame has a category button");
@@ -497,7 +513,10 @@ fn test_fullscreen_overrides_the_preset() {
 /// at full width, in both layouts.
 #[test]
 fn test_the_search_bar_is_outside_both_presets() {
-    for preset in [doris::ui::zones::LayoutPreset::Horizontal, doris::ui::zones::LayoutPreset::Split] {
+    for preset in [
+        doris::ui::zones::LayoutPreset::Horizontal,
+        doris::ui::zones::LayoutPreset::Split,
+    ] {
         let mut zones = ZoneLayout::new();
         zones.preset = preset;
         zones.update_areas(Rect::new(0, 0, 100, 30));
@@ -528,7 +547,15 @@ fn test_the_split_layout_survives_a_tiny_terminal() {
 
     for &id in ZoneId::all() {
         let area = zones.get_area(id);
-        assert!(area.x + area.width <= 40, "{:?} runs off the right edge", id);
-        assert!(area.y + area.height <= 6, "{:?} runs off the bottom edge", id);
+        assert!(
+            area.x + area.width <= 40,
+            "{:?} runs off the right edge",
+            id
+        );
+        assert!(
+            area.y + area.height <= 6,
+            "{:?} runs off the bottom edge",
+            id
+        );
     }
 }

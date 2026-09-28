@@ -64,10 +64,16 @@ fn test_zone_at_finds_the_containing_zone() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    assert_eq!(app.zone_at(results_area.y, results_area.x), Some(ZoneId::Results));
+    assert_eq!(
+        app.zone_at(results_area.y, results_area.x),
+        Some(ZoneId::Results)
+    );
 
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    assert_eq!(app.zone_at(torrent_area.y, torrent_area.x), Some(ZoneId::Torrent));
+    assert_eq!(
+        app.zone_at(torrent_area.y, torrent_area.x),
+        Some(ZoneId::Torrent)
+    );
 }
 
 #[test]
@@ -258,7 +264,10 @@ fn test_the_all_row_checks_or_clears_the_whole_roster() {
     assert!(config.enabled_sources.is_empty(), "all on -> clear");
 
     app.toggle_source(&mut config);
-    assert_eq!(config.enabled_sources, roster, "all off -> check everything");
+    assert_eq!(
+        config.enabled_sources, roster,
+        "all off -> check everything"
+    );
 }
 
 /// Switching a source off can take a category with it, so the row the
@@ -301,7 +310,11 @@ fn test_the_cursor_wraps_in_both_directions() {
     let len = doris::ui::app::source_rows().len() as i64;
 
     app.navigate_sources(-1);
-    assert_eq!(app.sources_cursor, len as usize - 1, "up from the top wraps to the bottom");
+    assert_eq!(
+        app.sources_cursor,
+        len as usize - 1,
+        "up from the top wraps to the bottom"
+    );
 
     app.navigate_sources(1);
     assert_eq!(app.sources_cursor, 0, "and back to the top");
@@ -351,7 +364,10 @@ fn test_the_results_info_slot_names_the_checked_sources() {
     );
 
     config.enabled_sources.clear();
-    assert_eq!(app.frame_info(ZoneId::Results, area, &config), "[none]  (0/0)");
+    assert_eq!(
+        app.frame_info(ZoneId::Results, area, &config),
+        "[none]  (0/0)"
+    );
 }
 
 #[test]
@@ -375,12 +391,17 @@ fn test_click_at_torrent_pause_button_returns_toggle_pause() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
     let layout = app.frame_layout(ZoneId::Torrent, torrent_area, &config);
-    let rect = layout.buttons.iter()
+    let rect = layout
+        .buttons
+        .iter()
         .find(|(b, _)| b.key == 'p')
         .map(|(_, r)| *r)
         .expect("the Torrent frame has a pause button");
 
-    assert_eq!(app.click_at(rect.y, rect.x, &mut config), Some(UiAction::TogglePause));
+    assert_eq!(
+        app.click_at(rect.y, rect.x, &mut config),
+        Some(UiAction::TogglePause)
+    );
     // And the last column of the word too, not just its first.
     assert_eq!(
         app.click_at(rect.y, rect.x + rect.width - 1, &mut config),
@@ -395,12 +416,17 @@ fn test_click_at_torrent_delete_button_returns_remove() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
     let layout = app.frame_layout(ZoneId::Torrent, torrent_area, &config);
-    let rect = layout.buttons.iter()
+    let rect = layout
+        .buttons
+        .iter()
         .find(|(b, _)| b.key == 'd')
         .map(|(_, r)| *r)
         .expect("the Torrent frame has a delete button");
 
-    assert_eq!(app.click_at(rect.y, rect.x, &mut config), Some(UiAction::Remove));
+    assert_eq!(
+        app.click_at(rect.y, rect.x, &mut config),
+        Some(UiAction::Remove)
+    );
 }
 
 /// Between the two buttons there is a gap: landing in it must do
@@ -415,10 +441,18 @@ fn test_click_between_two_frame_buttons_does_nothing() {
     // `Filter` is the only top-left button now the source tabs moved to
     // their own panel; `group` is the only top-right one. The gap
     // between them is at least one column wide.
-    let filter = layout.buttons.iter().find(|(b, _)| b.key == 'f')
-        .map(|(_, r)| *r).expect("filter button");
-    let group = layout.buttons.iter().find(|(b, _)| b.key == 'g')
-        .map(|(_, r)| *r).expect("group button");
+    let filter = layout
+        .buttons
+        .iter()
+        .find(|(b, _)| b.key == 'f')
+        .map(|(_, r)| *r)
+        .expect("filter button");
+    let group = layout
+        .buttons
+        .iter()
+        .find(|(b, _)| b.key == 'g')
+        .map(|(_, r)| *r)
+        .expect("group button");
     assert!(group.x > filter.x + filter.width);
 
     let gap_col = filter.x + filter.width;
@@ -436,7 +470,9 @@ fn test_clicking_the_filter_button_enters_filter_mode() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     let layout = app.frame_layout(ZoneId::Results, results_area, &config);
-    let rect = layout.buttons.iter()
+    let rect = layout
+        .buttons
+        .iter()
         .find(|(b, _)| b.key == 'f')
         .map(|(_, r)| *r)
         .expect("the Results frame has a filter button");
@@ -455,7 +491,10 @@ fn test_the_panel_offers_exactly_the_registry_in_order() {
     let rows = doris::ui::app::source_rows();
     assert_eq!(rows.len(), doris::sources::source::KNOWN_SOURCES.len() + 1);
     assert_eq!(rows[0].id(), "all");
-    for (row, info) in rows[1..].iter().zip(doris::sources::source::KNOWN_SOURCES.iter()) {
+    for (row, info) in rows[1..]
+        .iter()
+        .zip(doris::sources::source::KNOWN_SOURCES.iter())
+    {
         assert_eq!(row.id(), info.id, "registry order, one row each");
     }
 }
@@ -466,8 +505,13 @@ fn test_the_panel_offers_exactly_the_registry_in_order() {
 #[test]
 fn test_unimplemented_sources_are_listed_but_never_asked() {
     let rows = doris::ui::app::source_rows();
-    for info in doris::sources::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
-        let row = rows.iter().find(|r| r.id() == info.id)
+    for info in doris::sources::source::KNOWN_SOURCES
+        .iter()
+        .filter(|s| !s.implemented)
+    {
+        let row = rows
+            .iter()
+            .find(|r| r.id() == info.id)
             .expect("a planned source has a row");
         assert!(!row.is_implemented(), "{} is planned", info.id);
     }
@@ -481,8 +525,15 @@ fn test_unimplemented_sources_are_listed_but_never_asked() {
         .iter()
         .map(|info| info.id)
         .collect();
-    for info in doris::sources::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
-        assert!(!asked.contains(&info.id), "{} is planned and would be asked", info.id);
+    for info in doris::sources::source::KNOWN_SOURCES
+        .iter()
+        .filter(|s| !s.implemented)
+    {
+        assert!(
+            !asked.contains(&info.id),
+            "{} is planned and would be asked",
+            info.id
+        );
     }
 }
 
@@ -591,7 +642,9 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
 
     let (button, rect) = {
         let layout = app.frame_layout(ZoneId::Results, area, &config);
-        layout.buttons.iter()
+        layout
+            .buttons
+            .iter()
             .find(|(b, _)| b.is_category())
             .map(|(b, r)| (b.clone(), *r))
             .expect("the Results frame has a category button")
@@ -602,18 +655,27 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     let text = button.text();
     assert!(text.starts_with("◀ "), "the left arrow: {text}");
     assert!(text.ends_with(" ▶"), "the right arrow: {text}");
-    assert!(text.contains("all"), "a fresh app is on the all category: {text}");
+    assert!(
+        text.contains("all"),
+        "a fresh app is on the all category: {text}"
+    );
 
     // The right arrow steps forward through the category row.
     let right_arrow = rect.x + rect.width - 1;
     assert_eq!(app.click_at(rect.y, right_arrow, &mut config), None);
-    assert_eq!(app.active_group, Some(Group::Movies), "the right arrow steps forward");
+    assert_eq!(
+        app.active_group,
+        Some(Group::Movies),
+        "the right arrow steps forward"
+    );
     assert!(app.group_changed);
 
     // ...and the left arrow steps back.
     let rect = {
         let layout = app.frame_layout(ZoneId::Results, area, &config);
-        layout.buttons.iter()
+        layout
+            .buttons
+            .iter()
             .find(|(b, _)| b.is_category())
             .map(|(_, r)| *r)
             .expect("the category button")
@@ -624,7 +686,9 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     // The name between the arrows is display-only, not a target.
     let rect = {
         let layout = app.frame_layout(ZoneId::Results, area, &config);
-        layout.buttons.iter()
+        layout
+            .buttons
+            .iter()
             .find(|(b, _)| b.is_category())
             .map(|(_, r)| *r)
             .expect("the category button")
@@ -644,7 +708,9 @@ fn test_the_group_button_still_cycles_the_category() {
 
     let rect = {
         let layout = app.frame_layout(ZoneId::Results, area, &config);
-        layout.buttons.iter()
+        layout
+            .buttons
+            .iter()
             .find(|(b, _)| b.key == 'g' && !b.is_category())
             .map(|(_, r)| *r)
             .expect("the group button")
@@ -690,7 +756,12 @@ fn test_every_frame_button_stays_on_its_own_border() {
         let layout = app.frame_layout(ZoneId::Results, area, &config);
 
         for (button, rect) in &layout.buttons {
-            assert!(rect.x > area.x, "{:?} at {} touches the left border", button, w);
+            assert!(
+                rect.x > area.x,
+                "{:?} at {} touches the left border",
+                button,
+                w
+            );
             assert!(
                 rect.x + rect.width < area.x + area.width,
                 "{:?} at {} overruns the right border",
@@ -804,10 +875,17 @@ fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
     let area = app.zones.get_area(ZoneId::Results);
 
     let mut arrow_positions = Vec::new();
-    for group in [None, Some(Group::TV), Some(Group::Movies), Some(Group::Games)] {
+    for group in [
+        None,
+        Some(Group::TV),
+        Some(Group::Movies),
+        Some(Group::Games),
+    ] {
         app.active_group = group;
         let layout = app.frame_layout(ZoneId::Results, area, &config);
-        let (_, rect) = layout.buttons.iter()
+        let (_, rect) = layout
+            .buttons
+            .iter()
             .find(|(b, _)| b.is_category())
             .expect("the category button");
         arrow_positions.push((rect.x, rect.x + rect.width - 1));

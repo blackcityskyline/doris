@@ -87,14 +87,14 @@ impl TorrServer {
 
     async fn torrents_action(&self, body: serde_json::Value) -> Result<reqwest::Response> {
         let url = format!("{}/torrents", self.base_url);
-        Ok(self.client
+        Ok(self
+            .client
             .post(&url)
             .json(&body)
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await?)
     }
-
 }
 
 /// Reject a non-2xx answer from `/torrents` with a sentence the log can
@@ -123,7 +123,9 @@ async fn ensure_ok(resp: reqwest::Response, what: &str) -> Result<()> {
 impl TorrServer {
     /// All torrents TorrServer currently knows about (`{"action": "list"}`).
     pub async fn list_torrents(&self) -> Result<Vec<TorrentInfo>> {
-        let resp = self.torrents_action(serde_json::json!({ "action": "list" })).await?;
+        let resp = self
+            .torrents_action(serde_json::json!({ "action": "list" }))
+            .await?;
         // TorrServer returns `null` (not `[]`) when there are no torrents;
         // treat that the same as an empty list rather than an error.
         let list: Option<Vec<TorrentInfo>> = resp.json().await.unwrap_or(None);
@@ -132,7 +134,9 @@ impl TorrServer {
 
     /// A single torrent's status (`{"action": "get", "hash": ...}`).
     pub async fn get_torrent(&self, hash: &str) -> Result<Option<TorrentInfo>> {
-        let resp = self.torrents_action(serde_json::json!({ "action": "get", "hash": hash })).await?;
+        let resp = self
+            .torrents_action(serde_json::json!({ "action": "get", "hash": hash }))
+            .await?;
         if !resp.status().is_success() {
             return Ok(None);
         }
@@ -218,18 +222,25 @@ impl TorrServer {
             .trim()
             .to_string();
 
-        let filename = format!("{}.torrent", if safe_title.is_empty() { "torrent".to_string() } else { safe_title });
+        let filename = format!(
+            "{}.torrent",
+            if safe_title.is_empty() {
+                "torrent".to_string()
+            } else {
+                safe_title
+            }
+        );
 
-        let form = reqwest::multipart::Form::new()
-            .part(
-                "file",
-                reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
-                    .file_name(filename)
-                    .mime_str("application/x-bittorrent")?,
-            );
+        let form = reqwest::multipart::Form::new().part(
+            "file",
+            reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
+                .file_name(filename)
+                .mime_str("application/x-bittorrent")?,
+        );
 
         let url = format!("{}/torrent/upload?save=db", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .multipart(form)
             .header("title", title)
@@ -245,7 +256,12 @@ impl TorrServer {
         Ok(hash.to_string())
     }
 
-    pub async fn play(&self, hash: &str, title: &str, player: Option<&str>) -> Result<tokio::process::Child> {
+    pub async fn play(
+        &self,
+        hash: &str,
+        title: &str,
+        player: Option<&str>,
+    ) -> Result<tokio::process::Child> {
         let safe_title = title
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
@@ -270,7 +286,8 @@ impl TorrServer {
         #[cfg(unix)]
         cmd.process_group(0);
 
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to launch {}: {}", player_name, e))?;
 
         Ok(child)

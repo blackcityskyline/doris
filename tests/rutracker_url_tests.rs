@@ -1,5 +1,5 @@
+use doris::sources::rutracker::{resolve_url, search_url, GROUP_FORUMS};
 use doris::sources::source::Group;
-use doris::sources::rutracker::{search_url, GROUP_FORUMS, resolve_url};
 
 // Moved here from `models_tests.rs` together with `resolve_url` itself:
 // the function hardcodes rutracker's host, so it belongs to the
@@ -104,10 +104,7 @@ fn test_group_forums_are_disjoint_and_nonempty() {
         .flat_map(|(_, ids)| ids.iter().copied())
         .collect();
     let unique: std::collections::BTreeSet<i32> = all.iter().copied().collect();
-    assert!(
-        !all.is_empty(),
-        "the table spans no forums at all"
-    );
+    assert!(!all.is_empty(), "the table spans no forums at all");
     assert_eq!(
         all.len(),
         unique.len(),

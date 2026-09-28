@@ -73,7 +73,7 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use crate::sources::models::TorrentItem;
-use crate::sources::net::{FetchOptions, browser_client, fetch_resilient};
+use crate::sources::net::{browser_client, fetch_resilient, FetchOptions};
 use crate::sources::source::{Group, SearchPage};
 
 /// The rubric id behind each group this source declares -- one table
@@ -125,12 +125,12 @@ impl Default for RutorSearcher {
 }
 
 /// The browse URL (B9): the homepage index. Live 26.09.2026 it
-    /// answers 149 rows of the latest releases with the same row markup
-    /// as the search results, and it has no pager -- so browse is one
-    /// page and `has_more` is false. The category is not honoured: the
-    /// homepage is one mixed list, which is why the `b` key returns the
-    /// view to "all" before searching.
-    pub const BROWSE_URL: &str = "https://rutor.info/";
+/// answers 149 rows of the latest releases with the same row markup
+/// as the search results, and it has no pager -- so browse is one
+/// page and `has_more` is false. The category is not honoured: the
+/// homepage is one mixed list, which is why the `b` key returns the
+/// view to "all" before searching.
+pub const BROWSE_URL: &str = "https://rutor.info/";
 
 impl RutorSearcher {
     pub const HOME_URL: &'static str = "https://rutor.info/";
@@ -200,7 +200,11 @@ impl RutorSearcher {
                 anyhow::bail!("rutor returned HTTP {} for its homepage", status);
             }
             let items = parse_results(&html);
-            return Ok(SearchPage { items, has_more: false, next_offset: None });
+            return Ok(SearchPage {
+                items,
+                has_more: false,
+                next_offset: None,
+            });
         }
         if !offset.is_multiple_of(Self::PAGE_SIZE) {
             // The app advances `offset` by however many rows came back,
@@ -209,10 +213,13 @@ impl RutorSearcher {
             // nothing here both avoids re-reading that page and makes
             // `Source::search` report `has_more: false`, which flips
             // `all_loaded` (B2).
-            crate::log::log("rutor", &format!(
-                "offset {} is past a partial final page; no more results",
-                offset,
-            ));
+            crate::log::log(
+                "rutor",
+                &format!(
+                    "offset {} is past a partial final page; no more results",
+                    offset,
+                ),
+            );
             return Ok(SearchPage::default());
         }
         let page = (offset / Self::PAGE_SIZE) + 1;
@@ -221,10 +228,13 @@ impl RutorSearcher {
             Some(group) => group_ids(group),
             None => &[0],
         };
-        crate::log::log("rutor", &format!(
-            "page {} category {:?} -> rubric ids {:?}",
-            page, category, ids,
-        ));
+        crate::log::log(
+            "rutor",
+            &format!(
+                "page {} category {:?} -> rubric ids {:?}",
+                page, category, ids,
+            ),
+        );
         let mut per_id = Vec::with_capacity(ids.len());
         for &cat in ids {
             per_id.push(self.search_one_category(page, query, cat).await?);
@@ -263,16 +273,20 @@ impl RutorSearcher {
         }
 
         let relaxed = kept.join(" ");
-        crate::log::log("rutor", &format!(
-            "0 hits for {:?}; retrying as {:?} (rutor does not index \
+        crate::log::log(
+            "rutor",
+            &format!(
+                "0 hits for {:?}; retrying as {:?} (rutor does not index \
              {:?} and ANDs every query word)",
-            query, relaxed, dropped,
-        ));
+                query, relaxed, dropped,
+            ),
+        );
         let (status, html) = self.fetch_page(page, category, &relaxed).await?;
         if !status.is_success() {
-            crate::log::log("rutor", &format!(
-                "relaxed query {:?} failed with HTTP {}", relaxed, status,
-            ));
+            crate::log::log(
+                "rutor",
+                &format!("relaxed query {:?} failed with HTTP {}", relaxed, status,),
+            );
             return Ok(strict);
         }
 
@@ -284,21 +298,30 @@ impl RutorSearcher {
         // actual intent ("the matrix" -> "Матрица / The Matrix"), so
         // promote them; if none do, keeping the relaxed rows is still
         // strictly better than showing nothing.
-        let exact: Vec<TorrentItem> = items.iter()
+        let exact: Vec<TorrentItem> = items
+            .iter()
             .filter(|it| dropped.iter().all(|w| title_has_word(&it.title, w)))
             .cloned()
             .collect();
         if !exact.is_empty() {
-            crate::log::log("rutor", &format!(
-                "{}/{} relaxed rows also mention the dropped words",
-                exact.len(), items.len(),
-            ));
+            crate::log::log(
+                "rutor",
+                &format!(
+                    "{}/{} relaxed rows also mention the dropped words",
+                    exact.len(),
+                    items.len(),
+                ),
+            );
             return Ok(exact);
         }
-        crate::log::log("rutor", &format!(
-            "no relaxed row mentions {:?}; keeping all {} rows",
-            dropped, items.len(),
-        ));
+        crate::log::log(
+            "rutor",
+            &format!(
+                "no relaxed row mentions {:?}; keeping all {} rows",
+                dropped,
+                items.len(),
+            ),
+        );
         Ok(items)
     }
 
@@ -335,7 +358,6 @@ impl RutorSearcher {
     /// the homepage is not a search URL, but it is fetched and parsed
     /// exactly like one.
     async fn fetch_url(&self, url: &str) -> Result<(reqwest::StatusCode, String)> {
-
         // Accept/Accept-Language come from the shared client (B5); the
         // only per-request header left is Referer, which names this
         // source's own site. The fetch retries transient failures
@@ -360,10 +382,16 @@ impl RutorSearcher {
         let html = response.text().await?;
         let matched = count_title_links(&html);
 
-        crate::log::log("rutor", &format!(
-            "GET {} -> status={} body_len={} title_links={}",
-            url, status, html.len(), matched,
-        ));
+        crate::log::log(
+            "rutor",
+            &format!(
+                "GET {} -> status={} body_len={} title_links={}",
+                url,
+                status,
+                html.len(),
+                matched,
+            ),
+        );
 
         if matched == 0 && html.len() < 2000 {
             // A real rutor search results page is large (many rows); a
@@ -372,9 +400,10 @@ impl RutorSearcher {
             // matches. Log a snippet so the actual page content (rather
             // than just its length) is on hand next time this happens.
             let snippet: String = html.chars().take(500).collect();
-            crate::log::log("rutor", &format!(
-                "suspiciously small body, first 500 chars: {}", snippet,
-            ));
+            crate::log::log(
+                "rutor",
+                &format!("suspiciously small body, first 500 chars: {}", snippet,),
+            );
         }
 
         Ok((status, html))
@@ -384,8 +413,8 @@ impl RutorSearcher {
         // Same resilient path as search: a .torrent fetch that hits a
         // transient 503 should retry rather than hand TorrServer a
         // failure page.
-        let response = fetch_resilient(url, || self.client.get(url), &FetchOptions::default())
-            .await?;
+        let response =
+            fetch_resilient(url, || self.client.get(url), &FetchOptions::default()).await?;
         let status = response.status();
         if !status.is_success() {
             // This used to be unchecked, so a mirror answering
@@ -464,13 +493,11 @@ pub fn count_title_links(html: &str) -> usize {
 /// anyway.
 pub const STOPWORDS: &[&str] = &[
     // English
-    "a", "an", "the", "of", "to", "it", "i", "am", "is", "are", "be",
-    "in", "on", "at", "by", "for", "and", "or", "but", "not", "with",
-    "from", "this", "that", "as", "my", "your",
+    "a", "an", "the", "of", "to", "it", "i", "am", "is", "are", "be", "in", "on", "at", "by", "for",
+    "and", "or", "but", "not", "with", "from", "this", "that", "as", "my", "your",
     // Russian
-    "и", "в", "во", "на", "с", "со", "к", "ко", "о", "об", "от", "до",
-    "для", "по", "из", "не", "ни", "что", "как", "за", "у", "же", "бы",
-    "то",
+    "и", "в", "во", "на", "с", "со", "к", "ко", "о", "об", "от", "до", "для", "по", "из", "не",
+    "ни", "что", "как", "за", "у", "же", "бы", "то",
 ];
 
 /// Split a query into the words rutor can actually match and the ones
@@ -559,10 +586,7 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     // spellings depending on the row -- the Cyrillic variant used to parse
     // to an empty size (B0.6). `(?i)` covers lower-case spellings too
     // (`гб`, `mb`), which the old pattern also missed.
-    let size_re = Regex::new(
-        r"(?i)(\d+(?:[.,]\d+)?)(?:\s|&nbsp;)*(TB|GB|MB|KB|ТБ|ГБ|МБ|КБ)",
-    )
-    .ok();
+    let size_re = Regex::new(r"(?i)(\d+(?:[.,]\d+)?)(?:\s|&nbsp;)*(TB|GB|MB|KB|ТБ|ГБ|МБ|КБ)").ok();
     let seeds_re = Regex::new(r#"alt="S"[^>]*>(?:\s|&nbsp;)*(\d+)"#).ok();
     let peers_re = Regex::new(r#"alt="L"[^>]*>(?:<[^>]*>|\s|&nbsp;)*(\d+)"#).ok();
     // "07 Сен 25" / "31 Окт 20" style short Russian date, always the very
@@ -614,19 +638,23 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
 
         let row_html = row.html();
 
-        let size = size_re.as_ref()
+        let size = size_re
+            .as_ref()
             .and_then(|re| re.captures(&row_html))
             .map(|c| format!("{} {}", c[1].replace(',', "."), &c[2]))
             .unwrap_or_default();
-        let seeds = seeds_re.as_ref()
+        let seeds = seeds_re
+            .as_ref()
             .and_then(|re| re.captures(&row_html))
             .map(|c| c[1].to_string())
             .unwrap_or_default();
-        let peers = peers_re.as_ref()
+        let peers = peers_re
+            .as_ref()
             .and_then(|re| re.captures(&row_html))
             .map(|c| c[1].to_string())
             .unwrap_or_default();
-        let date = date_re.as_ref()
+        let date = date_re
+            .as_ref()
             .and_then(|re| re.captures(&row_html))
             .map(|c| c[1].replace("&nbsp;", " "))
             .unwrap_or_default();
@@ -718,7 +746,8 @@ fn info_hash_from_magnet(magnet: &str) -> String {
 
 fn info_hash_re() -> Option<&'static Regex> {
     static RE: OnceLock<Option<Regex>> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)xt=urn:btih:([a-f0-9]{40})").ok()).as_ref()
+    RE.get_or_init(|| Regex::new(r"(?i)xt=urn:btih:([a-f0-9]{40})").ok())
+        .as_ref()
 }
 
 /// `06 Сен 26` -> unix seconds of that UTC day, `0` when the date can't
@@ -726,8 +755,7 @@ fn info_hash_re() -> Option<&'static Regex> {
 /// abbreviations, two-digit years read as 20xx.
 fn parse_added(date: &str) -> i64 {
     const RU_MONTHS: [&str; 12] = [
-        "Янв", "Фев", "Мар", "Апр", "Май", "Июн",
-        "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
+        "Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
     ];
     let Some(caps) = added_re().and_then(|re| re.captures(date)) else {
         return 0;
@@ -736,7 +764,9 @@ fn parse_added(date: &str) -> i64 {
         Ok(d) => d,
         Err(_) => return 0,
     };
-    let Some(month) = RU_MONTHS.iter().position(|m| m.eq_ignore_ascii_case(&caps[2]))
+    let Some(month) = RU_MONTHS
+        .iter()
+        .position(|m| m.eq_ignore_ascii_case(&caps[2]))
     else {
         return 0;
     };

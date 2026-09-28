@@ -1,6 +1,6 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use doris::config::Config;
 use doris::ui::app::App as UiApp;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -16,7 +16,9 @@ fn make_app_in_settings() -> UiApp {
 fn test_settings_has_three_categories_general_streaming_download() {
     let app = make_app_in_settings();
     let names: Vec<&str> = match &app.modal {
-        doris::ui::app::Modal::Settings(state) => state.categories.iter().map(|c| c.name.as_str()).collect(),
+        doris::ui::app::Modal::Settings(state) => {
+            state.categories.iter().map(|c| c.name.as_str()).collect()
+        }
         _ => panic!("expected Settings modal"),
     };
     assert_eq!(names, vec!["general", "streaming", "download"]);

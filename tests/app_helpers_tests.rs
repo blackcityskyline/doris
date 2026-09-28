@@ -1,12 +1,12 @@
 use doris::app::{
-    EnterAction, cycle_index, enter_action, fill_missing_magnet, magnet_only_download,
-    safe_filename, source_id_for, source_needs_browser,
+    cycle_index, enter_action, fill_missing_magnet, magnet_only_download, safe_filename,
+    source_id_for, source_needs_browser, EnterAction,
 };
-use doris::search::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
 use doris::config::Config;
+use doris::search::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
 use doris::sources::models::TorrentItem;
 use doris::sources::source::{
-    AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, SourceEnv, build_source,
+    build_source, AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, SourceEnv,
 };
 use doris::ui::app::App as UiApp;
 use doris::ui::app::AppState;
@@ -38,7 +38,10 @@ fn test_stale_generation_results_are_dropped() {
     assert!(!applied, "stale results must not be applied");
     assert_eq!(ui.results.len(), 1, "the fresh results must survive");
     assert_eq!(ui.results[0].title, "fresh");
-    assert!(ui.state == AppState::Searching, "a stale event must not flip state");
+    assert!(
+        ui.state == AppState::Searching,
+        "a stale event must not flip state"
+    );
 }
 
 #[test]
@@ -50,7 +53,11 @@ fn test_rows_append_and_the_outcome_line_is_logged() {
     let applied = apply_source_done(&mut ui, 3, 3, "rutor", vec![item("a"), item("b")], None);
 
     assert!(applied);
-    assert_eq!(ui.results.len(), 3, "each source appends into the same list");
+    assert_eq!(
+        ui.results.len(),
+        3,
+        "each source appends into the same list"
+    );
     assert_eq!(ui.results[2].title, "b");
     assert!(
         ui.logs.iter().any(|l| l.contains("rutor: 2 results")),
@@ -84,7 +91,9 @@ fn test_a_failing_source_logs_its_line_without_adding_rows() {
     assert_eq!(ui.results.len(), 1, "a failure adds no rows");
     assert!(ui.results[0].title == "kept");
     assert!(
-        ui.logs.iter().any(|l| l.contains("rutracker: timed out after 25s")),
+        ui.logs
+            .iter()
+            .any(|l| l.contains("rutracker: timed out after 25s")),
         "the failure line must reach the log: {:?}",
         ui.logs
     );
@@ -99,7 +108,10 @@ fn test_completion_marks_all_loaded_when_no_source_has_more() {
     let has_more: HashMap<String, bool> = HashMap::new();
 
     assert!(finish_search(&mut ui, 1, 1, &has_more));
-    assert!(ui.all_loaded, "no source with another page means stop paging");
+    assert!(
+        ui.all_loaded,
+        "no source with another page means stop paging"
+    );
     assert!(ui.state == AppState::Idle);
 }
 
@@ -112,7 +124,10 @@ fn test_completion_keeps_paging_open_while_any_source_has_more() {
     has_more.insert("rutracker".to_string(), true);
 
     assert!(finish_search(&mut ui, 1, 1, &has_more));
-    assert!(!ui.all_loaded, "one source with another page keeps Load more alive");
+    assert!(
+        !ui.all_loaded,
+        "one source with another page keeps Load more alive"
+    );
     assert!(ui.state == AppState::Idle);
 }
 
@@ -149,7 +164,10 @@ fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
     // why 1337x left this test in wave 3 (B8).
     assert!(source_needs_browser(""));
     assert!(source_needs_browser("never-heard-of-it"));
-    assert!(!source_needs_browser("1337x"), "it needs no browser session");
+    assert!(
+        !source_needs_browser("1337x"),
+        "it needs no browser session"
+    );
 }
 
 // --- source_id_for (B2: rows route through the registry) -------------------
@@ -166,7 +184,10 @@ fn test_legacy_rows_fall_back_to_rutracker() {
     // and they carry rutracker-shaped URLs -- the same conservative
     // fallback `source_needs_browser` makes.
     assert_eq!(source_id_for(&item_with_source("")), "rutracker");
-    assert_eq!(source_id_for(&item_with_source("never-heard-of-it")), "rutracker");
+    assert_eq!(
+        source_id_for(&item_with_source("never-heard-of-it")),
+        "rutracker"
+    );
     // An id the registry *knows* keeps itself even while it is still
     // planned: such a row then fails at `build_source` with "no such
     // source", instead of being handed to rutracker and fed markup it
@@ -202,7 +223,13 @@ fn test_cycle_index_forward_and_backward_are_inverses() {
     for len in 2..8 {
         for pos in 0..len {
             let forward = cycle_index(pos, len, 1);
-            assert_eq!(cycle_index(forward, len, -1), pos, "len={} pos={}", len, pos);
+            assert_eq!(
+                cycle_index(forward, len, -1),
+                pos,
+                "len={} pos={}",
+                len,
+                pos
+            );
         }
     }
 }
@@ -223,8 +250,14 @@ fn test_cycle_index_single_item_stays_put() {
 
 #[test]
 fn test_cookie_file_disabled_when_save_cookies_off() {
-    let config = Config { save_cookies: false, ..Default::default() };
-    assert_eq!(resolve_cookie_file(&config, Some(std::path::Path::new("/tmp/x.txt"))), None);
+    let config = Config {
+        save_cookies: false,
+        ..Default::default()
+    };
+    assert_eq!(
+        resolve_cookie_file(&config, Some(std::path::Path::new("/tmp/x.txt"))),
+        None
+    );
 }
 
 #[test]
@@ -237,7 +270,10 @@ fn test_cookie_file_falls_back_to_config_toml_setting() {
         cookie_file: "my-cookies.txt".to_string(),
         ..Default::default()
     };
-    assert_eq!(resolve_cookie_file(&config, None), Some(PathBuf::from("my-cookies.txt")));
+    assert_eq!(
+        resolve_cookie_file(&config, None),
+        Some(PathBuf::from("my-cookies.txt"))
+    );
 }
 
 #[test]
@@ -248,7 +284,10 @@ fn test_cookie_file_cli_flag_takes_priority_over_config() {
         ..Default::default()
     };
     let cli_path = PathBuf::from("/explicit/cli-cookies.txt");
-    assert_eq!(resolve_cookie_file(&config, Some(&cli_path)), Some(cli_path));
+    assert_eq!(
+        resolve_cookie_file(&config, Some(&cli_path)),
+        Some(cli_path)
+    );
 }
 
 #[test]
@@ -281,7 +320,10 @@ fn test_outcome_line_distinguishes_sources_on_the_same_error() {
     let healthy: Result<usize, String> = Ok(7);
     let broken: Result<usize, String> = Err("timeout".to_string());
     assert_eq!(source_outcome_line("rutor", &healthy), "rutor: 7 results");
-    assert_eq!(source_outcome_line("rutracker", &broken), "rutracker: timeout");
+    assert_eq!(
+        source_outcome_line("rutracker", &broken),
+        "rutracker: timeout"
+    );
 }
 
 // --- enter_action (fixes B0.4: Enter on an empty query could stream) --------
@@ -393,7 +435,9 @@ fn test_finish_search_dedupes_and_orders_the_merged_list() {
     assert_eq!(ui.results[0].seeds_n, 12, "healthiest copy first");
     assert_eq!(ui.results[1].title, "row-other");
     assert!(
-        ui.logs.iter().any(|l| l.contains("Removed 1 duplicate results")),
+        ui.logs
+            .iter()
+            .any(|l| l.contains("Removed 1 duplicate results")),
         "the dedup must be visible in the log: {:?}",
         ui.logs
     );
@@ -412,7 +456,10 @@ fn test_finish_search_follows_the_selected_row_to_its_new_position() {
         ui.results[ui.selected].title, "row-cold",
         "reordering must not silently change what the user had highlighted"
     );
-    assert_eq!(ui.results[0].title, "row-warm", "the list itself is reordered");
+    assert_eq!(
+        ui.results[0].title, "row-warm",
+        "the list itself is reordered"
+    );
 }
 
 #[test]
@@ -439,8 +486,7 @@ fn test_finish_search_clamps_the_selection_when_dedup_removed_that_row() {
         "selection must land on a real row, not past the end"
     );
     assert_ne!(
-        ui.results[ui.selected].title,
-        "the one I highlighted",
+        ui.results[ui.selected].title, "the one I highlighted",
         "the removed row cannot stay selected"
     );
 }
@@ -596,7 +642,9 @@ async fn test_a_row_with_no_link_gets_the_magnet_off_its_own_page() {
         ..Default::default()
     };
 
-    fill_missing_magnet(&mut item, &source).await.expect("resolve");
+    fill_missing_magnet(&mut item, &source)
+        .await
+        .expect("resolve");
 
     assert_eq!(
         item.magnet.as_deref(),
@@ -614,7 +662,9 @@ async fn test_a_row_that_already_has_a_way_to_play_is_never_asked() {
         download_url: "https://lazy.invalid/download/1".to_string(),
         ..Default::default()
     };
-    fill_missing_magnet(&mut file_row, &with_file).await.expect("resolve");
+    fill_missing_magnet(&mut file_row, &with_file)
+        .await
+        .expect("resolve");
     assert_eq!(with_file.asked(), 0, "a fetchable row needs no lookup");
     assert_eq!(file_row.magnet, None, "and is not quietly rewritten");
 
@@ -624,9 +674,14 @@ async fn test_a_row_that_already_has_a_way_to_play_is_never_asked() {
         magnet: Some("magnet:?xt=urn:btih:present".to_string()),
         ..Default::default()
     };
-    fill_missing_magnet(&mut link_row, &with_link).await.expect("resolve");
+    fill_missing_magnet(&mut link_row, &with_link)
+        .await
+        .expect("resolve");
     assert_eq!(with_link.asked(), 0, "a row that has one keeps it");
-    assert_eq!(link_row.magnet.as_deref(), Some("magnet:?xt=urn:btih:present"));
+    assert_eq!(
+        link_row.magnet.as_deref(),
+        Some("magnet:?xt=urn:btih:present")
+    );
 }
 
 #[tokio::test]

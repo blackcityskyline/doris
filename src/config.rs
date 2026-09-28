@@ -241,7 +241,6 @@ fn default_enabled_sources() -> Vec<String> {
 /// config that predates the field (see `migrate_sources`).
 const LEGACY_SOURCES: &[&str] = &["rutracker", "rutor", "nnmclub"];
 
-
 fn default_download_dir_mode() -> String {
     "default".to_string()
 }
@@ -290,7 +289,11 @@ impl Config {
         // registry does not list at all -- is what counts as known.
         let known: Vec<String> = seen
             .iter()
-            .filter(|id| !KNOWN_SOURCES.iter().any(|info| info.id == **id && !info.implemented))
+            .filter(|id| {
+                !KNOWN_SOURCES
+                    .iter()
+                    .any(|info| info.id == **id && !info.implemented)
+            })
             .cloned()
             .collect();
 

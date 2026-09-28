@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::browser::cdp::Browser;
+use anyhow::Result;
 
 pub async fn patch_cdp_detection(browser: &Browser) -> Result<()> {
     let scripts = vec![

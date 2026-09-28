@@ -1,5 +1,5 @@
-use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
 use anyhow::Result;
+use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -35,7 +35,9 @@ pub enum Event {
     /// Every source of `generation` has reported in (or failed to):
     /// nothing more will arrive for it, so the UI may go idle. Rows
     /// already arrived individually via [`Event::SourceDone`].
-    SearchComplete { generation: u64 },
+    SearchComplete {
+        generation: u64,
+    },
     StreamComplete(String),
     StreamError(String),
     StreamLog(String),
@@ -71,27 +73,25 @@ impl EventHandler {
         let (tx, rx) = mpsc::unbounded_channel();
         let event_tx = tx.clone();
 
-        std::thread::spawn(move || {
-            loop {
-                if crossterm::event::poll(tick_rate).unwrap_or(false) {
-                    match crossterm::event::read() {
-                        Ok(CrosstermEvent::Key(key)) => {
-                            if event_tx.send(Event::Key(key)).is_err() {
-                                break;
-                            }
+        std::thread::spawn(move || loop {
+            if crossterm::event::poll(tick_rate).unwrap_or(false) {
+                match crossterm::event::read() {
+                    Ok(CrosstermEvent::Key(key)) => {
+                        if event_tx.send(Event::Key(key)).is_err() {
+                            break;
                         }
-                        Ok(CrosstermEvent::Mouse(mouse)) => {
-                            let _ = event_tx.send(Event::Mouse(mouse));
-                        }
-                        Ok(CrosstermEvent::Resize(w, h)) => {
-                            let _ = event_tx.send(Event::Resize(w, h));
-                        }
-                        _ => {}
                     }
-                } else {
-                    if event_tx.send(Event::Tick).is_err() {
-                        break;
+                    Ok(CrosstermEvent::Mouse(mouse)) => {
+                        let _ = event_tx.send(Event::Mouse(mouse));
                     }
+                    Ok(CrosstermEvent::Resize(w, h)) => {
+                        let _ = event_tx.send(Event::Resize(w, h));
+                    }
+                    _ => {}
+                }
+            } else {
+                if event_tx.send(Event::Tick).is_err() {
+                    break;
                 }
             }
         });
@@ -104,6 +104,9 @@ impl EventHandler {
     }
 
     pub async fn next(&mut self) -> Result<Event> {
-        self.rx.recv().await.ok_or_else(|| anyhow::anyhow!("Event channel closed"))
+        self.rx
+            .recv()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Event channel closed"))
     }
 }

@@ -56,7 +56,11 @@ async fn live_add_by_link_adds_lists_and_forgets_a_real_magnet() {
         .nth(1)
         .and_then(|rest| rest.split(['&', '?']).next())
         .unwrap_or_default();
-    assert_eq!(hash, from_link.to_lowercase(), "hash must come from the link");
+    assert_eq!(
+        hash,
+        from_link.to_lowercase(),
+        "hash must come from the link"
+    );
 
     let listed = torrserver
         .get_torrent(&hash)
@@ -94,7 +98,10 @@ async fn live_torrent_list_parses_against_the_running_server() {
         TORRSERVER
     );
 
-    let list = torrserver.list_torrents().await.expect("list must not error");
+    let list = torrserver
+        .list_torrents()
+        .await
+        .expect("list must not error");
     println!("TorrServer lists {} torrents", list.len());
     if let Some(first) = list.first() {
         println!(
@@ -107,7 +114,10 @@ async fn live_torrent_list_parses_against_the_running_server() {
         );
         assert!(!first.name.is_empty(), "title came back empty");
         assert!(first.total_size > 0, "torrent_size came back empty");
-        assert!(!first.status_string.is_empty(), "stat_string came back empty");
+        assert!(
+            !first.status_string.is_empty(),
+            "stat_string came back empty"
+        );
     } else {
         println!("no torrents to inspect (empty list is a valid answer)");
     }

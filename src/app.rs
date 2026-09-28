@@ -1,32 +1,30 @@
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseButton, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::{Mutex, mpsc};
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 
+use crate::bridge::handler::BridgeServer;
 use crate::browser::cdp::{Browser, BrowserVisibility};
 use crate::browser::detect;
+use crate::cli::Args;
+use crate::config::Config;
 use crate::event::{Event, EventHandler};
+use crate::search::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
 use crate::sources::cache::{CacheKey, SearchCache};
 use crate::sources::orchestrator::{self, SourceStatus};
 use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
 use crate::torrserver::api::TorrServer;
-use crate::bridge::handler::BridgeServer;
 use crate::tui;
 use crate::ui::app::{
-    App as UiApp, AppState, DetailAction, Modal, TorrentStatus, TorrentDetailState, UiAction,
-    sources_summary,
+    sources_summary, App as UiApp, AppState, DetailAction, Modal, TorrentDetailState,
+    TorrentStatus, UiAction,
 };
-use crate::ui::modals::settings::SettingsAction;
-use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
+use crate::ui::modals::settings::SettingsAction;
 use crate::ui::theme::Theme;
-use crate::cli::Args;
-use crate::config::Config;
-use crate::search::{
-    apply_source_done, finish_search, resolve_cookie_file, source_outcome_line,
-};
+use crate::ui::zones::ZoneId;
 
 /// Resolve the effective download directory from `download_dir_mode` and
 /// the three custom slots (Options -> download), falling back to the OS
@@ -108,7 +106,9 @@ pub fn safe_filename(title: &str) -> String {
 /// A row with neither URL nor magnet also returns `None`: it then fails
 /// in the normal path with a message, which is the honest outcome --
 /// the alternative is writing an empty file that looks like a result.
-pub fn magnet_only_download(item: &crate::sources::models::TorrentItem) -> Option<(String, String)> {
+pub fn magnet_only_download(
+    item: &crate::sources::models::TorrentItem,
+) -> Option<(String, String)> {
     if !item.download_url.is_empty() {
         return None;
     }
@@ -120,7 +120,9 @@ pub fn magnet_only_download(item: &crate::sources::models::TorrentItem) -> Optio
 }
 
 pub fn source_id_for(item: &crate::sources::models::TorrentItem) -> &'static str {
-    source::get_source(&item.source).map(|s| s.id).unwrap_or("rutracker")
+    source::get_source(&item.source)
+        .map(|s| s.id)
+        .unwrap_or("rutracker")
 }
 
 /// Fill a row's magnet in from the row's own page, for rows that carry
@@ -145,7 +147,6 @@ pub async fn fill_missing_magnet(
     }
     Ok(())
 }
-
 
 /// What pressing Enter in the results view means (B0.4).
 ///
@@ -192,7 +193,6 @@ pub fn enter_action(
     }
 }
 
-
 /// Merge a detail modal's file list into the modal (П.7).
 ///
 /// A free function over `&mut UiApp` for the same reason as
@@ -222,7 +222,6 @@ pub fn apply_detail_loaded(
         }
     }
 }
-
 
 pub struct App {
     args: Args,
@@ -285,7 +284,9 @@ impl App {
             args.torrserver.clone()
         };
 
-        let browser_visibility_str = args.browser_visibility.clone()
+        let browser_visibility_str = args
+            .browser_visibility
+            .clone()
             .unwrap_or_else(|| config.browser_visibility.clone());
         let browser_visibility: BrowserVisibility = browser_visibility_str.parse()?;
 
@@ -310,7 +311,8 @@ impl App {
         );
 
         Ok(Self {
-            ui: UiApp::new(torrserver_url.clone(), config.theme_name.as_deref()).with_group_tabs(&config),
+            ui: UiApp::new(torrserver_url.clone(), config.theme_name.as_deref())
+                .with_group_tabs(&config),
             event_handler,
             torrserver,
             browser: None,
@@ -332,7 +334,10 @@ impl App {
 
     pub async fn run(&mut self) -> Result<()> {
         let mut terminal = tui::init()?;
-        self.terminal_size = terminal.size().map(|s| (s.width, s.height)).unwrap_or((80, 24));
+        self.terminal_size = terminal
+            .size()
+            .map(|s| (s.width, s.height))
+            .unwrap_or((80, 24));
 
         Self::spawn_termination_watch(Arc::clone(&self.exit_signal));
 
@@ -596,7 +601,8 @@ impl App {
             }
             MouseEventKind::ScrollDown => {
                 if self.ui.detail_log_mode {
-                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
+                    self.ui.detail_log_scroll =
+                        (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
                 } else if self.ui.modal == Modal::None {
                     if let Some(id) = self.ui.zone_at(mouse.row, mouse.column) {
                         self.ui.zones.focused = id;
@@ -617,9 +623,7 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 if self.ui.detail_log_mode {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
-                } else if self.ui.modal == Modal::None
-                    && self.ui.search_box_at(mouse.row)
-                {
+                } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
                     // The input box is the only thing left to hit on
                     // those rows: the header hints ("s: search | S:
                     // settings | ...") went with П.3, and clicking the
@@ -734,7 +738,8 @@ impl App {
         };
 
         if !self.config.download_enabled {
-            self.ui.add_log("Downloading is disabled in Options -> download -> Enable downloading.");
+            self.ui
+                .add_log("Downloading is disabled in Options -> download -> Enable downloading.");
             return;
         }
 
@@ -750,7 +755,8 @@ impl App {
                 Err(e) => Err(e),
             };
             if let Err(e) = resolved {
-                self.ui.add_log(&format!("Could not read the magnet link: {}", e));
+                self.ui
+                    .add_log(&format!("Could not read the magnet link: {}", e));
                 return;
             }
             if item.magnet.is_none() {
@@ -771,7 +777,9 @@ impl App {
                 let _ = std::fs::create_dir_all(parent);
             }
             match std::fs::write(&path, payload.as_bytes()) {
-                Ok(_) => self.ui.add_log(&format!("Saved magnet link to {}", path.display())),
+                Ok(_) => self
+                    .ui
+                    .add_log(&format!("Saved magnet link to {}", path.display())),
                 Err(e) => self.ui.add_log(&format!("Failed to save file: {}", e)),
             }
             return;
@@ -810,7 +818,11 @@ impl App {
             self.ui.add_log("No result selected.");
             return;
         };
-        let source = if item.source.is_empty() { "rutracker" } else { item.source.as_str() };
+        let source = if item.source.is_empty() {
+            "rutracker"
+        } else {
+            item.source.as_str()
+        };
         self.ui.add_log(&format!(
             "INFO: {}  |  size={}  seeds={}  date={}  source={}  url={}",
             item.title, item.size, item.seeds, item.date, source, item.page_url,
@@ -847,7 +859,11 @@ impl App {
                 Ok(files) => (files, None),
                 Err(e) => (Vec::new(), Some(e.to_string())),
             };
-            let _ = tx.send(Event::DetailLoaded { page_url, files, error });
+            let _ = tx.send(Event::DetailLoaded {
+                page_url,
+                files,
+                error,
+            });
         });
     }
 
@@ -889,7 +905,9 @@ impl App {
     /// arrow / vim-style 'k'.
     fn handle_nav_up(&mut self) {
         match self.ui.zones.focused {
-            ZoneId::Results => { self.ui.navigate_up(); }
+            ZoneId::Results => {
+                self.ui.navigate_up();
+            }
             ZoneId::Log => self.ui.scroll_logs_up(),
             ZoneId::Sources => self.ui.navigate_sources(-1),
             _ => {}
@@ -907,10 +925,12 @@ impl App {
                     self.ui.detail_log_mode = false;
                 }
                 KeyCode::Char('j') if self.config.vim_keys => {
-                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
+                    self.ui.detail_log_scroll =
+                        (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
                 }
                 KeyCode::Down => {
-                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
+                    self.ui.detail_log_scroll =
+                        (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
                 }
                 KeyCode::Char('k') if self.config.vim_keys => {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
@@ -922,7 +942,8 @@ impl App {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(20);
                 }
                 KeyCode::PageDown => {
-                    self.ui.detail_log_scroll = (self.ui.detail_log_scroll + 20).min(self.ui.detail_logs.len());
+                    self.ui.detail_log_scroll =
+                        (self.ui.detail_log_scroll + 20).min(self.ui.detail_logs.len());
                 }
                 _ => {}
             }
@@ -1024,21 +1045,34 @@ impl App {
                     }
                     SettingsAction::CyclePrioritizeBrowser => {
                         const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
-                        let current = self.config.browser_priority.first().cloned().unwrap_or_default();
+                        let current = self
+                            .config
+                            .browser_priority
+                            .first()
+                            .cloned()
+                            .unwrap_or_default();
                         let next_first = match ORDER.iter().position(|&k| k == current) {
-                            Some(i) => ORDER[cycle_index(i, ORDER.len(), self.ui.last_cycle_direction)],
+                            Some(i) => {
+                                ORDER[cycle_index(i, ORDER.len(), self.ui.last_cycle_direction)]
+                            }
                             None => ORDER[0],
                         };
                         // Move next_first to the front, keep the rest in
                         // their existing relative order.
-                        let mut rest: Vec<String> = self.config.browser_priority.iter()
+                        let mut rest: Vec<String> = self
+                            .config
+                            .browser_priority
+                            .iter()
                             .filter(|k| k.as_str() != next_first)
                             .cloned()
                             .collect();
                         let mut new_priority = vec![next_first.to_string()];
                         new_priority.append(&mut rest);
                         self.config.browser_priority = new_priority;
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::EditCredentials => {
                         self.ui.open_login_modal();
@@ -1050,7 +1084,10 @@ impl App {
                         } else {
                             "TorrServer: not reachable"
                         });
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::OpenLog => {
                         self.ui.modal = Modal::None;
@@ -1062,23 +1099,33 @@ impl App {
                     }
                     SettingsAction::CycleTheme => {
                         let themes = Theme::load_themes();
-                        if let Some(pos) = themes.iter().position(|t| t.name == self.ui.theme.name) {
+                        if let Some(pos) = themes.iter().position(|t| t.name == self.ui.theme.name)
+                        {
                             let next = cycle_index(pos, themes.len(), self.ui.last_cycle_direction);
                             self.ui.theme = themes[next].clone();
                         } else if !themes.is_empty() {
                             self.ui.theme = themes[0].clone();
                         }
                         self.config.theme_name = Some(self.ui.theme.name.clone());
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::CyclePreset => {
                         if !self.config.disable_presets && !self.config.presets.is_empty() {
-                            self.config.preset_index =
-                                cycle_index(self.config.preset_index, self.config.presets.len(), self.ui.last_cycle_direction);
+                            self.config.preset_index = cycle_index(
+                                self.config.preset_index,
+                                self.config.presets.len(),
+                                self.ui.last_cycle_direction,
+                            );
                             let spec = self.config.presets[self.config.preset_index].clone();
                             self.ui.zones.apply_preset(&spec);
                         }
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::SetUpdateMs => {
                         // No numeric text-entry widget exists in the
@@ -1089,47 +1136,82 @@ impl App {
                         // reasonable follow-up once the modal supports one.
                         const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
                         let next = match STEPS.iter().position(|&v| v == self.config.update_ms) {
-                            Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
+                            Some(i) => {
+                                STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)]
+                            }
                             None => STEPS[0],
                         };
                         self.config.update_ms = next;
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::CycleGraphSymbol => {
                         const SYMBOLS: &[&str] = &["braille", "block", "dot"];
-                        let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol) {
-                            Some(i) => SYMBOLS[cycle_index(i, SYMBOLS.len(), self.ui.last_cycle_direction)],
+                        let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol)
+                        {
+                            Some(i) => {
+                                SYMBOLS[cycle_index(i, SYMBOLS.len(), self.ui.last_cycle_direction)]
+                            }
                             None => SYMBOLS[0],
                         };
                         self.config.graph_symbol = next.to_string();
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::CycleDownloadDirMode => {
                         const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
-                        let next = match MODES.iter().position(|&m| m == self.config.download_dir_mode) {
-                            Some(i) => MODES[cycle_index(i, MODES.len(), self.ui.last_cycle_direction)],
+                        let next = match MODES
+                            .iter()
+                            .position(|&m| m == self.config.download_dir_mode)
+                        {
+                            Some(i) => {
+                                MODES[cycle_index(i, MODES.len(), self.ui.last_cycle_direction)]
+                            }
                             None => MODES[0],
                         };
                         self.config.download_dir_mode = next.to_string();
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::CycleDownloadSpeedLimit => {
                         const STEPS: &[u32] = &[0, 128, 256, 512, 1024, 2048, 5120, 10240];
-                        let next = match STEPS.iter().position(|&v| v == self.config.download_speed_limit_kbps) {
-                            Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
+                        let next = match STEPS
+                            .iter()
+                            .position(|&v| v == self.config.download_speed_limit_kbps)
+                        {
+                            Some(i) => {
+                                STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)]
+                            }
                             None => STEPS[0],
                         };
                         self.config.download_speed_limit_kbps = next;
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::CycleUploadSpeedLimit => {
                         const STEPS: &[u32] = &[0, 64, 128, 256, 512, 1024, 2048, 5120];
-                        let next = match STEPS.iter().position(|&v| v == self.config.upload_speed_limit_kbps) {
-                            Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
+                        let next = match STEPS
+                            .iter()
+                            .position(|&v| v == self.config.upload_speed_limit_kbps)
+                        {
+                            Some(i) => {
+                                STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)]
+                            }
                             None => STEPS[0],
                         };
                         self.config.upload_speed_limit_kbps = next;
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::Close => {}
                     // The 17 bool toggles are handled above by the
@@ -1178,7 +1260,9 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('q') | KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.ui.quit();
             }
             KeyCode::Char('m') if !self.ui.input_mode => {
@@ -1215,29 +1299,37 @@ impl App {
             KeyCode::Char('P') if !self.ui.input_mode => {
                 self.ui.zones.cycle_preset();
             }
-            KeyCode::Char('p') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
+            KeyCode::Char('p')
+                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent =>
+            {
                 self.toggle_pause_active_torrent().await;
             }
-            KeyCode::Char('d') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
+            KeyCode::Char('d')
+                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent =>
+            {
                 self.remove_active_torrent().await;
             }
-            KeyCode::Char('d') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
+            KeyCode::Char('d')
+                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
+            {
                 self.download_selected_to_disk().await;
             }
-            KeyCode::Char('v') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
+            KeyCode::Char('v')
+                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
+            {
                 self.show_selected_info();
             }
             // The category row's keys, next to `g`/`G` and gated the same
             // way: `g` steps forward, `G` (shift) back. Both only ever
             // move the row and re-derive the view -- the search still
             // waits for Enter, exactly as it does after a category switch.
-            KeyCode::Char('g') if !self.ui.input_mode
-                && self.ui.zones.focused == ZoneId::Results =>
+            KeyCode::Char('g')
+                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
             {
                 self.ui.cycle_group(true);
             }
-            KeyCode::Char('G') if !self.ui.input_mode
-                && self.ui.zones.focused == ZoneId::Results =>
+            KeyCode::Char('G')
+                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
             {
                 self.ui.cycle_group(false);
             }
@@ -1247,13 +1339,13 @@ impl App {
             // for the same reason `g`/`G` are gated on Results -- a key
             // that moved a cursor somewhere the user is not looking would
             // be a surprise.
-            KeyCode::Char('j') if self.config.vim_keys
-                && self.ui.zones.focused == ZoneId::Sources =>
+            KeyCode::Char('j')
+                if self.config.vim_keys && self.ui.zones.focused == ZoneId::Sources =>
             {
                 self.ui.navigate_sources(1);
             }
-            KeyCode::Char('k') if self.config.vim_keys
-                && self.ui.zones.focused == ZoneId::Sources =>
+            KeyCode::Char('k')
+                if self.config.vim_keys && self.ui.zones.focused == ZoneId::Sources =>
             {
                 self.ui.navigate_sources(-1);
             }
@@ -1276,8 +1368,7 @@ impl App {
                 self.open_detail_modal().await;
             }
             KeyCode::Enter
-                if key.modifiers.contains(KeyModifiers::SHIFT)
-                    && !self.ui.input_mode =>
+                if key.modifiers.contains(KeyModifiers::SHIFT) && !self.ui.input_mode =>
             {
                 self.open_detail_modal().await;
             }
@@ -1300,10 +1391,14 @@ impl App {
                 self.ui.zones.focus_prev();
             }
             KeyCode::PageUp if !self.ui.input_mode => {
-                if self.ui.zones.focused == ZoneId::Log { self.ui.scroll_logs_page_up() }
+                if self.ui.zones.focused == ZoneId::Log {
+                    self.ui.scroll_logs_page_up()
+                }
             }
             KeyCode::PageDown if !self.ui.input_mode => {
-                if self.ui.zones.focused == ZoneId::Log { self.ui.scroll_logs_page_down() }
+                if self.ui.zones.focused == ZoneId::Log {
+                    self.ui.scroll_logs_page_down()
+                }
             }
             KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();
@@ -1321,14 +1416,15 @@ impl App {
                 self.ui.toggle_detail_log();
             }
             KeyCode::Char('S') if !self.ui.input_mode => {
-                self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                self.ui.open_settings(
+                    &self.config,
+                    self.browser_visibility == BrowserVisibility::Hidden,
+                );
             }
             // The help page (btop binds `F1`/`?`/`h`); `h` stays free
             // for future vim navigation, so the three triggers are `?`,
             // `/` and F1.
-            KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1)
-                if !self.ui.input_mode =>
-            {
+            KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1) if !self.ui.input_mode => {
                 self.ui.open_help_modal();
             }
             KeyCode::Esc => {
@@ -1373,13 +1469,19 @@ impl App {
                     EnterAction::DoNothing => {}
                 }
             }
-            KeyCode::Char('u') if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('u')
+                if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.ui.clear_input();
             }
-            KeyCode::Char('w') if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('w')
+                if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.ui.delete_word();
             }
-            KeyCode::Char(c) if self.ui.input_mode && !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char(c)
+                if self.ui.input_mode && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.ui.type_char(c);
             }
             KeyCode::Backspace if self.ui.input_mode => {
@@ -1392,7 +1494,9 @@ impl App {
 
     async fn handle_menu_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('q') | KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.ui.quit();
             }
             KeyCode::Char('m') | KeyCode::Esc => {
@@ -1421,7 +1525,10 @@ impl App {
                 match item {
                     MenuItem::Options => {
                         self.ui.show_menu = false;
-                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     MenuItem::Help => {
                         self.ui.menu.show_help = !self.ui.menu.show_help;
@@ -1553,10 +1660,9 @@ impl App {
             // serves the selected category -- the orchestrator words the
             // second one by what would actually change it.
             let reason = match self.ui.active_group {
-                Some(group) => orchestrator::nothing_to_ask_reason(
-                    &self.config.enabled_sources,
-                    group,
-                ),
+                Some(group) => {
+                    orchestrator::nothing_to_ask_reason(&self.config.enabled_sources, group)
+                }
                 None => {
                     "No source is checked -- the Sources panel (5) is where they are switched on."
                         .to_string()
@@ -1567,11 +1673,8 @@ impl App {
             return;
         }
 
-        let plan = orchestrator::dispatch_plan(
-            &selected,
-            &self.source_offsets,
-            &self.source_has_more,
-        );
+        let plan =
+            orchestrator::dispatch_plan(&selected, &self.source_offsets, &self.source_has_more);
         if plan.is_empty() {
             // Every selected source already reported its last page, so no
             // SourceDone is coming: close the generation here instead of
@@ -1614,14 +1717,16 @@ impl App {
                     // This source can't run at all, and with no task
                     // spawned nothing else will ever speak for it: it
                     // still owes the user a line (B0.3).
-                    self.ui.add_log(&source_outcome_line(info.id, &Err(e.to_string())));
+                    self.ui
+                        .add_log(&source_outcome_line(info.id, &Err(e.to_string())));
                     self.source_status
                         .insert(info.id.to_string(), SourceStatus::Error(e.to_string()));
                     continue;
                 }
             };
 
-            self.source_status.insert(info.id.to_string(), SourceStatus::Pending);
+            self.source_status
+                .insert(info.id.to_string(), SourceStatus::Pending);
             let mut req = SearchRequest::new(query.clone(), offset);
             // The selection rides along (B6): a source that can filter
             // server-side will, one that cannot returns what it has --
@@ -1725,7 +1830,9 @@ impl App {
         let torrserver_enabled = self.config.enable_torrserver;
 
         tokio::spawn(async move {
-            let log = |msg: &str| { let _ = event_tx.send(Event::StreamLog(msg.to_string())); };
+            let log = |msg: &str| {
+                let _ = event_tx.send(Event::StreamLog(msg.to_string()));
+            };
 
             if !torrserver_enabled {
                 // The user switched TorrServer off in Options: say so
@@ -1787,7 +1894,10 @@ impl App {
                         return;
                     }
                     Err(e) => {
-                        log(&format!("Magnet add failed ({}); fetching .torrent instead", e));
+                        log(&format!(
+                            "Magnet add failed ({}); fetching .torrent instead",
+                            e
+                        ));
                     }
                 }
             }
@@ -1830,7 +1940,9 @@ impl App {
                         let mut reader = BufReader::new(stderr).lines();
                         while let Ok(Some(line)) = reader.next_line().await {
                             let l = line.trim();
-                            if l.is_empty() { continue; }
+                            if l.is_empty() {
+                                continue;
+                            }
                             if crate::player_log::should_log(l) {
                                 log(&format!("MPV: {}", l));
                             }
@@ -1853,12 +1965,25 @@ impl App {
             return Ok(Arc::clone(b));
         }
 
-        let browser_choice = self.args.browser.as_deref().or(self.config.browser.as_deref());
+        let browser_choice = self
+            .args
+            .browser
+            .as_deref()
+            .or(self.config.browser.as_deref());
         let browser_priority = detect::parse_priority(&self.config.browser_priority);
         let (kind, path) = detect::detect_browser_with_priority(browser_choice, &browser_priority)?;
-        self.ui.add_log(&format!("Launching {} ({})...", kind, self.browser_visibility));
+        self.ui.add_log(&format!(
+            "Launching {} ({})...",
+            kind, self.browser_visibility
+        ));
 
-        let browser = Browser::launch(&path, self.browser_visibility, home_url, self.config.close_browser_on_exit).await?;
+        let browser = Browser::launch(
+            &path,
+            self.browser_visibility,
+            home_url,
+            self.config.close_browser_on_exit,
+        )
+        .await?;
         let browser = Arc::new(Mutex::new(browser));
         self.browser = Some(Arc::clone(&browser));
 
@@ -1873,8 +1998,8 @@ impl App {
         if let Some(existing) = self.sources.get(id) {
             return Ok(Arc::clone(existing));
         }
-        let info = source::get_source(id)
-            .ok_or_else(|| anyhow::anyhow!("unknown source '{}'", id))?;
+        let info =
+            source::get_source(id).ok_or_else(|| anyhow::anyhow!("unknown source '{}'", id))?;
         let browser = if info.requires_browser {
             Some(self.get_browser(info.home_url).await?)
         } else {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::config::Config;
-use crate::sources::ordering::{default_order, dedupe_by_hash};
+use crate::sources::ordering::{dedupe_by_hash, default_order};
 use crate::ui::app::{App as UiApp, AppState};
 
 /// The single log line describing how one source's dispatch ended (B0.3):
@@ -99,10 +99,7 @@ fn present_results(ui: &mut UiApp) {
             .results
             .iter()
             .position(|row| row.page_url == anchor.page_url && row.title == anchor.title);
-        ui.selected = keep.unwrap_or_else(|| {
-            ui.selected
-                .min(ui.results.len().saturating_sub(1))
-        });
+        ui.selected = keep.unwrap_or_else(|| ui.selected.min(ui.results.len().saturating_sub(1)));
     } else {
         ui.selected = 0;
     }
@@ -115,10 +112,14 @@ fn present_results(ui: &mut UiApp) {
 /// back to `Config.cookie_file` (the `config.toml` setting, which used to
 /// be completely dead -- see the instance method that calls this for the
 /// full story).
-pub fn resolve_cookie_file(config: &Config, cli_override: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+pub fn resolve_cookie_file(
+    config: &Config,
+    cli_override: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
     if !config.save_cookies {
         return None;
     }
-    cli_override.map(|p| p.to_path_buf())
+    cli_override
+        .map(|p| p.to_path_buf())
         .or_else(|| Some(std::path::PathBuf::from(&config.cookie_file)))
 }

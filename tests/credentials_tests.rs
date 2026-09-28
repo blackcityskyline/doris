@@ -52,12 +52,21 @@ fn test_multiple_resources_do_not_clobber_each_other() {
     save_credential("rutracker", "alice", "alice-pass").unwrap();
     save_credential("rutor", "bob", "bob-pass").unwrap();
 
-    assert_eq!(load_credential("rutracker"), Some(("alice".into(), "alice-pass".into())));
-    assert_eq!(load_credential("rutor"), Some(("bob".into(), "bob-pass".into())));
+    assert_eq!(
+        load_credential("rutracker"),
+        Some(("alice".into(), "alice-pass".into()))
+    );
+    assert_eq!(
+        load_credential("rutor"),
+        Some(("bob".into(), "bob-pass".into()))
+    );
     assert_eq!(load_credential("nnmclub"), None);
 
     // The old single-resource API only ever sees "rutracker".
-    assert_eq!(load_credentials(), Some(("alice".into(), "alice-pass".into())));
+    assert_eq!(
+        load_credentials(),
+        Some(("alice".into(), "alice-pass".into()))
+    );
 
     let _ = std::fs::remove_file(credentials_path());
 }

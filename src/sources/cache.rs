@@ -100,7 +100,13 @@ impl SearchCache {
     pub fn put(&self, key: CacheKey, page: SearchPage) {
         if let Ok(mut map) = self.entries.lock() {
             map.retain(|_, entry| entry.at.elapsed() < self.ttl);
-            map.insert(key, Entry { at: Instant::now(), page });
+            map.insert(
+                key,
+                Entry {
+                    at: Instant::now(),
+                    page,
+                },
+            );
         }
     }
 }

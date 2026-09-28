@@ -21,14 +21,14 @@
 //!   site does not say there is a next page.
 //! - **Rows claim Games**: the site is a games tracker, top to bottom.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use regex::Regex;
 use scraper::{Html, Selector};
 
 use super::format::unescape_entities;
 use super::models::TorrentItem;
-use super::net::{FetchOptions, browser_client, fetch_resilient};
+use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// Site root; the search endpoint is `/load` under it.
@@ -52,7 +52,9 @@ impl TorentinoSearcher {
     pub fn new() -> Self {
         // The shared browser-like client (B5): the HTML side of this
         // host 403s anything that does not look like a browser.
-        Self { client: browser_client() }
+        Self {
+            client: browser_client(),
+        }
     }
 
     /// One page of results for `query`. An empty query is refused with
@@ -85,7 +87,11 @@ impl TorentinoSearcher {
         }
         let items = parse_results(&html);
         let has_more = has_next_page(&html);
-        Ok(SearchPage { items, has_more, next_offset: None })
+        Ok(SearchPage {
+            items,
+            has_more,
+            next_offset: None,
+        })
     }
 
     /// The `.torrent` bytes for a row. The row's `download_url` is the
@@ -121,7 +127,11 @@ impl TorentinoSearcher {
         let final_url = file.url().to_string();
         let bytes = file.bytes().await?;
         if !file_status.is_success() {
-            bail!("torentino download {} answered HTTP {}", file_url, file_status);
+            bail!(
+                "torentino download {} answered HTTP {}",
+                file_url,
+                file_status
+            );
         }
         // The link 301s to `/_ld/.../<name>.torrent` for a real file, and
         // to a `.txt` placeholder ("ИГРА ПОКА НЕ ВЫШЛА") for a game that

@@ -18,7 +18,12 @@ impl App {
 
         let browser_binary = match crate::browser::detect::detect_browser(None) {
             Ok((kind, path)) => {
-                results.push(format!("{} Browser: {} [{}]", "\u{2714}", kind, path.display()));
+                results.push(format!(
+                    "{} Browser: {} [{}]",
+                    "\u{2714}",
+                    kind,
+                    path.display()
+                ));
                 Some(path)
             }
             Err(e) => {
@@ -34,8 +39,14 @@ impl App {
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
-        if has_xvfb { results.push(format!("{} Xvfb: available", "\u{2714}")); }
-        else { results.push(format!("{} Xvfb: not found (needed to run browser hidden)", "\u{2718}")); }
+        if has_xvfb {
+            results.push(format!("{} Xvfb: available", "\u{2714}"));
+        } else {
+            results.push(format!(
+                "{} Xvfb: not found (needed to run browser hidden)",
+                "\u{2718}"
+            ));
+        }
 
         // "Available" means available *for the browser named above*:
         // the patched cache is one file per browser major now, and a
@@ -45,8 +56,14 @@ impl App {
             .as_ref()
             .map(|binary| crate::browser::cdp::driver_ready_for(binary))
             .unwrap_or(false);
-        if has_chromedriver { results.push(format!("{} Chromedriver: patched/available", "\u{2714}")); }
-        else { results.push(format!("{} Chromedriver: will be downloaded on first run", "\u{26a0}")); }
+        if has_chromedriver {
+            results.push(format!("{} Chromedriver: patched/available", "\u{2714}"));
+        } else {
+            results.push(format!(
+                "{} Chromedriver: will be downloaded on first run",
+                "\u{26a0}"
+            ));
+        }
 
         let ts_url = self.torrserver_url.clone();
         // Was: tokio::runtime::Handle::current().block_on(...), which
@@ -63,29 +80,42 @@ impl App {
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false);
-        if ts_reachable { results.push(format!("{} TorrServer: reachable ({})", "\u{2714}", ts_url)); }
-        else { results.push(format!("{} TorrServer: NOT reachable ({})", "\u{2718}", ts_url)); }
+        if ts_reachable {
+            results.push(format!("{} TorrServer: reachable ({})", "\u{2714}", ts_url));
+        } else {
+            results.push(format!(
+                "{} TorrServer: NOT reachable ({})",
+                "\u{2718}", ts_url
+            ));
+        }
 
         match crate::credentials::load_credentials() {
-            Some((user, _)) => results.push(format!("{} Saved credentials: user='{}'", "\u{2714}", user)),
+            Some((user, _)) => {
+                results.push(format!("{} Saved credentials: user='{}'", "\u{2714}", user))
+            }
             None => results.push(format!("{} Saved credentials: none", "\u{2718}")),
         }
 
         let cookie_path = std::path::Path::new("cookies.txt");
         if cookie_path.exists() {
             match crate::sources::cookies::load_from_file(cookie_path) {
-                Ok(c) if !c.is_empty() => results.push(format!("{} Cookie file: {} cookies", "\u{2714}", c.len())),
+                Ok(c) if !c.is_empty() => {
+                    results.push(format!("{} Cookie file: {} cookies", "\u{2714}", c.len()))
+                }
                 _ => results.push(format!("{} Cookie file: empty/invalid", "\u{26a0}")),
             }
         } else {
             results.push(format!("{} Cookie file: not found", "\u{26a0}"));
         }
 
-        let sources_line = crate::sources::source::KNOWN_SOURCES.iter()
-            .map(|s| if s.implemented {
-                format!("{}{}", "\u{2714} ", s.label)
-            } else {
-                format!("{}{} (planned)", "\u{26a0} ", s.label)
+        let sources_line = crate::sources::source::KNOWN_SOURCES
+            .iter()
+            .map(|s| {
+                if s.implemented {
+                    format!("{}{}", "\u{2714} ", s.label)
+                } else {
+                    format!("{}{} (planned)", "\u{26a0} ", s.label)
+                }
             })
             .collect::<Vec<_>>()
             .join("   ");
@@ -104,27 +134,37 @@ impl App {
             let popup = centered_rect(70, 80, area);
             frame.render_widget(Clear, popup);
 
-            let block = self.modal_block(Color::Green, config).title(" Health Check ");
+            let block = self
+                .modal_block(Color::Green, config)
+                .title(" Health Check ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
 
-            let display_lines: Vec<Line> = lines.iter().map(|l| {
-                if l.contains("\u{2714}") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Green)))
-                } else if l.contains("\u{2718}") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Red)))
-                } else if l.contains("\u{26a0}") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Yellow)))
-                } else if l.starts_with("===") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
-                } else {
-                    Line::from(l.as_str())
-                }
-            }).collect();
+            let display_lines: Vec<Line> = lines
+                .iter()
+                .map(|l| {
+                    if l.contains("\u{2714}") {
+                        Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Green)))
+                    } else if l.contains("\u{2718}") {
+                        Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Red)))
+                    } else if l.contains("\u{26a0}") {
+                        Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Yellow)))
+                    } else if l.starts_with("===") {
+                        Line::from(Span::styled(
+                            l.as_str(),
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ))
+                    } else {
+                        Line::from(l.as_str())
+                    }
+                })
+                .collect();
 
-            let list = Paragraph::new(display_lines)
-                .style(Style::default().bg(Color::DarkGray));
-            frame.render_widget(list, inner);        }
+            let list = Paragraph::new(display_lines).style(Style::default().bg(Color::DarkGray));
+            frame.render_widget(list, inner);
+        }
     }
 }

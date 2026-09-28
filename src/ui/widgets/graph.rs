@@ -25,7 +25,11 @@ pub fn render_sparkline(history: &[f64], width: usize, symbol_set: &str) -> Stri
 fn take_last_padded(history: &[f64], count: usize) -> Vec<f64> {
     let clamp = |v: f64| v.clamp(0.0, 1.0);
     if history.len() >= count {
-        history[history.len() - count..].iter().copied().map(clamp).collect()
+        history[history.len() - count..]
+            .iter()
+            .copied()
+            .map(clamp)
+            .collect()
     } else {
         let mut padded = vec![0.0; count - history.len()];
         padded.extend(history.iter().copied().map(clamp));
@@ -52,7 +56,10 @@ fn render_braille(history: &[f64], width: usize) -> String {
 
     for pair in samples.chunks(2) {
         let left_level = (pair[0] * 4.0).round() as usize;
-        let right_level = pair.get(1).map(|&v| (v * 4.0).round() as usize).unwrap_or(0);
+        let right_level = pair
+            .get(1)
+            .map(|&v| (v * 4.0).round() as usize)
+            .unwrap_or(0);
 
         let mut byte: u8 = 0;
         for row in 0..4 {
@@ -72,8 +79,10 @@ fn render_braille(history: &[f64], width: usize) -> String {
 /// blank plus ▁▂▃▄▅▆▇█). Half the horizontal density of braille but works
 /// on any UTF-8 terminal and reads a little more like a bar chart.
 fn render_block(history: &[f64], width: usize) -> String {
-    const LEVELS: [char; 9] =
-        [' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+    const LEVELS: [char; 9] = [
+        ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+        '\u{2588}',
+    ];
     take_last_padded(history, width)
         .iter()
         .map(|&v| LEVELS[((v * 8.0).round() as usize).min(8)])

@@ -56,7 +56,8 @@ fn test_torrent_item_source_field_defaults_to_empty_and_deserializes_when_presen
     let without_source: TorrentItem = serde_json::from_str(r#"{"title": "Test"}"#).unwrap();
     assert_eq!(without_source.source, "");
 
-    let with_source: TorrentItem = serde_json::from_str(r#"{"title": "Test", "source": "rutor"}"#).unwrap();
+    let with_source: TorrentItem =
+        serde_json::from_str(r#"{"title": "Test", "source": "rutor"}"#).unwrap();
     assert_eq!(with_source.source, "rutor");
 }
 
@@ -139,7 +140,11 @@ fn test_b1_fields_deserialize_when_present() {
     let item: TorrentItem = serde_json::from_str(json).unwrap();
     assert_eq!(item.group, Some(doris::sources::source::Group::Movies));
     assert_eq!(item.info_hash, "06555d165746e815b0ab5b16de37ed24f9142595");
-    assert!(item.magnet.as_deref().unwrap().starts_with("magnet:?xt=urn:btih:"));
+    assert!(item
+        .magnet
+        .as_deref()
+        .unwrap()
+        .starts_with("magnet:?xt=urn:btih:"));
     assert_eq!(item.size_bytes, 4_521_000_000);
     assert_eq!(item.seeds_n, 42);
     assert_eq!(item.leechers, 7);
@@ -164,7 +169,10 @@ fn test_fill_from_display_leaves_unparseable_values_at_zero() {
     item.fill_from_display();
     assert_eq!(item.size_bytes, 0);
     assert_eq!(item.seeds_n, 0);
-    assert_eq!(item.added, 0, "fill_from_display must not touch fields it derives from");
+    assert_eq!(
+        item.added, 0,
+        "fill_from_display must not touch fields it derives from"
+    );
 }
 
 // --- format_bytes / format_date (B8 wave 1: JSON sources report numbers) ----
@@ -173,7 +181,11 @@ fn test_fill_from_display_leaves_unparseable_values_at_zero() {
 fn test_format_bytes_matches_torios_format_bytes() {
     use doris::sources::format::format_bytes;
 
-    assert_eq!(format_bytes(0), "0 B", "unknown size must still look like a size");
+    assert_eq!(
+        format_bytes(0),
+        "0 B",
+        "unknown size must still look like a size"
+    );
     assert_eq!(format_bytes(511), "511 B");
     assert_eq!(format_bytes(1024), "1.00 KB");
     // torio steps by 1024 but labels the units SI -- kept identical so a
@@ -220,7 +232,11 @@ fn test_flex_num_reads_numbers_and_numeric_strings() {
     assert_eq!(padded.size.as_i64(), 42, "surrounding space is not garbage");
 
     let garbage: WithNum = serde_json::from_str(r#"{"size":"n/a"}"#).expect("still a value");
-    assert_eq!(garbage.size.as_i64(), 0, "unparseable -> zero, not a failure");
+    assert_eq!(
+        garbage.size.as_i64(),
+        0,
+        "unparseable -> zero, not a failure"
+    );
 
     let negative: WithNum = serde_json::from_str(r#"{"size":-5}"#).expect("number");
     assert_eq!(negative.size.as_u64(), 0, "sizes are never negative");

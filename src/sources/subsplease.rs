@@ -21,14 +21,14 @@
 //! `TorrentItem::info_hash` promises, so nothing here re-implements
 //! that conversion.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::format::{format_bytes, format_date};
 use super::magnet::parse_magnet;
 use super::models::TorrentItem;
-use super::net::{FetchOptions, browser_client, fetch_resilient};
+use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 pub const API: &str = "https://subsplease.org/api/";
@@ -183,7 +183,9 @@ fn to_row(entry: &SpEntry) -> Option<TorrentItem> {
         date: format_date(added),
         // Magnet-only: the download key writes `<title>.magnet`.
         download_url: String::new(),
-        page_url: page.map(|p| format!("{}{}/", SHOWS_URL, p)).unwrap_or_default(),
+        page_url: page
+            .map(|p| format!("{}{}/", SHOWS_URL, p))
+            .unwrap_or_default(),
         source: "subsplease".to_string(),
         group: Some(Group::Anime),
         query: String::new(),
@@ -204,7 +206,9 @@ impl SubsPleaseSearcher {
     pub const HOME_URL: &str = "https://subsplease.org";
 
     pub fn new() -> Self {
-        Self { client: browser_client() }
+        Self {
+            client: browser_client(),
+        }
     }
 }
 

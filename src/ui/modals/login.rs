@@ -56,7 +56,6 @@ impl App {
         self.modal = Modal::None;
     }
 
-
     /// One keypress in the login modal. Returns the credentials to log
     /// in with on Enter -- resource id included, since the tab selects
     /// which resource they belong to. Left/Right switch the resource tab;
@@ -85,7 +84,9 @@ impl App {
                     state.resource = resources[next];
                 }
                 crossterm::event::KeyCode::Char('s')
-                    if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
                 {
                     if state.username.is_empty() || state.password.is_empty() {
                         state.message = Some("Nothing to save".to_string());
@@ -117,18 +118,24 @@ impl App {
                         return Some(result);
                     }
                 }
-                crossterm::event::KeyCode::Char(c) if !key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                crossterm::event::KeyCode::Char(c)
+                    if !key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
                     match state.focus {
                         LoginField::Username => state.username.push(c),
                         LoginField::Password => state.password.push(c),
                     }
                 }
-                crossterm::event::KeyCode::Backspace => {
-                    match state.focus {
-                        LoginField::Username => { state.username.pop(); }
-                        LoginField::Password => { state.password.pop(); }
+                crossterm::event::KeyCode::Backspace => match state.focus {
+                    LoginField::Username => {
+                        state.username.pop();
                     }
-                }
+                    LoginField::Password => {
+                        state.password.pop();
+                    }
+                },
                 _ => {}
             }
         }
@@ -201,18 +208,24 @@ impl App {
             frame.render_widget(Paragraph::new(Line::from(tabs)), rows[0]);
 
             let user_style = if state.focus == LoginField::Username {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(fg_color)
             };
 
             let pass_style = if state.focus == LoginField::Password {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(fg_color)
             };
 
-            let user_block = self.modal_block(user_style.fg.unwrap_or(fg_color), config).title("Username");
+            let user_block = self
+                .modal_block(user_style.fg.unwrap_or(fg_color), config)
+                .title("Username");
             frame.render_widget(
                 Paragraph::new(state.username.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -240,7 +253,9 @@ impl App {
                 "*".repeat(state.password.len())
             };
 
-            let pass_block = self.modal_block(pass_style.fg.unwrap_or(fg_color), config).title("Password");
+            let pass_block = self
+                .modal_block(pass_style.fg.unwrap_or(fg_color), config)
+                .title("Password");
             frame.render_widget(
                 Paragraph::new(pass_display.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -251,10 +266,7 @@ impl App {
             // Ctrl+S feedback, when there is any.
             if let Some(message) = state.message.as_deref() {
                 frame.render_widget(
-                    Paragraph::new(Span::styled(
-                        message,
-                        Style::default().fg(Color::Green),
-                    )),
+                    Paragraph::new(Span::styled(message, Style::default().fg(Color::Green))),
                     rows[4],
                 );
             }

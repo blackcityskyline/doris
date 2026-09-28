@@ -27,7 +27,10 @@ async fn live_a_query_returns_at_most_a_hundred_rows_and_never_more() {
         );
     }
 
-    assert!(!page.items.is_empty(), "live apibay search returned nothing");
+    assert!(
+        !page.items.is_empty(),
+        "live apibay search returned nothing"
+    );
     // apibay tops out at 100 and ignores page=, so a page promising
     // more would invite a "Load more" that repeats the same rows.
     assert!(!page.has_more, "apibay has no cursor to offer");
@@ -66,8 +69,18 @@ async fn live_browse_reads_both_top100_lists() {
 
     // Both lists are fetched, so the answer spans more than one list's
     // worth of rows and carries both declared groups.
-    assert!(page.items.len() > 100, "expected movies + episodes, got {}", page.items.len());
-    assert!(page.items.iter().any(|r| r.group == Some(doris::sources::source::Group::Movies)));
-    assert!(page.items.iter().any(|r| r.group == Some(doris::sources::source::Group::TV)));
+    assert!(
+        page.items.len() > 100,
+        "expected movies + episodes, got {}",
+        page.items.len()
+    );
+    assert!(page
+        .items
+        .iter()
+        .any(|r| r.group == Some(doris::sources::source::Group::Movies)));
+    assert!(page
+        .items
+        .iter()
+        .any(|r| r.group == Some(doris::sources::source::Group::TV)));
     assert!(!page.has_more, "the top-100 lists are fixed");
 }

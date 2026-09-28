@@ -69,7 +69,8 @@ fn aead_key() -> Result<ring::aead::LessSafeKey> {
 fn decrypt_file() -> Option<Vec<u8>> {
     let path = credentials_path();
     let data = std::fs::read_to_string(&path).ok()?;
-    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data.trim()).ok()?;
+    let decoded =
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data.trim()).ok()?;
 
     if decoded.len() < NONCE_LEN + 16 {
         return None;
@@ -92,7 +93,8 @@ fn encrypt_and_write(plaintext: &[u8]) -> Result<()> {
     let key = aead_key()?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    getrandom::getrandom(&mut nonce_bytes).map_err(|e| anyhow::anyhow!("nonce gen error: {}", e))?;
+    getrandom::getrandom(&mut nonce_bytes)
+        .map_err(|e| anyhow::anyhow!("nonce gen error: {}", e))?;
     let nonce = ring::aead::Nonce::assume_unique_for_key(nonce_bytes);
 
     let mut payload = plaintext.to_vec();
@@ -107,7 +109,10 @@ fn encrypt_and_write(plaintext: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &output))?;
+    std::fs::write(
+        &path,
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &output),
+    )?;
     Ok(())
 }
 
@@ -132,7 +137,10 @@ pub fn load_store() -> HashMap<String, Credential> {
             let mut map = HashMap::new();
             map.insert(
                 DEFAULT_RESOURCE.to_string(),
-                Credential { username: username.to_string(), password: password.to_string() },
+                Credential {
+                    username: username.to_string(),
+                    password: password.to_string(),
+                },
             );
             return map;
         }
@@ -152,13 +160,18 @@ pub fn save_credential(resource_id: &str, username: &str, password: &str) -> Res
     let mut store = load_store();
     store.insert(
         resource_id.to_string(),
-        Credential { username: username.to_string(), password: password.to_string() },
+        Credential {
+            username: username.to_string(),
+            password: password.to_string(),
+        },
     );
     save_store(&store)
 }
 
 pub fn load_credential(resource_id: &str) -> Option<(String, String)> {
-    load_store().get(resource_id).map(|c| (c.username.clone(), c.password.clone()))
+    load_store()
+        .get(resource_id)
+        .map(|c| (c.username.clone(), c.password.clone()))
 }
 
 pub fn delete_credential(resource_id: &str) -> Result<()> {

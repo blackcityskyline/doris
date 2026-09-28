@@ -7,7 +7,7 @@
 //! the kind of bug a single-fixture test never catches.
 
 use doris::sources::source::{self, Group, SourceEnv};
-use doris::sources::tpb::{TOP_MOVIES_URL, TOP_TV_URL, parse_rows, search_url};
+use doris::sources::tpb::{parse_rows, search_url, TOP_MOVIES_URL, TOP_TV_URL};
 
 /// `q.php` shape: strings everywhere, `info_hash` uppercase, and the
 /// "No results" placeholder as a third row (that is how apibay answers
@@ -97,10 +97,12 @@ fn test_string_typed_endpoint_yields_rows_with_every_number_read() {
     assert_eq!(rows.len(), 2, "the placeholder row must not be counted");
 
     let first = &rows[0];
-    assert_eq!(first.title, "The Matrix (1999) 1080p BrRip x264 - 1.85GB - YIFY");
     assert_eq!(
-        first.info_hash,
-        "d7a46713eaee18c746b3254b7d1492a50fd9d6ce",
+        first.title,
+        "The Matrix (1999) 1080p BrRip x264 - 1.85GB - YIFY"
+    );
+    assert_eq!(
+        first.info_hash, "d7a46713eaee18c746b3254b7d1492a50fd9d6ce",
         "apibay shouts the hash; info_hash promises lowercase"
     );
     assert_eq!(first.size_bytes, 1_992_277_407, "read from \"1992277407\"");
@@ -161,13 +163,19 @@ fn test_the_no_results_placeholder_never_becomes_a_row() {
     // A miss answers with one row that *looks* like a result: id "0",
     // all-zero hash, name "No results returned". Rendering it would
     // show a fake torrent for every failed search.
-    let rows = parse_rows(r#"[
+    let rows = parse_rows(
+        r#"[
         {"id":"0","name":"No results returned",
          "info_hash":"0000000000000000000000000000000000000000",
          "size":"0","seeders":"0","leechers":"0","added":"0","category":"0"}
-    ]"#)
+    ]"#,
+    )
     .expect("the placeholder body parses");
-    assert!(rows.is_empty(), "got: {:?}", rows.iter().map(|r| &r.title).collect::<Vec<_>>());
+    assert!(
+        rows.is_empty(),
+        "got: {:?}",
+        rows.iter().map(|r| &r.title).collect::<Vec<_>>()
+    );
 
     // The same rule on a real answer, where the placeholder is a
     // third row -- it must not cost the two real ones.
@@ -220,7 +228,12 @@ fn test_only_the_declared_groups_are_attributed() {
         assert_eq!(group_of(category), Some(Group::TV), "cat {}", category);
     }
     for category in [101, 203, 204, 206, 301, 401, 505, 601] {
-        assert_eq!(group_of(category), None, "cat {} stays unattributed", category);
+        assert_eq!(
+            group_of(category),
+            None,
+            "cat {} stays unattributed",
+            category
+        );
     }
 }
 
@@ -281,7 +294,11 @@ fn test_tpb_is_registered_as_a_browser_free_source_declaring_movies_and_tv() {
     let info = source::get_source("tpb").expect("tpb must be in KNOWN_SOURCES");
     assert!(info.implemented);
     assert_eq!(info.label, "TPB");
-    assert_eq!(info.groups, &[Group::Movies, Group::TV], "one source, both groups");
+    assert_eq!(
+        info.groups,
+        &[Group::Movies, Group::TV],
+        "one source, both groups"
+    );
     assert!(!info.requires_browser, "a JSON API needs no browser");
     assert!(info.home_url.starts_with("http"), "{}", info.home_url);
 
@@ -297,6 +314,14 @@ fn test_tpb_is_registered_as_a_browser_free_source_declaring_movies_and_tv() {
 
 #[test]
 fn test_browse_is_the_two_top100_lists() {
-    assert!(TOP_MOVIES_URL.ends_with("data_top100_207.json"), "{}", TOP_MOVIES_URL);
-    assert!(TOP_TV_URL.ends_with("data_top100_208.json"), "{}", TOP_TV_URL);
+    assert!(
+        TOP_MOVIES_URL.ends_with("data_top100_207.json"),
+        "{}",
+        TOP_MOVIES_URL
+    );
+    assert!(
+        TOP_TV_URL.ends_with("data_top100_208.json"),
+        "{}",
+        TOP_TV_URL
+    );
 }

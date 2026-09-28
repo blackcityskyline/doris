@@ -1,5 +1,5 @@
-use ratatui::prelude::*;
 use super::theme::Theme;
+use ratatui::prelude::*;
 
 /// Rows the always-visible search input takes: top border, one line of
 /// text, bottom border. `update_areas` splits it off the top of the
@@ -208,11 +208,15 @@ impl ZoneLayout {
     }
 
     pub fn focus_next(&mut self) {
-        let visible: Vec<ZoneId> = self.zones.iter()
+        let visible: Vec<ZoneId> = self
+            .zones
+            .iter()
             .filter(|z| z.visible)
             .map(|z| z.id)
             .collect();
-        if visible.is_empty() { return; }
+        if visible.is_empty() {
+            return;
+        }
         if let Some(pos) = visible.iter().position(|&z| z == self.focused) {
             let next = (pos + 1) % visible.len();
             self.focused = visible[next];
@@ -222,11 +226,15 @@ impl ZoneLayout {
     }
 
     pub fn focus_prev(&mut self) {
-        let visible: Vec<ZoneId> = self.zones.iter()
+        let visible: Vec<ZoneId> = self
+            .zones
+            .iter()
             .filter(|z| z.visible)
             .map(|z| z.id)
             .collect();
-        if visible.is_empty() { return; }
+        if visible.is_empty() {
+            return;
+        }
         if let Some(pos) = visible.iter().position(|&z| z == self.focused) {
             let prev = if pos == 0 { visible.len() - 1 } else { pos - 1 };
             self.focused = visible[prev];
@@ -242,7 +250,11 @@ impl ZoneLayout {
     pub fn update_areas(&mut self, area: Rect) {
         if let Some(fs_id) = self.fullscreen {
             for zone in &mut self.zones {
-                zone.area = if zone.id == fs_id { area } else { Rect::default() };
+                zone.area = if zone.id == fs_id {
+                    area
+                } else {
+                    Rect::default()
+                };
             }
             return;
         }
@@ -257,7 +269,9 @@ impl ZoneLayout {
     /// height equally, the first `remainder` of them one row taller so
     /// no row of the terminal is wasted.
     fn layout_horizontal(&mut self, area: Rect) {
-        let visible_zones: Vec<ZoneId> = self.zones.iter()
+        let visible_zones: Vec<ZoneId> = self
+            .zones
+            .iter()
             .filter(|z| z.visible)
             .map(|z| z.id)
             .collect();
@@ -312,8 +326,7 @@ impl ZoneLayout {
         }
 
         let left_visible = self.is_visible(ZoneId::Torrent);
-        let right_visible =
-            self.is_visible(ZoneId::Log) || self.is_visible(ZoneId::Sources);
+        let right_visible = self.is_visible(ZoneId::Log) || self.is_visible(ZoneId::Sources);
         let half = area.width / 2;
         let (left_w, right_w) = match (left_visible, right_visible) {
             (true, true) => (half, area.width - half),
@@ -364,14 +377,16 @@ impl ZoneLayout {
     }
 
     pub fn get_area(&self, id: ZoneId) -> Rect {
-        self.zones.iter()
+        self.zones
+            .iter()
             .find(|z| z.id == id)
             .map(|z| z.area)
             .unwrap_or_default()
     }
 
     pub fn is_visible(&self, id: ZoneId) -> bool {
-        self.zones.iter()
+        self.zones
+            .iter()
             .find(|z| z.id == id)
             .map(|z| z.visible)
             .unwrap_or(false)
@@ -505,11 +520,7 @@ const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
 ];
 
 /// The Log panel's only real action: jump to the full-screen detail log.
-const LOG_BUTTONS: &[(FrameSlot, char, &str)] = &[(
-    FrameSlot::TopRight,
-    'L',
-    "detail",
-)];
+const LOG_BUTTONS: &[(FrameSlot, char, &str)] = &[(FrameSlot::TopRight, 'L', "detail")];
 
 /// The buttons drawn on `id`'s frame; empty for zones with no actions.
 ///
@@ -526,7 +537,11 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
     };
     table
         .iter()
-        .map(|&(slot, key, label)| FrameButton { slot, key, label: label.to_string() })
+        .map(|&(slot, key, label)| FrameButton {
+            slot,
+            key,
+            label: label.to_string(),
+        })
         .collect()
 }
 
@@ -572,7 +587,10 @@ pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Sp
     if button.is_category() {
         // `◀ name ▶`: the arrows are the targets, the name is not. The
         // spaces around the name are part of the label, so they stay.
-        let name = text.trim_start_matches('◀').trim_end_matches('▶').to_string();
+        let name = text
+            .trim_start_matches('◀')
+            .trim_end_matches('▶')
+            .to_string();
         return vec![
             Span::styled("◀", hotkey_style),
             Span::styled(name, word_style),

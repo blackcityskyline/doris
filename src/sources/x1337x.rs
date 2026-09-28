@@ -107,13 +107,13 @@
 
 use std::sync::OnceLock;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{bail, ensure, Context, Result};
 use async_trait::async_trait;
 use regex::Regex;
 
 use super::format::{format_date, parse_size, unescape_entities};
 use super::models::TorrentItem;
-use super::net::{FetchOptions, browser_client, fetch_resilient, first_ok};
+use super::net::{browser_client, fetch_resilient, first_ok, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// Mirror hosts, the live-verified answer first (module doc): the two
@@ -322,9 +322,18 @@ fn digits(token: &str) -> String {
 /// `oct` from `Oct.` -- the site writes the abbreviation with a dot.
 fn month_number(token: &str) -> u32 {
     match token.trim_end_matches('.').to_lowercase().as_str() {
-        "jan" => 1, "feb" => 2, "mar" => 3, "apr" => 4,
-        "may" => 5, "jun" => 6, "jul" => 7, "aug" => 8,
-        "sep" => 9, "oct" => 10, "nov" => 11, "dec" => 12,
+        "jan" => 1,
+        "feb" => 2,
+        "mar" => 3,
+        "apr" => 4,
+        "may" => 5,
+        "jun" => 6,
+        "jul" => 7,
+        "aug" => 8,
+        "sep" => 9,
+        "oct" => 10,
+        "nov" => 11,
+        "dec" => 12,
         _ => 0,
     }
 }
@@ -346,7 +355,13 @@ fn parse_upload_date(text: &str) -> i64 {
         .next()
         .map(|token| digits(token.trim_start_matches('\'')))
         .and_then(|year| year.parse::<i32>().ok())
-        .map(|year| if (0..100).contains(&year) { 2000 + year } else { year })
+        .map(|year| {
+            if (0..100).contains(&year) {
+                2000 + year
+            } else {
+                year
+            }
+        })
         .unwrap_or(0);
     if month == 0 || day == 0 || year == 0 {
         return 0;
@@ -540,7 +555,12 @@ async fn get(client: &reqwest::Client, url: &str) -> Result<String> {
     };
     let response = fetch_resilient(url, || client.get(url), &options).await?;
     let status = response.status();
-    ensure!(status.is_success(), "1337x could not read {} (HTTP {})", url, status);
+    ensure!(
+        status.is_success(),
+        "1337x could not read {} (HTTP {})",
+        url,
+        status
+    );
     response
         .text()
         .await
@@ -586,7 +606,9 @@ impl X1337xSearcher {
     pub const HOME_URL: &str = "https://1337x.to";
 
     pub fn new() -> Self {
-        Self { client: browser_client() }
+        Self {
+            client: browser_client(),
+        }
     }
 
     /// The rows the list dated, left alone; the ones it only gave a
@@ -608,7 +630,9 @@ impl X1337xSearcher {
         let mut tasks = tokio::task::JoinSet::new();
         for index in pending {
             while tasks.len() >= DATE_FETCHES {
-                let Some(result) = tasks.join_next().await else { break };
+                let Some(result) = tasks.join_next().await else {
+                    break;
+                };
                 apply_detail_date(&mut rows, result);
             }
             let client = self.client.clone();
@@ -725,7 +749,10 @@ impl Source for X1337xSearcher {
         // `resolve_magnet` instead, and a caller that got here anyway
         // deserves the reason rather than a fetch of something that is
         // not a torrent.
-        bail!("1337x has no .torrent to fetch ({}): its rows play over a magnet", url)
+        bail!(
+            "1337x has no .torrent to fetch ({}): its rows play over a magnet",
+            url
+        )
     }
 
     async fn resolve_magnet(&self, page_url: &str) -> Result<Option<String>> {

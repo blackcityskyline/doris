@@ -174,7 +174,10 @@ async fn rows_arrive_in_completion_order_and_a_deadline_does_not_block_the_rest(
             assert_eq!(source, "fast", "rows must not wait behind a slow source");
             assert_eq!(generation, 7);
             assert_eq!(items.len(), 2);
-            assert!(has_more, "the source's paging verdict travels with its rows");
+            assert!(
+                has_more,
+                "the source's paging verdict travels with its rows"
+            );
             assert_eq!(next_offset, None, "a row-paged source hands back no cursor");
             assert!(error.is_none());
             assert!(!timed_out);
@@ -246,9 +249,7 @@ async fn a_failing_source_does_not_suppress_a_healthy_one() {
                 assert!(error.is_none() && !timed_out);
                 got_ok_rows = true;
             }
-            Event::SourceDone {
-                source, error, ..
-            } if source == "bad" => {
+            Event::SourceDone { source, error, .. } if source == "bad" => {
                 let message = error.expect("a failed source must report why");
                 assert_eq!(message, "HTTP 503");
                 got_bad_error = true;
@@ -271,9 +272,7 @@ async fn a_panicking_task_is_reported_rather_than_hanging_the_dispatch() {
     tokio::spawn(orchestrator::coordinate(4, vec![("boom", boom)], tx));
 
     match next_event(&mut rx).await {
-        Event::SourceDone {
-            source, error, ..
-        } => {
+        Event::SourceDone { source, error, .. } => {
             assert_eq!(source, "boom");
             let message = error.expect("a dead task still owes a report");
             assert!(message.contains("task failed"), "got: {}", message);
@@ -288,7 +287,10 @@ async fn a_panicking_task_is_reported_rather_than_hanging_the_dispatch() {
 
 #[test]
 fn status_mapping_separates_timeout_error_and_success() {
-    assert_eq!(SourceStatus::from_event(4, None, false), SourceStatus::Ok(4));
+    assert_eq!(
+        SourceStatus::from_event(4, None, false),
+        SourceStatus::Ok(4)
+    );
     assert_eq!(
         SourceStatus::from_event(0, Some("HTTP 503"), false),
         SourceStatus::Error("HTTP 503".to_string())
@@ -322,8 +324,15 @@ fn selection_follows_the_panel_checklist() {
     };
 
     assert_eq!(ids(&both), vec!["rutracker", "rutor"]);
-    assert_eq!(ids(&both[..1]), vec!["rutracker"], "an unchecked source is skipped");
-    assert!(ids(&[]).is_empty(), "nothing checked means nothing to dispatch");
+    assert_eq!(
+        ids(&both[..1]),
+        vec!["rutracker"],
+        "an unchecked source is skipped"
+    );
+    assert!(
+        ids(&[]).is_empty(),
+        "nothing checked means nothing to dispatch"
+    );
     // An id that is not in the registry is not asked either: the panel
     // derives its rows from the registry, so a typo cannot become a
     // dispatch.
@@ -423,7 +432,15 @@ fn a_browse_asks_only_the_sources_that_can_answer_an_empty_query() {
     };
 
     let browse = ids(true);
-    for id in ["rutor", "yts", "tpb", "eztv", "subsplease", "nnmclub", "1337x"] {
+    for id in [
+        "rutor",
+        "yts",
+        "tpb",
+        "eztv",
+        "subsplease",
+        "nnmclub",
+        "1337x",
+    ] {
         assert!(browse.contains(&id), "{} must be able to browse", id);
     }
     // The two that cannot: the browser-backed one, and the one whose
@@ -485,7 +502,10 @@ fn a_source_that_failed_gets_retried_from_where_it_stopped() {
     assert_eq!(plan.len(), 1);
     let (info, offset) = plan[0];
     assert_eq!(info.id, "rutor");
-    assert_eq!(offset, 0, "a source with no verdict restarts its own cursor");
+    assert_eq!(
+        offset, 0,
+        "a source with no verdict restarts its own cursor"
+    );
 }
 
 fn both_enabled() -> Vec<String> {
@@ -558,7 +578,9 @@ async fn a_source_supplied_cursor_travels_with_its_rows() {
 
     match next_event(&mut rx).await {
         Event::SourceDone {
-            next_offset, has_more, ..
+            next_offset,
+            has_more,
+            ..
         } => {
             assert_eq!(next_offset, Some(2), "the source's own cursor must arrive");
             assert!(has_more);

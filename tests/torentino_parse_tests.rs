@@ -3,10 +3,10 @@
 //! link, all against fixtures shaped like the live markup (probed
 //! 26.09.2026 -- see the module doc).
 
-use doris::sources::torentino::{
-    TorentinoSearcher, find_download_link, has_next_page, parse_date, parse_results,
-};
 use doris::sources::source::Group;
+use doris::sources::torentino::{
+    find_download_link, has_next_page, parse_date, parse_results, TorentinoSearcher,
+};
 
 /// One results row, in the shape the live search page answers with.
 const ROW: &str = concat!(
@@ -56,7 +56,10 @@ fn test_a_row_is_read_for_title_link_date_size_and_group() {
     let items = parse_results(ROW);
     assert_eq!(items.len(), 1, "one entryID block must give one row");
     let item = &items[0];
-    assert_eq!(item.title, "The Matrix Awakens: An Unreal Engine 5 Experience");
+    assert_eq!(
+        item.title,
+        "The Matrix Awakens: An Unreal Engine 5 Experience"
+    );
     assert_eq!(
         item.page_url, "/load/adventure/the_matrix/9-1-0-3689",
         "the row links its item page"
@@ -65,9 +68,16 @@ fn test_a_row_is_read_for_title_link_date_size_and_group() {
         item.download_url, item.page_url,
         "the file link lives on the item page, so the row points there"
     );
-    assert_eq!(item.date, "2026-08-29", "the date is normalized, not transliterated");
+    assert_eq!(
+        item.date, "2026-08-29",
+        "the date is normalized, not transliterated"
+    );
     assert_eq!(item.size, "1.2 GB");
-    assert_eq!(item.group, Some(Group::Games), "a games tracker claims Games");
+    assert_eq!(
+        item.group,
+        Some(Group::Games),
+        "a games tracker claims Games"
+    );
     // No magnet and no hash on this site: playback is the .torrent path.
     assert!(item.magnet.is_none());
     assert!(item.info_hash.is_empty());
@@ -79,13 +89,22 @@ fn test_a_row_without_a_title_or_link_is_skipped() {
         r#"<div id="entryID1"><div class="shortstory">"#,
         r#"<div class="short_descr"><h2></h2></div></div></div>"#,
     );
-    assert!(parse_results(html).is_empty(), "a row with no title link is not a row");
+    assert!(
+        parse_results(html).is_empty(),
+        "a row with no title link is not a row"
+    );
 }
 
 #[test]
 fn test_the_date_normalizes_to_iso() {
-    assert_eq!(parse_date(" | Дата: 29.08.2026, 11:26").as_deref(), Some("2026-08-29"));
-    assert_eq!(parse_date(" | Дата: 01.01.2027").as_deref(), Some("2027-01-01"));
+    assert_eq!(
+        parse_date(" | Дата: 29.08.2026, 11:26").as_deref(),
+        Some("2026-08-29")
+    );
+    assert_eq!(
+        parse_date(" | Дата: 01.01.2027").as_deref(),
+        Some("2027-01-01")
+    );
     assert_eq!(parse_date("no date here"), None);
 }
 
@@ -95,7 +114,10 @@ fn test_the_pagination_verdict_follows_the_block() {
         !has_next_page(PAGES_SINGLE),
         "a block with no links is a single-page answer -- what every live probe showed"
     );
-    assert!(has_next_page(PAGES_MORE), "a block with a page link has a next page");
+    assert!(
+        has_next_page(PAGES_MORE),
+        "a block with a page link has a next page"
+    );
 }
 
 #[test]

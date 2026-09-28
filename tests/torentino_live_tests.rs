@@ -23,7 +23,10 @@ async fn live_search_answers_rows_claiming_games() {
         page.items.len(),
         page.has_more
     );
-    assert!(!page.items.is_empty(), "live torentino search returned zero items");
+    assert!(
+        !page.items.is_empty(),
+        "live torentino search returned zero items"
+    );
     for row in &page.items {
         assert_eq!(
             row.group,
@@ -44,7 +47,9 @@ async fn live_search_answers_rows_claiming_games() {
 async fn live_an_empty_query_is_refused_with_the_reason() {
     let searcher = TorentinoSearcher::new();
     let outcome = searcher.search_page("", 0).await;
-    let message = outcome.expect_err("an empty query must be refused").to_string();
+    let message = outcome
+        .expect_err("an empty query must be refused")
+        .to_string();
     println!("refused: {}", message);
     assert!(
         message.contains("needs terms"),
@@ -78,7 +83,10 @@ async fn live_download_follows_the_item_page_to_a_torrent() {
 
     let bytes = downloaded.expect("at least one row downloads a real .torrent");
     println!("download: {} bytes", bytes.len());
-    assert!(bytes.len() > 1000, "a real .torrent is far bigger than that");
+    assert!(
+        bytes.len() > 1000,
+        "a real .torrent is far bigger than that"
+    );
     // A bencoded torrent starts with "d" (a dict) -- the same check
     // `download_torrent`'s status guard implies, read off the bytes.
     assert_eq!(bytes[0], b'd', "the download is a bencoded torrent");
@@ -103,7 +111,9 @@ async fn live_a_placeholder_file_is_refused_with_the_reason() {
     // back as if they were a torrent.
     for row in &page.items {
         let outcome = searcher.download_torrent(&row.download_url).await;
-        let message = outcome.expect_err("a placeholder must be refused").to_string();
+        let message = outcome
+            .expect_err("a placeholder must be refused")
+            .to_string();
         println!("  refused: {}: {}", row.title, message);
         assert!(
             message.contains("no .torrent link") || message.contains("not a .torrent"),

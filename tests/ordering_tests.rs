@@ -4,7 +4,7 @@
 
 use doris::sources::models::TorrentItem;
 use doris::sources::ordering::{
-    SORT_CYCLE, Sort, SortDir, SortField, default_order, dedupe_by_hash, next_sort, sort_results,
+    dedupe_by_hash, default_order, next_sort, sort_results, Sort, SortDir, SortField, SORT_CYCLE,
 };
 
 /// `torio: r(...)` -- a row with just the fields a sort actually reads.
