@@ -21,7 +21,7 @@ use std::sync::Arc;
 use crate::browser::cdp::Browser;
 use tokio::sync::Mutex;
 
-use super::models::TorrentItem;
+use super::models::{FileEntry, TorrentItem};
 use super::rutracker::RutrackerSearcher;
 use super::torentino::TorentinoSearcher;
 use super::rutor::RutorSearcher;
@@ -184,6 +184,19 @@ pub trait Source: Send + Sync {
     /// of a search.
     async fn resolve_magnet(&self, _page_url: &str) -> Result<Option<String>> {
         Ok(None)
+    }
+
+    /// The files inside a torrent, read from the row's own page.
+    ///
+    /// The default answers "this source cannot list files" with an
+    /// empty list rather than an error: the modal is opened on demand,
+    /// so a source with nothing to add should leave the row's own facts
+    /// on screen, not fail the modal. A source that can list files
+    /// overrides this the same way [`resolve_magnet`] is overridden --
+    /// one method with a default, so no source has to change and the
+    /// orchestrator does not know the method exists.
+    async fn details(&self, _page_url: &str) -> Result<Vec<FileEntry>> {
+        Ok(Vec::new())
     }
 }
 

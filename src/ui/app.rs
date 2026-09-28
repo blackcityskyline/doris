@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use crate::sources::models::TorrentItem;
+use crossterm::event::{KeyCode, KeyEvent};
+use crate::sources::models::{FileEntry, TorrentItem};
 use crate::ui::modals::help::HelpState;
 use crate::ui::modals::login::LoginState;
 use crate::ui::modals::settings::{SettingsState, group_tabs};
@@ -42,6 +43,52 @@ pub enum Modal {
     Settings(SettingsState),
     HealthCheck(Vec<String>),
     Help(HelpState),
+    /// The selected row's details (П.7): the row itself, the file list
+    /// its source is still fetching (or has fetched), and the cursor
+    /// into that list.
+    ///
+    /// Boxed because the state carries a whole `TorrentItem`: an enum
+    /// variant that big would make every `Modal` -- including the
+    /// `HealthCheck(Vec<String>)` that is just a few lines -- pay for it.
+    TorrentDetail(Box<TorrentDetailState>),
+}
+
+/// What a key in the detail modal asks the orchestrator for. The modal
+/// owns the cursor and the list; playing and downloading are the
+/// orchestrator's, exactly like a frame button's [`UiAction`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailAction {
+    Play,
+    Download,
+}
+
+/// The detail modal's state (П.7).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TorrentDetailState {
+    /// The row the modal was opened from. Its facts are on screen before
+    /// anything is fetched, so the modal is never an empty box.
+    pub item: TorrentItem,
+    /// The files inside the torrent, once `Source::details` answered.
+    pub files: Vec<FileEntry>,
+    /// `true` while that answer is in flight: the modal says so rather
+    /// than leaving a blank list that reads as "no files".
+    pub pending: bool,
+    /// Why the file list could not be read, when it could not.
+    pub error: Option<String>,
+    /// Which file the cursor is on.
+    pub cursor: usize,
+}
+
+impl TorrentDetailState {
+    pub fn new(item: TorrentItem) -> Self {
+        Self {
+            item,
+            files: Vec::new(),
+            pending: true,
+            error: None,
+            cursor: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -76,6 +123,11 @@ pub struct App {
     pub all_loaded: bool,
     /// True = browser runs hidden (background). False = visible window.
     pub browser_hidden: bool,
+    /// Mirrors `Config::vim_keys`: the j/k bindings the detail modal's
+    /// file cursor uses, gated the same way every other j/k in the app
+    /// is. Held here (like `browser_hidden`) because the modal's keys
+    /// are `ui::App`'s, not the orchestrator's.
+    pub vim_keys: bool,
     pub stream_mode: bool,
     pub download_dir: String,
     pub theme: Theme,
@@ -307,6 +359,7 @@ impl App {
     pub fn new(
         torrserver_url: String,
         browser_hidden: bool,
+        vim_keys: bool,
         theme_name: Option<&str>,
         download_dir: String,
         graph_symbol: String,
@@ -336,6 +389,7 @@ impl App {
             search_query: None,
             all_loaded: false,
             browser_hidden,
+            vim_keys,
             stream_mode: true,
             download_dir,
             theme,
@@ -1489,6 +1543,48 @@ impl App {
             // `&mut self`: the page publishes its own page count for
             // `help_key` while it draws.
             self.render_help_modal(frame, area);
+        } else if matches!(self.modal, Modal::TorrentDetail(_)) {
+            self.render_detail_modal(frame, area);
+        }
+    }
+
+    /// The detail modal's keys (П.7): j/k move the cursor through the
+    /// file list, Enter plays the row, `d` downloads it, Esc/q close.
+    ///
+    /// Returns the actions that belong to the orchestrator; everything
+    /// the modal owns itself (the cursor, closing) happens right here.
+    pub fn detail_key(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        let Modal::TorrentDetail(ref mut state) = self.modal else {
+            return None;
+        };
+        match key.code {
+            KeyCode::Char('j') if self.vim_keys => {
+                if !state.files.is_empty() {
+                    state.cursor = (state.cursor + 1).min(state.files.len() - 1);
+                }
+                None
+            }
+            KeyCode::Char('k') if self.vim_keys => {
+                state.cursor = state.cursor.saturating_sub(1);
+                None
+            }
+            KeyCode::Down => {
+                if !state.files.is_empty() {
+                    state.cursor = (state.cursor + 1).min(state.files.len() - 1);
+                }
+                None
+            }
+            KeyCode::Up => {
+                state.cursor = state.cursor.saturating_sub(1);
+                None
+            }
+            KeyCode::Enter => Some(DetailAction::Play),
+            KeyCode::Char('d') => Some(DetailAction::Download),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.modal = Modal::None;
+                None
+            }
+            _ => None,
         }
     }
 }

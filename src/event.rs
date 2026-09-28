@@ -50,6 +50,15 @@ pub enum Event {
     /// Torrent panel (e.g. right after it was uploaded to TorrServer for
     /// streaming).
     TorrentActive(String),
+    /// The answer to a detail modal's `Source::details` request (П.7):
+    /// the file list for the page it was asked about, or the error.
+    /// Tagged with that page so an answer for a row the user has already
+    /// left is dropped instead of landing in the next row's modal.
+    DetailLoaded {
+        page_url: String,
+        files: Vec<crate::sources::models::FileEntry>,
+        error: Option<String>,
+    },
 }
 
 pub struct EventHandler {

@@ -78,7 +78,8 @@ src/
     │   ├── settings.rs # typed descriptor table: Options modal (pagination, keys, item builders)
     │   ├── login.rs   # login modal: resource tabs, Ctrl+S save, saved-indicator
     │   ├── health.rs  # health check modal: browser/TorrServer/credentials/cookies/sources
-    │   └── help.rs    # help page (btop's `helpMenu`): Key:/Description: table + paging
+    │   ├── help.rs    # help page (btop's `helpMenu`): Key:/Description: table + paging
+    │   └── detail.rs  # torrent detail modal (П.7): row facts + the file list its source reads
     ├── menu.rs      # btop-style main menu
     ├── theme.rs     # Theme system (colors, gradients)
     ├── zones.rs     # Zone layout system (toggle, focus, presets)
@@ -163,6 +164,7 @@ free here, while `info`/`play` trail their `v`/`⏎`.
 ## Key Bindings
 - `s`/`i`: enter search input mode
 - `Enter`: search (in input mode), play (in results mode), or switch the row under the cursor (in the sources panel)
+- `Shift+Enter`: open the selected row's details (title, source, size, hash, magnet, page, and the file list its source can read)
 - `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the all-category with it)
 - `S`: open settings modal (login is now here too: streaming -> Edit credentials -- there's no top-level login keybind anymore)
 - `L`: toggle detailed log view
