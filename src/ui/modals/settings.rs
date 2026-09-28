@@ -244,7 +244,8 @@ fn center_str(s: &str, width: usize) -> String {
 }
 
 impl App {
-    pub fn open_settings(&mut self, config: &Config) {
+    pub fn open_settings(&mut self, config: &Config, browser_hidden: bool) {
+        self.settings_browser_hidden = browser_hidden;
         let mode_str = if self.stream_mode { "Streaming (TorrServer)".to_string() } else { "Download (.torrent file)".to_string() };
         let theme_name = self.theme.name.clone();
         // Value shown between the cycle arrows must be the theme's own
@@ -468,7 +469,7 @@ impl App {
                 },
                 SettingsCategory {
                     name: "streaming".into(),
-                    items: streaming_settings_items(config, self.browser_hidden, &mode_str),
+                    items: streaming_settings_items(config, self.settings_browser_hidden, &mode_str),
                 },
                 SettingsCategory {
                     name: "download".into(),
@@ -667,13 +668,13 @@ impl App {
     /// The settings modal's own rendering: the descriptor table with
     /// its tab row, pagination and the item list. `&mut self` because
     /// the list is a `Selector` that mutates the modal state.
-    pub fn render_settings_modal(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render_settings_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         if matches!(self.modal, Modal::Settings(_)) {
             let popup = centered_rect(80, 80, area);
             frame.render_widget(Clear, popup);
 
             let border_color = self.theme.hi_fg.to_color();
-            let main_block = self.modal_block(border_color);
+            let main_block = self.modal_block(border_color, config);
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
 

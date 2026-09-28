@@ -22,6 +22,7 @@ use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use crate::config::Config;
 use crate::ui::app::{centered_rect, App, Modal};
 
 /// Columns the key column is padded to -- btop's `cjust(..., 20)`.
@@ -136,7 +137,7 @@ impl App {
     ///
     /// `&mut self` because it publishes `pages`/`visible` for
     /// [`App::help_key`] on the way through.
-    pub fn render_help_modal(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render_help_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         // btop's help box is a fixed 78 columns wide -- nearly the
         // whole terminal on an 80-column screen -- because a two-column
         // table has no room to spare. Same intent here: wide enough
@@ -144,7 +145,7 @@ impl App {
         let popup = centered_rect(90, 85, area);
         frame.render_widget(Clear, popup);
 
-        let mut block = self.modal_block(Color::Cyan).title(" help ");
+        let mut block = self.modal_block(Color::Cyan, config).title(" help ");
         let inner = block.inner(popup);
         let visible = (inner.height as usize).max(1);
         let pages = HELP_TEXT.len().div_ceil(visible);

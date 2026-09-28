@@ -428,19 +428,7 @@ impl App {
         );
 
         Ok(Self {
-            ui: UiApp::new(
-                torrserver_url.clone(),
-                browser_visibility == BrowserVisibility::Hidden,
-                config.vim_keys,
-                config.theme_name.as_deref(),
-                resolve_download_dir(&config),
-                config.graph_symbol.clone(),
-                config.rounded_corners,
-                config.theme_background,
-                config.truecolor,
-                config.false_tty,
-            )
-            .with_group_tabs(&config),
+            ui: UiApp::new(torrserver_url.clone(), config.theme_name.as_deref()).with_group_tabs(&config),
             event_handler,
             torrserver,
             browser: None,
@@ -1078,7 +1066,7 @@ impl App {
             // The detail modal owns the keyboard too: j/k move the file
             // cursor, Enter plays, `d` downloads, Esc/q close. The two
             // actions that belong to the orchestrator come back.
-            if let Some(action) = self.ui.detail_key(key) {
+            if let Some(action) = self.ui.detail_key(key, self.config.vim_keys) {
                 match action {
                     DetailAction::Play => {
                         // Playing leaves the modal: the user is going
@@ -1094,23 +1082,64 @@ impl App {
 
         if let Modal::Settings(_) = self.ui.modal {
             if let Some(action) = self.ui.settings_key(key) {
+                // 17 toggle-actions all do the same: invert a bool field,
+                // reopen the settings modal. Each is one macro call; `||`
+                // short-circuits so only the first match flips a field.
+                macro_rules! toggle {
+                    ($action:ident, $field:ident) => {
+                        if matches!(action, SettingsAction::$action) {
+                            self.config.$field = !self.config.$field;
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                }
+                let toggled = toggle!(ToggleCloseBrowserOnExit, close_browser_on_exit)
+                    || toggle!(ToggleSaveCookies, save_cookies)
+                    || toggle!(ToggleSaveCredentials, save_credentials)
+                    || toggle!(ToggleEnableTorrserver, enable_torrserver)
+                    || toggle!(ToggleThemeBackground, theme_background)
+                    || toggle!(ToggleTruecolor, truecolor)
+                    || toggle!(ToggleFalseTty, false_tty)
+                    || toggle!(ToggleVimKeys, vim_keys)
+                    || toggle!(ToggleMouse, disable_mouse)
+                    || toggle!(ToggleDisablePresets, disable_presets)
+                    || toggle!(ToggleShowBoxes, show_boxes)
+                    || toggle!(ToggleRoundedCorners, rounded_corners)
+                    || toggle!(ToggleTerminalSync, terminal_sync)
+                    || toggle!(ToggleDownloadEnabled, download_enabled)
+                    || toggle!(ToggleDownloadSequential, download_sequential)
+                    || toggle!(ToggleCloseTorrentCoreOnExit, close_torrent_core_on_exit)
+                    || toggle!(ToggleSaveOnExit, save_config_on_exit);
+                if toggled {
+                    self.ui.open_settings(
+                        &self.config,
+                        self.browser_visibility == BrowserVisibility::Hidden,
+                    );
+                }
                 match action {
                     SettingsAction::ToggleBrowserVisibility => {
-                        self.ui.browser_hidden = !self.ui.browser_hidden;
-                        // Keep the value actually used to launch the
-                        // browser in sync. Previously this toggle only
-                        // updated the display label and had zero effect on
-                        // the next launch (ROADMAP.md bug B6).
-                        self.browser_visibility = if self.ui.browser_hidden {
-                            BrowserVisibility::Hidden
-                        } else {
-                            BrowserVisibility::Visible
+                        // `App::browser_visibility` is the single runtime
+                        // owner; the modal reads a session copy on open.
+                        // Previously this toggle only updated the display
+                        // label and had zero effect on the next launch
+                        // (ROADMAP.md bug B6).
+                        self.browser_visibility = match self.browser_visibility {
+                            BrowserVisibility::Hidden => BrowserVisibility::Visible,
+                            BrowserVisibility::Visible => BrowserVisibility::Hidden,
                         };
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::ToggleMode => {
                         self.ui.stream_mode = !self.ui.stream_mode;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     SettingsAction::CyclePrioritizeBrowser => {
                         const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
@@ -1128,23 +1157,7 @@ impl App {
                         let mut new_priority = vec![next_first.to_string()];
                         new_priority.append(&mut rest);
                         self.config.browser_priority = new_priority;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleCloseBrowserOnExit => {
-                        self.config.close_browser_on_exit = !self.config.close_browser_on_exit;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleSaveCookies => {
-                        self.config.save_cookies = !self.config.save_cookies;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleSaveCredentials => {
-                        self.config.save_credentials = !self.config.save_credentials;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleEnableTorrserver => {
-                        self.config.enable_torrserver = !self.config.enable_torrserver;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::EditCredentials => {
                         self.ui.open_login_modal();
@@ -1156,7 +1169,7 @@ impl App {
                         } else {
                             "TorrServer: not reachable"
                         });
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::OpenLog => {
                         self.ui.modal = Modal::None;
@@ -1175,35 +1188,7 @@ impl App {
                             self.ui.theme = themes[0].clone();
                         }
                         self.config.theme_name = Some(self.ui.theme.name.clone());
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleThemeBackground => {
-                        self.config.theme_background = !self.config.theme_background;
-                        self.ui.theme_background = self.config.theme_background;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleTruecolor => {
-                        self.config.truecolor = !self.config.truecolor;
-                        self.ui.truecolor = self.config.truecolor;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleFalseTty => {
-                        self.config.false_tty = !self.config.false_tty;
-                        self.ui.false_tty = self.config.false_tty;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleVimKeys => {
-                        self.config.vim_keys = !self.config.vim_keys;
-                        self.ui.vim_keys = self.config.vim_keys;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleMouse => {
-                        self.config.disable_mouse = !self.config.disable_mouse;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleDisablePresets => {
-                        self.config.disable_presets = !self.config.disable_presets;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::CyclePreset => {
                         if !self.config.disable_presets && !self.config.presets.is_empty() {
@@ -1212,11 +1197,7 @@ impl App {
                             let spec = self.config.presets[self.config.preset_index].clone();
                             self.ui.zones.apply_preset(&spec);
                         }
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleShowBoxes => {
-                        self.config.show_boxes = !self.config.show_boxes;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::SetUpdateMs => {
                         // No numeric text-entry widget exists in the
@@ -1231,16 +1212,7 @@ impl App {
                             None => STEPS[0],
                         };
                         self.config.update_ms = next;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleRoundedCorners => {
-                        self.config.rounded_corners = !self.config.rounded_corners;
-                        self.ui.rounded_corners = self.config.rounded_corners;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleTerminalSync => {
-                        self.config.terminal_sync = !self.config.terminal_sync;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::CycleGraphSymbol => {
                         const SYMBOLS: &[&str] = &["braille", "block", "dot"];
@@ -1249,12 +1221,7 @@ impl App {
                             None => SYMBOLS[0],
                         };
                         self.config.graph_symbol = next.to_string();
-                        self.ui.graph_symbol = next.to_string();
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleDownloadEnabled => {
-                        self.config.download_enabled = !self.config.download_enabled;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::CycleDownloadDirMode => {
                         const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
@@ -1263,15 +1230,7 @@ impl App {
                             None => MODES[0],
                         };
                         self.config.download_dir_mode = next.to_string();
-                        // Keep the display field ui.download_dir (used
-                        // wherever a "current download directory" is shown)
-                        // in sync with the resolved effective directory.
-                        self.ui.download_dir = self.resolve_download_dir();
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleDownloadSequential => {
-                        self.config.download_sequential = !self.config.download_sequential;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::CycleDownloadSpeedLimit => {
                         const STEPS: &[u32] = &[0, 128, 256, 512, 1024, 2048, 5120, 10240];
@@ -1280,7 +1239,7 @@ impl App {
                             None => STEPS[0],
                         };
                         self.config.download_speed_limit_kbps = next;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::CycleUploadSpeedLimit => {
                         const STEPS: &[u32] = &[0, 64, 128, 256, 512, 1024, 2048, 5120];
@@ -1289,17 +1248,12 @@ impl App {
                             None => STEPS[0],
                         };
                         self.config.upload_speed_limit_kbps = next;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleCloseTorrentCoreOnExit => {
-                        self.config.close_torrent_core_on_exit = !self.config.close_torrent_core_on_exit;
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleSaveOnExit => {
-                        self.config.save_config_on_exit = !self.config.save_config_on_exit;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     SettingsAction::Close => {}
+                    // The 17 bool toggles are handled above by the
+                    // `toggle!` chain; nothing else to do here.
+                    _ => {}
                 }
                 // Persist every settings change immediately rather than
                 // only on a clean exit ("Save config on exit" governs a
@@ -1492,7 +1446,7 @@ impl App {
                 self.ui.toggle_detail_log();
             }
             KeyCode::Char('S') if !self.ui.input_mode => {
-                self.ui.open_settings(&self.config);
+                self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
             }
             // The help page (btop binds `F1`/`?`/`h`); `h` stays free
             // for future vim navigation, so the three triggers are `?`,
@@ -1592,7 +1546,7 @@ impl App {
                 match item {
                     MenuItem::Options => {
                         self.ui.show_menu = false;
-                        self.ui.open_settings(&self.config);
+                        self.ui.open_settings(&self.config, self.browser_visibility == BrowserVisibility::Hidden);
                     }
                     MenuItem::Help => {
                         self.ui.menu.show_help = !self.ui.menu.show_help;

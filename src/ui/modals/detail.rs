@@ -11,13 +11,14 @@ use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use crate::config::Config;
 use crate::ui::app::{centered_rect, App, Modal};
 use crate::sources::source::Group;
 
 impl App {
     /// Draw the detail modal: `Label: value` rows for the row itself,
     /// then the file list with the cursor reversed, then the keys.
-    pub fn render_detail_modal(&self, frame: &mut Frame, area: Rect) {
+    pub fn render_detail_modal(&self, frame: &mut Frame, area: Rect, config: &Config) {
         let Modal::TorrentDetail(ref state) = self.modal else {
             return;
         };
@@ -25,7 +26,7 @@ impl App {
         let popup = centered_rect(70, 80, area);
         frame.render_widget(Clear, popup);
 
-        let block = self.modal_block(Color::Cyan).title(" Torrent details ");
+        let block = self.modal_block(Color::Cyan, config).title(" Torrent details ");
 
         let inner = block.inner(popup);
         frame.render_widget(block, popup);

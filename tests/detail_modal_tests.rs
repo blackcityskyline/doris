@@ -14,18 +14,7 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn make_app() -> UiApp {
-    UiApp::new(
-        "http://127.0.0.1:8090".into(),
-        true,
-        true,
-        None,
-        "/tmp".into(),
-        "braille".into(),
-        true,
-        true,
-        true,
-        false,
-    )
+    UiApp::new("http://127.0.0.1:8090".into(), None)
 }
 
 fn item() -> TorrentItem {
@@ -78,13 +67,13 @@ fn test_the_cursor_moves_and_clamps_at_both_ends() {
         state.files = files(3);
     }
 
-    assert_eq!(app.detail_key(key(KeyCode::Down)), None);
-    assert_eq!(app.detail_key(key(KeyCode::Up)), None, "clamped at the top");
-    assert_eq!(app.detail_key(key(KeyCode::Char('j'))), None);
-    assert_eq!(app.detail_key(key(KeyCode::Char('j'))), None);
-    assert_eq!(app.detail_key(key(KeyCode::Char('j'))), None, "clamped at the bottom");
-    assert_eq!(app.detail_key(key(KeyCode::Char('k'))), None);
-    assert_eq!(app.detail_key(key(KeyCode::Up)), None);
+    assert_eq!(app.detail_key(key(KeyCode::Down), true), None);
+    assert_eq!(app.detail_key(key(KeyCode::Up), true), None, "clamped at the top");
+    assert_eq!(app.detail_key(key(KeyCode::Char('j')), true), None);
+    assert_eq!(app.detail_key(key(KeyCode::Char('j')), true), None);
+    assert_eq!(app.detail_key(key(KeyCode::Char('j')), true), None, "clamped at the bottom");
+    assert_eq!(app.detail_key(key(KeyCode::Char('k')), true), None);
+    assert_eq!(app.detail_key(key(KeyCode::Up), true), None);
 }
 
 /// An empty list has nothing to move through: the keys must not panic or
@@ -95,7 +84,7 @@ fn test_the_cursor_stays_put_when_there_are_no_files() {
     open_detail(&mut app);
 
     for k in [key(KeyCode::Down), key(KeyCode::Up), key(KeyCode::Char('j')), key(KeyCode::Char('k'))] {
-        assert_eq!(app.detail_key(k), None);
+        assert_eq!(app.detail_key(k, true), None);
     }
     if let Modal::TorrentDetail(ref state) = app.modal {
         assert_eq!(state.cursor, 0);
@@ -107,8 +96,8 @@ fn test_enter_and_d_ask_for_the_orchestrators_actions() {
     let mut app = make_app();
     open_detail(&mut app);
 
-    assert_eq!(app.detail_key(key(KeyCode::Enter)), Some(DetailAction::Play));
-    assert_eq!(app.detail_key(key(KeyCode::Char('d'))), Some(DetailAction::Download));
+    assert_eq!(app.detail_key(key(KeyCode::Enter), true), Some(DetailAction::Play));
+    assert_eq!(app.detail_key(key(KeyCode::Char('d')), true), Some(DetailAction::Download));
 }
 
 /// Esc and q close the modal; the cursor and the list stay behind, so
@@ -118,11 +107,11 @@ fn test_esc_and_q_close_the_modal() {
     let mut app = make_app();
     open_detail(&mut app);
 
-    assert_eq!(app.detail_key(key(KeyCode::Esc)), None);
+    assert_eq!(app.detail_key(key(KeyCode::Esc), true), None);
     assert_eq!(app.modal, Modal::None);
 
     open_detail(&mut app);
-    assert_eq!(app.detail_key(key(KeyCode::Char('q'))), None);
+    assert_eq!(app.detail_key(key(KeyCode::Char('q')), true), None);
     assert_eq!(app.modal, Modal::None);
 }
 
@@ -131,8 +120,8 @@ fn test_esc_and_q_close_the_modal() {
 #[test]
 fn test_the_keys_do_nothing_without_the_modal() {
     let mut app = make_app();
-    assert_eq!(app.detail_key(key(KeyCode::Enter)), None);
-    assert_eq!(app.detail_key(key(KeyCode::Char('d'))), None);
+    assert_eq!(app.detail_key(key(KeyCode::Enter), true), None);
+    assert_eq!(app.detail_key(key(KeyCode::Char('d')), true), None);
 }
 
 // --- the answer landing in the modal ---------------------------------------

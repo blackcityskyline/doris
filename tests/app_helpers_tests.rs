@@ -16,18 +16,7 @@ use std::path::PathBuf;
 // --- apply_source_done (B0.2 stale-drop; B3 per-source arrival) -------------
 
 fn make_ui() -> UiApp {
-    UiApp::new(
-        "http://127.0.0.1:8090".into(),
-        true,
-        true,
-        None,
-        "/tmp".into(),
-        "braille".into(),
-        true,
-        true,
-        true,
-        false,
-    )
+    UiApp::new("http://127.0.0.1:8090".into(), None)
 }
 
 fn item(title: &str) -> TorrentItem {

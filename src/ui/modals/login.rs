@@ -8,6 +8,7 @@ use ratatui::layout::{Constraint, Direction, Rect};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use crate::config::Config;
 use crate::ui::app::{centered_rect, App, Modal};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -130,7 +131,7 @@ impl App {
     /// The login modal's own rendering: the resource tabs, the two
     /// fields, the saved-indicator and the hint row. `&self` because it
     /// only reads the modal state and the theme.
-    pub fn render_login_modal(&self, frame: &mut Frame, area: Rect) {
+    pub fn render_login_modal(&self, frame: &mut Frame, area: Rect, config: &Config) {
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);
             // ratatui's Buffer::set_style *patches* a cell's style (only
@@ -152,7 +153,7 @@ impl App {
             let bg_color = self.theme.main_bg.to_color();
             let fg_color = self.theme.main_fg.to_color();
 
-            let block = self.modal_block(Color::Yellow).title(" Login ");
+            let block = self.modal_block(Color::Yellow, config).title(" Login ");
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
@@ -204,7 +205,7 @@ impl App {
                 Style::default().fg(fg_color)
             };
 
-            let user_block = self.modal_block(user_style.fg.unwrap_or(fg_color)).title("Username");
+            let user_block = self.modal_block(user_style.fg.unwrap_or(fg_color), config).title("Username");
             frame.render_widget(
                 Paragraph::new(state.username.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -232,7 +233,7 @@ impl App {
                 "*".repeat(state.password.len())
             };
 
-            let pass_block = self.modal_block(pass_style.fg.unwrap_or(fg_color)).title("Password");
+            let pass_block = self.modal_block(pass_style.fg.unwrap_or(fg_color), config).title("Password");
             frame.render_widget(
                 Paragraph::new(pass_display.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
