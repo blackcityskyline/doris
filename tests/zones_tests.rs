@@ -13,6 +13,26 @@ fn test_zone_id_key_char_and_from_key_round_trip() {
     assert_eq!(ZoneId::from_key('x'), None);
 }
 
+// Phase 10 (REFACTOR_PLAN.md): key_char/label/from_key all read one
+// ZONE_ROWS entry. Guard against a variant with no row (or two variants
+// sharing a digit) -- that would silently break the `1`-`5` zone keys.
+#[test]
+fn test_every_zone_has_one_complete_row() {
+    let keys: Vec<char> = ZoneId::all().iter().map(|z| z.key_char()).collect();
+    for &id in ZoneId::all() {
+        assert_ne!(id.label(), "", "{id:?} has no label");
+        assert_ne!(id.key_char(), '\0', "{id:?} has no key");
+    }
+    let mut sorted = keys.clone();
+    sorted.sort_unstable();
+    let unique = sorted.len();
+    sorted.dedup();
+    assert_eq!(unique, sorted.len(), "two zones share a digit key");
+    // all() is the render-side list; it must match the row set exactly,
+    // or a zone would render but be unreachable from the keyboard.
+    assert_eq!(ZoneId::all().len(), keys.len());
+}
+
 #[test]
 fn test_default_layout_visibility() {
     let zones = ZoneLayout::new();
