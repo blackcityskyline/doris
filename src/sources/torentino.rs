@@ -42,6 +42,12 @@ pub struct TorentinoSearcher {
     client: reqwest::Client,
 }
 
+impl Default for TorentinoSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TorentinoSearcher {
     pub fn new() -> Self {
         // The shared browser-like client (B5): the HTML side of this

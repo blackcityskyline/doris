@@ -29,6 +29,12 @@ pub enum LoginField {
     Password,
 }
 
+impl Default for LoginState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LoginState {
     pub fn new() -> Self {
         Self {
@@ -51,6 +57,7 @@ impl App {
     }
 
 
+    /// One keypress in the login modal. Returns the credentials to log
     /// in with on Enter -- resource id included, since the tab selects
     /// which resource they belong to. Left/Right switch the resource tab;
     /// Ctrl+S saves the current tab's credentials without logging in.

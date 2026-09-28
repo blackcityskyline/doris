@@ -62,7 +62,7 @@ fn test_search_url_without_category_has_no_forum_param() {
 #[test]
 fn test_search_url_with_category_asks_for_exactly_that_groups_forums() {
     for (group, ids) in GROUP_FORUMS {
-        let url = search_url("matrix", 0, Some(group.clone()));
+        let url = search_url("matrix", 0, Some(group));
         assert_eq!(
             url.matches("f%5B%5D=").count(),
             ids.len(),

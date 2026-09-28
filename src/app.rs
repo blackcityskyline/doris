@@ -226,7 +226,6 @@ pub fn apply_detail_loaded(
 
 pub struct App {
     args: Args,
-    #[allow(dead_code)]
     config: Config,
     ui: UiApp,
     event_handler: EventHandler,
@@ -258,6 +257,8 @@ pub struct App {
     /// (B5): a fresh hit answers immediately, browser and all.
     cache: Arc<SearchCache>,
     browser_visibility: BrowserVisibility,
+    /// Kept alive (never read): dropping the last sender would close the
+    /// channel the extension bridge searches through.
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
@@ -267,7 +268,6 @@ pub struct App {
     /// new one started and overwrote its results (B0.2) -- torio's
     /// equivalent is the AbortController + `alive` flag on a search.
     search_generation: u64,
-    bridge: Option<BridgeServer>,
     terminal_size: (u16, u16),
     /// Set by the SIGHUP/SIGTERM/SIGINT listener spawned in [`App::run`] so
     /// a terminal being closed (or a plain `kill`) goes through the normal
@@ -292,16 +292,14 @@ impl App {
         let (search_tx, search_rx) = mpsc::unbounded_channel();
 
         let bridge_port = config.bridge_port;
-        let bridge = if bridge_port > 0 {
+        if bridge_port > 0 {
+            // The server task owns its own handle (listener + router with a
+            // cloned sender), so nothing needs to keep this struct alive.
             let mut bridge = BridgeServer::new(search_tx.clone(), bridge_port);
-            if bridge.start().await.is_ok() {
-                Some(bridge)
-            } else {
-                None
+            if let Err(e) = bridge.start().await {
+                crate::log::log("bridge", &format!("bridge server failed to start: {}", e));
             }
-        } else {
-            None
-        };
+        }
 
         let event_handler = EventHandler::new(std::time::Duration::from_millis(100));
         let torrserver = TorrServer::new(&torrserver_url);
@@ -324,7 +322,6 @@ impl App {
             browser_visibility,
             search_tx,
             search_rx,
-            bridge,
             args,
             config,
             terminal_size: (0, 0),
@@ -1303,16 +1300,10 @@ impl App {
                 self.ui.zones.focus_prev();
             }
             KeyCode::PageUp if !self.ui.input_mode => {
-                match self.ui.zones.focused {
-                    ZoneId::Log => self.ui.scroll_logs_page_up(),
-                    _ => {}
-                }
+                if self.ui.zones.focused == ZoneId::Log { self.ui.scroll_logs_page_up() }
             }
             KeyCode::PageDown if !self.ui.input_mode => {
-                match self.ui.zones.focused {
-                    ZoneId::Log => self.ui.scroll_logs_page_down(),
-                    _ => {}
-                }
+                if self.ui.zones.focused == ZoneId::Log { self.ui.scroll_logs_page_down() }
             }
             KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
                 self.ui.enter_input_mode();

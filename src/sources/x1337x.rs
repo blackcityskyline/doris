@@ -572,6 +572,12 @@ pub struct X1337xSearcher {
     client: reqwest::Client,
 }
 
+impl Default for X1337xSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl X1337xSearcher {
     /// The canonical name of the site, which is not the mirror the
     /// probes found answering (module doc). Nothing here navigates to

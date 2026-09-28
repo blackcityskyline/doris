@@ -126,6 +126,12 @@ impl LayoutPreset {
     }
 }
 
+impl Default for ZoneLayout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZoneLayout {
     pub fn new() -> Self {
         Self {

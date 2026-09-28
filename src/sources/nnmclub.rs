@@ -489,6 +489,12 @@ pub struct NnmclubSearcher {
     client: reqwest::Client,
 }
 
+impl Default for NnmclubSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NnmclubSearcher {
     pub const HOME_URL: &str = "https://nnmclub.to";
 

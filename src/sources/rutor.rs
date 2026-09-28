@@ -202,7 +202,7 @@ impl RutorSearcher {
             let items = parse_results(&html);
             return Ok(SearchPage { items, has_more: false, next_offset: None });
         }
-        if offset % Self::PAGE_SIZE != 0 {
+        if !offset.is_multiple_of(Self::PAGE_SIZE) {
             // The app advances `offset` by however many rows came back,
             // so an offset that isn't on a page boundary means the
             // previous fetch was a partial (= final) page. Returning
@@ -350,7 +350,7 @@ impl RutorSearcher {
         // do -- if this ever returns zero results again, that file is
         // the first thing to check.
         let response = fetch_resilient(
-            &url,
+            url,
             || self.client.get(url).header("Referer", Self::BASE),
             &FetchOptions::default(),
         )

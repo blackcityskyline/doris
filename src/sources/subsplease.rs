@@ -194,6 +194,12 @@ pub struct SubsPleaseSearcher {
     client: reqwest::Client,
 }
 
+impl Default for SubsPleaseSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SubsPleaseSearcher {
     pub const HOME_URL: &str = "https://subsplease.org";
 

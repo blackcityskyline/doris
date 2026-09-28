@@ -160,6 +160,12 @@ pub struct EztvSearcher {
     client: reqwest::Client,
 }
 
+impl Default for EztvSearcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EztvSearcher {
     pub const HOME_URL: &str = "https://eztvx.to";
 

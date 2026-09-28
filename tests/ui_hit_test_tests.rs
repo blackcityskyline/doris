@@ -179,8 +179,10 @@ fn test_all_is_checked_when_every_implemented_source_is() {
         "a fresh config enables every implemented source"
     );
 
-    let mut partial = Config::default();
-    partial.enabled_sources = vec!["rutracker".to_string()];
+    let partial = Config {
+        enabled_sources: vec!["rutracker".to_string()],
+        ..Default::default()
+    };
     assert!(!doris::ui::app::SourceRow::All.is_checked(&partial));
 }
 
@@ -267,8 +269,10 @@ fn test_losing_the_last_source_of_a_category_falls_back_to_all() {
     let mut app = make_app();
     app.active_group = Some(Group::Games);
 
-    let mut config = Config::default();
-    config.enabled_sources = vec!["yts".to_string()];
+    let config = Config {
+        enabled_sources: vec!["yts".to_string()],
+        ..Default::default()
+    };
     app.set_group_tabs(&config);
 
     assert_eq!(app.active_group, None, "falls back to all");
@@ -487,8 +491,10 @@ fn test_unimplemented_sources_are_listed_but_never_asked() {
 /// what explains it.
 #[test]
 fn test_switching_every_source_off_leaves_the_panel_empty() {
-    let mut config = Config::default();
-    config.enabled_sources = Vec::new();
+    let config = Config {
+        enabled_sources: Vec::new(),
+        ..Default::default()
+    };
 
     assert!(!doris::ui::app::SourceRow::All.is_checked(&config));
     assert_eq!(doris::ui::app::sources_summary(&config), "none");
@@ -506,23 +512,29 @@ fn test_switching_every_source_off_leaves_the_panel_empty() {
 /// the same rule `source_tabs` applies to disabled sources.
 #[test]
 fn test_category_row_offers_only_groups_an_enabled_source_serves() {
-    let mut yts_only = Config::default();
-    yts_only.enabled_sources = vec!["yts".to_string()];
+    let yts_only = Config {
+        enabled_sources: vec!["yts".to_string()],
+        ..Default::default()
+    };
     assert_eq!(
         doris::ui::modals::settings::group_tabs(&yts_only),
         vec![None, Some(Group::Movies)],
         "yts declares Movies and nothing else"
     );
 
-    let mut eztv_only = Config::default();
-    eztv_only.enabled_sources = vec!["eztv".to_string()];
+    let eztv_only = Config {
+        enabled_sources: vec!["eztv".to_string()],
+        ..Default::default()
+    };
     assert_eq!(
         doris::ui::modals::settings::group_tabs(&eztv_only),
         vec![None, Some(Group::TV)]
     );
 
-    let mut all_off = Config::default();
-    all_off.enabled_sources = Vec::new();
+    let all_off = Config {
+        enabled_sources: Vec::new(),
+        ..Default::default()
+    };
     assert_eq!(
         doris::ui::modals::settings::group_tabs(&all_off),
         vec![None],
@@ -649,8 +661,10 @@ fn test_losing_the_category_moves_the_selection_to_all() {
     let mut app = make_app();
     app.active_group = Some(Group::Games);
 
-    let mut config = Config::default();
-    config.enabled_sources = vec!["yts".to_string()];
+    let config = Config {
+        enabled_sources: vec!["yts".to_string()],
+        ..Default::default()
+    };
     app.set_group_tabs(&config);
 
     assert_eq!(app.active_group, None, "falls back to all");
@@ -785,7 +799,7 @@ fn test_the_filter_matches_size_source_word_and_category() {
 #[test]
 fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let config = Config::default();
     app.zones.update_areas(Rect::new(0, 0, 100, 30));
     let area = app.zones.get_area(ZoneId::Results);
 

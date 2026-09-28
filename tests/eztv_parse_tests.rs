@@ -126,7 +126,7 @@ fn test_rows_without_a_usable_hash_never_reach_the_table() {
         "A Row Whose Hash Is Not A Hash",
     ] {
         assert!(
-            !titles.iter().any(|t| *t == unusable),
+            !titles.contains(&unusable),
             "{} became a row: {:?}",
             unusable,
             titles
