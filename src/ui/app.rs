@@ -394,17 +394,29 @@ impl App {
 
     pub fn add_log(&mut self, msg: &str) {
         let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+        // Follow the reader, not the writer: a new line only drags the
+        // panel down if it was already parked at the bottom. A reader
+        // halfway up a history keeps the history they were reading.
+        let following = self.log_scroll >= self.logs.len();
         self.logs.push_back(format!("[{}] {}", ts, msg));
         if self.logs.len() > 500 {
             self.logs.pop_front();
+            if !following {
+                self.log_scroll = self.log_scroll.saturating_sub(1);
+            }
         }
-        self.log_scroll = self.logs.len();
+        if following {
+            self.log_scroll = self.logs.len();
+        }
     }
 
     pub fn add_detail(&mut self, msg: &str) {
         let ts = chrono::Local::now().format("%H:%M:%S%.3f").to_string();
+        let following = self.detail_log_scroll >= self.detail_logs.len();
         self.detail_logs.push(format!("[{}] {}", ts, msg));
-        self.detail_log_scroll = self.detail_logs.len();
+        if following {
+            self.detail_log_scroll = self.detail_logs.len();
+        }
     }
 
     pub fn toggle_detail_log(&mut self) {
