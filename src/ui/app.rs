@@ -1273,8 +1273,14 @@ impl App {
         // live) -- the same "colour says state, text says content"
         // split btop's boxes use.
         let filter_on = self.zones.filter_mode || !self.zones.filter_input.is_empty();
-        let title = match (self.input_mode, filter_on) {
-            (false, true) => format!("filter: {}", self.zones.filter_input),
+        // While `f` is open the text lives in the box, so the border
+        // names the mode only -- repeating it there was the third copy
+        // (border, body, frame legend). A filter in effect but not
+        // being edited still announces itself: the box then holds the
+        // query, and nothing else says a filter is on.
+        let title = match (self.input_mode, self.zones.filter_mode, filter_on) {
+            (false, true, _) => "filter".to_string(),
+            (false, false, true) => format!("filter: {}", self.zones.filter_input),
             _ => "search".to_string(),
         };
 

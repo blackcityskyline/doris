@@ -89,6 +89,44 @@ fn test_caret_follows_the_filter_being_typed() {
 }
 
 #[test]
+fn test_filter_mode_labels_the_mode_and_leaves_the_text_to_the_body() {
+    let mut app = make_app();
+    app.search_input = "batman".to_string();
+    app.zones.filter_mode = true;
+    app.zones.filter_input = "gotham".to_string();
+    app.update_filter();
+
+    let (rows, _) = render(&mut app, 120, 40);
+    let border = &rows[0];
+    assert!(
+        border.contains("filter"),
+        "the border names the mode: {border}"
+    );
+    assert!(
+        !border.contains("gotham"),
+        "the text is in the box already -- saying it twice is noise: {border}"
+    );
+    assert_eq!(input_row(&rows), "gotham");
+}
+
+#[test]
+fn test_an_applied_filter_is_still_announced_on_the_border() {
+    let mut app = make_app();
+    app.search_input = "batman".to_string();
+    app.zones.filter_mode = false;
+    app.zones.filter_input = "gotham".to_string();
+    app.update_filter();
+
+    let (rows, _) = render(&mut app, 120, 40);
+    assert!(
+        rows[0].contains("filter: gotham"),
+        "a filter in effect, not being edited, says what it is: {}",
+        rows[0]
+    );
+    assert_eq!(input_row(&rows), "batman");
+}
+
+#[test]
 fn test_idle_box_still_shows_the_query() {
     let mut app = make_app();
     app.search_input = "batman".to_string();
