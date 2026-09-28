@@ -1,4 +1,5 @@
 pub mod log;
+pub mod search;
 pub mod player_log;
 pub mod cli;
 pub mod config;
