@@ -119,6 +119,7 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
         let style = if selected {
             Style::default()
                 .fg(theme.menu_selected_fg.to_color())
+                .bg(theme.menu_selected_bg.to_color())
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.menu_fg.to_color())

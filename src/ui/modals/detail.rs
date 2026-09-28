@@ -125,7 +125,7 @@ impl App {
             for (i, file) in state.files.iter().enumerate().skip(offset).take(visible) {
                 let text = format!("  {}  ({})", file.name, file.size);
                 let style = if i == state.cursor {
-                    value.add_modifier(Modifier::REVERSED)
+                    self.theme.selection_style()
                 } else {
                     value
                 };

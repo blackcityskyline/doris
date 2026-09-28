@@ -1,4 +1,4 @@
-use ratatui::style::Color;
+use ratatui::style::{Color, Style};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +157,20 @@ impl Theme {
 
     pub fn default_theme() -> Self {
         Self::dark()
+    }
+
+    /// The style of the row under the cursor in any list -- the results
+    /// table, the Sources panel, the detail modal's file list.
+    ///
+    /// Every bundled theme sets `selected_bg`/`selected_fg`, and before
+    /// this the renderer read neither: the cursor was reverse video of
+    /// whatever colours happened to be in play, so picking a theme could
+    /// not change how a selection looks. One helper keeps the three
+    /// lists agreeing with each other and with the theme file.
+    pub fn selection_style(&self) -> Style {
+        Style::default()
+            .fg(self.selected_fg.to_color())
+            .bg(self.selected_bg.to_color())
     }
 
     pub fn from_config(path: &std::path::Path) -> Option<Self> {
