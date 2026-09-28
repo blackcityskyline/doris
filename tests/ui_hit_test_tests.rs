@@ -109,7 +109,8 @@ fn test_click_at_focuses_the_clicked_zone() {
     assert_eq!(app.zones.focused, ZoneId::Results);
 
     let log_area = app.zones.get_area(ZoneId::Log);
-    app.click_at(log_area.y, log_area.x);
+    let mut config = Config::default();
+    app.click_at(log_area.y, log_area.x, &mut config);
     assert_eq!(app.zones.focused, ZoneId::Log);
 }
 
@@ -122,9 +123,10 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     let before = app.selected;
-    // +1 for the border, +2 for the source and category tab rows above
-    // the table's own header row -- see render_results_zone.
-    app.click_at(results_area.y + 3, results_area.x); // table header row, not a data row
+    // +1 for the border, +1 for the category row above the table's own
+    // header row -- see render_results_zone.
+    let mut config = Config::default();
+    app.click_at(results_area.y + 2, results_area.x, &mut config); // table header row, not a data row
     assert_eq!(app.selected, before);
 }
 
@@ -136,12 +138,13 @@ fn test_click_at_results_data_row_selects_that_item() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    // y+1 = source tabs, y+2 = category tabs, y+3 = table header,
-    // y+4 = first data row (index 0).
-    app.click_at(results_area.y + 4, results_area.x);
+    // y+1 = category tabs, y+2 = table header, y+3 = first data row
+    // (index 0).
+    let mut config = Config::default();
+    app.click_at(results_area.y + 3, results_area.x, &mut config);
     assert_eq!(app.selected, 0);
 
-    app.click_at(results_area.y + 5, results_area.x);
+    app.click_at(results_area.y + 4, results_area.x, &mut config);
     assert_eq!(app.selected, 1);
 }
 
@@ -154,75 +157,217 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    app.click_at(results_area.y + 4, results_area.x); // first visible (filtered) row
+    let mut config = Config::default();
+    app.click_at(results_area.y + 3, results_area.x, &mut config); // first visible (filtered) row
     assert_eq!(app.selected, 3);
 }
 
-// --- source tab bar (Results panel, btop proc-tab style) -----------------
+// --- the Sources panel (П.4) ----------------------------------------------
 
+/// The panel's rows are the registry plus the `all` switch, in the order
+/// they are drawn -- so a new source lands in the list on its own, and
+/// the cursor and the hit-test walk the same one.
 #[test]
-fn test_source_tab_at_finds_each_tab_on_the_tab_row() {
-    let mut app = make_app();
-    app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let results_area = app.zones.get_area(ZoneId::Results);
-    let tab_row = results_area.y + 1;
-
-    // Default active source is "rutracker", shown as "[rutracker]".
-    assert_eq!(app.source_tab_at(tab_row, results_area.x + 1), Some("rutracker"));
+fn test_the_panel_lists_all_then_the_registry_in_order() {
+    let rows = doris::ui::app::source_rows();
+    assert_eq!(rows.first(), Some(&doris::ui::app::SourceRow::All));
+    let ids: Vec<&str> = rows[1..].iter().map(|r| r.id()).collect();
+    let registry: Vec<&str> = doris::sources::source::KNOWN_SOURCES
+        .iter()
+        .map(|info| info.id)
+        .collect();
+    assert_eq!(ids, registry, "one row per registered source, in order");
 }
 
+/// `all` is the master switch: checked when every implemented source is,
+/// which is the default view -- so the panel opens saying "everything".
 #[test]
-fn test_source_tab_at_returns_none_off_the_tab_row() {
-    let mut app = make_app();
-    app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let results_area = app.zones.get_area(ZoneId::Results);
-    // Table header row, one below the tab row.
-    assert_eq!(app.source_tab_at(results_area.y + 2, results_area.x + 1), None);
+fn test_all_is_checked_when_every_implemented_source_is() {
+    let config = Config::default();
+    assert!(
+        doris::ui::app::SourceRow::All.is_checked(&config),
+        "a fresh config enables every implemented source"
+    );
+
+    let mut partial = Config::default();
+    partial.enabled_sources = vec!["rutracker".to_string()];
+    assert!(!doris::ui::app::SourceRow::All.is_checked(&partial));
 }
 
+/// A source that is not implemented offers nothing: its row says so
+/// and Enter leaves the config alone. With every registered source
+/// implemented today this is the invariant the *next* source has to
+/// satisfy -- the guard is what keeps a planned id from being toggled
+/// into existence, and the row is where the user would find out.
 #[test]
-fn test_click_at_tab_row_switches_active_source() {
-    let mut app = make_app();
-    app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let results_area = app.zones.get_area(ZoneId::Results);
-    let tab_row = results_area.y + 1;
+fn test_an_unimplemented_source_cannot_be_switched_on() {
+    let row = doris::ui::app::SourceRow::One("never-heard-of-it");
+    assert!(!row.is_implemented(), "an unknown id is not a source");
 
-    assert_eq!(app.active_source, "rutracker");
-    // "[rutracker]" is 11 chars ("rutracker" + brackets) starting right
-    // after the left border; "rutor" starts right after that plus a
-    // 2-space gap.
-    let rutor_col = results_area.x + 1 + "[rutracker]".chars().count() as u16 + 2;
-    let action = app.click_at(tab_row, rutor_col);
-    assert_eq!(app.active_source, "rutor");
-    assert_eq!(action, None); // switching source isn't a UiAction
+    let mut app = make_app();
+    let mut config = Config::default();
+    let before = config.enabled_sources.clone();
+
+    // A cursor past the end of the panel is a no-op too: the row list
+    // and the cursor are checked against each other, not trusted.
+    app.sources_cursor = doris::ui::app::source_rows().len();
+    app.toggle_source(&mut config);
+
+    assert_eq!(config.enabled_sources, before);
+    assert!(!app.source_changed, "nothing changed, so nothing is owed");
 }
 
+/// Enter on a source row switches exactly that source, and tells Enter
+/// that the enabled set owes a search -- the same flag a category
+/// switch sets, for the same reason.
 #[test]
-fn test_cycle_source_wraps_through_all_tabs() {
+fn test_toggling_a_source_flips_only_it_and_owes_a_search() {
     let mut app = make_app();
-    // Derived from the same function the header draws from, rather than
-    // spelled out: B8 adds a tab per source, and a hardcoded list here
-    // would either break on every addition or -- worse -- stop proving
-    // that the cycle covers everything the header draws.
-    let tabs = doris::ui::app::source_tabs(&Config::default());
-    assert!(tabs.contains(&"all"), "the merge tab is part of the cycle");
-    assert_eq!(app.active_source, tabs[0]);
+    let mut config = Config::default();
+    let before = config.enabled_sources.clone();
 
-    for expected in tabs.iter().skip(1) {
-        app.cycle_source();
-        assert_eq!(&app.active_source, expected, "walks the whole list");
-    }
-    app.cycle_source();
-    assert_eq!(&app.active_source, tabs[0], "the cycle must wrap");
+    app.sources_cursor = 1; // the first registry entry
+    app.toggle_source(&mut config);
+
+    let id = doris::sources::source::KNOWN_SOURCES[0].id;
+    assert!(
+        !config.enabled_sources.iter().any(|s| s == id),
+        "{} was on and is now off",
+        id
+    );
+    assert_eq!(config.enabled_sources.len(), before.len() - 1);
+    assert!(app.source_changed, "the next Enter must re-search");
+
+    app.toggle_source(&mut config);
+
+    // Compared as sets, not lists: switching a source off and on again
+    // moves it to the end of the vec, and the order is not a promise.
+    let mut back = config.enabled_sources.clone();
+    back.sort();
+    let mut expected = before.clone();
+    expected.sort();
+    assert_eq!(back, expected, "and back on again");
+}
+
+/// The `all` row is the other way round: off means "check the whole
+/// roster", on means "clear it" -- one keypress for either extreme.
+#[test]
+fn test_the_all_row_checks_or_clears_the_whole_roster() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    let roster: Vec<String> = doris::sources::source::KNOWN_SOURCES
+        .iter()
+        .filter(|info| info.implemented)
+        .map(|info| info.id.to_string())
+        .collect();
+
+    app.sources_cursor = 0;
+    app.toggle_source(&mut config);
+    assert!(config.enabled_sources.is_empty(), "all on -> clear");
+
+    app.toggle_source(&mut config);
+    assert_eq!(config.enabled_sources, roster, "all off -> check everything");
+}
+
+/// Switching a source off can take a category with it, so the row the
+/// view was showing has to fall back to one that still exists -- the
+/// same repair `set_group_tabs` has always done.
+#[test]
+fn test_losing_the_last_source_of_a_category_falls_back_to_all() {
+    let mut app = make_app();
+    app.active_group = Some(Group::Games);
+
+    let mut config = Config::default();
+    config.enabled_sources = vec!["yts".to_string()];
+    app.set_group_tabs(&config);
+
+    assert_eq!(app.active_group, None, "falls back to all");
+    assert!(app.group_tabs.contains(&Some(Group::Movies)));
+    assert!(!app.group_tabs.contains(&Some(Group::Games)));
+}
+
+/// Re-deriving must not disturb a category that still has sources behind
+/// it -- opening and closing the panel is not a switch.
+#[test]
+fn test_keeping_the_category_leaves_the_selection_alone() {
+    let mut app = make_app();
+    app.active_group = Some(Group::Movies);
+
+    app.set_group_tabs(&Config::default());
+
+    assert_eq!(app.active_group, Some(Group::Movies));
+    assert!(!app.group_changed, "re-deriving is not a switch");
+}
+
+/// The cursor wraps both ways, like every other list in the app -- a
+/// panel that dead-ends at the last row is a trap.
+#[test]
+fn test_the_cursor_wraps_in_both_directions() {
+    let mut app = make_app();
+    let len = doris::ui::app::source_rows().len() as i64;
+
+    app.navigate_sources(-1);
+    assert_eq!(app.sources_cursor, len as usize - 1, "up from the top wraps to the bottom");
+
+    app.navigate_sources(1);
+    assert_eq!(app.sources_cursor, 0, "and back to the top");
+}
+
+/// The drawn rows and the hit-test read the same list, so a row that is
+/// drawn can be clicked: the click lands on the row under the cursor's
+/// column and switches it.
+#[test]
+fn test_clicking_a_panel_row_switches_it() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Sources);
+    assert!(area.height > 3, "the panel is on screen");
+
+    // The `all` row is the first line inside the border.
+    let action = app.click_at(area.y + 1, area.x + 1, &mut config);
+    assert_eq!(action, None, "a checkbox is not a frame action");
+    assert!(
+        config.enabled_sources.is_empty(),
+        "the default view has everything on, so the click cleared it"
+    );
+    assert_eq!(app.zones.focused, ZoneId::Sources);
+}
+
+/// The Results frame's info slot says what the search is asking, and it
+/// is derived from the same config the panel edits -- so the two can
+/// never disagree about who is on.
+#[test]
+fn test_the_results_info_slot_names_the_checked_sources() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Results);
+
+    assert_eq!(
+        app.frame_info(ZoneId::Results, area, &config),
+        "[all]  (0/0)",
+        "every implemented source is on by default"
+    );
+
+    config.enabled_sources = vec!["rutracker".to_string(), "yts".to_string()];
+    assert_eq!(
+        app.frame_info(ZoneId::Results, area, &config),
+        "[rutracker, yts]  (0/0)"
+    );
+
+    config.enabled_sources.clear();
+    assert_eq!(app.frame_info(ZoneId::Results, area, &config), "[none]  (0/0)");
 }
 
 #[test]
 fn test_click_at_returns_none_on_the_zone_title() {
+    let mut config = Config::default();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
     // The top-left corner carries the zone title, not a frame button.
-    let action = app.click_at(torrent_area.y, torrent_area.x);
+    let action = app.click_at(torrent_area.y, torrent_area.x, &mut config);
     assert_eq!(action, None);
 }
 
@@ -231,35 +376,37 @@ fn test_click_at_returns_none_on_the_zone_title() {
 /// back as the pause action, not fall through to "clicked the panel".
 #[test]
 fn test_click_at_torrent_pause_button_returns_toggle_pause() {
+    let mut config = Config::default();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    let layout = app.frame_layout(ZoneId::Torrent, torrent_area);
+    let layout = app.frame_layout(ZoneId::Torrent, torrent_area, &config);
     let rect = layout.buttons.iter()
         .find(|(b, _)| b.key == 'p')
         .map(|(_, r)| *r)
         .expect("the Torrent frame has a pause button");
 
-    assert_eq!(app.click_at(rect.y, rect.x), Some(UiAction::TogglePause));
+    assert_eq!(app.click_at(rect.y, rect.x, &mut config), Some(UiAction::TogglePause));
     // And the last column of the word too, not just its first.
     assert_eq!(
-        app.click_at(rect.y, rect.x + rect.width - 1),
+        app.click_at(rect.y, rect.x + rect.width - 1, &mut config),
         Some(UiAction::TogglePause)
     );
 }
 
 #[test]
 fn test_click_at_torrent_delete_button_returns_remove() {
+    let mut config = Config::default();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    let layout = app.frame_layout(ZoneId::Torrent, torrent_area);
+    let layout = app.frame_layout(ZoneId::Torrent, torrent_area, &config);
     let rect = layout.buttons.iter()
         .find(|(b, _)| b.key == 'd')
         .map(|(_, r)| *r)
         .expect("the Torrent frame has a delete button");
 
-    assert_eq!(app.click_at(rect.y, rect.x), Some(UiAction::Remove));
+    assert_eq!(app.click_at(rect.y, rect.x, &mut config), Some(UiAction::Remove));
 }
 
 /// Between the two buttons there is a gap: landing in it must do
@@ -267,135 +414,99 @@ fn test_click_at_torrent_delete_button_returns_remove() {
 #[test]
 fn test_click_between_two_frame_buttons_does_nothing() {
     let mut app = make_app();
+    let mut config = Config::default();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
-    let layout = app.frame_layout(ZoneId::Results, results_area);
-    // `group` and `source` are the two right-aligned buttons; the gap
+    let layout = app.frame_layout(ZoneId::Results, results_area, &config);
+    // `Filter` is the only top-left button now the source tabs moved to
+    // their own panel; `group` is the only top-right one. The gap
     // between them is at least one column wide.
+    let filter = layout.buttons.iter().find(|(b, _)| b.key == 'F')
+        .map(|(_, r)| *r).expect("filter button");
     let group = layout.buttons.iter().find(|(b, _)| b.key == 'g')
         .map(|(_, r)| *r).expect("group button");
-    let source = layout.buttons.iter().find(|(b, _)| b.key == ']')
-        .map(|(_, r)| *r).expect("source button");
-    assert!(source.x > group.x + group.width);
+    assert!(group.x > filter.x + filter.width);
 
-    let gap_col = group.x + group.width;
-    assert!(app.click_at(group.y, gap_col).is_none());
+    let gap_col = filter.x + filter.width;
+    assert!(app.click_at(filter.y, gap_col, &mut config).is_none());
 }
 
 /// The buttons `ui::App` can act on itself happen right here rather than
 /// being handed to the orchestrator.
 #[test]
 fn test_clicking_the_filter_button_enters_filter_mode() {
+    let mut config = Config::default();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     assert!(!app.zones.filter_mode);
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    let layout = app.frame_layout(ZoneId::Results, results_area);
+    let layout = app.frame_layout(ZoneId::Results, results_area, &config);
     let rect = layout.buttons.iter()
         .find(|(b, _)| b.key == 'F')
         .map(|(_, r)| *r)
         .expect("the Results frame has a filter button");
 
-    assert_eq!(app.click_at(rect.y, rect.x), None);
+    assert_eq!(app.click_at(rect.y, rect.x, &mut config), None);
     assert!(app.zones.filter_mode, "the click entered filter mode");
 }
 
-// --- the tab bar is derived from config, not written down -------------------
+// --- the panel is derived from the registry, not written down ----------------
 
 /// Decided with the user after wave 1's live run: a source the user
-/// switched off must not leave behind a tab whose search can only
-/// answer "Selected source is disabled".
+/// switched off must not be asked -- the panel is the only place that
+/// decides, so its rows come from the registry and nothing else.
 #[test]
-fn test_a_switched_off_source_has_no_tab() {
-    let mut config = Config::default();
-    config.enabled_sources = vec!["rutracker".to_string(), "tpb".to_string()];
-
-    assert_eq!(
-        doris::ui::app::source_tabs(&config),
-        vec!["rutracker", "tpb", "all"],
-        "registry order, and only what is switched on"
-    );
-}
-
-#[test]
-fn test_unimplemented_sources_never_get_a_tab() {
-    // A source that is not implemented offers nothing: no tab, no
-    // rows, no way to be enabled into existence. With every source
-    // implemented today this is the invariant the next planned source
-    // has to satisfy -- the bar is derived from the registry, so a
-    // planned id cannot appear there by accident.
-    let tabs = doris::ui::app::source_tabs(&Config::default());
-    for info in doris::sources::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
-        assert!(!tabs.contains(&info.id), "{} is planned and has a tab", info.id);
+fn test_the_panel_offers_exactly_the_registry_in_order() {
+    let rows = doris::ui::app::source_rows();
+    assert_eq!(rows.len(), doris::sources::source::KNOWN_SOURCES.len() + 1);
+    assert_eq!(rows[0].id(), "all");
+    for (row, info) in rows[1..].iter().zip(doris::sources::source::KNOWN_SOURCES.iter()) {
+        assert_eq!(row.id(), info.id, "registry order, one row each");
     }
-    assert!(tabs.contains(&"nnmclub"), "wave 3's first source does");
-    assert!(tabs.contains(&"1337x"), "and wave 3's second one does too");
-    assert!(tabs.contains(&"torentino"), "and wave 3's third one does too");
 }
 
+/// A source that is not implemented offers nothing: it is listed (so
+/// the next one is visible where it will land) but reads as planned, and
+/// the dispatch never asks it -- the same invariant the old tab bar had.
 #[test]
-fn test_the_all_tab_survives_switching_every_source_off() {
+fn test_unimplemented_sources_are_listed_but_never_asked() {
+    let rows = doris::ui::app::source_rows();
+    for info in doris::sources::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
+        let row = rows.iter().find(|r| r.id() == info.id)
+            .expect("a planned source has a row");
+        assert!(!row.is_implemented(), "{} is planned", info.id);
+    }
+
+    let all: Vec<String> = doris::sources::source::KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect();
+    let asked: Vec<&str> = doris::sources::orchestrator::selected_sources(&all, None, false)
+        .iter()
+        .map(|info| info.id)
+        .collect();
+    for info in doris::sources::source::KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
+        assert!(!asked.contains(&info.id), "{} is planned and would be asked", info.id);
+    }
+}
+
+/// Switching every source off leaves the panel saying so rather than
+/// silently asking nothing -- the search's "selected nobody" line is
+/// what explains it.
+#[test]
+fn test_switching_every_source_off_leaves_the_panel_empty() {
     let mut config = Config::default();
     config.enabled_sources = Vec::new();
 
-    let tabs = doris::ui::app::source_tabs(&config);
-    assert_eq!(tabs, vec!["all"], "the bar always has somewhere to be");
-}
-
-/// Losing the tab you were on must move the selection somewhere that
-/// exists, rather than leaving `active_source` pointing at nothing (a
-/// silent search that returns no rows and no explanation).
-#[test]
-fn test_losing_the_active_tab_moves_the_selection_to_a_live_one() {
-    let mut app = make_app();
-    app.active_source = "subsplease".to_string();
-
-    let mut config = Config::default();
-    config.enabled_sources = vec!["rutracker".to_string(), "eztv".to_string()];
-    app.set_result_tabs(&config);
-
-    assert_eq!(app.active_source, "rutracker", "first live tab wins");
-    assert!(app.source_tabs.contains(&app.active_source.as_str()));
-}
-
-/// Opening and closing Settings (which re-derives the bar every time)
-/// must not disturb where the user already was.
-#[test]
-fn test_keeping_the_active_tab_leaves_the_selection_alone() {
-    let mut app = make_app();
-    app.active_source = "eztv".to_string();
-
-    app.set_result_tabs(&Config::default());
-
-    assert_eq!(app.active_source, "eztv");
-    assert_eq!(
-        app.source_tabs,
-        vec![
-            "rutracker", "rutor", "yts", "tpb", "subsplease", "nyaa", "eztv", "nnmclub",
-            "1337x", "torentino", "all",
-        ],
-        "and the bar itself still lists everything the default config enables"
+    assert!(!doris::ui::app::SourceRow::All.is_checked(&config));
+    assert_eq!(doris::ui::app::sources_summary(&config), "none");
+    assert!(
+        doris::sources::orchestrator::selected_sources(&config.enabled_sources, None, false)
+            .is_empty(),
+        "nothing checked means nothing to dispatch"
     );
-}
-
-/// The rendered bar and the click hit-test read the same field, so a
-/// tab that is drawn can be clicked: derivations must stay in one
-/// place (`set_result_tabs`), never in the render path alone.
-#[test]
-fn test_clicking_a_tab_that_was_derived_selects_it() {
-    let mut app = make_app();
-    let mut config = Config::default();
-    config.enabled_sources = vec!["yts".to_string(), "all".to_string()];
-    app.set_result_tabs(&config);
-    app.active_source = "yts".to_string();
-    app.zones.update_areas(Rect::new(0, 0, 80, 24));
-
-    let results = app.zones.get_area(ZoneId::Results);
-    // yts starts one column in; its label is 3 wide, then two spaces.
-    let tpb_col = results.x + 1 + 3 + 2;
-    assert_eq!(app.source_tab_at(results.y + 1, tpb_col), None);
-    assert_eq!(app.source_tab_at(results.y + 1, results.x + 1), Some("yts"));
 }
 
 // --- category tab row (B6's second Results row) ---------------------------
@@ -466,13 +577,15 @@ fn test_cycle_group_walks_the_row_and_wraps() {
 }
 
 /// The row that is drawn is the row that is clickable: the hit-test
-/// walks the same `group_tabs` field the render does, one row lower.
+/// walks the same `group_tabs` field the render does, on the first line
+/// inside the border.
 #[test]
 fn test_group_tab_at_finds_each_tab_it_drew() {
+    let mut config = Config::default();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results = app.zones.get_area(ZoneId::Results);
-    let row = results.y + 2; // one row below the source tabs
+    let row = results.y + 1; // the first line inside the border
     let first = results.x + 1;
 
     // "[all]" is bracketed while selected: 5 cells, then two spaces.
@@ -482,14 +595,14 @@ fn test_group_tab_at_finds_each_tab_it_drew() {
         app.group_tab_at(row, first + 5 + 2),
         Some(Some(Group::Movies))
     );
-    // The source row above and the table's header row below are not
-    // this row, however close their columns look.
-    assert_eq!(app.group_tab_at(results.y + 1, first), None);
-    assert_eq!(app.group_tab_at(results.y + 3, first), None);
+    // The border above and the table's header row below are not this
+    // row, however close their columns look.
+    assert_eq!(app.group_tab_at(results.y, first), None);
+    assert_eq!(app.group_tab_at(results.y + 2, first), None);
 
     // A click selects the tab, flags the owed search, and focuses the
     // zone -- like every other Results click.
-    assert_eq!(app.click_at(row, first + 5 + 2), None);
+    assert_eq!(app.click_at(row, first + 5 + 2, &mut config), None);
     assert_eq!(app.active_group, Some(Group::Movies));
     assert!(app.group_changed);
     assert_eq!(app.zones.focused, ZoneId::Results);
@@ -505,8 +618,8 @@ fn test_group_tab_at_finds_each_tab_it_drew() {
     assert_eq!(app.group_tab_at(row, first + 5), Some(Some(Group::Movies)));
 }
 
-/// Switching the source that was the last one serving a category must
-/// not leave the row pointing at a tab that is no longer drawn.
+/// Switching off the source that was the last one serving a category
+/// must not leave the row pointing at a tab that is no longer drawn.
 #[test]
 fn test_losing_the_category_moves_the_selection_to_all() {
     let mut app = make_app();
@@ -514,24 +627,11 @@ fn test_losing_the_category_moves_the_selection_to_all() {
 
     let mut config = Config::default();
     config.enabled_sources = vec!["yts".to_string()];
-    app.set_result_tabs(&config);
+    app.set_group_tabs(&config);
 
     assert_eq!(app.active_group, None, "falls back to all");
     assert!(app.group_tabs.contains(&Some(Group::Movies)));
     assert!(!app.group_tabs.contains(&Some(Group::Games)));
-}
-
-/// Opening and closing Settings re-derives both rows every time; a
-/// category that still has sources behind it stays where it was.
-#[test]
-fn test_keeping_the_category_leaves_the_selection_alone() {
-    let mut app = make_app();
-    app.active_group = Some(Group::Movies);
-
-    app.set_result_tabs(&Config::default());
-
-    assert_eq!(app.active_group, Some(Group::Movies));
-    assert!(!app.group_changed, "re-deriving is not a switch");
 }
 
 // --- the frame legend's geometry ------------------------------------------
@@ -543,12 +643,13 @@ fn test_keeping_the_category_leaves_the_selection_alone() {
 /// dropped the right-hand cluster entirely.
 #[test]
 fn test_every_frame_button_stays_on_its_own_border() {
+    let config = Config::default();
     for (w, h) in [(80u16, 24u16), (40, 12), (20, 8), (10, 4), (6, 3)] {
         let mut app = make_app();
         app.zones.update_areas(Rect::new(0, 0, w, h));
         app.zones.set_fullscreen(Some(ZoneId::Results));
         let area = app.zones.get_area(ZoneId::Results);
-        let layout = app.frame_layout(ZoneId::Results, area);
+        let layout = app.frame_layout(ZoneId::Results, area, &config);
 
         for (button, rect) in &layout.buttons {
             assert!(rect.x > area.x, "{:?} at {} touches the left border", button, w);
@@ -577,11 +678,12 @@ fn test_every_frame_button_stays_on_its_own_border() {
 /// about which of them the user meant.
 #[test]
 fn test_frame_buttons_do_not_overlap() {
+    let config = Config::default();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     for &id in ZoneId::all() {
         let area = app.zones.get_area(id);
-        let layout = app.frame_layout(id, area);
+        let layout = app.frame_layout(id, area, &config);
         for (i, (a, ra)) in layout.buttons.iter().enumerate() {
             for (b, rb) in layout.buttons.iter().skip(i + 1) {
                 assert!(

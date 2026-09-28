@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use doris::ui::app::App as UiApp;
 use doris::ui::modals::help::HELP_TEXT;
 use ratatui::backend::TestBackend;
+use doris::config::Config;
 use ratatui::Terminal;
 
 fn make_app() -> UiApp {
@@ -29,7 +30,7 @@ fn key(code: KeyCode) -> KeyEvent {
 /// count `help_key` clamps against -- and hand back the drawn rows.
 fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
     let buf = terminal.backend().buffer();
     (0..buf.area.height)
         .map(|y| {
@@ -47,8 +48,8 @@ fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
 fn test_help_text_names_the_documented_keybinds() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
     for expected in [
-        "s, i", "Enter", "b", "S", "L", "F", "f", "m", "1, 2, 3, 4", "Tab, Shift+Tab",
-        "j, k, Up, Down", "g, G", "]", "d", "v", "p", "Esc", "q, ctrl + c", "? , /, F1",
+        "s, i", "Enter", "b", "S", "L", "F", "f", "m", "1, 2, 3, 4, 5", "Tab, Shift+Tab",
+        "j, k, Up, Down", "g, G", "d", "v", "p", "Esc", "q, ctrl + c", "? , /, F1",
     ] {
         assert!(
             keys.iter().any(|k| k == &expected),

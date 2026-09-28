@@ -3,7 +3,7 @@ use doris::sources::orchestrator;
 use doris::sources::source::{self, Group, KNOWN_SOURCES, Source, SourceEnv, SourceInfo, GROUP_ORDER};
 use doris::sources::rutor::RutorSearcher;
 use doris::sources::x1337x::X1337xSearcher;
-use doris::ui::modals::settings::{SettingsAction, source_settings_items, streaming_settings_items};
+use doris::ui::modals::settings::{SettingsAction, streaming_settings_items};
 
 #[test]
 fn test_rutracker_and_rutor_are_registered_and_implemented() {
@@ -347,75 +347,14 @@ fn test_build_source_rejects_unknown_ids() {
 
 // --- Options rows derive from the same registry -----------------------------
 
-/// B8 wave 1 shipped four sources with no way to enable them: the
-/// `streaming -> Sources` rows were written out by hand for
-/// rutracker/rutor/nnmclub, so the new tabs only ever answered
-/// "Selected source is disabled". These tests pin the derivation itself,
-/// not the current roster -- a fifth source must appear on its own.
+/// The sources checklist left Options when it moved to its own panel
+/// (П.4): these tests used to pin the rows' derivation. What is left to
+/// pin is that the streaming category still builds, and that the
+/// registry remains the single list everything else reads.
 #[test]
-fn test_options_lists_exactly_the_registry_losing_nothing_to_handwriting() {
-    let config = Config::default();
-    let items = source_settings_items(&config);
-
-    assert_eq!(
-        items.len(),
-        KNOWN_SOURCES.len(),
-        "every registered source must have a row -- handwritten lists rot"
-    );
-    for (item, info) in items.iter().zip(KNOWN_SOURCES.iter()) {
-        assert_eq!(item.label, format!("Sources: {}", info.label));
-    }
-}
-
-#[test]
-fn test_each_toggles_its_own_registry_id_and_says_whether_it_is_on() {
-    let mut config = Config::default();
-    config.enabled_sources = vec!["rutracker".to_string(), "yts".to_string()];
-
-    for (item, info) in source_settings_items(&config).iter().zip(KNOWN_SOURCES.iter()) {
-        if info.implemented {
-            assert_eq!(
-                item.action,
-                SettingsAction::ToggleSource(info.id),
-                "{} must toggle itself, not a neighbour",
-                info.id
-            );
-            let expected = if info.id == "rutracker" || info.id == "yts" {
-                "True"
-            } else {
-                "False"
-            };
-            assert_eq!(item.value, expected, "{}'s state", info.id);
-        } else {
-            assert_eq!(item.value, "planned", "{} is not implemented", info.id);
-            assert_ne!(
-                item.action,
-                SettingsAction::ToggleSource(info.id),
-                "a planned source must not claim to be toggleable"
-            );
-        }
-    }
-}
-
-/// The description is assembled from registry facts, so it can lag the
-/// code only if the registry itself lies.
-#[test]
-fn test_a_row_describes_groups_and_the_browser_the_registry_declares() {
-    let config = Config::default();
-
-    for (item, info) in source_settings_items(&config).iter().zip(KNOWN_SOURCES.iter()) {
-        let text = item.description.join("\n");
-        assert!(text.contains("Enable/disable"), "{}", info.id);
-        let groups: Vec<String> = info.groups.iter().map(|g| format!("{:?}", g)).collect();
-        assert!(text.contains(&groups.join(", ")), "{}: {}", info.id, text);
-
-        let browser_line = if info.requires_browser {
-            "Uses an automated browser."
-        } else {
-            "No browser required."
-        };
-        assert!(text.contains(browser_line), "{}: {}", info.id, text);
-    }
+fn test_the_streaming_category_still_builds_from_the_config() {
+    let items = streaming_settings_items(&Config::default(), true, "Stream");
+    assert!(!items.is_empty());
 }
 
 /// B9: the CLI asks what the `all` tab asks -- one list, not two. A
@@ -483,11 +422,11 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
         .collect();
 
     let cli = source::cli_sources(None, &enabled).expect("the registry answers");
-    let tab = orchestrator::selected_sources("all", &enabled, None, false);
+    let tab = orchestrator::selected_sources(&enabled, None, false);
     assert_eq!(
         cli.len(),
         tab.len(),
-        "CLI and tab bar must derive from one list"
+        "CLI and the dispatch must derive from one list"
     );
 
     // A disabled source is not asked when the CLI defaults to "all".

@@ -1,3 +1,4 @@
+use doris::config::Config;
 use ratatui::prelude::*;
 use ratatui::backend::TestBackend;
 use ratatui::widgets::*;
@@ -574,7 +575,7 @@ fn test_render_does_not_panic() {
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -582,7 +583,7 @@ fn test_render_empty_state() {
     let mut app = make_test_app();
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -593,7 +594,7 @@ fn test_render_with_many_results() {
     app.selected = 50;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -605,7 +606,7 @@ fn test_render_log_scroll() {
     app.log_scroll = 30;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -615,7 +616,7 @@ fn test_render_input_mode() {
     app.search_input = "test query".into();
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -625,7 +626,7 @@ fn test_render_with_modal() {
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -634,7 +635,7 @@ fn test_state_searching() {
     app.state = doris::ui::app::AppState::Searching;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 #[test]
@@ -646,7 +647,7 @@ fn test_state_streaming() {
     app.selected = 1;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 }
 
 /// B6's instant half: picking a category re-derives the view from the
@@ -686,15 +687,19 @@ fn test_switching_the_category_rederives_the_view_instantly() {
 
 /// The row exists on screen and not only in state: the table's own
 /// header moved down a line to make room for it.
+/// The category row is the first line inside the Results border: the
+/// source tabs that used to sit above it moved to the Sources panel
+/// (П.4), so the row below the frame is the category row and the one
+/// below that is the table header.
 #[test]
-fn test_render_draws_the_category_row_under_the_source_row() {
+fn test_render_draws_the_category_row_under_the_frame() {
     let mut app = make_test_app();
     app.zones.update_areas(Rect::new(0, 0, 120, 40));
     let results = app.zones.get_area(doris::ui::zones::ZoneId::Results);
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
     let buf = terminal.backend().buffer();
     let row_text = |y: u16| -> String {
         (0..buf.area.width)
@@ -702,22 +707,19 @@ fn test_render_draws_the_category_row_under_the_source_row() {
             .collect()
     };
 
-    let source_row = row_text(results.y + 1);
-    assert!(source_row.contains("rutracker"), "source row: {source_row}");
-
     // "all" is the selected category on a fresh app, so it is the
-    // bracketed one here -- the row below the source row, and only it.
-    let category_row = row_text(results.y + 2);
+    // bracketed one here -- the first line inside the border, and only it.
+    let category_row = row_text(results.y + 1);
     assert!(category_row.contains("[all]"), "category row: {category_row}");
     for group in ["Movies", "TV", "Games", "Anime"] {
         assert!(category_row.contains(group), "missing {group}: {category_row}");
     }
     assert!(
         !category_row.contains("rutracker"),
-        "a separate line, not a repeat of the row above: {category_row}"
+        "the source tabs are a panel now, not a row in here: {category_row}"
     );
     assert!(
-        row_text(results.y + 3).contains("Seeds"),
+        row_text(results.y + 2).contains("Seeds"),
         "the table header sits one row lower now"
     );
 }
@@ -742,13 +744,15 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     app.update_filter();
     let backend = TestBackend::new(100, 30);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 
     let results = app.zones.get_area(ZoneId::Results);
     let top = row_text(&terminal, results.y);
     assert!(top.contains("Filter"), "Results top border: {}", top);
     assert!(top.contains("group"), "Results top border: {}", top);
-    assert!(top.contains("source"), "Results top border: {}", top);
+    // The source tabs left the frame for their own panel (П.4); what
+    // the border says instead is what the search is asking.
+    assert!(top.contains("[all]"), "Results top border: {}", top);
     assert!(top.contains("(3/3)"), "info text on the border: {}", top);
 
     let bottom = row_text(&terminal, results.y + results.height - 1);
@@ -773,7 +777,7 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
     app.update_filter();
     let backend = TestBackend::new(100, 30);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
 
     let results = app.zones.get_area(ZoneId::Results);
     let mut body = String::new();
@@ -797,7 +801,7 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
 /// rather than about state.
 fn render_rows(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-    terminal.draw(|frame| app.render(frame)).unwrap();
+    terminal.draw(|frame| app.render(frame, &Config::default())).unwrap();
     let buf = terminal.backend().buffer();
     (0..buf.area.height)
         .map(|y| {

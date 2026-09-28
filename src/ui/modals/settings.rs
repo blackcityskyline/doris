@@ -12,7 +12,7 @@ use ratatui::widgets::*;
 use ratatui::Frame;
 
 use crate::config::Config;
-use crate::sources::source::{Group, KNOWN_SOURCES, SourceInfo, GROUP_ORDER};
+use crate::sources::source::{Group, KNOWN_SOURCES, GROUP_ORDER};
 use crate::ui::app::{centered_rect, App, Modal};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -35,25 +35,6 @@ pub struct SettingsCategory {
     pub items: Vec<SettingsItem>,
 }
 
-/// What one source row says about its source: its groups and whether it
-/// needs a browser, both read from the registry so the prose can never
-/// contradict what dispatch actually does. (Login itself is not a
-/// registry fact -- the credentials flow asks for it when the source
-/// does.)
-fn source_description(info: &SourceInfo) -> Vec<String> {
-    let groups: Vec<String> = info.groups.iter().map(|g| format!("{:?}", g)).collect();
-    vec![
-        "Enable/disable this source.".into(),
-        "".into(),
-        format!("Groups: {}.", groups.join(", ")),
-        if info.requires_browser {
-            "Uses an automated browser.".into()
-        } else {
-            "No browser required.".into()
-        },
-    ]
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct SettingsItem {
     pub label: String,
@@ -73,10 +54,6 @@ pub enum SettingsAction {
     ToggleEnableTorrserver,
     EditCredentials,
     CheckTorrserverStatus,
-    /// Turn one source on or off, carrying the id straight from
-    /// `KNOWN_SOURCES` -- see `source_settings_items`. One variant for
-    /// every source, so a new registry entry needs no new enum case.
-    ToggleSource(&'static str),
     ToggleDownloadEnabled,
     CycleDownloadDirMode,
     ToggleDownloadSequential,
@@ -112,7 +89,7 @@ fn bool_str(b: bool) -> String {
 /// Availability rather than a fixed four (the layout B6's question was
 /// asked in): a category no enabled source could answer would be a tab
 /// that can only show an empty table with no explanation, which is the
-/// trap `source_tabs` already avoids for disabled sources.
+/// trap the Sources panel's rows avoid for unchecked sources.
 pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
     let available = |group: Group| {
         KNOWN_SOURCES
@@ -131,45 +108,10 @@ pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
     tabs
 }
 
-/// The `streaming -> Sources` rows: one per registry entry, in
-/// registry order.
-///
-/// Written out by hand for rutracker/rutor/nnmclub, these rows went
-/// stale the moment wave 1 added four sources -- they got tabs and
-/// Written out by hand for rutracker/rutor/nnmclub, these rows went
-/// stale the moment wave 1 added four sources -- they got tabs and
-/// no way to be enabled, which is exactly what a live run of the
-/// finished wave ran into ("Selected source is disabled", with
-/// nothing in Options that could enable it). Deriving them is what
-/// makes the next source free: a new registry entry appears here on
-/// its own, still marked "planned" until `implemented` flips.
-pub fn source_settings_items(config: &Config) -> Vec<SettingsItem> {
-    KNOWN_SOURCES
-        .iter()
-        .map(|info| SettingsItem {
-            label: format!("Sources: {}", info.label),
-            value: if info.implemented {
-                bool_str(config.enabled_sources.iter().any(|s| s == info.id))
-            } else {
-                "planned".into()
-            },
-            description: source_description(info),
-            action: if info.implemented {
-                SettingsAction::ToggleSource(info.id)
-            } else {
-                // Not implemented: say so, and do nothing when
-                // pressed -- toggling a source that cannot run
-                // would be a lie in the other direction.
-                SettingsAction::Close
-            },
-        })
-        .collect()
-}
-
 /// The Options "streaming" category's items, built from the config the
-/// same way [`source_settings_items`] builds the sources list -- one
-/// place, so a test can assert what the category offers without a
-/// rendered modal. `browser_hidden` is the runtime UI state the
+/// same way [`group_tabs`] builds the category row -- one place, so a
+/// test can assert what the category offers without a rendered modal.
+/// `browser_hidden` is the runtime UI state the
 
 /// `mode_str` is the "Play mode" row's value, computed by the caller.
 pub fn streaming_settings_items(
@@ -182,7 +124,7 @@ pub fn streaming_settings_items(
     } else {
         "Visible".to_string()
     };
-    let mut items: Vec<SettingsItem> = vec![
+    let items: Vec<SettingsItem> = vec![
                         SettingsItem {
                             label: "Browser visible".into(),
                             value: visibility_str,
@@ -287,7 +229,6 @@ pub fn streaming_settings_items(
                             action: SettingsAction::CheckTorrserverStatus,
                         },
                     ];
-    items.extend(source_settings_items(config));
     items
 }
 

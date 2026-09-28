@@ -308,23 +308,27 @@ fn the_per_source_deadline_is_torios_25_seconds() {
     assert_eq!(orchestrator::PER_SOURCE_TIMEOUT, Duration::from_secs(25));
 }
 
+/// П.4 removed the Results tab bar: the panel's checkboxes *are* the
+/// selection, so "ask everything" is simply every checked source and
+/// "ask one source" means checking only it.
 #[test]
-fn selection_follows_the_results_tab_and_the_options_checklist() {
+fn selection_follows_the_panel_checklist() {
     let both = vec!["rutracker".to_string(), "rutor".to_string()];
-    let ids = |tab: &str, enabled: &[String]| -> Vec<&'static str> {
-        orchestrator::selected_sources(tab, enabled, None, false)
+    let ids = |enabled: &[String]| -> Vec<&'static str> {
+        orchestrator::selected_sources(enabled, None, false)
             .iter()
             .map(|info| info.id)
             .collect()
     };
 
-    assert_eq!(ids("all", &both), vec!["rutracker", "rutor"]);
-    assert_eq!(ids("rutor", &both), vec!["rutor"]);
-    assert_eq!(ids("rutracker", &both), vec!["rutracker"]);
-    assert_eq!(ids("all", &both[..1]), vec!["rutracker"], "a disabled source is skipped");
-    assert!(ids("all", &[]).is_empty(), "nothing enabled means nothing to dispatch");
-    // Planned sources are listed in the registry but never dispatched.
-    assert!(!ids("all", &both).contains(&"nnmclub"));
+    assert_eq!(ids(&both), vec!["rutracker", "rutor"]);
+    assert_eq!(ids(&both[..1]), vec!["rutracker"], "an unchecked source is skipped");
+    assert!(ids(&[]).is_empty(), "nothing checked means nothing to dispatch");
+    // An id that is not in the registry is not asked either: the panel
+    // derives its rows from the registry, so a typo cannot become a
+    // dispatch.
+    let with_unknown = vec!["rutracker".to_string(), "never-heard-of-it".to_string()];
+    assert_eq!(ids(&with_unknown), vec!["rutracker"]);
 }
 
 /// B6: the category decides who gets asked, and a source that does not
@@ -335,74 +339,69 @@ fn selection_follows_the_results_tab_and_the_options_checklist() {
 /// really consulted.
 #[test]
 fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
-    // rutracker declares all four groups but cannot filter by any of
-    // them (`category_filter: false`, its `c[]` slot never verified
-    // live); yts declares only Movies and serves it by construction.
+    // yts declares only Movies and serves it by construction; tpb
+    // declares Movies and TV; the rest declare all four.
     let both = vec!["rutracker".to_string(), "yts".to_string()];
-    let ids = |tab: &str, group: Option<Group>| -> Vec<&'static str> {
-        orchestrator::selected_sources(tab, &both, group, false)
+    let ids = |group: Option<Group>| -> Vec<&'static str> {
+        orchestrator::selected_sources(&both, group, false)
             .iter()
             .map(|info| info.id)
             .collect()
     };
 
-    assert_eq!(ids("all", None), vec!["rutracker", "yts"]);
+    assert_eq!(ids(None), vec!["rutracker", "yts"]);
     assert_eq!(
-        ids("all", Some(Group::Movies)),
+        ids(Some(Group::Movies)),
         vec!["rutracker", "yts"],
-        "rutracker declares Movies and filters it (its f[] slot, verified \
-         live), so it is asked like any other serving source"
+        "both declare Movies, so both are asked"
     );
     assert_eq!(
-        ids("all", Some(Group::TV)),
+        ids(Some(Group::TV)),
         vec!["rutracker"],
         "yts cannot answer TV, so it is not asked"
     );
-    assert_eq!(ids("all", Some(Group::Anime)), vec!["rutracker"]);
-    assert_eq!(ids("all", Some(Group::Games)), vec!["rutracker"]);
-    // The rutracker tab with a category selected asks only its own source.
+    assert_eq!(ids(Some(Group::Anime)), vec!["rutracker"]);
+    assert_eq!(ids(Some(Group::Games)), vec!["rutracker"]);
+
+    // Checking only yts narrows the same way: one source, one group.
+    let yts_only = vec!["yts".to_string()];
     assert_eq!(
-        ids("rutracker", Some(Group::Movies)),
-        vec!["rutracker"],
-        "the rutracker tab reaches its own source, and it serves Movies"
+        orchestrator::selected_sources(&yts_only, Some(Group::Movies), false).len(),
+        1
     );
-    // The tab still wins when it disagrees with the category.
     assert!(
-        ids("yts", Some(Group::TV)).is_empty(),
-        "yts is reachable only through its own tab, and only serves Movies"
+        orchestrator::selected_sources(&yts_only, Some(Group::TV), false).is_empty(),
+        "yts is checked but serves nothing here"
     );
 }
 
-/// The empty-dispatch message is the only hint a stuck user gets, so
-/// it has to point at the fix that works. The blocked-source branch is
+/// The empty-dispatch message is the only hint a stuck user gets, so it
+/// has to point at the fix that works. The blocked-source branch is
 /// unreachable through the registry today (every implemented source
 /// serves its categories, which `source_registry_tests` guards), so the
 /// assertions cover the branch that can still fire.
 #[test]
 fn the_empty_dispatch_explains_which_fix_actually_applies() {
-    // A tab whose source does not declare the group keeps the older
-    // advice -- there enabling or switching sources is real.
-    let undeclared = orchestrator::nothing_to_ask_reason("yts", Group::TV);
+    // Nothing checked at all: the panel is the fix, and the line says so.
+    let none: Vec<String> = Vec::new();
+    let undeclared = orchestrator::nothing_to_ask_reason(&none, Group::TV);
     assert!(
-        undeclared.contains("No source on this tab serves 'TV'"),
+        undeclared.contains("No checked source serves 'TV'"),
         "{}",
         undeclared
     );
-    assert!(undeclared.contains("Options"), "{}", undeclared);
+    assert!(undeclared.contains("Sources panel"), "{}", undeclared);
 
-    // The `all` tab reaches every source, so it never blames a filter.
-    let all = orchestrator::nothing_to_ask_reason("all", Group::Games);
-    assert!(all.contains("No source on this tab serves 'Games'"), "{}", all);
-
-    // rutracker filters now (its f[] slot was verified live), so even the
-    // default tab with a category selected gets the generic line rather
-    // than the "cannot filter yet" one.
-    let rutracker = orchestrator::nothing_to_ask_reason("rutracker", Group::Movies);
+    // Sources checked, but none serves the group: same advice, and it
+    // names the panel rather than a tab that no longer exists.
+    let yts_only = vec!["yts".to_string()];
+    let wrong_group = orchestrator::nothing_to_ask_reason(&yts_only, Group::TV);
     assert!(
-        rutracker.contains("No source on this tab serves 'Movies'"),
+        wrong_group.contains("No checked source serves 'TV'"),
         "{}",
-        rutracker
+        wrong_group
     );
+    assert!(!wrong_group.contains("tab"), "{}", wrong_group);
 }
 
 /// B9: an empty query is browse mode, and a source that cannot answer
@@ -417,7 +416,7 @@ fn a_browse_asks_only_the_sources_that_can_answer_an_empty_query() {
         .map(|s| s.id.to_string())
         .collect();
     let ids = |browse: bool| -> Vec<&'static str> {
-        orchestrator::selected_sources("all", &all, None, browse)
+        orchestrator::selected_sources(&all, None, browse)
             .iter()
             .map(|info| info.id)
             .collect()
@@ -438,7 +437,7 @@ fn a_browse_asks_only_the_sources_that_can_answer_an_empty_query() {
 
 #[test]
 fn a_fresh_search_asks_every_selected_source_from_zero() {
-    let selected = orchestrator::selected_sources("all", &both_enabled(), None, false);
+    let selected = orchestrator::selected_sources(&both_enabled(), None, false);
     let offsets = std::collections::HashMap::new();
     let has_more = std::collections::HashMap::new();
 
@@ -452,7 +451,7 @@ fn a_fresh_search_asks_every_selected_source_from_zero() {
 
 #[test]
 fn load_more_asks_only_sources_that_reported_another_page() {
-    let selected = orchestrator::selected_sources("all", &both_enabled(), None, false);
+    let selected = orchestrator::selected_sources(&both_enabled(), None, false);
     let mut offsets = std::collections::HashMap::new();
     offsets.insert("rutor".to_string(), 100);
     offsets.insert("rutracker".to_string(), 50);
@@ -473,7 +472,7 @@ fn load_more_asks_only_sources_that_reported_another_page() {
 
 #[test]
 fn a_source_that_failed_gets_retried_from_where_it_stopped() {
-    let selected = orchestrator::selected_sources("all", &both_enabled(), None, false);
+    let selected = orchestrator::selected_sources(&both_enabled(), None, false);
     let mut offsets = std::collections::HashMap::new();
     offsets.insert("rutracker".to_string(), 50);
     let mut has_more = std::collections::HashMap::new();

@@ -15,7 +15,9 @@ use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, So
 use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
-use crate::ui::app::{App as UiApp, AppState, Modal, TorrentStatus, UiAction};
+use crate::ui::app::{
+    App as UiApp, AppState, Modal, TorrentStatus, UiAction, sources_summary,
+};
 use crate::ui::modals::settings::SettingsAction;
 use crate::ui::zones::ZoneId;
 use crate::ui::menu::MenuItem;
@@ -406,7 +408,7 @@ impl App {
                 config.truecolor,
                 config.false_tty,
             )
-            .with_result_tabs(&config),
+            .with_group_tabs(&config),
             event_handler,
             torrserver,
             browser: None,
@@ -444,7 +446,7 @@ impl App {
         loop {
             terminal.draw(|frame| {
                 self.terminal_size = (frame.area().width, frame.area().height);
-                self.ui.render(frame);
+                self.ui.render(frame, &self.config);
             })?;
 
             tokio::select! {
@@ -672,7 +674,13 @@ impl App {
                             // placeholder respectively) -- focusing them on
                             // hover is still correct, there's just no list
                             // to move within.
-                            ZoneId::Torrent | ZoneId::Extra => {}
+                            // Torrent and Extra have nothing scrollable yet
+                            // (a single status readout, and an unbuilt
+                            // placeholder respectively), and Sources
+                            // scrolls its cursor rather than a list --
+                            // focusing any of them on hover is still
+                            // correct.
+                            ZoneId::Torrent | ZoneId::Extra | ZoneId::Sources => {}
                         }
                     }
                 }
@@ -686,7 +694,13 @@ impl App {
                         match id {
                             ZoneId::Log => self.ui.scroll_logs_down(),
                             ZoneId::Results => self.handle_nav_down().await,
-                            ZoneId::Torrent | ZoneId::Extra => {}
+                            // Torrent and Extra have nothing scrollable yet
+                            // (a single status readout, and an unbuilt
+                            // placeholder respectively), and Sources
+                            // scrolls its cursor rather than a list --
+                            // focusing any of them on hover is still
+                            // correct.
+                            ZoneId::Torrent | ZoneId::Extra | ZoneId::Sources => {}
                         }
                     }
                 }
@@ -703,7 +717,7 @@ impl App {
                     // field does what `s`/`i` do.
                     self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
-                    match self.ui.click_at(mouse.row, mouse.column) {
+                    match self.ui.click_at(mouse.row, mouse.column, &mut self.config) {
                         Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,
                         Some(UiAction::Remove) => self.remove_active_torrent().await,
                         Some(UiAction::Download) => self.download_selected_to_disk().await,
@@ -921,6 +935,9 @@ impl App {
                 }
             }
             ZoneId::Log => self.ui.scroll_logs_down(),
+            // The Sources panel is a list like the others, so the same
+            // keys move its cursor -- the one piece of state it has.
+            ZoneId::Sources => self.ui.navigate_sources(1),
             _ => {}
         }
     }
@@ -931,6 +948,7 @@ impl App {
         match self.ui.zones.focused {
             ZoneId::Results => { self.ui.navigate_up(); }
             ZoneId::Log => self.ui.scroll_logs_up(),
+            ZoneId::Sources => self.ui.navigate_sources(-1),
             _ => {}
         }
     }
@@ -1046,19 +1064,6 @@ impl App {
                         } else {
                             "TorrServer: not reachable"
                         });
-                        self.ui.open_settings(&self.config);
-                    }
-                    SettingsAction::ToggleSource(id) => {
-                        if self.config.enabled_sources.iter().any(|s| s == id) {
-                            self.config.enabled_sources.retain(|s| s != id);
-                        } else {
-                            self.config.enabled_sources.push(id.to_string());
-                        }
-                        // Both Results rows are derived from this same
-                        // list: a source switched off loses its tab (and
-                        // may vacate the one that was selected), and can
-                        // take the last tab of its category row with it.
-                        self.ui.set_result_tabs(&self.config);
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::OpenLog => {
@@ -1273,6 +1278,9 @@ impl App {
             KeyCode::Char('4') if !self.ui.input_mode => {
                 self.ui.zones.toggle(ZoneId::Extra);
             }
+            KeyCode::Char('5') if !self.ui.input_mode => {
+                self.ui.zones.toggle(ZoneId::Sources);
+            }
             KeyCode::Char('p') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent => {
                 self.toggle_pause_active_torrent().await;
             }
@@ -1285,13 +1293,10 @@ impl App {
             KeyCode::Char('v') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
                 self.show_selected_info();
             }
-            KeyCode::Char(']') if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results => {
-                self.ui.cycle_source();
-            }
-            // The category row's keys, next to `]` and gated the same
+            // The category row's keys, next to `g`/`G` and gated the same
             // way: `g` steps forward, `G` (shift) back. Both only ever
             // move the row and re-derive the view -- the search still
-            // waits for Enter, exactly as it does after `]`.
+            // waits for Enter, exactly as it does after a category switch.
             KeyCode::Char('g') if !self.ui.input_mode
                 && self.ui.zones.focused == ZoneId::Results =>
             {
@@ -1301,6 +1306,25 @@ impl App {
                 && self.ui.zones.focused == ZoneId::Results =>
             {
                 self.ui.cycle_group(false);
+            }
+            // The Sources panel's own keys: `j`/`k` move the cursor
+            // (wrapping, like every other list in the app), Enter switches
+            // the row under it. Both are gated on the panel being focused
+            // for the same reason `g`/`G` are gated on Results -- a key
+            // that moved a cursor somewhere the user is not looking would
+            // be a surprise.
+            KeyCode::Char('j') if self.config.vim_keys
+                && self.ui.zones.focused == ZoneId::Sources =>
+            {
+                self.ui.navigate_sources(1);
+            }
+            KeyCode::Char('k') if self.config.vim_keys
+                && self.ui.zones.focused == ZoneId::Sources =>
+            {
+                self.ui.navigate_sources(-1);
+            }
+            KeyCode::Enter if self.ui.zones.focused == ZoneId::Sources => {
+                self.ui.toggle_source(&mut self.config);
             }
             KeyCode::Char('j') if self.config.vim_keys => {
                 self.handle_nav_down().await;
@@ -1338,12 +1362,8 @@ impl App {
             KeyCode::Char('b') if !self.ui.input_mode => {
                 // Browse (B9): an empty query asks the browse-capable
                 // sources for their freshest rows. Browse is cross-source
-                // by nature, so it takes the `all` tab and the "all"
-                // category with it -- a mixed list of rows claiming no
-                // group must stay visible, and a single source's tab
-                // would either answer nothing (rutracker cannot browse)
-                // or hide the rest.
-                self.ui.active_source = "all".to_string();
+                // by nature, so it takes the "all" category with it -- a
+                // mixed list of rows claiming no group must stay visible.
                 self.ui.source_changed = true;
                 self.ui.set_group(None);
                 self.start_search(String::new()).await;
@@ -1540,8 +1560,10 @@ impl App {
             None => String::new(),
         };
         self.ui.add_log(&format!(
-            "Searching '{}'{} for '{}'...",
-            self.ui.active_source, category, query
+            "Searching '{}'{} across {}...",
+            query,
+            category,
+            sources_summary(&self.config)
         ));
         // New generation: anything still in flight for a previous query is
         // now stale and gets dropped when it lands (B0.2).
@@ -1551,8 +1573,8 @@ impl App {
     }
 
     /// Kick off the search for `query`: one task per source
-    /// `orchestrator::selected_sources` picks (Results tab + Options)
-    /// and `orchestrator::dispatch_plan` says is worth asking (a fresh
+    /// `orchestrator::selected_sources` picks (the Sources panel's
+    /// checkboxes, narrowed by the selected category) and `orchestrator::dispatch_plan` says is worth asking (a fresh
     /// search asks everyone, a "load more" asks only the sources that
     /// reported another page, each at its own cursor), each task under
     /// the per-source deadline. Every task reports in on its
@@ -1572,22 +1594,22 @@ impl App {
         let browsing = query.trim().is_empty();
         self.ui.browsing = browsing;
         let selected = orchestrator::selected_sources(
-            &self.ui.active_source,
             &self.config.enabled_sources,
             self.ui.active_group,
             browsing,
         );
         if selected.is_empty() {
-            // Two ways to get here, and they have different fixes: the
-            // tab's source is off, or nothing the tab can reach serves
-            // the selected category (B6) -- the orchestrator words the
+            // Two ways to get here, and they have different fixes: no
+            // source is checked at all, or nothing the panel reaches
+            // serves the selected category -- the orchestrator words the
             // second one by what would actually change it.
             let reason = match self.ui.active_group {
-                Some(group) => {
-                    orchestrator::nothing_to_ask_reason(&self.ui.active_source, group)
-                }
+                Some(group) => orchestrator::nothing_to_ask_reason(
+                    &self.config.enabled_sources,
+                    group,
+                ),
                 None => {
-                    "Selected source is disabled in Options -> streaming -> Sources."
+                    "No source is checked -- the Sources panel (5) is where they are switched on."
                         .to_string()
                 }
             };
