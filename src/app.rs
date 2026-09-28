@@ -16,7 +16,8 @@ use crate::torrserver::api::TorrServer;
 use crate::bridge::handler::BridgeServer;
 use crate::tui;
 use crate::ui::app::{
-    App as UiApp, AppState, Modal, TorrentStatus, UiAction, sources_summary,
+    App as UiApp, AppState, DetailAction, Modal, TorrentStatus, TorrentDetailState, UiAction,
+    sources_summary,
 };
 use crate::ui::modals::settings::SettingsAction;
 use crate::ui::zones::ZoneId;
@@ -238,6 +239,36 @@ pub fn apply_source_done(
     true
 }
 
+/// Merge a detail modal's file list into the modal (П.7).
+///
+/// A free function over `&mut UiApp` for the same reason as
+/// [`apply_source_done`]: the "is this answer still wanted?" decision is
+/// the interesting part, and it should be testable without a terminal or
+/// a running event loop.
+///
+/// The answer is tagged with the page it was asked about, so opening
+/// another row's details drops the previous row's file list instead of
+/// showing it in the wrong modal. A closed modal drops it too.
+pub fn apply_detail_loaded(
+    ui: &mut UiApp,
+    page_url: &str,
+    files: Vec<crate::sources::models::FileEntry>,
+    error: Option<&str>,
+) {
+    if let Modal::TorrentDetail(ref mut state) = ui.modal {
+        if state.item.page_url == page_url {
+            state.files = files;
+            state.pending = false;
+            state.error = error.map(|e| e.to_string());
+            // The cursor was clamped to the old list; a shorter answer
+            // must not leave it past the end.
+            if state.cursor >= state.files.len() {
+                state.cursor = state.files.len().saturating_sub(1);
+            }
+        }
+    }
+}
+
 /// Every source of `generation` reported in (or failed to): nothing more
 /// is coming for it, so the UI goes idle. Whether "Load more" still has
 /// anything to offer is read from the per-source `has_more` verdicts
@@ -400,6 +431,7 @@ impl App {
             ui: UiApp::new(
                 torrserver_url.clone(),
                 browser_visibility == BrowserVisibility::Hidden,
+                config.vim_keys,
                 config.theme_name.as_deref(),
                 resolve_download_dir(&config),
                 config.graph_symbol.clone(),
@@ -571,6 +603,14 @@ impl App {
                                 self.ui.progress_history.clear();
                             }
                             self.ui.active_torrent_hash = Some(hash);
+                        }
+                        Event::DetailLoaded { page_url, files, error } => {
+                            apply_detail_loaded(
+                                &mut self.ui,
+                                &page_url,
+                                files,
+                                error.as_deref(),
+                            );
                         }
                     }
                 }
@@ -895,7 +935,7 @@ impl App {
     }
 
     /// Show the selected result's full details in the log -- the 'v'
-    /// action from the Results panel's bottom action bar.
+    /// action from the Results panel's bottom action row.
     fn show_selected_info(&mut self) {
         let Some(item) = self.ui.results.get(self.ui.selected) else {
             self.ui.add_log("No result selected.");
@@ -906,6 +946,40 @@ impl App {
             "INFO: {}  |  size={}  seeds={}  date={}  source={}  url={}",
             item.title, item.size, item.seeds, item.date, source, item.page_url,
         ));
+    }
+
+    /// Open the detail modal for the selected row (П.7, Shift+Enter) and
+    /// ask its source for the file list.
+    ///
+    /// The row's own facts go on screen at once -- the modal is never an
+    /// empty box waiting on the network. The file list is one request
+    /// away and arrives as [`Event::DetailLoaded`], tagged with the page
+    /// it was asked about so an answer for a row the user has already
+    /// left is dropped rather than shown in the next row's modal.
+    async fn open_detail_modal(&mut self) {
+        let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
+            self.ui.add_log("No result selected.");
+            return;
+        };
+        self.ui.modal = Modal::TorrentDetail(Box::new(TorrentDetailState::new(item.clone())));
+
+        let source = match self.get_source(source_id_for(&item)).await {
+            Ok(source) => source,
+            Err(e) => {
+                self.ui.add_log(&e.to_string());
+                return;
+            }
+        };
+        let page_url = item.page_url.clone();
+        let tx = self.event_handler.sender();
+        tokio::spawn(async move {
+            let outcome = source.details(&page_url).await;
+            let (files, error) = match outcome {
+                Ok(files) => (files, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+            let _ = tx.send(Event::DetailLoaded { page_url, files, error });
+        });
     }
 
     /// See the free function of the same name for the resolution logic;
@@ -997,6 +1071,24 @@ impl App {
             // The help page owns the keyboard while it is up, exactly
             // like btop's `helpMenu` -- every key lands here.
             self.ui.help_key(key);
+            return Ok(());
+        }
+
+        if let Modal::TorrentDetail(_) = self.ui.modal {
+            // The detail modal owns the keyboard too: j/k move the file
+            // cursor, Enter plays, `d` downloads, Esc/q close. The two
+            // actions that belong to the orchestrator come back.
+            if let Some(action) = self.ui.detail_key(key) {
+                match action {
+                    DetailAction::Play => {
+                        // Playing leaves the modal: the user is going
+                        // to watch the torrent, not read about it.
+                        self.ui.modal = Modal::None;
+                        self.spawn_stream().await;
+                    }
+                    DetailAction::Download => self.download_selected_to_disk().await,
+                }
+            }
             return Ok(());
         }
 
@@ -1102,6 +1194,7 @@ impl App {
                     }
                     SettingsAction::ToggleVimKeys => {
                         self.config.vim_keys = !self.config.vim_keys;
+                        self.ui.vim_keys = self.config.vim_keys;
                         self.ui.open_settings(&self.config);
                     }
                     SettingsAction::ToggleMouse => {
@@ -1325,6 +1418,16 @@ impl App {
             }
             KeyCode::Enter if self.ui.zones.focused == ZoneId::Sources => {
                 self.ui.toggle_source(&mut self.config);
+            }
+            // Shift+Enter: the selected row's details (П.7). Separate
+            // from the plain Enter below on purpose -- that one plays
+            // or re-searches, and a modifier is the only thing that can
+            // tell the two apart.
+            KeyCode::Enter
+                if key.modifiers.contains(KeyModifiers::SHIFT)
+                    && !self.ui.input_mode =>
+            {
+                self.open_detail_modal().await;
             }
             KeyCode::Char('j') if self.config.vim_keys => {
                 self.handle_nav_down().await;

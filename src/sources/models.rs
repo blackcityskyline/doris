@@ -38,7 +38,7 @@ impl FlexNum {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TorrentItem {
     pub title: String,
     #[serde(default)]
@@ -96,6 +96,17 @@ pub struct TorrentItem {
     /// Unix seconds when the row was added; `0` = unknown.
     #[serde(default)]
     pub added: i64,
+}
+
+/// One file inside a torrent, as the detail modal lists it (П.7).
+///
+/// Deliberately two fields: a source that can list files has a name and
+/// a size for each, and one that cannot say more still lets the modal
+/// show the row's own facts instead of failing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub size: String,
 }
 
 impl TorrentItem {

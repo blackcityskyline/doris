@@ -12,6 +12,7 @@ fn make_app() -> UiApp {
     UiApp::new(
         "http://127.0.0.1:8090".into(),
         true,
+        true,
         None,
         "/tmp".into(),
         "braille".into(),
@@ -48,8 +49,9 @@ fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
 fn test_help_text_names_the_documented_keybinds() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
     for expected in [
-        "s, i", "Enter", "b", "S", "L", "F", "f", "m", "1, 2, 3, 4, 5", "Tab, Shift+Tab",
-        "j, k, Up, Down", "g, G", "d", "v", "p", "Esc", "q, ctrl + c", "? , /, F1",
+        "s, i", "Enter", "Shift+Enter", "b", "S", "L", "F", "f", "m", "1, 2, 3, 4, 5",
+        "Tab, Shift+Tab", "j, k, Up, Down", "g, G", "d", "v", "p", "Esc", "q, ctrl + c",
+        "? , /, F1",
     ] {
         assert!(
             keys.iter().any(|k| k == &expected),

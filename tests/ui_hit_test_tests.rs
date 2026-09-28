@@ -9,6 +9,7 @@ fn make_app() -> UiApp {
     UiApp::new(
         "http://127.0.0.1:8090".to_string(),
         true,
+        true,
         None,
         "/tmp".into(),
         "braille".into(),
