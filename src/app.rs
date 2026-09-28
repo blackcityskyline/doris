@@ -1956,46 +1956,7 @@ impl App {
                         while let Ok(Some(line)) = reader.next_line().await {
                             let l = line.trim();
                             if l.is_empty() { continue; }
-                            let low = l.to_lowercase();
-                            if low.contains("vo:")
-                                || low.contains("ao:")
-                                || low.contains("av:")
-                                || low.contains("video:")
-                                || low.contains("audio:")
-                                || low.contains("cache")
-                                || low.contains("hwdec")
-                                || low.contains("vaapi")
-                                || low.contains("vdpau")
-                                || low.contains("nvdec")
-                                || low.contains("cuda")
-                                || low.contains("drm")
-                                || low.contains("duration:")
-                                || low.contains("playing:")
-                                || low.contains("exiting")
-                                || low.contains("resume")
-                                || low.contains("track")
-                                || low.contains("tag:")
-                                || low.contains("kbps")
-                                || low.contains("fps")
-                                || low.contains("h264")
-                                || low.contains("h265")
-                                || low.contains("hevc")
-                                || low.contains("av1")
-                                || low.contains("vp9")
-                                || low.contains("aac")
-                                || low.contains("ac3")
-                                || low.contains("opus")
-                                || low.contains("flac")
-                                || low.contains("passthrough")
-                                || low.contains("format")
-                                || low.contains("video output")
-                                || low.contains("audio output")
-                                || low.contains("pix_fmt")
-                                || low.contains("backend")
-                                || low.contains("1056")
-                                || low.contains("1920")
-                                || low.contains("1280")
-                            {
+                            if crate::player_log::should_log(l) {
                                 log(&format!("MPV: {}", l));
                             }
                         }
