@@ -238,11 +238,6 @@ pub struct App {
     /// the browser behind it was always reused via `get_browser()` and
     /// still is.
     sources: HashMap<&'static str, Arc<dyn Source>>,
-    /// Where each source of the current dispatch stands (B3): `Pending`
-    /// while its task runs, then `Ok`/`Error`/`Timeout` from its
-    /// `SourceDone`. The log line is the interim surface; a status row
-    /// can render this map later.
-    source_status: HashMap<String, SourceStatus>,
     /// Each source's last "has another page" verdict (B2/B3): consulted
     /// by "Load more" and turned into `ui.all_loaded` by
     /// [`finish_search`].
@@ -317,7 +312,6 @@ impl App {
             torrserver,
             browser: None,
             sources: HashMap::new(),
-            source_status: HashMap::new(),
             source_has_more: HashMap::new(),
             source_offsets: HashMap::new(),
             cache: Arc::new(SearchCache::new()),
@@ -392,7 +386,7 @@ impl App {
                                     error.as_deref(),
                                     timed_out,
                                 );
-                                self.source_status.insert(source.clone(), status);
+                                self.ui.source_status.insert(source.clone(), status);
                                 self.source_has_more.insert(source.clone(), has_more);
                                 // Failures deliver no rows and no cursor,
                                 // so a failed page leaves the cursor where
@@ -1608,7 +1602,7 @@ impl App {
         self.ui.results.clear();
         self.ui.selected = 0;
         self.ui.update_filter();
-        self.source_status.clear();
+        self.ui.source_status.clear();
         self.source_has_more.clear();
         self.source_offsets.clear();
         let category = match self.ui.active_group {
@@ -1719,13 +1713,15 @@ impl App {
                     // still owes the user a line (B0.3).
                     self.ui
                         .add_log(&source_outcome_line(info.id, &Err(e.to_string())));
-                    self.source_status
+                    self.ui
+                        .source_status
                         .insert(info.id.to_string(), SourceStatus::Error(e.to_string()));
                     continue;
                 }
             };
 
-            self.source_status
+            self.ui
+                .source_status
                 .insert(info.id.to_string(), SourceStatus::Pending);
             let mut req = SearchRequest::new(query.clone(), offset);
             // The selection rides along (B6): a source that can filter

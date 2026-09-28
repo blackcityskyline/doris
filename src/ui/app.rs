@@ -3,6 +3,7 @@ use super::theme::Theme;
 use super::zones::{FrameButton, FrameSlot, ZoneId, ZoneLayout, SEARCH_BAR_HEIGHT};
 use crate::config::Config;
 use crate::sources::models::{FileEntry, TorrentItem};
+use crate::sources::orchestrator::SourceStatus;
 use crate::sources::source::{Group, KNOWN_SOURCES};
 use crate::ui::modals::help::HelpState;
 use crate::ui::modals::login::LoginState;
@@ -10,7 +11,7 @@ use crate::ui::modals::settings::{group_tabs, SettingsState};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(PartialEq)]
 pub enum AppState {
@@ -115,6 +116,11 @@ pub struct App {
     pub detail_log_mode: bool,
     pub detail_log_scroll: usize,
     pub state: AppState,
+    /// What each source answered for the running search: pending, how
+    /// many rows, an error or a deadline. Lives here because this is
+    /// the only place that ever shows it -- the Sources panel reads it
+    /// per row.
+    pub source_status: HashMap<String, SourceStatus>,
     pub torrserver_url: String,
     pub running: bool,
     pub input_mode: bool,
@@ -289,6 +295,41 @@ pub fn source_row_at(index: usize) -> Option<SourceRow> {
     source_rows().into_iter().nth(index)
 }
 
+/// How much of a source's error text a Sources row shows. An error is a
+/// sentence, and a sentence does not fit on a one-line row.
+const STATUS_TEXT_WIDTH: usize = 24;
+
+/// What a Sources row appends after its checkbox: what that source
+/// answered for the search that ran. Without it the panel said only
+/// which sources were *asked*, never which of them replied.
+fn source_status_text(status: &SourceStatus) -> String {
+    match status {
+        SourceStatus::Pending => "…".to_string(),
+        SourceStatus::Ok(rows) => format!("✓ {rows}"),
+        SourceStatus::Timeout => "✗ timeout".to_string(),
+        SourceStatus::Error(err) => {
+            let clipped: String = err.chars().take(STATUS_TEXT_WIDTH).collect();
+            if err.chars().count() > STATUS_TEXT_WIDTH {
+                format!("✗ {clipped}…")
+            } else {
+                format!("✗ {err}")
+            }
+        }
+    }
+}
+
+/// The status's own colour, so a failure reads at a glance: dim while
+/// still in flight, the informational mid-bright for an answer, red for
+/// a refusal. The label says it in words too, so colour is never the
+/// only channel carrying the meaning.
+fn source_status_style(status: &SourceStatus, theme: &Theme) -> Style {
+    match status {
+        SourceStatus::Pending => Style::default().fg(theme.inactive_fg.to_color()),
+        SourceStatus::Ok(_) => Style::default().fg(theme.graph_text.to_color()),
+        SourceStatus::Timeout | SourceStatus::Error(_) => Style::default().fg(Color::Red),
+    }
+}
+
 /// What the Results frame's info slot says the search is asking:
 /// `all` when every implemented source is checked (the default view),
 /// `none` when nothing is, otherwise the checked ids in registry order.
@@ -360,6 +401,7 @@ impl App {
             detail_log_mode: false,
             detail_log_scroll: 0,
             state: AppState::Idle,
+            source_status: HashMap::new(),
             torrserver_url,
             running: true,
             input_mode: false,
@@ -1410,28 +1452,53 @@ impl App {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        let rows: Vec<Line> = source_rows()
+        // The status reads as a column only if every id is padded to
+        // the widest one, so an answer lands under the answer above it
+        // instead of trailing each name at its own length.
+        let roster = source_rows();
+        let id_width = roster
+            .iter()
+            .map(|r| r.id().chars().count())
+            .max()
+            .unwrap_or(3);
+        let rows: Vec<Line> = roster
             .into_iter()
             .enumerate()
             .map(|(index, row)| {
                 let checked = row.is_checked(config);
                 let mark = if checked { "x" } else { " " };
-                let mut text = format!("[{}] {}", mark, row.id());
-                // A planned source is listed -- so the next one is
-                // visible where it will land -- but says so instead of
-                // pretending it can be switched on.
-                if !row.is_implemented() {
-                    text.push_str(" (planned)");
-                }
                 let mut style = if !row.is_implemented() {
                     Style::default().fg(self.theme.inactive_fg.to_color())
                 } else {
                     Style::default().fg(self.theme.main_fg.to_color())
                 };
-                if index == self.sources_cursor {
+                let cursor = index == self.sources_cursor;
+                if cursor {
                     style = style.add_modifier(Modifier::REVERSED);
                 }
-                Line::from(Span::styled(text, style))
+                let mut spans = vec![Span::styled(
+                    format!("[{}] {:<width$}", mark, row.id(), width = id_width),
+                    style,
+                )];
+                if let SourceRow::One(source_id) = row {
+                    if let Some(status) = self.source_status.get(source_id) {
+                        let mut status_style = source_status_style(status, &self.theme);
+                        if cursor {
+                            status_style = status_style.add_modifier(Modifier::REVERSED);
+                        }
+                        spans.push(Span::styled(
+                            format!(" {}", source_status_text(status)),
+                            status_style,
+                        ));
+                    }
+                }
+                // A planned source is listed -- so the next one is
+                // visible where it will land -- but says so instead of
+                // pretending it can be switched on.
+                if !row.is_implemented() {
+                    spans.push(Span::styled(" (planned)", style));
+                }
+                Line::from(spans)
             })
             .collect();
 
