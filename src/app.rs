@@ -1761,7 +1761,7 @@ impl App {
                     orchestrator::nothing_to_ask_reason(&self.config.enabled_sources, group)
                 }
                 None => {
-                    "No source is checked -- the Sources panel (5) is where they are switched on."
+                    "No source is checked -- the Sources panel (4) is where they are switched on."
                         .to_string()
                 }
             };
@@ -2373,5 +2373,77 @@ mod key_routing_tests {
             "the full log must have it too:\n{full}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `g`/`G` are Results keys: they cycle the category when the panel
+    /// has focus, and they are letters of the query when the box is
+    /// being typed into -- the same hand-over every other key gets.
+    #[tokio::test]
+    async fn g_cycles_the_category_and_types_when_the_box_is_open() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.zones.focused = ZoneId::Results;
+        // The category row is derived from what is checked, and this app
+        // starts with nothing checked.
+        app.config.enabled_sources = vec!["rutracker".into(), "tpb".into(), "yts".into()];
+        app.ui.set_group_tabs(&app.config);
+        let all = app.ui.active_group;
+
+        app.handle_key(press(KeyCode::Char('g'))).await.expect("g");
+        assert_ne!(app.ui.active_group, all, "the category moved forward");
+        assert!(app.ui.group_changed, "Enter owes the server-side search");
+
+        app.handle_key(press(KeyCode::Char('G'))).await.expect("G");
+        assert_eq!(app.ui.active_group, all, "and back again");
+
+        app.ui.enter_input_mode();
+        let parked = app.ui.active_group;
+        app.handle_key(press(KeyCode::Char('g'))).await.expect("g");
+        assert_eq!(app.ui.active_group, parked, "typing must not move it");
+        assert_eq!(app.ui.search_input, "g", "the letter belongs to the query");
+    }
+
+    /// The category travels with the search: it is named in the line the
+    /// user reads, and a category no checked source can serve says so --
+    /// the honest "Anime 0/0" answer, rather than a table that looks
+    /// like nothing was found.
+    #[tokio::test]
+    async fn a_search_names_its_category_and_says_when_nothing_can_answer_it() {
+        let mut app = app_focused_on_sources(None).await;
+        app.config.enabled_sources = vec!["yts".to_string()]; // Movies only
+        app.ui.active_group = Some(source::Group::TV);
+
+        app.start_search("matrix".to_string()).await;
+
+        let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            logs.contains("Searching 'matrix' [TV]"),
+            "the category is named in the log:\n{logs}"
+        );
+        assert!(
+            logs.contains("No checked source serves 'TV'"),
+            "and the reason for the empty table names it:\n{logs}"
+        );
+        assert!(
+            app.ui.state == AppState::Idle,
+            "nothing was dispatched, so nothing is searching"
+        );
+    }
+
+    /// The other empty-dispatch: nothing checked at all. The line has to
+    /// name the key the Sources panel is on, which moved to `4` when the
+    /// placeholder zone went away -- a stale key points at a zone that
+    /// does not exist.
+    #[tokio::test]
+    async fn nothing_checked_points_at_the_panel_that_switches_them() {
+        let mut app = app_focused_on_sources(None).await;
+        assert!(app.config.enabled_sources.is_empty(), "starts unchecked");
+
+        app.start_search("matrix".to_string()).await;
+
+        let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            logs.contains("Sources panel (4)"),
+            "the message must name the panel's current key:\n{logs}"
+        );
     }
 }

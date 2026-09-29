@@ -400,6 +400,12 @@ fn the_empty_dispatch_explains_which_fix_actually_applies() {
         undeclared
     );
     assert!(undeclared.contains("Sources panel"), "{}", undeclared);
+    assert!(
+        undeclared.contains("panel (4)"),
+        "the panel is on key 4 now -- a stale key sends the user to a\n\
+         zone that does not exist: {}",
+        undeclared
+    );
 
     // Sources checked, but none serves the group: same advice, and it
     // names the panel rather than a tab that no longer exists.
