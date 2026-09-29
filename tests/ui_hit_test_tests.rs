@@ -158,7 +158,7 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
     assert_eq!(app.selected, 3);
 }
 
-// --- the Sources panel (П.4) ----------------------------------------------
+// --- the Trackers panel (П.4) ----------------------------------------------
 
 /// The panel's rows are the registry plus the `all` switch, in the order
 /// they are drawn -- so a new source lands in the list on its own, and
@@ -309,14 +309,14 @@ fn test_the_cursor_wraps_in_both_directions() {
     let mut app = make_app();
     let len = doris::ui::app::source_rows().len() as i64;
 
-    app.navigate_sources(-1);
+    app.navigate_trackers(-1);
     assert_eq!(
         app.sources_cursor,
         len as usize - 1,
         "up from the top wraps to the bottom"
     );
 
-    app.navigate_sources(1);
+    app.navigate_trackers(1);
     assert_eq!(app.sources_cursor, 0, "and back to the top");
 }
 
@@ -328,19 +328,19 @@ fn test_clicking_a_panel_row_switches_it() {
     let mut app = make_app();
     let mut config = Config::default();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let area = app.zones.get_area(ZoneId::Sources);
+    let area = app.zones.get_area(ZoneId::Trackers);
     assert!(area.height > 3, "the panel is on screen");
 
     // The `all` row is the first line inside the border. The panel's
     // checkbox is not a frame action, but it has to report itself so the
     // orchestrator can persist the change.
     let action = app.click_at(area.y + 1, area.x + 1, &mut config);
-    assert_eq!(action, Some(doris::ui::app::UiAction::SourcesChanged));
+    assert_eq!(action, Some(doris::ui::app::UiAction::TrackersChanged));
     assert!(
         config.enabled_sources.is_empty(),
         "the default view has everything on, so the click cleared it"
     );
-    assert_eq!(app.zones.focused, ZoneId::Sources);
+    assert_eq!(app.zones.focused, ZoneId::Trackers);
 }
 
 /// The same gate the keyboard has: while a query is being typed the
@@ -353,7 +353,7 @@ fn test_clicking_a_panel_row_while_typing_does_not_switch_it() {
     let mut config = Config::default();
     app.enter_input_mode();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let area = app.zones.get_area(ZoneId::Sources);
+    let area = app.zones.get_area(ZoneId::Trackers);
 
     let action = app.click_at(area.y + 1, area.x + 1, &mut config);
 

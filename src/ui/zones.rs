@@ -17,12 +17,14 @@ const MIN_SPLIT_ROWS: u16 = 4;
 pub enum ZoneId {
     Results = 1,
     Torrent = 2,
-    Log = 3,
-    /// The sources checklist (П.4): which sources the search asks. It
-    /// took the number the "Extra" placeholder used to hold, so the
-    /// zone a user actually touches sits at `4` instead of hiding
+    /// The trackers checklist (П.4): which sources the search asks.
+    /// It took the number the "Extra" placeholder used to hold, so the
+    /// zone a user actually touches sits at `3` instead of hiding
     /// behind a fifth key of a panel that drew nothing.
-    Sources = 4,
+    Trackers = 3,
+    /// The log moved to the last slot so the zone keyboard reads
+    /// Results / Torrent / Trackers / Log in row order.
+    Log = 4,
 }
 
 /// `(digit key, label)` per zone. One row per [`ZoneId`] -- the three
@@ -33,8 +35,8 @@ pub enum ZoneId {
 const ZONE_ROWS: &[(ZoneId, char, &str)] = &[
     (ZoneId::Results, '1', "Results"),
     (ZoneId::Torrent, '2', "Torrent"),
-    (ZoneId::Log, '3', "Log"),
-    (ZoneId::Sources, '4', "Sources"),
+    (ZoneId::Trackers, '3', "Trackers"),
+    (ZoneId::Log, '4', "Log"),
 ];
 
 impl ZoneId {
@@ -42,8 +44,8 @@ impl ZoneId {
         &[
             ZoneId::Results,
             ZoneId::Torrent,
+            ZoneId::Trackers,
             ZoneId::Log,
-            ZoneId::Sources,
         ]
     }
 
@@ -138,8 +140,8 @@ impl ZoneLayout {
             zones: vec![
                 Zone::new(ZoneId::Results, true),
                 Zone::new(ZoneId::Torrent, true),
+                Zone::new(ZoneId::Trackers, true),
                 Zone::new(ZoneId::Log, true),
-                Zone::new(ZoneId::Sources, true),
             ],
             preset: LayoutPreset::default(),
             focused: ZoneId::Results,
@@ -319,7 +321,7 @@ impl ZoneLayout {
         }
 
         let left_visible = self.is_visible(ZoneId::Torrent);
-        let right_visible = self.is_visible(ZoneId::Log) || self.is_visible(ZoneId::Sources);
+        let right_visible = self.is_visible(ZoneId::Log) || self.is_visible(ZoneId::Trackers);
         let half = area.width / 2;
         let (left_w, right_w) = match (left_visible, right_visible) {
             (true, true) => (half, area.width - half),
@@ -336,7 +338,7 @@ impl ZoneLayout {
             let right_x = area.x + left_w;
             // Log and Sources share the column; with one of them hidden
             // the other takes the whole of it.
-            let column: Vec<ZoneId> = [ZoneId::Log, ZoneId::Sources]
+            let column: Vec<ZoneId> = [ZoneId::Log, ZoneId::Trackers]
                 .into_iter()
                 .filter(|id| self.is_visible(*id))
                 .collect();
@@ -516,7 +518,7 @@ const LOG_BUTTONS: &[(FrameSlot, char, &str)] = &[(FrameSlot::TopRight, 'L', "de
 
 /// The buttons drawn on `id`'s frame; empty for zones with no actions.
 ///
-/// The Sources panel has none on purpose: its rows are the actions, and
+/// The Trackers panel has none on purpose: its rows are the actions, and
 /// a frame legend would only repeat what `j`/`k` and Enter already say
 /// (btop's proc panel draws its actions on the border because the rows
 /// there are data, not controls).
@@ -525,7 +527,7 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
         ZoneId::Results => RESULTS_BUTTONS,
         ZoneId::Torrent => TORRENT_BUTTONS,
         ZoneId::Log => LOG_BUTTONS,
-        ZoneId::Sources => &[],
+        ZoneId::Trackers => &[],
     };
     table
         .iter()

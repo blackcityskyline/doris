@@ -120,13 +120,13 @@ Keys `1`-`4` toggle a zone; `5` is deliberately unused.
   - btop-style braille/block/dot history sparkline (`ui/widgets/graph.rs`), not a plain fill bar
   - DL/UL speed, downloaded/total, seeds, peers
   - `p`: pause/resume (TorrServer `drop`/`get`), `d`: remove -- both keyboard and click (see the frame legend below)
-- **Zone 3 (Log)**: Short log panel
-  - Scroll with mouse/j/k; `L` flips to the full log
-- **Zone 4 (Sources)**: the sources checklist -- `[x] all` on top, then one row per
+- **Zone 3 (Trackers)**: the trackers (sources) checklist -- `[x] all` on top, then one row per
   registered source. j/k move the cursor (wrapping), Enter switches the row, clicking
   a row switches it. This is the only place sources are switched: the Results tab
   bar it replaced now just *displays* the selection on its frame (`[all]`,
   `[rutracker, yts]`, `[none]`)
+- **Zone 4 (Log)**: Short log panel
+  - Scroll with mouse/j/k; `L` flips to the full log
 
 ### Frame legend (btop-style)
 
@@ -136,7 +136,7 @@ character that triggers it is `on_hover` + bold -- the highlight marks the
 hotkey, not the alphabet, so `pause` leads with `p` only because that key is
 free here. What is drawn today: `f Filter` and `g group` on Results,
 `p pause` and `d delete` on Torrent, `L detail` on Log, and nothing on
-Sources (its rows *are* the controls). The bottom action row
+Trackers (its rows *are* the controls). The bottom action row
 (`play ⏎` / `download d` / `info v`) is gone -- those three are keyboard
 and help-page actions now, and a legend that repeats them would be a
 second place documenting the same keys.
@@ -204,7 +204,7 @@ colliding with the rose its `secondary` gives the date and badge columns.
 
 ## Key Bindings
 - `s`/`i`: enter search input mode
-- `Enter`: search (in input mode), play (in results mode), or switch the row under the cursor (in the sources panel)
+- `Enter`: search (in input mode), play (in results mode), or switch the row under the cursor (in the trackers panel)
 - `Shift+Enter`/`D`: open the selected row's details (title, source, size, hash, magnet, page, and the file list its source can read)
 - `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the all-category with it)
 - `S`: open settings modal (login is now here too: streaming -> Edit credentials -- there's no top-level login keybind anymore)
@@ -215,7 +215,7 @@ colliding with the rose its `secondary` gives the date and badge columns.
 - `1-4`: toggle zone visibility
 - `Shift+P`: cycle the layout preset -- `Horizontal` (every zone full width, equal
   heights; the default) or `Split` (Results on top at full width, then Torrent down
-  the left and Log + Sources stacked down the right)
+  the left and Log + Trackers stacked down the right)
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
 - `g`/`G`: cycle the category (forward/back; an empty query is browse mode, not a category) -- the `◀ name ▶` button on the Results frame does the same by mouse
@@ -224,7 +224,7 @@ colliding with the rose its `secondary` gives the date and badge columns.
 - `Esc`: close modal / exit input mode / exit filter mode
 - `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)
 - Mouse: click any zone to focus it, click a frame button to
-  trigger it, click a Sources checkbox to switch that source, click the
+  trigger it, click a Trackers checkbox to switch that source, click the
   search box to start typing, scroll wheel over any zone to
   scroll/navigate it
 

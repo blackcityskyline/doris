@@ -399,10 +399,10 @@ fn the_empty_dispatch_explains_which_fix_actually_applies() {
         "{}",
         undeclared
     );
-    assert!(undeclared.contains("Sources panel"), "{}", undeclared);
+    assert!(undeclared.contains("Trackers panel"), "{}", undeclared);
     assert!(
-        undeclared.contains("panel (4)"),
-        "the panel is on key 4 now -- a stale key sends the user to a\n\
+        undeclared.contains("panel (3)."),
+        "the panel is on key 3 now -- a stale key sends the user to a\n\
          zone that does not exist: {}",
         undeclared
     );

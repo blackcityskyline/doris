@@ -1,4 +1,4 @@
-//! The Sources panel shows what each source answered: the map was
+//! The Trackers panel shows what each source answered: the map was
 //! filled in on every dispatch and read by nobody, so a source that
 //! hung or 503'd was invisible unless you happened to catch its line in
 //! the Log.

@@ -173,7 +173,7 @@ impl Theme {
     }
 
     /// The style of the row under the cursor in any list -- the results
-    /// table, the Sources panel, the detail modal's file list.
+    /// table, the Trackers panel, the detail modal's file list.
     ///
     /// Every bundled theme sets `selected_bg`/`selected_fg`, and before
     /// this the renderer read neither: the cursor was reverse video of

@@ -1,4 +1,4 @@
-//! The Sources panel scrolls its roster to follow the cursor: rows past
+//! The Trackers panel scrolls its roster to follow the cursor: rows past
 //! the end of a short zone used to be simply not drawn while the cursor
 //! kept walking every one of them, so it could sit on a row nobody could
 //! see.

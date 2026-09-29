@@ -15,7 +15,7 @@ use std::collections::{HashMap, VecDeque};
 
 /// Where the search is. Failures deliberately have no variant: an error
 /// belongs to one source, not to the whole app, so it lives in
-/// [`App::source_status`] (drawn in the Sources panel) and in the log's
+/// [`App::source_status`] (drawn in the Trackers panel) and in the log's
 /// per-source outcome line -- one source failing never stops the ones
 /// that answered, and the panel must not claim otherwise.
 #[derive(PartialEq)]
@@ -42,7 +42,7 @@ pub enum UiAction {
     /// A Sources checkbox was switched (the panel's click path edits the
     /// config itself, so it has to say so for the orchestrator to
     /// persist it).
-    SourcesChanged,
+    TrackersChanged,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -126,7 +126,7 @@ pub struct App {
     pub state: AppState,
     /// What each source answered for the running search: pending, how
     /// many rows, an error or a deadline. Lives here because this is
-    /// the only place that ever shows it -- the Sources panel reads it
+    /// the only place that ever shows it -- the Trackers panel reads it
     /// per row.
     pub source_status: HashMap<String, SourceStatus>,
     pub torrserver_url: String,
@@ -153,7 +153,7 @@ pub struct App {
     /// reporting it as paused -- so this is the source of truth for what
     /// the 'p' key should do next, not something derived from polling.
     pub torrent_paused: bool,
-    /// Which row of the Sources panel the cursor sits on: 0 is the `all`
+    /// Which row of the Trackers panel the cursor sits on: 0 is the `all`
     /// master switch, 1.. the registry entries. The panel is the only
     /// place sources are switched (П.4), so this is the only cursor the
     /// enabled set has.
@@ -231,7 +231,7 @@ pub fn source_badge(item: &TorrentItem) -> String {
     }
 }
 
-/// One row of the Sources panel: the `all` switch, then the registry in
+/// One row of the Trackers panel: the `all` switch, then the registry in
 /// order (П.4). A row past the end is `None`, so the cursor and the
 /// hit-test share one list to walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,7 +442,7 @@ impl App {
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
             torrent_paused: false,
-            // Which row of the Sources panel the cursor sits on: 0 is
+            // Which row of the Trackers panel the cursor sits on: 0 is
             // the `all` switch, 1.. the registry entries.
             sources_cursor: 0,
             active_group: None,
@@ -572,7 +572,7 @@ impl App {
 
     /// Re-derive the category row from `config` and repair
     /// `active_group` when the tab it pointed at has just disappeared (a
-    /// source switched off in the Sources panel can take a group with it
+    /// source switched off in the Trackers panel can take a group with it
     /// when no other enabled source serves it).
     ///
     /// Called once from `App::new` and after every enable/disable --
@@ -590,9 +590,9 @@ impl App {
         }
     }
 
-    /// Move the Sources panel's cursor by `delta` rows, wrapping both ways
+    /// Move the Trackers panel's cursor by `delta` rows, wrapping both ways
     /// -- btop wraps its lists too, so the panel never dead-ends.
-    pub fn navigate_sources(&mut self, delta: i64) {
+    pub fn navigate_trackers(&mut self, delta: i64) {
         let len = source_rows().len() as i64;
         if len == 0 {
             return;
@@ -601,15 +601,15 @@ impl App {
         self.sources_cursor = next as usize;
     }
 
-    /// The row of the Sources panel under `(row, col)`, given that zone's
+    /// The row of the Trackers panel under `(row, col)`, given that zone's
     /// current area: the top border, then one row per entry of
     /// [`source_rows`], starting one column in. Kept in lockstep with
-    /// render_sources_zone's own layout by construction -- both are one
+    /// render_trackers_zone's own layout by construction -- both are one
     /// row below the top border and start one column after the left
     /// border, the same convention `frame_layout` uses for the buttons it
     /// hangs there.
     pub fn sources_row_at(&self, row: u16, _col: u16) -> Option<SourceRow> {
-        let area = self.zones.get_area(ZoneId::Sources);
+        let area = self.zones.get_area(ZoneId::Trackers);
         if area.width == 0 || area.height == 0 {
             return None;
         }
@@ -704,7 +704,7 @@ impl App {
                     format!(" [F: {}] {} {}", self.zones.filter_input, sources, counts)
                 }
             }
-            ZoneId::Sources => {
+            ZoneId::Trackers => {
                 let checked = config
                     .enabled_sources
                     .iter()
@@ -918,7 +918,7 @@ impl App {
     /// async TorrServer call, a search restart) are returned rather than
     /// performed here, since `ui::App` doesn't own that state.
     ///
-    /// `config` is the live one: the Sources panel edits it, and the
+    /// `config` is the live one: the Trackers panel edits it, and the
     /// Results frame's info slot reads the selection it implies.
     pub fn click_at(&mut self, row: u16, col: u16, config: &mut Config) -> Option<UiAction> {
         let id = self.zone_at(row, col)?;
@@ -955,7 +955,7 @@ impl App {
                     self.selected = idx;
                 }
             }
-            ZoneId::Sources => {
+            ZoneId::Trackers => {
                 // The rows are the controls, so a click is the same as
                 // moving the cursor there and pressing Enter -- except
                 // that Enter's `!input_mode` gate applies here too: the
@@ -969,7 +969,7 @@ impl App {
                         .unwrap_or(self.sources_cursor);
                     if !self.input_mode {
                         self.toggle_source(config);
-                        return Some(UiAction::SourcesChanged);
+                        return Some(UiAction::TrackersChanged);
                     }
                 }
             }
@@ -1220,7 +1220,7 @@ impl App {
     }
 
     /// Draw the main view. `config` rides along because the zones read
-    /// it: the Sources panel's checkboxes and the Results frame's "what
+    /// it: the Trackers panel's checkboxes and the Results frame's "what
     /// the search is asking" slot both come from `enabled_sources`.
     pub fn render(&mut self, frame: &mut Frame, config: &Config) {
         let area = frame.area();
@@ -1245,7 +1245,7 @@ impl App {
                 ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
                 ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
                 ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
-                ZoneId::Sources => self.render_sources_zone(frame, zone_area, *zone_id, config),
+                ZoneId::Trackers => self.render_trackers_zone(frame, zone_area, *zone_id, config),
             }
         }
         super::menu::render_menu(frame, area, &self.menu, &self.theme);
@@ -1269,7 +1269,9 @@ impl App {
                     ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
-                    ZoneId::Sources => self.render_sources_zone(frame, zone_area, *zone_id, config),
+                    ZoneId::Trackers => {
+                        self.render_trackers_zone(frame, zone_area, *zone_id, config)
+                    }
                 }
             }
         }
@@ -1387,7 +1389,7 @@ impl App {
             return "Searching...".to_string();
         }
         if self.results.is_empty() && self.all_sources_failed() {
-            return "Every source failed -- see the Sources panel".to_string();
+            return "Every source failed -- see the Trackers panel".to_string();
         }
         if !self.zones.filter_input.is_empty() && !self.results.is_empty() {
             return format!(
@@ -1506,12 +1508,12 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    /// The Sources panel (П.4): the `all` master switch on top, then one
+    /// The Trackers panel (П.4): the `all` master switch on top, then one
     /// row per registered source, `[x]`/`[ ]` showing whether the search
     /// asks it. The row under the cursor is reversed, the same way the
     /// selected result row is -- the cursor is the panel's only state, and
     /// it has to be visible the same way.
-    fn render_sources_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+    fn render_trackers_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let block = self
             .themed_block(border_color, config)
@@ -1863,7 +1865,7 @@ mod colour_tests {
     }
 
     /// A refusal reads as the error accent wherever a source reports
-    /// one -- the Sources panel marks the same fact in words.
+    /// one -- the Trackers panel marks the same fact in words.
     #[test]
     fn test_a_refusing_source_reads_as_the_error_accent() {
         let theme = Theme::dark();

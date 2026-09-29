@@ -93,7 +93,7 @@ fn bool_str(b: bool) -> String {
 /// Availability rather than a fixed four (the layout B6's question was
 /// asked in): a category no enabled source could answer would be a tab
 /// that can only show an empty table with no explanation, which is the
-/// trap the Sources panel's rows avoid for unchecked sources.
+/// trap the Trackers panel's rows avoid for unchecked sources.
 pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
     let available = |group: Group| {
         KNOWN_SOURCES

@@ -41,7 +41,7 @@ fn test_default_layout_visibility() {
     assert!(zones.is_visible(ZoneId::Results));
     assert!(zones.is_visible(ZoneId::Torrent));
     assert!(zones.is_visible(ZoneId::Log));
-    assert!(zones.is_visible(ZoneId::Sources));
+    assert!(zones.is_visible(ZoneId::Trackers));
     assert_eq!(zones.focused, ZoneId::Results);
     assert_eq!(zones.fullscreen, None);
 }
@@ -60,22 +60,28 @@ fn test_toggle_flips_visibility_and_focuses_when_shown() {
     assert!(!zones.is_visible(ZoneId::Log));
 }
 
-/// Sources took the `4` slot (the TBD Extra zone is gone), so the panel
-/// the user actually reaches for sits next to Log instead of hiding
-/// behind a fifth key. Digits `1`-`4` are the whole zone keyboard now.
+/// The panel renamed to Trackers sits at `3` and Log moved to the last
+/// slot `4`, so the zone keyboard reads Results / Torrent / Trackers /
+/// Log in order. Digits `1`-`4` are the whole zone keyboard.
 #[test]
-fn test_sources_owns_the_four_slot() {
-    assert_eq!(ZoneId::from_key('4'), Some(ZoneId::Sources));
+fn test_trackers_is_three_and_log_is_four() {
+    assert_eq!(ZoneId::Trackers.label(), "Trackers");
+    assert_eq!(ZoneId::from_key('3'), Some(ZoneId::Trackers));
+    assert_eq!(ZoneId::from_key('4'), Some(ZoneId::Log));
     assert_eq!(ZoneId::from_key('5'), None);
     assert_eq!(
         ZoneId::all(),
         &[
             ZoneId::Results,
             ZoneId::Torrent,
-            ZoneId::Log,
-            ZoneId::Sources
+            ZoneId::Trackers,
+            ZoneId::Log
         ]
     );
+    // The superscript in the frame title is `id as u8`, so the
+    // discriminant has to agree with the key digit.
+    assert_eq!(ZoneId::Trackers as u8, 3);
+    assert_eq!(ZoneId::Log as u8, 4);
 }
 
 #[test]
@@ -107,12 +113,14 @@ fn test_set_visible_false_clears_matching_fullscreen() {
 
 #[test]
 fn test_apply_preset_shows_exactly_the_named_zones() {
+    // `1,3` names zones by key digit: Results and Trackers (Log moved
+    // to `4` when Trackers took `3`).
     let mut zones = ZoneLayout::new();
-    zones.apply_preset("1,3");
+    zones.apply_preset("1,4");
     assert!(zones.is_visible(ZoneId::Results));
     assert!(!zones.is_visible(ZoneId::Torrent));
     assert!(zones.is_visible(ZoneId::Log));
-    assert!(!zones.is_visible(ZoneId::Sources));
+    assert!(!zones.is_visible(ZoneId::Trackers));
 }
 
 #[test]
@@ -127,18 +135,18 @@ fn test_apply_preset_all_five() {
 #[test]
 fn test_apply_preset_ignores_unknown_characters() {
     let mut zones = ZoneLayout::new();
-    zones.apply_preset("1,3,9,x");
+    zones.apply_preset("1,4,9,x");
     assert!(zones.is_visible(ZoneId::Results));
     assert!(zones.is_visible(ZoneId::Log));
     assert!(!zones.is_visible(ZoneId::Torrent));
-    assert!(!zones.is_visible(ZoneId::Sources));
+    assert!(!zones.is_visible(ZoneId::Trackers));
 }
 
 #[test]
 fn test_apply_preset_moves_focus_off_a_now_hidden_zone() {
     let mut zones = ZoneLayout::new();
     zones.focused = ZoneId::Torrent;
-    zones.apply_preset("1,3"); // hides Torrent
+    zones.apply_preset("1,4"); // hides Torrent
     assert!(
         zones.is_visible(zones.focused),
         "focus must land on a visible zone"
@@ -157,14 +165,14 @@ fn test_apply_preset_keeps_focus_if_still_visible() {
 #[test]
 fn test_focus_next_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
-    // Default visible order: Results, Torrent, Log, Sources.
+    // Default visible order: Results, Torrent, Trackers, Log.
     zones.focused = ZoneId::Results;
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Torrent);
     zones.focus_next();
-    assert_eq!(zones.focused, ZoneId::Log);
+    assert_eq!(zones.focused, ZoneId::Trackers);
     zones.focus_next();
-    assert_eq!(zones.focused, ZoneId::Sources);
+    assert_eq!(zones.focused, ZoneId::Log);
     zones.focus_next(); // wraps back to Results
     assert_eq!(zones.focused, ZoneId::Results);
 }
@@ -173,8 +181,8 @@ fn test_focus_next_skips_hidden_zones_and_wraps() {
 fn test_focus_prev_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
     zones.focused = ZoneId::Results;
-    zones.focus_prev(); // wraps to the last visible zone (Sources)
-    assert_eq!(zones.focused, ZoneId::Sources);
+    zones.focus_prev(); // wraps to the last visible zone (Log)
+    assert_eq!(zones.focused, ZoneId::Log);
 }
 
 #[test]
@@ -465,7 +473,7 @@ fn test_the_preset_cycles_and_wraps() {
 }
 
 /// The split layout: Results on top at full width, then Torrent down
-/// the left and Log/Sources stacked down the right.
+/// the left and Log/Trackers stacked down the right.
 #[test]
 fn test_the_split_layout_stacks_the_zones_in_two_columns() {
     let mut zones = ZoneLayout::new();
@@ -475,7 +483,7 @@ fn test_the_split_layout_stacks_the_zones_in_two_columns() {
     let results = zones.get_area(ZoneId::Results);
     let torrent = zones.get_area(ZoneId::Torrent);
     let log = zones.get_area(ZoneId::Log);
-    let sources = zones.get_area(ZoneId::Sources);
+    let trackers = zones.get_area(ZoneId::Trackers);
 
     // Results: full width, below the search bar, about a third of the
     // 27 rows that are left.
@@ -484,9 +492,9 @@ fn test_the_split_layout_stacks_the_zones_in_two_columns() {
     // Torrent: the left half, everything below Results.
     assert_eq!(torrent, Rect::new(0, 12, 50, 18));
 
-    // Log and Sources: the right half, stacked, Log on top.
+    // Log and Trackers: the right half, stacked, Log on top.
     assert_eq!(log, Rect::new(50, 12, 50, 9));
-    assert_eq!(sources, Rect::new(50, 21, 50, 9));
+    assert_eq!(trackers, Rect::new(50, 21, 50, 9));
 }
 
 /// Hiding a zone gives its space to whatever shares its column, so the
@@ -496,18 +504,18 @@ fn test_hiding_a_zone_gives_its_space_to_its_column() {
     let mut zones = ZoneLayout::new();
     zones.cycle_preset();
 
-    // Sources off: Log takes the whole right column.
-    zones.set_visible(ZoneId::Sources, false);
+    // Trackers off: Log takes the whole right column.
+    zones.set_visible(ZoneId::Trackers, false);
     zones.update_areas(Rect::new(0, 0, 100, 30));
     assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 12, 50, 18));
-    assert_eq!(zones.get_area(ZoneId::Sources), Rect::default());
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::default());
 
     // Torrent off too: the right column is the only one left, so it
     // takes the full width -- and Log, alone in it, all of its height.
     zones.set_visible(ZoneId::Torrent, false);
     zones.update_areas(Rect::new(0, 0, 100, 30));
     assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 12, 100, 18));
-    assert_eq!(zones.get_area(ZoneId::Sources), Rect::default());
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::default());
     assert_eq!(zones.get_area(ZoneId::Torrent), Rect::default());
 }
 

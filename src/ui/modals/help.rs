@@ -38,7 +38,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ),
     ("Mouse scroll", "Scrolls what is under the cursor."),
     ("s, i", "Enters search input mode."),
-    ("Enter", "Searches / plays; in Sources, switches the row."),
+    ("Enter", "Searches / plays; in Trackers, switches the row."),
     ("Shift+Enter, D", "Shows the selected row's details."),
     ("b", "Browse: freshest rows from every source."),
     ("S", "Shows Options (Settings)."),

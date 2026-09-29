@@ -193,7 +193,7 @@ pub async fn coordinate(
 /// on the active Results tab (`"all"` means every one of them). This is
 /// the registry-driven replacement for `app.rs`'s two hardcoded
 /// branches -- a source registered later needs no orchestrator change.
-/// Which sources a dispatch should ask: the Sources panel's checkboxes,
+/// Which sources a dispatch should ask: the Trackers panel's checkboxes,
 /// and -- since B6 -- the selected category.
 ///
 /// A source that does not serve the category is *not asked* rather than
@@ -255,8 +255,8 @@ pub fn nothing_to_ask_reason(enabled: &[String], group: Group) -> String {
             group.label()
         ),
         None => format!(
-            "No checked source serves '{}' -- check one in the Sources \
-             panel (4).",
+            "No checked source serves '{}' -- check one in the Trackers \
+             panel (3).",
             group.label()
         ),
     }

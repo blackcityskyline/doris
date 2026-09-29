@@ -601,11 +601,11 @@ impl App {
                             ZoneId::Log => self.ui.scroll_logs_up(),
                             ZoneId::Results => self.handle_nav_up(),
                             // Torrent is a single status readout and
-                            // Sources scrolls its cursor rather than a
+                            // Trackers scrolls its cursor rather than a
                             // list -- focusing them on hover is still
                             // correct, there's just no list to move
                             // within.
-                            ZoneId::Torrent | ZoneId::Sources => {}
+                            ZoneId::Torrent | ZoneId::Trackers => {}
                         }
                     }
                 }
@@ -621,10 +621,10 @@ impl App {
                             ZoneId::Log => self.ui.scroll_logs_down(),
                             ZoneId::Results => self.handle_nav_down().await,
                             // Torrent is a single status readout and
-                            // Sources scrolls its cursor rather than a
+                            // Trackers scrolls its cursor rather than a
                             // list -- focusing them on hover is still
                             // correct.
-                            ZoneId::Torrent | ZoneId::Sources => {}
+                            ZoneId::Torrent | ZoneId::Trackers => {}
                         }
                     }
                 }
@@ -640,7 +640,7 @@ impl App {
                     self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
                     match self.ui.click_at(mouse.row, mouse.column, &mut self.config) {
-                        Some(UiAction::SourcesChanged) => self.persist_config(),
+                        Some(UiAction::TrackersChanged) => self.persist_config(),
                         Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,
                         Some(UiAction::Remove) => self.remove_active_torrent().await,
                         Some(UiAction::Download) => self.download_selected_to_disk().await,
@@ -892,7 +892,7 @@ impl App {
     /// Write the config back now rather than at exit.
     ///
     /// Every in-app edit of `self.config` goes through here: the
-    /// Settings modal always did this, and the Sources checkboxes only
+    /// Settings modal always did this, and the Trackers checkboxes only
     /// flipped a field in memory -- with "Save config on exit" defaulting
     /// to off, a checked source simply evaporated when the app closed.
     /// The path is `--config`, the one `config::load` read from, so a
@@ -969,9 +969,9 @@ impl App {
                 }
             }
             ZoneId::Log => self.ui.scroll_logs_down(),
-            // The Sources panel is a list like the others, so the same
+            // The Trackers panel is a list like the others, so the same
             // keys move its cursor -- the one piece of state it has.
-            ZoneId::Sources => self.ui.navigate_sources(1),
+            ZoneId::Trackers => self.ui.navigate_trackers(1),
             _ => {}
         }
     }
@@ -984,7 +984,7 @@ impl App {
                 self.ui.navigate_up();
             }
             ZoneId::Log => self.ui.scroll_logs_up(),
-            ZoneId::Sources => self.ui.navigate_sources(-1),
+            ZoneId::Trackers => self.ui.navigate_trackers(-1),
             _ => {}
         }
     }
@@ -1342,7 +1342,7 @@ impl App {
             return Ok(());
         }
 
-        // The search box has no zone of its own, so "the Sources panel is
+        // The search box has no zone of its own, so "the Trackers panel is
         // focused" and "a query is being typed" are not mutually
         // exclusive. Every arm below therefore needs `!input_mode` to stay
         // out of the user's way -- and that is exactly the guard that kept
@@ -1379,10 +1379,10 @@ impl App {
                 self.ui.zones.toggle(ZoneId::Torrent);
             }
             KeyCode::Char('3') => {
-                self.ui.zones.toggle(ZoneId::Log);
+                self.ui.zones.toggle(ZoneId::Trackers);
             }
             KeyCode::Char('4') => {
-                self.ui.zones.toggle(ZoneId::Sources);
+                self.ui.zones.toggle(ZoneId::Log);
             }
             // Shift+P: cycle the layout preset (П.8). Lowercase `p` is
             // pause/resume on the Torrent panel, so the capital is the
@@ -1412,7 +1412,7 @@ impl App {
             KeyCode::Char('G') if self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_group(false);
             }
-            // The Sources panel's own keys: `j`/`k` move the cursor
+            // The Trackers panel's own keys: `j`/`k` move the cursor
             // (wrapping, like every other list in the app), Enter switches
             // the row under it. Both are gated on the panel being focused
             // for the same reason `g`/`G` are gated on Results -- a key
@@ -1421,16 +1421,16 @@ impl App {
             // this match runs (see the `input_mode` hand-over above), so
             // none of the three needs its own half of that guard.
             KeyCode::Char('j')
-                if self.config.vim_keys && self.ui.zones.focused == ZoneId::Sources =>
+                if self.config.vim_keys && self.ui.zones.focused == ZoneId::Trackers =>
             {
-                self.ui.navigate_sources(1);
+                self.ui.navigate_trackers(1);
             }
             KeyCode::Char('k')
-                if self.config.vim_keys && self.ui.zones.focused == ZoneId::Sources =>
+                if self.config.vim_keys && self.ui.zones.focused == ZoneId::Trackers =>
             {
-                self.ui.navigate_sources(-1);
+                self.ui.navigate_trackers(-1);
             }
-            KeyCode::Enter if self.ui.zones.focused == ZoneId::Sources => {
+            KeyCode::Enter if self.ui.zones.focused == ZoneId::Trackers => {
                 self.ui.toggle_source(&mut self.config);
                 self.persist_config();
             }
@@ -1726,7 +1726,7 @@ impl App {
     }
 
     /// Kick off the search for `query`: one task per source
-    /// `orchestrator::selected_sources` picks (the Sources panel's
+    /// `orchestrator::selected_sources` picks (the Trackers panel's
     /// checkboxes, narrowed by the selected category) and `orchestrator::dispatch_plan` says is worth asking (a fresh
     /// search asks everyone, a "load more" asks only the sources that
     /// reported another page, each at its own cursor), each task under
@@ -1761,7 +1761,7 @@ impl App {
                     orchestrator::nothing_to_ask_reason(&self.config.enabled_sources, group)
                 }
                 None => {
-                    "No source is checked -- the Sources panel (4) is where they are switched on."
+                    "No source is checked -- the Trackers panel (3) is where they are switched on."
                         .to_string()
                 }
             };
@@ -2138,7 +2138,7 @@ impl App {
 // --- key routing: who owns Enter while the search box is being typed ------
 //
 // The search input has no zone of its own, so `input_mode` and "the
-// Sources panel is focused" are not mutually exclusive -- a query typed
+// Trackers panel is focused" are not mutually exclusive -- a query typed
 // after clicking the panel used to have its Enter (and its `j`/`k`)
 // swallowed by the panel. These run against a real `App` because the bug
 // lives in the *order* of the match arms, which no pure helper sees.
@@ -2150,7 +2150,7 @@ mod key_routing_tests {
     use clap::Parser;
     use std::path::PathBuf;
 
-    /// An `App` with the Sources panel focused, no bridge listener, and
+    /// An `App` with the Trackers panel focused, no bridge listener, and
     /// no sources checked, so a key that submits a search starts no
     /// network task and the routing decision is all there is to observe.
     async fn app_focused_on_sources(config_path: Option<PathBuf>) -> App {
@@ -2169,7 +2169,7 @@ mod key_routing_tests {
             .await
             .expect("an App for a key-routing test");
         app.ui.show_menu = false;
-        app.ui.zones.focused = ZoneId::Sources;
+        app.ui.zones.focused = ZoneId::Trackers;
         app
     }
 
@@ -2188,10 +2188,28 @@ mod key_routing_tests {
 
         assert_eq!(
             app.config.enabled_sources, before,
-            "Enter was stolen by the Sources panel while the query was typed"
+            "Enter was stolen by the Trackers panel while the query was typed"
         );
         assert!(!app.ui.input_mode, "the typed query was submitted");
         assert!(app.search_generation > 0, "and it started a search");
+    }
+
+    /// The zone digits follow the zone table, not a stale copy of it:
+    /// `3` toggles Trackers and `4` toggles Log, the renumbered way.
+    #[tokio::test]
+    async fn zone_digit_keys_toggle_the_zone_they_name() {
+        let mut app = app_focused_on_sources(None).await;
+        assert!(app.ui.zones.is_visible(ZoneId::Trackers));
+        assert!(app.ui.zones.is_visible(ZoneId::Log));
+
+        app.handle_key(press(KeyCode::Char('3'))).await.expect("3");
+        assert!(
+            !app.ui.zones.is_visible(ZoneId::Trackers),
+            "`3` must toggle Trackers"
+        );
+
+        app.handle_key(press(KeyCode::Char('4'))).await.expect("4");
+        assert!(!app.ui.zones.is_visible(ZoneId::Log), "`4` must toggle Log");
     }
 
     /// A query is typed while the panel is focused: every one of its
@@ -2430,7 +2448,7 @@ mod key_routing_tests {
     }
 
     /// The other empty-dispatch: nothing checked at all. The line has to
-    /// name the key the Sources panel is on, which moved to `4` when the
+    /// name the key the Trackers panel is on, which moved to `3` when the
     /// placeholder zone went away -- a stale key points at a zone that
     /// does not exist.
     #[tokio::test]
@@ -2442,7 +2460,7 @@ mod key_routing_tests {
 
         let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
         assert!(
-            logs.contains("Sources panel (4)"),
+            logs.contains("Trackers panel (3)"),
             "the message must name the panel's current key:\n{logs}"
         );
     }
