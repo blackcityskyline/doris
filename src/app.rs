@@ -1480,7 +1480,11 @@ impl App {
                     self.ui.scroll_logs_page_down()
                 }
             }
-            KeyCode::Char('s') | KeyCode::Char('i') => {
+            // Three keys for one box: `s` and `i` as they always were,
+            // plus `S` -- Settings moved to the menu, and the letter
+            // this app's users already had under their pinky keeps
+            // working as "start typing".
+            KeyCode::Char('s') | KeyCode::Char('i') | KeyCode::Char('S') => {
                 self.ui.enter_input_mode();
             }
             KeyCode::Char('b') => {
@@ -1494,12 +1498,6 @@ impl App {
             }
             KeyCode::Char('L') => {
                 self.ui.toggle_detail_log();
-            }
-            KeyCode::Char('S') => {
-                self.ui.open_settings(
-                    &self.config,
-                    self.browser_visibility == BrowserVisibility::Hidden,
-                );
             }
             // The help page (btop binds `F1`/`?`/`h`); `h` stays free
             // for future vim navigation, so the three triggers are `?`,
@@ -2175,6 +2173,36 @@ mod key_routing_tests {
 
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// `i`, `s` and `S` all focus the search box -- three keys for one
+    /// action, so muscle memory from vi (`i`), from this app (`s`) and
+    /// from the old Settings binding (`S`) all land in the same place.
+    /// `S` used to open Settings; Settings lives in the menu now.
+    #[tokio::test]
+    async fn all_three_search_keys_enter_input_mode() {
+        for code in [KeyCode::Char('i'), KeyCode::Char('s'), KeyCode::Char('S')] {
+            let mut app = app_focused_on_sources(None).await;
+            app.ui.exit_input_mode();
+
+            app.handle_key(press(code)).await.expect("a search key");
+
+            assert!(app.ui.input_mode, "{code:?} must open the search box");
+        }
+    }
+
+    /// `S` is a search key now: it must not open the Settings modal
+    /// behind the box it just focused.
+    #[tokio::test]
+    async fn search_capital_s_does_not_open_settings() {
+        let mut app = app_focused_on_sources(None).await;
+
+        app.handle_key(press(KeyCode::Char('S'))).await.expect("S");
+
+        assert!(
+            !matches!(app.ui.modal, Modal::Settings(_)),
+            "Settings moved to the menu; `S` belongs to search"
+        );
     }
 
     #[tokio::test]

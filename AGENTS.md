@@ -203,15 +203,14 @@ colliding with the rose its `secondary` gives the date and badge columns.
 - 1-4: toggle zone visibility
 
 ## Key Bindings
-- `s`/`i`: enter search input mode
+- `s`/`i`/`S`: enter search input mode (all three; `S` used to be Settings)
 - `Enter`: search (in input mode), play (in results mode), or switch the row under the cursor (in the trackers panel)
 - `Shift+Enter`/`D`: open the selected row's details (title, source, size, hash, magnet, page, and the file list its source can read)
 - `b`: browse mode -- an empty query asking the browse-capable sources for their freshest rows (takes the all-category with it)
-- `S`: open settings modal (login is now here too: streaming -> Edit credentials -- there's no top-level login keybind anymore)
+- `m`: open main menu (Options/Settings lives there now; there is no top-level settings keybind)
 - `L`: toggle detailed log view
 - `f`: enter filter mode (type to filter results — matches title, size, source, category)
 - `F`: toggle fullscreen for focused zone
-- `m`: open main menu
 - `1-4`: toggle zone visibility
 - `Shift+P`: cycle the layout preset -- `Horizontal` (every zone full width, equal
   heights; the default) or `Split` (Results on top at full width, then Torrent down

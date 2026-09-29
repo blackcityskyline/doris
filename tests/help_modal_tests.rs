@@ -40,11 +40,10 @@ fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
 fn test_help_text_names_the_documented_keybinds() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
     for expected in [
-        "s, i",
+        "s, i, S",
         "Enter",
         "Shift+Enter, D",
         "b",
-        "S",
         "L",
         "F",
         "f",

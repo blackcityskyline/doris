@@ -1317,7 +1317,7 @@ impl App {
         let title = match (self.input_mode, self.zones.filter_mode, filter_on) {
             (false, true, _) => "filter".to_string(),
             (false, false, true) => format!("filter: {}", self.zones.filter_input),
-            _ => "search".to_string(),
+            _ => "Search".to_string(),
         };
 
         // The box holds whichever string is being edited: the query in

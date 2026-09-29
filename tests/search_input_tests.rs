@@ -138,3 +138,21 @@ fn test_idle_box_still_shows_the_query() {
     assert_eq!(input_row(&rows), "batman");
     assert_eq!(pos, (0, 0), "an applied filter is not an editing session");
 }
+
+/// The box's idle title is a name, not a whisper: `Search`, capital S,
+/// the way every other zone title is written (`Results`, `Torrent`).
+#[test]
+fn test_the_idle_box_title_is_capitalized_search() {
+    let mut app = make_app();
+    let (rows, _) = render(&mut app, 120, 40);
+    assert!(
+        rows[0].contains("Search"),
+        "the box is titled 'Search': {}",
+        rows[0]
+    );
+    assert!(
+        !rows[0].contains("search"),
+        "and not in lowercase: {}",
+        rows[0]
+    );
+}
