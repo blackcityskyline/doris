@@ -46,7 +46,6 @@ impl MenuItem {
 pub struct MenuState {
     pub selected: usize,
     pub active: bool,
-    pub show_help: bool,
 }
 
 impl Default for MenuState {
@@ -60,7 +59,6 @@ impl MenuState {
         Self {
             selected: 0,
             active: true,
-            show_help: false,
         }
     }
 
@@ -116,18 +114,28 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
         let x = area.x + area.width.saturating_sub(mw) / 2;
         let y = menu_y + idx as u16 * 4;
 
-        let style = if selected {
-            Style::default()
-                .fg(theme.menu_selected_fg.to_color())
-                .bg(theme.menu_selected_bg.to_color())
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme.menu_fg.to_color())
-        };
-
         for (j, line) in block.iter().enumerate() {
+            // Highlight the glyphs of the picked item, not the row they
+            // sit in: a background behind the spaces would be a solid
+            // stripe across the menu. So the style is per character --
+            // a space keeps the plain menu style, everything else gets
+            // the selection colours when this item is the picked one.
+            let spans: Vec<Span> = line
+                .chars()
+                .map(|c| {
+                    let style = if selected && c != ' ' {
+                        Style::default()
+                            .fg(theme.menu_selected_fg.to_color())
+                            .bg(theme.menu_selected_bg.to_color())
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.menu_fg.to_color())
+                    };
+                    Span::styled(c.to_string(), style)
+                })
+                .collect();
             let render_area = Rect::new(x, y + j as u16, mw, 1);
-            frame.render_widget(Paragraph::new(Span::styled(*line, style)), render_area);
+            frame.render_widget(Paragraph::new(Line::from(spans)), render_area);
         }
     }
 }

@@ -1646,7 +1646,11 @@ impl App {
                         );
                     }
                     MenuItem::Help => {
-                        self.ui.menu.show_help = !self.ui.menu.show_help;
+                        // The same page `?` opens -- one help modal, two
+                        // ways to reach it -- and the menu goes away with
+                        // it, like Options does for the Settings modal.
+                        self.ui.show_menu = false;
+                        self.ui.open_help_modal();
                     }
                     MenuItem::Quit => {
                         self.ui.quit();
@@ -2546,6 +2550,25 @@ mod key_routing_tests {
     }
 
     /// The other empty-dispatch: nothing checked at all. The line has to
+    /// The menu's Help item opens the very same modal `?` does: one
+    /// help page, two ways to reach it -- a menu item that toggled its
+    /// own private flag drew nothing.
+    #[tokio::test]
+    async fn menu_help_opens_the_same_modal_as_question_mark() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.show_menu = true;
+        app.ui.menu.select(); // sanity: the menu has an item to pick
+        app.ui.menu.selected = 1; // Help
+
+        app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+        assert!(
+            matches!(app.ui.modal, Modal::Help(_)),
+            "the Help item must open the help modal"
+        );
+        assert!(!app.ui.show_menu, "and leave the menu behind");
+    }
+
     /// name the key the Trackers panel is on, which moved to `3` when the
     /// placeholder zone went away -- a stale key points at a zone that
     /// does not exist.
