@@ -5,6 +5,7 @@ pub mod cli;
 pub mod config;
 pub mod credentials;
 pub mod event;
+pub mod filter;
 pub mod log;
 pub mod player_log;
 pub mod search;

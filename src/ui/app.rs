@@ -1202,14 +1202,11 @@ impl App {
     /// the "all" view only -- hiding them here is what makes that
     /// ROADMAP rule mean something instead of being a comment.
     pub fn update_filter(&mut self) {
-        let filter = self.zones.filter_input.clone();
-        let lower = filter.to_lowercase();
+        let filter = crate::filter::Filter::parse(&self.zones.filter_input);
         // The filter matches any field a result carries, not just the
-        // title: a size ("1.4 GB"), a source ("rutracker"), a word from
-        // the title, or the category all answer to the same prompt --
-        // the user should not have to know which column a term lives
-        // in. The category is matched by name, so "movies" finds the
-        // Movies view's rows.
+        // title -- a size, a source, a category or a word from the
+        // title all answer to the same prompt -- and `field:value`
+        // narrows it further (src/filter.rs holds the syntax).
         self.filtered_indices = self
             .results
             .iter()
@@ -1218,19 +1215,7 @@ impl App {
                 None => true,
                 Some(group) => item.group == Some(group),
             })
-            .filter(|(_, item)| {
-                if filter.is_empty() {
-                    return true;
-                }
-                let haystack = format!(
-                    "{} {} {} {}",
-                    item.title,
-                    item.size,
-                    item.source,
-                    item.group.map_or("", Group::label),
-                );
-                haystack.to_lowercase().contains(&lower)
-            })
+            .filter(|(_, item)| filter.matches(item))
             .map(|(i, _)| i)
             .collect();
         if !self.filtered_indices.is_empty() && !self.filtered_indices.contains(&self.selected) {

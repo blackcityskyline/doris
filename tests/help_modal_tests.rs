@@ -241,8 +241,9 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
 
     assert_eq!(
         desc("f"),
-        "Filter mode; Enter applies, Esc clears.",
-        "`f` is the filter, as routed in `handle_key`"
+        "Filter mode; words, -not, src:, size:, seeds:.",
+        "`f` is the filter, as routed in `handle_key`, and the box's \
+         syntax is src/filter.rs"
     );
     assert_eq!(
         desc("F"),

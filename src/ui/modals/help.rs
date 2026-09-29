@@ -44,7 +44,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("L", "Toggles the detailed log view."),
     ("T", "Toggles the torrent detail view."),
     ("R", "Toggles the results detail view."),
-    ("f", "Filter mode; Enter applies, Esc clears."),
+    ("f", "Filter mode; words, -not, src:, size:, seeds:."),
     ("F", "Toggles fullscreen for the focused zone."),
     ("m", "Toggles the main menu (Options lives there)."),
     ("1, 2, 3, 4", "Toggles that zone's visibility."),
