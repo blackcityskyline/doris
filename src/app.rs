@@ -1017,6 +1017,18 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        // Quit first, always. Every mode below answers and returns
+        // before the plain-view match is reached -- the menu, a modal, a
+        // detail view, the search box -- so a Ctrl+C arm at the bottom
+        // of a match is a Ctrl+C that works in exactly one of them.
+        // Ctrl+Q quits the same way (btop's quit is `q`).
+        if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('c'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            self.ui.quit();
+            return Ok(());
+        }
+
         if self.ui.show_menu {
             return self.handle_menu_key(key).await;
         }
@@ -1387,11 +1399,6 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('c')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                self.ui.quit();
-            }
             KeyCode::Char('m') => {
                 self.ui.show_menu = !self.ui.show_menu;
             }
@@ -1607,11 +1614,6 @@ impl App {
     /// here so Ctrl+C works while a query is being typed.
     async fn handle_input_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('c')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                self.ui.quit();
-            }
             KeyCode::Esc => self.ui.exit_input_mode(),
             KeyCode::Enter => self.handle_enter().await,
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1631,11 +1633,6 @@ impl App {
 
     async fn handle_menu_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('c')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                self.ui.quit();
-            }
             KeyCode::Char('m') | KeyCode::Esc => {
                 self.ui.show_menu = false;
             }
@@ -2571,10 +2568,36 @@ mod key_routing_tests {
         );
     }
 
-    /// The other empty-dispatch: nothing checked at all. The line has to
     /// `L`, `T` and `R` each open their zone's detail view -- the same
     /// full-frame takeover the detailed log already had -- and the same
     /// key closes it again. Esc closes whichever is open.
+    /// Every mode that grabs the keyboard -- the menu, the search box, a
+    /// modal, a detail view -- answers before the plain-view Ctrl+C arm
+    /// is ever reached, so quitting has to be the *first* thing
+    /// `handle_key` asks, not the last. Otherwise a takeover is also an
+    /// exit lockout and the only way out is a signal.
+    #[tokio::test]
+    async fn ctrl_c_quits_from_every_mode() {
+        for mode in ["main", "search", "menu", "detail"] {
+            let mut app = app_focused_on_sources(None).await;
+            match mode {
+                "search" => app.ui.input_mode = true,
+                "menu" => app.ui.show_menu = true,
+                "detail" => app.ui.detail_view = Some(ZoneId::Torrent),
+                _ => {}
+            }
+
+            app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+                .await
+                .expect("Ctrl+C is not an error");
+
+            assert!(
+                !app.ui.running,
+                "Ctrl+C quits with the {mode} mode owning the keyboard"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn l_t_and_r_open_and_close_their_detail_views() {
         for (code, view) in [
