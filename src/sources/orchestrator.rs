@@ -256,7 +256,7 @@ pub fn nothing_to_ask_reason(enabled: &[String], group: Group) -> String {
         ),
         None => format!(
             "No checked source serves '{}' -- check one in the Sources \
-             panel (5).",
+             panel (4).",
             group.label()
         ),
     }

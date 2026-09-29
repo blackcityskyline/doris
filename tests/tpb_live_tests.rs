@@ -84,3 +84,32 @@ async fn live_browse_reads_both_top100_lists() {
         .any(|r| r.group == Some(doris::sources::source::Group::TV)));
     assert!(!page.has_more, "the top-100 lists are fixed");
 }
+
+/// The category half of the apibay `cat=` filter: every row on the
+/// answer has to come from the categories the group stands for, or the
+/// tab above the table is claiming something the rows do not.
+#[tokio::test]
+#[ignore = "requires network access to apibay.org"]
+async fn live_a_selected_category_answers_with_only_that_category() {
+    use doris::sources::source::Group;
+
+    let tpb = TpbSearcher::new();
+    let mut req = SearchRequest::new("matrix", 0);
+    req.category = Some(Group::Movies);
+    let page = tpb.search(&req).await.expect("live apibay category search");
+
+    println!(
+        "Movies rows={}, has_more={}",
+        page.items.len(),
+        page.has_more
+    );
+    assert!(!page.items.is_empty(), "cat= answered nothing");
+    for row in &page.items {
+        assert_eq!(
+            row.group,
+            Some(Group::Movies),
+            "{} was fetched inside the Movies categories and claims it",
+            row.title
+        );
+    }
+}
