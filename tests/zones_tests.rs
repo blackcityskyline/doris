@@ -514,121 +514,112 @@ fn test_primary_buttons_lead_with_their_hotkey() {
     }
 }
 
-// --- layout presets (П.8) ---------------------------------------------------
+// --- layout tiling (rows via `,`, columns via `|`) --------------------------
 
-/// The layout a fresh app starts in: the one that has always been there,
-/// so a terminal that has never heard of presets looks the same.
+/// The spec is written the way it is read: rows separated by `,`,
+/// columns inside a row by `|`. The old flat list `"1,2,3,4"` still
+/// parses -- it is four rows of one cell each -- so an existing
+/// `config.toml` keeps meaning "every zone, stacked full width".
 #[test]
-fn test_the_default_preset_is_the_horizontal_one() {
-    let zones = ZoneLayout::new();
-    assert_eq!(zones.preset, doris::ui::zones::LayoutPreset::Horizontal);
+fn test_a_preset_spec_writes_rows_and_columns() {
+    let mut zones = ZoneLayout::new();
+    zones.apply_preset("1,3|4");
+
+    assert!(zones.is_visible(ZoneId::Results));
+    assert!(zones.is_visible(ZoneId::Trackers));
+    assert!(zones.is_visible(ZoneId::Log));
+    assert!(!zones.is_visible(ZoneId::Torrent), "row 2 is `3|4`");
+
+    assert_eq!(
+        zones.grid,
+        vec![vec![ZoneId::Results], vec![ZoneId::Trackers, ZoneId::Log]],
+        "row 1 is Results alone, row 2 is Trackers beside Log"
+    );
 }
 
-/// `P` cycles the two presets and comes back around, like every other
-/// cycle in the app.
+/// The default tiling the plan asks for: Results across the top, then
+/// Trackers | Log underneath, Torrent switched off.
 #[test]
-fn test_the_preset_cycles_and_wraps() {
+fn test_the_default_tiling_is_results_over_trackers_and_log() {
     let mut zones = ZoneLayout::new();
-    zones.cycle_preset();
-    assert_eq!(zones.preset, doris::ui::zones::LayoutPreset::Split);
-    zones.cycle_preset();
-    assert_eq!(zones.preset, doris::ui::zones::LayoutPreset::Horizontal);
-}
-
-/// The split layout: Results on top at full width, then Torrent down
-/// the left and Log/Trackers stacked down the right.
-#[test]
-fn test_the_split_layout_stacks_the_zones_in_two_columns() {
-    let mut zones = ZoneLayout::new();
-    zones.cycle_preset();
+    zones.apply_preset("1,3|4");
     zones.update_areas(Rect::new(0, 0, 100, 30));
 
-    let results = zones.get_area(ZoneId::Results);
-    let torrent = zones.get_area(ZoneId::Torrent);
-    let log = zones.get_area(ZoneId::Log);
-    let trackers = zones.get_area(ZoneId::Trackers);
-
-    // Results: full width, below the search bar, about a third of the
-    // 27 rows that are left.
-    assert_eq!(results, Rect::new(0, 3, 100, 9));
-
-    // Torrent: the left half, everything below Results.
-    assert_eq!(torrent, Rect::new(0, 12, 50, 18));
-
-    // Log and Trackers: the right half, stacked, Log on top.
-    assert_eq!(log, Rect::new(50, 12, 50, 9));
-    assert_eq!(trackers, Rect::new(50, 21, 50, 9));
-}
-
-/// Hiding a zone gives its space to whatever shares its column, so the
-/// layout never has a hole in it.
-#[test]
-fn test_hiding_a_zone_gives_its_space_to_its_column() {
-    let mut zones = ZoneLayout::new();
-    zones.cycle_preset();
-
-    // Trackers off: Log takes the whole right column.
-    zones.set_visible(ZoneId::Trackers, false);
-    zones.update_areas(Rect::new(0, 0, 100, 30));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 12, 50, 18));
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::default());
-
-    // Torrent off too: the right column is the only one left, so it
-    // takes the full width -- and Log, alone in it, all of its height.
-    zones.set_visible(ZoneId::Torrent, false);
-    zones.update_areas(Rect::new(0, 0, 100, 30));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 12, 100, 18));
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::default());
+    // 27 rows below the search bar, split over two rows: 14 then 13.
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 14));
+    // The second row splits its width between its two cells.
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 17, 50, 13));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 17, 50, 13));
     assert_eq!(zones.get_area(ZoneId::Torrent), Rect::default());
 }
 
-/// Fullscreen outranks any preset: one zone gets the whole frame, the
-/// others get nothing, whatever the preset says.
+/// An old flat spec still stacks every zone at full width, which is
+/// exactly what it meant before there were rows.
 #[test]
-fn test_fullscreen_overrides_the_preset() {
+fn test_a_flat_spec_still_stacks_zones_full_width() {
     let mut zones = ZoneLayout::new();
-    zones.cycle_preset();
-    zones.set_fullscreen(Some(ZoneId::Torrent));
+    zones.apply_preset("1,2,3,4");
     zones.update_areas(Rect::new(0, 0, 100, 30));
 
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 0, 100, 30));
-    assert_eq!(zones.get_area(ZoneId::Results), Rect::default());
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::default());
+    // 27 rows over four zones: 7, 7, 7, 6 -- the first three get the
+    // remainder, so no row of the terminal is wasted.
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 7));
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 10, 100, 7));
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 17, 100, 7));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 24, 100, 6));
 }
 
-/// The search bar is not part of any preset: it is always the top rows
-/// at full width, in both layouts.
+/// A cell switched off hands its width to the rest of its row, so the
+/// tiling never leaves a hole.
 #[test]
-fn test_the_search_bar_is_outside_both_presets() {
-    for preset in [
-        doris::ui::zones::LayoutPreset::Horizontal,
-        doris::ui::zones::LayoutPreset::Split,
-    ] {
-        let mut zones = ZoneLayout::new();
-        zones.preset = preset;
-        zones.update_areas(Rect::new(0, 0, 100, 30));
-        for &id in ZoneId::all() {
-            let area = zones.get_area(id);
-            if area.height == 0 {
-                continue;
-            }
-            assert!(
-                area.y >= doris::ui::zones::SEARCH_BAR_HEIGHT,
-                "{:?} starts inside the search bar in {:?}",
-                id,
-                preset
-            );
-        }
-    }
-}
-
-/// A terminal too short for the split still gets a layout: Results
-/// takes what there is and the columns get what is left, with nothing
-/// panicking and nothing drawn outside the frame.
-#[test]
-fn test_the_split_layout_survives_a_tiny_terminal() {
+fn test_hiding_a_cell_gives_its_width_to_its_row() {
     let mut zones = ZoneLayout::new();
-    zones.cycle_preset();
+    zones.apply_preset("1,3|4");
+    zones.set_visible(ZoneId::Trackers, false);
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 17, 100, 13));
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::default());
+}
+
+/// A whole row switched off hands its height to the rows that remain.
+#[test]
+fn test_hiding_a_row_gives_its_height_to_the_rest() {
+    let mut zones = ZoneLayout::new();
+    zones.apply_preset("1,3|4");
+    zones.set_visible(ZoneId::Trackers, false);
+    zones.set_visible(ZoneId::Log, false);
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    assert_eq!(
+        zones.get_area(ZoneId::Results),
+        Rect::new(0, 3, 100, 27),
+        "Results takes everything below the search bar"
+    );
+}
+
+/// The zone keys keep working after a preset: a zone the spec never
+/// names still gets room, as a row of its own at the bottom.
+#[test]
+fn test_a_zone_shown_by_hand_gets_its_own_row() {
+    let mut zones = ZoneLayout::new();
+    zones.apply_preset("1,3|4");
+    zones.toggle(ZoneId::Torrent);
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    // Three rows over 27: 9 each.
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 9));
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 12, 50, 9));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 12, 50, 9));
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 21, 100, 9));
+}
+
+/// A terminal too short for the tiling still gets a layout: nothing
+/// panics and nothing is drawn outside the frame.
+#[test]
+fn test_the_tiling_survives_a_tiny_terminal() {
+    let mut zones = ZoneLayout::new();
+    zones.apply_preset("1,3|4");
     zones.update_areas(Rect::new(0, 0, 40, 6));
 
     for &id in ZoneId::all() {
@@ -644,4 +635,54 @@ fn test_the_split_layout_survives_a_tiny_terminal() {
             id
         );
     }
+}
+
+/// The search bar is not part of any spec: it is always the top rows
+/// at full width, whatever the tiling says.
+#[test]
+fn test_the_search_bar_is_outside_every_spec() {
+    for spec in ["1,3|4", "1,2,3,4", "1,3"] {
+        let mut zones = ZoneLayout::new();
+        zones.apply_preset(spec);
+        zones.update_areas(Rect::new(0, 0, 100, 30));
+        for &id in ZoneId::all() {
+            let area = zones.get_area(id);
+            if area.height == 0 {
+                continue;
+            }
+            assert!(
+                area.y >= doris::ui::zones::SEARCH_BAR_HEIGHT,
+                "{:?} starts inside the search bar under `{}`",
+                id,
+                spec
+            );
+        }
+    }
+}
+
+/// Fullscreen outranks any spec: one zone gets the whole frame, the
+/// others get nothing.
+#[test]
+fn test_fullscreen_overrides_the_tiling() {
+    let mut zones = ZoneLayout::new();
+    zones.apply_preset("1,3|4");
+    zones.set_fullscreen(Some(ZoneId::Torrent));
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 0, 100, 30));
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::default());
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::default());
+}
+
+/// A layout that has never had a spec applied still tiles: the fresh
+/// state is one full-width row per zone, exactly what the flat default
+/// spec would give.
+#[test]
+fn test_a_fresh_layout_stacks_every_zone() {
+    let mut zones = ZoneLayout::new();
+    zones.update_areas(Rect::new(0, 0, 100, 30));
+
+    assert!(zones.is_visible(ZoneId::Torrent), "all four start on");
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 7));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 24, 100, 6));
 }

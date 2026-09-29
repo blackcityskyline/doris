@@ -221,7 +221,14 @@ fn default_graph_symbol() -> String {
 }
 
 fn default_presets() -> Vec<String> {
-    vec!["1,2,3,4".to_string(), "1,3".to_string(), "1,2".to_string()]
+    // Rows via `,`, columns via `|`. The first one is the default UI:
+    // Results across the top, Trackers and Log under it, no Torrent.
+    vec![
+        "1,3|4".to_string(),
+        "1,2,3,4".to_string(),
+        "1,3".to_string(),
+        "1,2".to_string(),
+    ]
 }
 
 fn default_enabled_sources() -> Vec<String> {

@@ -327,9 +327,20 @@ impl App {
             event_handler.sender(),
         );
 
+        let mut ui = UiApp::new(torrserver_url.clone(), config.theme_name.as_deref())
+            .with_group_tabs(&config);
+        // The zones know nothing about Config, so the saved tiling is
+        // applied here rather than in `ZoneLayout::new`: the default
+        // first preset (`1,3|4`) is what a fresh config.toml means.
+        if !config.disable_presets {
+            if let Some(spec) = config.presets.get(config.preset_index) {
+                let spec = spec.clone();
+                ui.zones.apply_preset(&spec);
+            }
+        }
+
         Ok(Self {
-            ui: UiApp::new(torrserver_url.clone(), config.theme_name.as_deref())
-                .with_group_tabs(&config),
+            ui,
             event_handler,
             torrserver,
             browser: None,
@@ -346,6 +357,22 @@ impl App {
             search_generation: 0,
             exit_signal: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Move `config.preset_index` one step and apply the spec it lands
+    /// on. Both `Shift+P` and the Options "Presets" row come through
+    /// here, so there is one place that decides what a preset cycle is.
+    fn cycle_layout_preset(&mut self, direction: i8) {
+        if self.config.disable_presets || self.config.presets.is_empty() {
+            return;
+        }
+        self.config.preset_index = cycle_index(
+            self.config.preset_index,
+            self.config.presets.len(),
+            direction,
+        );
+        let spec = self.config.presets[self.config.preset_index].clone();
+        self.ui.zones.apply_preset(&spec);
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -1196,15 +1223,7 @@ impl App {
                         );
                     }
                     SettingsAction::CyclePreset => {
-                        if !self.config.disable_presets && !self.config.presets.is_empty() {
-                            self.config.preset_index = cycle_index(
-                                self.config.preset_index,
-                                self.config.presets.len(),
-                                self.ui.last_cycle_direction,
-                            );
-                            let spec = self.config.presets[self.config.preset_index].clone();
-                            self.ui.zones.apply_preset(&spec);
-                        }
+                        self.cycle_layout_preset(self.ui.last_cycle_direction);
                         self.ui.open_settings(
                             &self.config,
                             self.browser_visibility == BrowserVisibility::Hidden,
@@ -1384,11 +1403,12 @@ impl App {
             KeyCode::Char('4') => {
                 self.ui.zones.toggle(ZoneId::Log);
             }
-            // Shift+P: cycle the layout preset (П.8). Lowercase `p` is
+            // Shift+P: cycle the layout presets (П.8), the same list the
+            // Options row cycles -- one list, not two. Lowercase `p` is
             // pause/resume on the Torrent panel, so the capital is the
             // free one -- the same reasoning as `F` for filter.
             KeyCode::Char('P') => {
-                self.ui.zones.cycle_preset();
+                self.cycle_layout_preset(1);
             }
             KeyCode::Char('p') if self.ui.zones.focused == ZoneId::Torrent => {
                 self.toggle_pause_active_torrent().await;
@@ -2238,6 +2258,56 @@ mod key_routing_tests {
 
         app.handle_key(press(KeyCode::Char('4'))).await.expect("4");
         assert!(!app.ui.zones.is_visible(ZoneId::Log), "`4` must toggle Log");
+    }
+
+    /// A fresh app applies `presets[preset_index]`, and the default
+    /// first preset is `1,3|4`: Torrent starts hidden, Trackers and Log
+    /// share the row under Results. The zones know nothing about Config,
+    /// so this apply happens here rather than in `ZoneLayout::new`.
+    #[tokio::test]
+    async fn startup_applies_the_first_config_preset() {
+        let app = app_focused_on_sources(None).await;
+        assert!(app.ui.zones.is_visible(ZoneId::Results));
+        assert!(
+            !app.ui.zones.is_visible(ZoneId::Torrent),
+            "the default preset has no Torrent"
+        );
+        assert!(app.ui.zones.is_visible(ZoneId::Trackers));
+        assert!(app.ui.zones.is_visible(ZoneId::Log));
+    }
+
+    /// `Shift+P` cycles the *configured* presets, not a private copy of
+    /// them: the index moves and the tiling that spec asks for lands on
+    /// the zones.
+    #[tokio::test]
+    async fn shift_p_cycles_the_configured_presets() {
+        let mut app = app_focused_on_sources(None).await;
+        assert_eq!(app.config.preset_index, 0, "starts on the first preset");
+
+        app.handle_key(press(KeyCode::Char('P'))).await.expect("P");
+
+        assert_eq!(app.config.preset_index, 1, "`P` moves the index");
+        assert!(
+            app.ui.zones.is_visible(ZoneId::Torrent),
+            "preset 2 is `1,2,3,4`, every zone back on"
+        );
+    }
+
+    /// `disable_presets` freezes both the tiling and the index: `P`
+    /// must not move a layout the user turned off.
+    #[tokio::test]
+    async fn shift_p_is_a_no_op_when_presets_are_disabled() {
+        let mut app = app_focused_on_sources(None).await;
+        app.config.disable_presets = true;
+        let before = app.config.preset_index;
+
+        app.handle_key(press(KeyCode::Char('P'))).await.expect("P");
+
+        assert_eq!(app.config.preset_index, before, "`P` must not move");
+        assert!(
+            !app.ui.zones.is_visible(ZoneId::Torrent),
+            "the tiling must stay the default one"
+        );
     }
 
     /// A query is typed while the panel is focused: every one of its

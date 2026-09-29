@@ -23,6 +23,10 @@ fn test_config_default() {
     assert!(!config.disable_presets);
     assert!(!config.presets.is_empty());
     assert_eq!(config.preset_index, 0);
+    // The tiling grammar is rows via `,` and columns via `|`, so the
+    // very first preset is the default UI the options list promises:
+    // Results on top, Trackers and Log in the row under it, no Torrent.
+    assert_eq!(config.presets[0], "1,3|4");
     assert!(config.show_boxes);
     assert_eq!(config.update_ms, 1000);
     assert!(config.rounded_corners);

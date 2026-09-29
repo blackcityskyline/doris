@@ -8,11 +8,6 @@ use ratatui::prelude::*;
 /// the zones can never drift under the box.
 pub const SEARCH_BAR_HEIGHT: u16 = 3;
 
-/// Smallest height the split layout gives the Results band. A third of
-/// a short terminal is often less than a legend and a row, and a zone
-/// that short is a box with nothing in it.
-const MIN_SPLIT_ROWS: u16 = 4;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneId {
     Results = 1,
@@ -94,38 +89,10 @@ pub struct ZoneLayout {
     pub fullscreen: Option<ZoneId>,
     pub filter_mode: bool,
     pub filter_input: String,
-    /// How the visible zones are arranged below the search bar. Session
-    /// only -- nothing in Config asks for a layout yet, so there is
-    /// nothing to persist.
-    pub preset: LayoutPreset,
-}
-
-/// How the visible zones share the screen below the search bar.
-///
-/// The search bar itself is not part of any preset: it is always the top
-/// [`SEARCH_BAR_HEIGHT`] rows at full width, which is what "the search
-/// is always there" means in practice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LayoutPreset {
-    /// Every visible zone spans the full width and the height is shared
-    /// equally -- the layout there has been since the zones existed.
-    #[default]
-    Horizontal,
-    /// Results on top at full width, then two columns: Torrent on the
-    /// left, Log and Sources stacked on the right. A zone that is turned
-    /// off gives its space to whatever shares its column.
-    Split,
-}
-
-impl LayoutPreset {
-    /// The next preset, for the key that cycles them. Two presets today,
-    /// so this is a toggle -- a third one would only need its own arm.
-    pub fn next(self) -> Self {
-        match self {
-            LayoutPreset::Horizontal => LayoutPreset::Split,
-            LayoutPreset::Split => LayoutPreset::Horizontal,
-        }
-    }
+    /// The tiling: rows of cells, one cell per zone, left to right and
+    /// top to bottom. Written as `rows via ","`, `columns via "|"` --
+    /// see [`ZoneLayout::apply_preset`].
+    pub grid: Vec<Vec<ZoneId>>,
 }
 
 impl Default for ZoneLayout {
@@ -143,19 +110,12 @@ impl ZoneLayout {
                 Zone::new(ZoneId::Trackers, true),
                 Zone::new(ZoneId::Log, true),
             ],
-            preset: LayoutPreset::default(),
+            grid: ZoneId::all().iter().map(|&id| vec![id]).collect(),
             focused: ZoneId::Results,
             fullscreen: None,
             filter_mode: false,
             filter_input: String::new(),
         }
-    }
-
-    /// Switch to the next layout preset (`P`). The areas are recomputed
-    /// on the next `update_areas`, which every render starts with, so
-    /// this is a one-line change with no render of its own.
-    pub fn cycle_preset(&mut self) {
-        self.preset = self.preset.next();
     }
 
     pub fn toggle(&mut self, id: ZoneId) {
@@ -184,12 +144,16 @@ impl ZoneLayout {
         }
     }
 
-    /// Apply a preset written as a comma-separated list of zone key
-    /// characters (the same digits the 1/2/3/4 keybinds use), e.g.
-    /// `"1,3"` shows only Results and Log and hides the rest. Unknown
-    /// characters are ignored. If focus would land on a now-hidden zone,
-    /// it moves to the first visible one.
+    /// Apply a tiling spec. Rows are separated by `,`, columns inside a
+    /// row by `|`, and every zone is named by its 1/2/3/4 key digit, so
+    /// `"1,3|4"` is the default UI: Results alone across the top, then
+    /// Trackers beside Log. A cell may hold several digits (`"34"` reads
+    /// as `"3|4"`), and any character that is not a zone key is ignored,
+    /// which keeps the old flat `"1,2,3,4"` meaning exactly what it
+    /// always did -- four rows, one zone each. If focus would land on a
+    /// now-hidden zone, it moves to the first visible one.
     pub fn apply_preset(&mut self, spec: &str) {
+        self.grid = Self::parse_spec(spec);
         let wanted: std::collections::HashSet<char> =
             spec.chars().filter(|c| c.is_ascii_digit()).collect();
         for id in ZoneId::all() {
@@ -254,25 +218,49 @@ impl ZoneLayout {
             return;
         }
 
-        match self.preset {
-            LayoutPreset::Horizontal => self.layout_horizontal(area),
-            LayoutPreset::Split => self.layout_split(area),
-        }
+        self.layout_grid(area);
     }
 
-    /// The default layout: every visible zone at full width, sharing the
-    /// height equally, the first `remainder` of them one row taller so
-    /// no row of the terminal is wasted.
-    fn layout_horizontal(&mut self, area: Rect) {
-        let visible_zones: Vec<ZoneId> = self
-            .zones
-            .iter()
-            .filter(|z| z.visible)
-            .map(|z| z.id)
-            .collect();
+    /// Split a spec into rows of zone keys: `,` starts a new row, and
+    /// the digits inside one chunk are its cells left to right. Empty
+    /// rows (a chunk with no zone key in it) are dropped.
+    fn parse_spec(spec: &str) -> Vec<Vec<ZoneId>> {
+        spec.split(',')
+            .map(|row| row.chars().filter_map(ZoneId::from_key).collect())
+            .filter(|row: &Vec<ZoneId>| !row.is_empty())
+            .collect()
+    }
 
-        let count = visible_zones.len();
-        if count == 0 {
+    /// The grid: rows from `grid` top to bottom, cells left to right,
+    /// each row taking an equal share of the height below the search
+    /// bar and each cell an equal share of its row's width -- the
+    /// first row and the first cells of a row taking the remainder, so
+    /// no row of the terminal is wasted.
+    ///
+    /// A cell whose zone is switched off is dropped, giving its width
+    /// to the rest of its row; a row that ends up empty is dropped,
+    /// giving its height to the rows that remain. A visible zone the
+    /// spec never named (switched back on with its digit key) gets a
+    /// row of its own at the bottom rather than vanishing.
+    fn layout_grid(&mut self, area: Rect) {
+        let mut rows: Vec<Vec<ZoneId>> = self
+            .grid
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .copied()
+                    .filter(|id| self.is_visible(*id))
+                    .collect()
+            })
+            .filter(|row: &Vec<ZoneId>| !row.is_empty())
+            .collect();
+        for zone in &self.zones {
+            if zone.visible && !self.grid.iter().flatten().any(|id| *id == zone.id) {
+                rows.push(vec![zone.id]);
+            }
+        }
+
+        if rows.is_empty() {
             for zone in &mut self.zones {
                 zone.area = Rect::default();
             }
@@ -280,82 +268,21 @@ impl ZoneLayout {
         }
 
         let available = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
-        let zone_height = available / count as u16;
-        let remainder = available.saturating_sub(zone_height * count as u16);
+        let row_height = available / rows.len() as u16;
+        let row_remainder = available - row_height * rows.len() as u16;
 
         let mut y = area.y + SEARCH_BAR_HEIGHT;
-        for (i, &id) in visible_zones.iter().enumerate() {
-            // Give the first `remainder` zones one extra row so every
-            // row of the terminal is used.
-            let h = zone_height + if (i as u16) < remainder { 1 } else { 0 };
-            let zone_area = Rect::new(area.x, y, area.width, h);
-            self.set_area(id, zone_area);
-            y += h;
-        }
-
-        for zone in &mut self.zones {
-            if !zone.visible {
-                zone.area = Rect::default();
+        for (i, row) in rows.iter().enumerate() {
+            let h = row_height + if (i as u16) < row_remainder { 1 } else { 0 };
+            let cell_width = area.width / row.len() as u16;
+            let cell_remainder = area.width - cell_width * row.len() as u16;
+            let mut x = area.x;
+            for (j, &id) in row.iter().enumerate() {
+                let w = cell_width + if (j as u16) < cell_remainder { 1 } else { 0 };
+                self.set_area(id, Rect::new(x, y, w, h));
+                x += w;
             }
-        }
-    }
-
-    /// The split layout: Results on top at full width, then two columns
-    /// -- Torrent on the left, Log and Sources stacked on the right.
-    ///
-    /// A zone that is turned off gives its space to whatever shares its
-    /// column, and a column whose zones are all off gives its width to
-    /// the other one, so hiding something never leaves a hole.
-    fn layout_split(&mut self, area: Rect) {
-        let mut y = area.y + SEARCH_BAR_HEIGHT;
-        let mut remaining = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
-
-        // Results first: about a third of what is there, full width. The
-        // floor keeps a legend and a row or two on screen at terminal
-        // heights where a third of nothing is nothing.
-        if self.is_visible(ZoneId::Results) {
-            let h = ((remaining / 3).max(MIN_SPLIT_ROWS)).min(remaining);
-            self.set_area(ZoneId::Results, Rect::new(area.x, y, area.width, h));
             y += h;
-            remaining -= h;
-        }
-
-        let left_visible = self.is_visible(ZoneId::Torrent);
-        let right_visible = self.is_visible(ZoneId::Log) || self.is_visible(ZoneId::Trackers);
-        let half = area.width / 2;
-        let (left_w, right_w) = match (left_visible, right_visible) {
-            (true, true) => (half, area.width - half),
-            (true, false) => (area.width, 0),
-            (false, true) => (0, area.width),
-            (false, false) => (0, 0),
-        };
-
-        if left_visible {
-            self.set_area(ZoneId::Torrent, Rect::new(area.x, y, left_w, remaining));
-        }
-
-        if right_visible {
-            let right_x = area.x + left_w;
-            // Log and Sources share the column; with one of them hidden
-            // the other takes the whole of it.
-            let column: Vec<ZoneId> = [ZoneId::Log, ZoneId::Trackers]
-                .into_iter()
-                .filter(|id| self.is_visible(*id))
-                .collect();
-            let count = column.len() as u16;
-            let h = remaining / count;
-            let mut ry = y;
-            for (i, id) in column.iter().enumerate() {
-                // The last one takes the remainder, so the column adds
-                // up to exactly `remaining` rows.
-                let zh = if i == column.len() - 1 {
-                    remaining - h * (count - 1)
-                } else {
-                    h
-                };
-                self.set_area(*id, Rect::new(right_x, ry, right_w, zh));
-                ry += zh;
-            }
         }
 
         for zone in &mut self.zones {

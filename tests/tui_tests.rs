@@ -933,19 +933,19 @@ fn test_results_table_shows_which_source_returned_each_row() {
     );
 }
 
-// --- layout presets (П.8) ----------------------------------------------------
+// --- layout tiling -----------------------------------------------------------
 
-/// The split preset (`P`) puts Results on top at full width and stacks
-/// Torrent against Log + Trackers in two columns below it. The render
-/// pass needs no change for that -- it draws into whatever rect
-/// `update_areas` handed out -- so this is a smoke test that the zones
-/// really land where the layout says.
+/// The default preset (`1,3|4`) puts Results across the top and tiles
+/// Trackers beside Log underneath. The render pass needs no change for
+/// that -- it draws into whatever rect `update_areas` handed out -- so
+/// this is a smoke test that the zones really land where the grid says
+/// and each one still draws its own frame there.
 #[test]
-fn test_the_split_preset_draws_two_columns() {
+fn test_the_default_tiling_draws_two_columns() {
     let mut app = make_test_app();
     app.results = make_results(3);
     app.update_filter();
-    app.zones.cycle_preset();
+    app.zones.apply_preset("1,3|4");
 
     let backend = TestBackend::new(100, 30);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -965,21 +965,19 @@ fn test_the_split_preset_draws_two_columns() {
     assert_eq!(results.width, 100);
     assert!(row_text(results.y).contains("Results"), "the Results frame");
 
-    // Torrent is the left column, Log and Trackers the right one.
-    let torrent = app.zones.get_area(ZoneId::Torrent);
-    let log = app.zones.get_area(ZoneId::Log);
+    // Trackers and Log share the row underneath, one column each.
     let trackers = app.zones.get_area(ZoneId::Trackers);
-    assert_eq!(torrent.x, 0);
-    assert_eq!(torrent.width, 50);
+    let log = app.zones.get_area(ZoneId::Log);
+    assert_eq!(trackers.x, 0);
+    assert_eq!(trackers.width, 50);
     assert_eq!(log.x, 50);
-    assert_eq!(trackers.x, 50);
-    assert!(log.y < trackers.y, "Log is stacked above Trackers");
+    assert_eq!(log.y, trackers.y, "the two cells share one row");
+    assert_eq!(app.zones.get_area(ZoneId::Torrent), Rect::default());
 
     // And each of them actually drew its own frame where it was placed.
-    assert!(row_text(torrent.y).contains("Torrent"), "the Torrent frame");
-    assert!(row_text(log.y).contains("Log"), "the Log frame");
     assert!(
         row_text(trackers.y).contains("Trackers"),
         "the Trackers frame"
     );
+    assert!(row_text(log.y).contains("Log"), "the Log frame");
 }

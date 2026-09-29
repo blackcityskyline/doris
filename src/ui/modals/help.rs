@@ -46,7 +46,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("F", "Toggles fullscreen for the focused zone."),
     ("m", "Toggles the main menu (Options lives there)."),
     ("1, 2, 3, 4", "Toggles that zone's visibility."),
-    ("Shift+P", "Cycles the layout preset (horizontal / split)."),
+    ("Shift+P", "Cycles the saved zone layout (a preset)."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
     (
         "j, k, Up, Down",
