@@ -34,12 +34,12 @@ base64 = "0.22"
 serial_test = "3"
 rusqlite = { version = "0.31", features = ["bundled"] }
 unicode-width = "0.2"
-# Needed for src/search/rutor.rs: extracting size/seeds/peers/date from a
+# Needed for src/sources/rutor.rs: extracting size/seeds/peers/date from a
 # table row's HTML is far more robust as a couple of small, well-anchored
 # patterns than nested DOM traversal guesses against a page whose exact
 # CSS classes weren't directly inspectable while writing this.
 regex = "1"
-# Needed so `Source` (src/search/source.rs) can be used as `Box<dyn Source>`
+# Needed so `Source` (src/sources/source.rs) can be used as `Box<dyn Source>`
 # in a registry: native async-fn-in-traits (stable since Rust 1.75) is not
 # object-safe on its own, this crate boxes the futures so it is. Small,
 # widely-used, proc-macro only (no extra runtime dependencies pulled in).

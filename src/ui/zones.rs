@@ -484,20 +484,19 @@ impl FrameButton {
 /// Frame buttons per zone.
 ///
 /// The keys are the bindings in AGENTS.md; a word is picked so its first
-/// letter is free for the hotkey whenever possible (`f` belongs to
-/// fullscreen, so filter has to take `F`; `v`/`⏎` are not letters at
-/// all and end up trailing the word). Kept next to `zone_title` so the
-/// legend and the bindings it advertises are edited together.
+/// letter is free for the hotkey whenever possible (`f` filters and `F`
+/// goes fullscreen, so in both cases the label leads with the binding).
+/// Kept next to `zone_title` so the legend and the bindings it
+/// advertises are edited together.
 ///
 /// The tables are `(slot, key, label)` tuples rather than `FrameButton`s
 /// so they stay `const` -- only the category button has a dynamic label,
 /// and it is built in `frame_layout`, not here.
 const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // Lowercase `f`: the filter is the Results panel's primary function,
-    // and the plan's "first letter where free" rule gives it `f` now
-    // that fullscreen has moved to `F` (btop capitalises a word when
-    // the hotkey is uppercase, but here the lowercase is the point --
-    // `f` is the key, not a shifted one).
+    // so it gets the letter unshifted while fullscreen -- which used to
+    // hold `f` -- moved to `F` (btop capitalises a word when the hotkey
+    // is uppercase; here the shift is what tells the two apart).
     (FrameSlot::TopLeft, 'f', "Filter"),
     (FrameSlot::TopRight, 'g', "group"),
     // The bottom action row (`play ⏎` / `download d` / `info v`) is
