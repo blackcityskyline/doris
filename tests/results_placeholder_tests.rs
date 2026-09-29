@@ -157,3 +157,44 @@ fn test_rows_present_render_no_placeholder() {
         "a populated panel must not carry the empty state:\n{text}"
     );
 }
+
+/// An empty table is still a list the TUI can leave.
+///
+/// `needs_more` used to require rows to scroll -- which is the reason
+/// 1337x handed pages back raw instead of admitting that nothing on
+/// them matched the query (the "Games" tab full of RELOADED repacks).
+/// With no rows the cursor is at the end by definition, so the next
+/// page is exactly what Down owes the user.
+#[test]
+fn test_an_empty_result_set_still_wants_the_next_page() {
+    let mut app = make_app();
+    app.search_query = Some("frieren crack".to_string());
+    app.state = AppState::Idle;
+    app.all_loaded = false;
+    app.filtered_indices = Vec::new();
+
+    assert!(app.results.is_empty(), "starts empty");
+    assert!(
+        app.needs_more(),
+        "an empty page must still promise the next one"
+    );
+}
+
+#[test]
+fn test_a_search_that_really_finished_does_not() {
+    let mut app = make_app();
+    app.search_query = Some("frieren crack".to_string());
+    app.state = AppState::Idle;
+    app.all_loaded = true;
+
+    assert!(!app.needs_more(), "no more pages to ask for");
+}
+
+#[test]
+fn test_a_search_still_running_does_not_ask_for_more() {
+    let mut app = make_app();
+    app.search_query = Some("frieren crack".to_string());
+    app.state = AppState::Searching;
+
+    assert!(!app.needs_more(), "one search at a time");
+}
