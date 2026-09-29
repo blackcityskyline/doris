@@ -142,7 +142,14 @@ impl App {
             Style::default().fg(self.theme.inactive_fg.to_color()),
         )));
 
-        let paragraph = Paragraph::new(lines).style(Style::default().bg(Color::DarkGray));
+        // No background of its own: `Clear` has blanked the popup and
+        // `modal_block` paints the theme's `main_bg` when "Theme
+        // background" is on, so btop's rule -- a box writes plain spaces
+        // and lets the terminal through (`btop_draw.cpp:createBox`) --
+        // holds here too. The hardcoded `DarkGray` this replaced was the
+        // one colour in the popup no theme could move, and on a light
+        // theme it put dark body text on grey.
+        let paragraph = Paragraph::new(lines);
         frame.render_widget(paragraph, inner);
     }
 }

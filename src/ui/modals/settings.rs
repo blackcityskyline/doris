@@ -734,6 +734,11 @@ impl App {
             let key_color = self.theme.on_hover_color();
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
+            // The cursor row of this list is a selected row like any
+            // other: same `selected_bg`/`selected_fg` Results, Trackers
+            // and the detail modal's file list use, and the same btop
+            // gives the option under the cursor (`btop_menu.cpp:1687`).
+            let selection = self.theme.selection_style();
 
             if let Modal::Settings(ref mut state) = self.modal {
                 let bw = inner.width as usize;
@@ -758,7 +763,13 @@ impl App {
                     + 2; // breathing room before the next tab
 
                 let mut tab_line = String::new();
-                let mut tab_styles: Vec<(usize, usize, bool)> = Vec::new();
+                // (start, length, is_selected, mark offsets): the
+                // marks are the characters that *are* the key -- the
+                // digit that switches to an unselected tab, the
+                // brackets around the selected one -- and take the
+                // hover accent while the tab's name stays structure,
+                // the split btop draws (`btop_menu.cpp:1631`).
+                let mut tab_styles: Vec<(usize, usize, bool, Vec<usize>)> = Vec::new();
                 let mut pos = 0;
                 for (i, cat) in state.categories.iter().enumerate() {
                     let is_sel = i == state.selected_category;
@@ -768,7 +779,12 @@ impl App {
                         format!("{}:{}", i + 1, cat.name)
                     };
                     let label_len = label.chars().count();
-                    tab_styles.push((pos, label_len, is_sel));
+                    let marks = if is_sel {
+                        vec![0, label_len - 1]
+                    } else {
+                        (0..(i + 1).to_string().len()).collect()
+                    };
+                    tab_styles.push((pos, label_len, is_sel, marks));
                     tab_line.push_str(&label);
                     for _ in label_len..slot_width {
                         tab_line.push(' ');
@@ -789,11 +805,15 @@ impl App {
                 let mut spans = Vec::new();
                 let chars: Vec<char> = tab_line.chars().collect();
                 let mut ci = 0;
-                for (start, len, is_sel) in &tab_styles {
+                for (start, len, is_sel, marks) in &tab_styles {
                     while ci < chars.len() && ci < *start + *len {
                         let ch = chars[ci].to_string();
-                        let style = if *is_sel {
-                            Style::default().fg(hi_color).add_modifier(Modifier::BOLD)
+                        let style = if marks.contains(&(ci - *start)) {
+                            Style::default().fg(key_color).add_modifier(Modifier::BOLD)
+                        } else if *is_sel {
+                            Style::default()
+                                .fg(title_color)
+                                .add_modifier(Modifier::BOLD)
                         } else {
                             Style::default().fg(title_color)
                         };
@@ -859,7 +879,7 @@ impl App {
                             item.label.clone()
                         };
                         let label_style = if is_sel {
-                            Style::default().fg(hi_color).add_modifier(Modifier::BOLD)
+                            selection.add_modifier(Modifier::BOLD)
                         } else {
                             Style::default().fg(title_color)
                         };
@@ -869,7 +889,14 @@ impl App {
                             Rect::new(left_x, y, divider_col as u16 - 1, 1),
                         );
 
-                        let val_style = Style::default().fg(fg_color);
+                        // btop lets the selection colours run onto the
+                        // value line as well (no new colour is emitted
+                        // for it), so the whole cursor row reads as one.
+                        let val_style = if is_sel {
+                            selection
+                        } else {
+                            Style::default().fg(fg_color)
+                        };
                         let val_display = if is_sel {
                             format!("← {} →", item.value)
                         } else {

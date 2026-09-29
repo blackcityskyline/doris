@@ -171,7 +171,19 @@ impl App {
                 Modal::Help(state) => state.page,
                 _ => 0,
             };
-            block = block.title_bottom(Line::from(format!(" ↑ page {}/{} ↓", page + 1, pages)));
+            // The arrows are the glyphs that act, so they take the
+            // hotkey accent + bold while `page n/m` stays structure --
+            // btop's split (`btop_menu.cpp:1780`) and the one the
+            // Settings modal already draws its own paging row with.
+            let arrow = Style::default()
+                .fg(self.theme.on_hover_color())
+                .add_modifier(Modifier::BOLD);
+            let title = Style::default().fg(self.theme.primary_color());
+            block = block.title_bottom(Line::from(vec![
+                Span::styled(" ↑ ", arrow),
+                Span::styled(format!("page {}/{} ", page + 1, pages), title),
+                Span::styled("↓", arrow),
+            ]));
         }
         frame.render_widget(block, popup);
 

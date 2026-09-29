@@ -183,7 +183,10 @@ impl App {
                 })
                 .collect();
 
-            let list = Paragraph::new(display_lines).style(Style::default().bg(Color::DarkGray));
+            // Same as the detail modal: `Clear` plus `modal_block`'s
+            // `main_bg` is the popup's background, so the panel never
+            // paints a colour the theme did not choose.
+            let list = Paragraph::new(display_lines);
             frame.render_widget(list, inner);
         }
     }
