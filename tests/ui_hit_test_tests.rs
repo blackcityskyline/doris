@@ -331,14 +331,37 @@ fn test_clicking_a_panel_row_switches_it() {
     let area = app.zones.get_area(ZoneId::Sources);
     assert!(area.height > 3, "the panel is on screen");
 
-    // The `all` row is the first line inside the border.
+    // The `all` row is the first line inside the border. The panel's
+    // checkbox is not a frame action, but it has to report itself so the
+    // orchestrator can persist the change.
     let action = app.click_at(area.y + 1, area.x + 1, &mut config);
-    assert_eq!(action, None, "a checkbox is not a frame action");
+    assert_eq!(action, Some(doris::ui::app::UiAction::SourcesChanged));
     assert!(
         config.enabled_sources.is_empty(),
         "the default view has everything on, so the click cleared it"
     );
     assert_eq!(app.zones.focused, ZoneId::Sources);
+}
+
+/// The same gate the keyboard has: while a query is being typed the
+/// pointer can still be over the panel, and that click belongs to the
+/// query -- it may move the cursor, it may not flip a checkbox behind
+/// the user's back.
+#[test]
+fn test_clicking_a_panel_row_while_typing_does_not_switch_it() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    app.enter_input_mode();
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Sources);
+
+    let action = app.click_at(area.y + 1, area.x + 1, &mut config);
+
+    assert_eq!(action, None, "nothing changed, so nothing to persist");
+    assert!(
+        !config.enabled_sources.is_empty(),
+        "the click must not have touched the selection"
+    );
 }
 
 /// The Results frame's info slot says what the search is asking, and it

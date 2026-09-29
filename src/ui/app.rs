@@ -39,6 +39,10 @@ pub enum UiAction {
     Info,
     TogglePause,
     Remove,
+    /// A Sources checkbox was switched (the panel's click path edits the
+    /// config itself, so it has to say so for the orchestrator to
+    /// persist it).
+    SourcesChanged,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -935,13 +939,20 @@ impl App {
             }
             ZoneId::Sources => {
                 // The rows are the controls, so a click is the same as
-                // moving the cursor there and pressing Enter.
+                // moving the cursor there and pressing Enter -- except
+                // that Enter's `!input_mode` gate applies here too: the
+                // search box has no zone of its own, so a query can be
+                // half-typed while the pointer is over the panel, and
+                // that click belongs to the query, not to the checkbox.
                 if let Some(row) = self.sources_row_at(row, col) {
                     self.sources_cursor = source_rows()
                         .iter()
                         .position(|r| *r == row)
                         .unwrap_or(self.sources_cursor);
-                    self.toggle_source(config);
+                    if !self.input_mode {
+                        self.toggle_source(config);
+                        return Some(UiAction::SourcesChanged);
+                    }
                 }
             }
             ZoneId::Torrent => {

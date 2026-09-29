@@ -5,7 +5,7 @@
 
 use doris::config::Config;
 use doris::ui::app::source_rows;
-use doris::ui::app::App as UiApp;
+use doris::ui::app::{App as UiApp, SourceRow};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
@@ -71,4 +71,55 @@ fn test_every_row_can_be_reached_by_walking_the_cursor() {
         missing.is_empty(),
         "rows the cursor can stand on but the panel never draws: {missing:?}"
     );
+}
+
+/// Every source the registry knows about is in the panel *and* switches
+/// both ways from the keyboard: a source that can be seen but not
+/// toggled is a source the user can never turn on or off.
+#[test]
+fn test_every_implemented_source_toggles_through_its_checkbox() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    config.enabled_sources.clear();
+
+    let mut checked = 0usize;
+    for (i, row) in source_rows().iter().enumerate() {
+        if !row.is_implemented() {
+            continue;
+        }
+        app.sources_cursor = i;
+        app.toggle_source(&mut config);
+        assert!(row.is_checked(&config), "{} must switch on", row.id());
+        app.toggle_source(&mut config);
+        assert!(!row.is_checked(&config), "{} must switch off", row.id());
+        if row.id() != "all" {
+            checked += 1;
+        }
+    }
+    assert_eq!(
+        checked,
+        doris::sources::source::KNOWN_SOURCES
+            .iter()
+            .filter(|info| info.implemented)
+            .count(),
+        "the panel must offer every implemented source"
+    );
+}
+
+/// The `all` row is the master switch: it must reach every implemented
+/// source at once, both directions, not just the ones that happened to
+/// be checked.
+#[test]
+fn test_the_all_row_switches_the_whole_roster() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    config.enabled_sources.clear();
+    let last = source_rows().iter().position(|r| r.id() == "all").unwrap();
+    app.sources_cursor = last;
+
+    app.toggle_source(&mut config);
+    assert!(SourceRow::All.is_checked(&config));
+    app.toggle_source(&mut config);
+    assert!(!SourceRow::All.is_checked(&config));
+    assert!(config.enabled_sources.is_empty());
 }

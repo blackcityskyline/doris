@@ -508,7 +508,8 @@ impl App {
         }
 
         if self.config.save_config_on_exit {
-            if let Err(e) = crate::config::save(&self.config, None) {
+            // Same path `config::load` read from (see `persist_config`).
+            if let Err(e) = crate::config::save(&self.config, self.args.config.as_deref()) {
                 eprintln!("Failed to save config on exit: {}", e);
             }
         }
@@ -617,6 +618,7 @@ impl App {
                     self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
                     match self.ui.click_at(mouse.row, mouse.column, &mut self.config) {
+                        Some(UiAction::SourcesChanged) => self.persist_config(),
                         Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,
                         Some(UiAction::Remove) => self.remove_active_torrent().await,
                         Some(UiAction::Download) => self.download_selected_to_disk().await,
@@ -863,6 +865,23 @@ impl App {
     /// and why this exists; this just supplies `&self.config`/`self.args`.
     fn resolve_cookie_file(&self) -> Option<std::path::PathBuf> {
         resolve_cookie_file(&self.config, self.args.cookie_file.as_deref())
+    }
+
+    /// Write the config back now rather than at exit.
+    ///
+    /// Every in-app edit of `self.config` goes through here: the
+    /// Settings modal always did this, and the Sources checkboxes only
+    /// flipped a field in memory -- with "Save config on exit" defaulting
+    /// to off, a checked source simply evaporated when the app closed.
+    /// The path is `--config`, the one `config::load` read from, so a
+    /// run pointed at another file cannot be overwritten by (or overwrite
+    /// the contents of) the default one. A failure is worth saying out
+    /// loud in the Log zone: silently losing a setting is what this
+    /// function exists to stop.
+    fn persist_config(&mut self) {
+        if let Err(e) = crate::config::save(&self.config, self.args.config.as_deref()) {
+            self.ui.add_log(&format!("Failed to save config: {e}"));
+        }
     }
 
     /// Move the selection down in the focused zone, loading the next page
@@ -1209,7 +1228,7 @@ impl App {
                 // final flush, not whether changes are remembered at all
                 // -- a crash between now and exit shouldn't lose them,
                 // and it previously did).
-                let _ = crate::config::save(&self.config, None);
+                self.persist_config();
             }
             return Ok(());
         }
@@ -1245,75 +1264,74 @@ impl App {
             return Ok(());
         }
 
+        // The search box has no zone of its own, so "the Sources panel is
+        // focused" and "a query is being typed" are not mutually
+        // exclusive. Every arm below therefore needs `!input_mode` to stay
+        // out of the user's way -- and that is exactly the guard that kept
+        // being left off (`j`/`k` on the panel, `j`/`k` and Up/Down
+        // everywhere). Typing owns the key here instead, so one check
+        // replaces a guard every future arm would have to remember.
+        if self.ui.input_mode {
+            return self.handle_input_key(key).await;
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 self.ui.quit();
             }
-            KeyCode::Char('m') if !self.ui.input_mode => {
+            KeyCode::Char('m') => {
                 self.ui.show_menu = !self.ui.show_menu;
             }
-            KeyCode::Char('f') if !self.ui.input_mode => {
+            KeyCode::Char('f') => {
                 self.ui.zones.filter_mode = true;
             }
-            KeyCode::Char('F') if !self.ui.input_mode => {
+            KeyCode::Char('F') => {
                 if self.ui.zones.fullscreen.is_some() {
                     self.ui.zones.set_fullscreen(None);
                 } else {
                     self.ui.zones.set_fullscreen(Some(self.ui.zones.focused));
                 }
             }
-            KeyCode::Char('1') if !self.ui.input_mode => {
+            KeyCode::Char('1') => {
                 self.ui.zones.toggle(ZoneId::Results);
             }
-            KeyCode::Char('2') if !self.ui.input_mode => {
+            KeyCode::Char('2') => {
                 self.ui.zones.toggle(ZoneId::Torrent);
             }
-            KeyCode::Char('3') if !self.ui.input_mode => {
+            KeyCode::Char('3') => {
                 self.ui.zones.toggle(ZoneId::Log);
             }
-            KeyCode::Char('4') if !self.ui.input_mode => {
+            KeyCode::Char('4') => {
                 self.ui.zones.toggle(ZoneId::Sources);
             }
             // Shift+P: cycle the layout preset (П.8). Lowercase `p` is
             // pause/resume on the Torrent panel, so the capital is the
             // free one -- the same reasoning as `F` for filter.
-            KeyCode::Char('P') if !self.ui.input_mode => {
+            KeyCode::Char('P') => {
                 self.ui.zones.cycle_preset();
             }
-            KeyCode::Char('p')
-                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent =>
-            {
+            KeyCode::Char('p') if self.ui.zones.focused == ZoneId::Torrent => {
                 self.toggle_pause_active_torrent().await;
             }
-            KeyCode::Char('d')
-                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Torrent =>
-            {
+            KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Torrent => {
                 self.remove_active_torrent().await;
             }
-            KeyCode::Char('d')
-                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
-            {
+            KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Results => {
                 self.download_selected_to_disk().await;
             }
-            KeyCode::Char('v')
-                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
-            {
+            KeyCode::Char('v') if self.ui.zones.focused == ZoneId::Results => {
                 self.show_selected_info();
             }
             // The category row's keys, next to `g`/`G` and gated the same
             // way: `g` steps forward, `G` (shift) back. Both only ever
             // move the row and re-derive the view -- the search still
             // waits for Enter, exactly as it does after a category switch.
-            KeyCode::Char('g')
-                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
-            {
+            KeyCode::Char('g') if self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_group(true);
             }
-            KeyCode::Char('G')
-                if !self.ui.input_mode && self.ui.zones.focused == ZoneId::Results =>
-            {
+            KeyCode::Char('G') if self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_group(false);
             }
             // The Sources panel's own keys: `j`/`k` move the cursor
@@ -1321,7 +1339,9 @@ impl App {
             // the row under it. Both are gated on the panel being focused
             // for the same reason `g`/`G` are gated on Results -- a key
             // that moved a cursor somewhere the user is not looking would
-            // be a surprise.
+            // be a surprise. Typing is already off the table by the time
+            // this match runs (see the `input_mode` hand-over above), so
+            // none of the three needs its own half of that guard.
             KeyCode::Char('j')
                 if self.config.vim_keys && self.ui.zones.focused == ZoneId::Sources =>
             {
@@ -1334,6 +1354,7 @@ impl App {
             }
             KeyCode::Enter if self.ui.zones.focused == ZoneId::Sources => {
                 self.ui.toggle_source(&mut self.config);
+                self.persist_config();
             }
             // Shift+Enter: the selected row's details (П.7). Separate
             // from the plain Enter below on purpose -- that one plays
@@ -1347,12 +1368,10 @@ impl App {
             // Shift+Enter falls through to play and the modal never
             // opens. `D` is the same action on a key every terminal
             // sends distinctly.
-            KeyCode::Char('D') if !self.ui.input_mode => {
+            KeyCode::Char('D') => {
                 self.open_detail_modal().await;
             }
-            KeyCode::Enter
-                if key.modifiers.contains(KeyModifiers::SHIFT) && !self.ui.input_mode =>
-            {
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.open_detail_modal().await;
             }
             KeyCode::Char('j') if self.config.vim_keys => {
@@ -1367,26 +1386,26 @@ impl App {
             KeyCode::Up => {
                 self.handle_nav_up();
             }
-            KeyCode::Tab if !self.ui.input_mode => {
+            KeyCode::Tab => {
                 self.ui.zones.focus_next();
             }
-            KeyCode::BackTab if !self.ui.input_mode => {
+            KeyCode::BackTab => {
                 self.ui.zones.focus_prev();
             }
-            KeyCode::PageUp if !self.ui.input_mode => {
+            KeyCode::PageUp => {
                 if self.ui.zones.focused == ZoneId::Log {
                     self.ui.scroll_logs_page_up()
                 }
             }
-            KeyCode::PageDown if !self.ui.input_mode => {
+            KeyCode::PageDown => {
                 if self.ui.zones.focused == ZoneId::Log {
                     self.ui.scroll_logs_page_down()
                 }
             }
-            KeyCode::Char('s') | KeyCode::Char('i') if !self.ui.input_mode => {
+            KeyCode::Char('s') | KeyCode::Char('i') => {
                 self.ui.enter_input_mode();
             }
-            KeyCode::Char('b') if !self.ui.input_mode => {
+            KeyCode::Char('b') => {
                 // Browse (B9): an empty query asks the browse-capable
                 // sources for their freshest rows. Browse is cross-source
                 // by nature, so it takes the "all" category with it -- a
@@ -1395,10 +1414,10 @@ impl App {
                 self.ui.set_group(None);
                 self.start_search(String::new()).await;
             }
-            KeyCode::Char('L') if !self.ui.input_mode => {
+            KeyCode::Char('L') => {
                 self.ui.toggle_detail_log();
             }
-            KeyCode::Char('S') if !self.ui.input_mode => {
+            KeyCode::Char('S') => {
                 self.ui.open_settings(
                     &self.config,
                     self.browser_visibility == BrowserVisibility::Hidden,
@@ -1407,69 +1426,86 @@ impl App {
             // The help page (btop binds `F1`/`?`/`h`); `h` stays free
             // for future vim navigation, so the three triggers are `?`,
             // `/` and F1.
-            KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1) if !self.ui.input_mode => {
+            KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1) => {
                 self.ui.open_help_modal();
             }
+            // detail log mode and input mode both returned above, so the
+            // only Esc left to answer for is the main view's.
             KeyCode::Esc => {
-                if self.ui.detail_log_mode {
-                    self.ui.detail_log_mode = false;
-                } else if self.ui.input_mode {
-                    self.ui.exit_input_mode();
-                } else {
-                    self.ui.show_menu = !self.ui.show_menu;
+                self.ui.show_menu = !self.ui.show_menu;
+            }
+            KeyCode::Enter => self.handle_enter().await,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// What Enter means on the main view (btop's `enter`/`play`): submit
+    /// the typed query, re-search a selection that just changed, or play
+    /// the highlighted row. Also the key input mode passes it to --
+    /// [`handle_input_key`] calls it with `input_mode` still on, where
+    /// `enter_action` can only answer SubmitQuery or DoNothing.
+    async fn handle_enter(&mut self) {
+        let action = enter_action(
+            self.ui.input_mode,
+            !self.ui.search_input.is_empty(),
+            self.ui.source_changed,
+            self.ui.group_changed,
+            self.ui.submit_selection().is_some(),
+        );
+        match action {
+            EnterAction::SubmitQuery => {
+                if let Some(query) = self.ui.submit_search() {
+                    self.start_search(query).await;
                 }
             }
-            KeyCode::Enter => {
-                let action = enter_action(
-                    self.ui.input_mode,
-                    !self.ui.search_input.is_empty(),
-                    self.ui.source_changed,
-                    self.ui.group_changed,
-                    self.ui.submit_selection().is_some(),
-                );
-                match action {
-                    EnterAction::SubmitQuery => {
-                        if let Some(query) = self.ui.submit_search() {
-                            self.start_search(query).await;
-                        }
-                    }
-                    EnterAction::RestartSearch => {
-                        // A tab row was just switched (`]`/click or
-                        // `g`/`G`/click): re-search with the new
-                        // selection instead of playing a torrent. Both
-                        // flags clear here as well as in `start_search`,
-                        // for the only path where no search follows --
-                        // nothing has ever been searched, so there is no
-                        // query to restart and no row to play either.
-                        self.ui.source_changed = false;
-                        self.ui.group_changed = false;
-                        if let Some(ref q) = self.ui.search_query.clone() {
-                            let query = q.clone();
-                            self.start_search(query).await;
-                        }
-                    }
-                    EnterAction::Play => self.spawn_stream().await,
-                    EnterAction::DoNothing => {}
+            EnterAction::RestartSearch => {
+                // A tab row was just switched (`]`/click or
+                // `g`/`G`/click): re-search with the new selection
+                // instead of playing a torrent. Both flags clear here
+                // as well as in `start_search`, for the only path where
+                // no search follows -- nothing has ever been searched,
+                // so there is no query to restart and no row to play
+                // either.
+                self.ui.source_changed = false;
+                self.ui.group_changed = false;
+                if let Some(ref q) = self.ui.search_query.clone() {
+                    let query = q.clone();
+                    self.start_search(query).await;
                 }
             }
-            KeyCode::Char('u')
-                if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            EnterAction::Play => self.spawn_stream().await,
+            EnterAction::DoNothing => {}
+        }
+    }
+
+    /// Every key typed into the search box, and nothing else: the box
+    /// has no zone of its own, so `input_mode` can overlap any focused
+    /// zone, and this is the single place that overlap is decided --
+    /// `handle_key` hands the key over before its own match runs.
+    ///
+    /// Esc and Enter go through the same paths they have on any other
+    /// view (leave input mode / the Enter decision tree); quitting stays
+    /// here so Ctrl+C works while a query is being typed.
+    async fn handle_input_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
+                self.ui.quit();
+            }
+            KeyCode::Esc => self.ui.exit_input_mode(),
+            KeyCode::Enter => self.handle_enter().await,
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.clear_input();
             }
-            KeyCode::Char('w')
-                if self.ui.input_mode && key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.delete_word();
             }
-            KeyCode::Char(c)
-                if self.ui.input_mode && !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.type_char(c);
             }
-            KeyCode::Backspace if self.ui.input_mode => {
-                self.ui.backspace();
-            }
+            KeyCode::Backspace => self.ui.backspace(),
             _ => {}
         }
         Ok(())
@@ -2018,5 +2054,127 @@ impl App {
         // source inside `dispatch_search`.
         let generation = self.search_generation;
         self.dispatch_search(query, generation).await;
+    }
+}
+
+// --- key routing: who owns Enter while the search box is being typed ------
+//
+// The search input has no zone of its own, so `input_mode` and "the
+// Sources panel is focused" are not mutually exclusive -- a query typed
+// after clicking the panel used to have its Enter (and its `j`/`k`)
+// swallowed by the panel. These run against a real `App` because the bug
+// lives in the *order* of the match arms, which no pure helper sees.
+
+#[cfg(test)]
+mod key_routing_tests {
+    use super::*;
+    use crate::ui::app::source_rows;
+    use clap::Parser;
+    use std::path::PathBuf;
+
+    /// An `App` with the Sources panel focused, no bridge listener, and
+    /// no sources checked, so a key that submits a search starts no
+    /// network task and the routing decision is all there is to observe.
+    async fn app_focused_on_sources(config_path: Option<PathBuf>) -> App {
+        let config = Config {
+            bridge_port: 0,
+            enabled_sources: Vec::new(),
+            vim_keys: true,
+            ..Config::default()
+        };
+        let mut argv = vec!["doris"];
+        if let Some(path) = &config_path {
+            argv.push("--config");
+            argv.push(path.to_str().expect("utf-8 test path"));
+        }
+        let mut app = App::new(Args::parse_from(argv), config)
+            .await
+            .expect("an App for a key-routing test");
+        app.ui.show_menu = false;
+        app.ui.zones.focused = ZoneId::Sources;
+        app
+    }
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[tokio::test]
+    async fn enter_submits_the_query_with_the_sources_panel_focused() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.enter_input_mode();
+        app.ui.type_char('m');
+        let before = app.config.enabled_sources.clone();
+
+        app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+        assert_eq!(
+            app.config.enabled_sources, before,
+            "Enter was stolen by the Sources panel while the query was typed"
+        );
+        assert!(!app.ui.input_mode, "the typed query was submitted");
+        assert!(app.search_generation > 0, "and it started a search");
+    }
+
+    /// A query is typed while the panel is focused: every one of its
+    /// letters -- including the `j`/`k` that are nav keys everywhere
+    /// else, and the arrow keys after them -- belongs to the box.
+    #[tokio::test]
+    async fn every_letter_of_a_query_reaches_the_box() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.enter_input_mode();
+
+        for c in "john wick".chars() {
+            app.handle_key(press(KeyCode::Char(c)))
+                .await
+                .expect("a letter");
+        }
+        app.handle_key(press(KeyCode::Down)).await.expect("Down");
+        app.handle_key(press(KeyCode::Up)).await.expect("Up");
+
+        assert_eq!(
+            app.ui.search_input, "john wick",
+            "the query was eaten by the panel's (or Results') navigation keys"
+        );
+        assert_eq!(app.ui.sources_cursor, 0, "the panel cursor must not move");
+    }
+
+    /// The other half of the same guard: outside input mode the panel's
+    /// keys must still do exactly what they did.
+    #[tokio::test]
+    async fn enter_still_switches_the_focused_source_row() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.sources_cursor = 1; // the first real source, after `all`
+        let id = source_rows()[1].id();
+
+        app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+        assert_eq!(app.config.enabled_sources, vec![id.to_string()]);
+    }
+
+    /// A checkbox the app forgets on quit is a checkbox that never
+    /// happened: "Save config on exit" defaults to off, so the toggle
+    /// has to reach the disk itself -- through the same `--config` path
+    /// the config was loaded from.
+    #[tokio::test]
+    async fn switching_a_source_row_persists_the_config() {
+        let dir = std::env::temp_dir().join(format!("doris-cfg-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_focused_on_sources(Some(path.clone())).await;
+        app.ui.sources_cursor = 1;
+        let id = source_rows()[1].id();
+
+        app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+        let text =
+            std::fs::read_to_string(&path).expect("the checkbox change must reach the config file");
+        assert!(
+            text.contains(id),
+            "`{id}` must be in the saved config:\n{text}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
