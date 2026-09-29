@@ -766,14 +766,20 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
 
     let results = app.zones.get_area(ZoneId::Results);
     let top = row_text(&terminal, results.y);
-    assert!(top.contains("Filter"), "Results top border: {}", top);
+    assert!(top.contains("filter"), "Results top border: {}", top);
     assert!(top.contains("group"), "Results top border: {}", top);
     // The source tabs left the frame for their own panel (П.4), and
     // play/download/info left for the help page -- what the border says
     // now is the category button and the counts.
     assert!(top.contains('◀'), "Results top border: {}", top);
     assert!(top.contains('▶'), "Results top border: {}", top);
-    assert!(top.contains("(3/3)"), "info text on the border: {}", top);
+    // With nothing on the left but the title, the counter lands
+    // directly after the zone's name: `¹ Results (003/003)`.
+    assert!(
+        top.contains("Results (003/003)"),
+        "counter after the zone name: {}",
+        top
+    );
 
     // The bottom action row is gone: play/download/info are
     // keyboard-and-help-page actions, not frame buttons.

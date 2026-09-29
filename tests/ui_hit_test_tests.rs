@@ -364,11 +364,13 @@ fn test_clicking_a_panel_row_while_typing_does_not_switch_it() {
     );
 }
 
-/// The Results frame's info slot says what the search is asking, and it
-/// is derived from the same config the panel edits -- so the two can
-/// never disagree about who is on.
+/// What is left on the Results frame after the source tabs moved to
+/// their own panel: the row counter, zero-padded like the log's
+/// scroll position, and the filter while one is set. Which sources are
+/// on is the Trackers panel's answer, and printing it a second time on
+/// this border is a place for the two to disagree.
 #[test]
-fn test_the_results_info_slot_names_the_checked_sources() {
+fn test_the_results_info_slot_counts_without_naming_sources() {
     let mut app = make_app();
     let mut config = Config::default();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
@@ -376,20 +378,47 @@ fn test_the_results_info_slot_names_the_checked_sources() {
 
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "[all]  (0/0)",
-        "every implemented source is on by default"
+        "(000/000)",
+        "zero-padded, three digits wide"
     );
 
     config.enabled_sources = vec!["rutracker".to_string(), "yts".to_string()];
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "[rutracker, yts]  (0/0)"
+        "(000/000)",
+        "the checked sources never come back onto this frame"
     );
 
     config.enabled_sources.clear();
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "[none]  (0/0)"
+        "(000/000)",
+        "not even as `[none]`"
+    );
+}
+
+/// The counter sits directly after the zone's name -- `¹ Results
+/// (003/003)` -- and the filter trails it rather than pushing it off.
+#[test]
+fn test_the_results_counter_leads_the_info_slot() {
+    let mut app = make_app();
+    app.results = make_results(3);
+    app.update_filter();
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Results);
+    let config = Config::default();
+
+    assert_eq!(
+        app.frame_info(ZoneId::Results, area, &config),
+        "(003/003)",
+        "filtered 3 of 3"
+    );
+
+    app.zones.filter_input = "rutor".to_string();
+    assert_eq!(
+        app.frame_info(ZoneId::Results, area, &config),
+        "(003/003) [F: rutor]",
+        "the count stays first, the filter trails it"
     );
 }
 
@@ -461,9 +490,9 @@ fn test_click_between_two_frame_buttons_does_nothing() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
     let layout = app.frame_layout(ZoneId::Results, results_area, &config);
-    // `Filter` is the only top-left button now the source tabs moved to
-    // their own panel; `group` is the only top-right one. The gap
-    // between them is at least one column wide.
+    // `filter` and `group` share the right cluster, drawn in table
+    // order with the category button after them. The gap between two
+    // neighbouring words is at least one column wide.
     let filter = layout
         .buttons
         .iter()

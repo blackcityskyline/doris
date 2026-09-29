@@ -1,6 +1,7 @@
+use doris::sources::source::Group;
 use doris::ui::theme::Theme;
 use doris::ui::zones::{
-    button_spans, zone_buttons, zone_title, zone_title_width, ZoneId, ZoneLayout,
+    button_spans, zone_buttons, zone_title, zone_title_width, FrameSlot, ZoneId, ZoneLayout,
 };
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -355,6 +356,68 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
             );
         }
     }
+}
+
+/// The filter is a state toggle like `group`, so it lives in the same
+/// right-hand cluster beside it instead of standing alone on the left,
+/// and it is spelled in lowercase like every other legend word -- the
+/// hotkey `f` is what marks it, not a capital letter.
+#[test]
+fn test_the_filter_button_sits_on_the_right_next_to_group() {
+    let buttons = zone_buttons(ZoneId::Results);
+    let filter = buttons
+        .iter()
+        .find(|b| b.key == 'f')
+        .expect("Results has a filter button");
+    assert_eq!(
+        filter.slot,
+        FrameSlot::TopRight,
+        "filter moved beside group"
+    );
+    assert_eq!(filter.label, "filter", "lowercase, like `group`/`pause`");
+
+    let group = buttons
+        .iter()
+        .find(|b| b.key == 'g')
+        .expect("Results has a group button");
+    assert_eq!(filter.slot, group.slot, "they share the right cluster");
+}
+
+/// The category name is centred in a slot as wide as the widest
+/// category, so the arrows hold the same columns no matter which one
+/// shows: `◀..TV..▶` beside `◀Movies▶`, not `◀TV    ▶`.
+#[test]
+fn test_the_category_name_is_centred_in_its_slot() {
+    let mut app = doris::ui::app::App::new("http://127.0.0.1:8090".into(), None);
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = app.zones.get_area(ZoneId::Results);
+    let config = doris::config::Config::default();
+
+    let layout = app.frame_layout(ZoneId::Results, area, &config);
+    let label = layout
+        .buttons
+        .iter()
+        .find(|(b, _)| b.is_category())
+        .map(|(b, _)| b.label.clone())
+        .expect("the Results frame has a category button");
+
+    let width = app
+        .group_tabs
+        .iter()
+        .map(|g| g.map_or("all", Group::label).chars().count())
+        .max()
+        .unwrap_or(3);
+    let name = app.active_group.map_or("all", Group::label);
+    assert_eq!(
+        label,
+        format!("◀ {:^width$} ▶", name, width = width),
+        "centred in the fixed slot, extra space to the right"
+    );
+    assert_eq!(
+        label.chars().count(),
+        1 + 1 + width + 1 + 1,
+        "the arrows stay in the same columns whatever the name"
+    );
 }
 
 /// The category button's arrows are the mouse targets, so both take the

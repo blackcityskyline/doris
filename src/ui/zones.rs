@@ -498,8 +498,10 @@ const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // Lowercase `f`: the filter is the Results panel's primary function,
     // so it gets the letter unshifted while fullscreen -- which used to
     // hold `f` -- moved to `F` (btop capitalises a word when the hotkey
-    // is uppercase; here the shift is what tells the two apart).
-    (FrameSlot::TopLeft, 'f', "Filter"),
+    // is uppercase; here the shift is what tells the two apart). It sits
+    // with `group` on the right because both are state toggles, leaving
+    // the left of the border to the title and the row counter.
+    (FrameSlot::TopRight, 'f', "filter"),
     (FrameSlot::TopRight, 'g', "group"),
     // The bottom action row (`play ⏎` / `download d` / `info v`) is
     // gone: those three are keyboard-and-help-page actions now, and a

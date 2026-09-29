@@ -252,8 +252,8 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
     // two tables have to agree about `f` or one of them is lying.
     let legend = doris::ui::zones::zone_buttons(doris::ui::zones::ZoneId::Results);
     assert!(
-        legend.iter().any(|b| b.key == 'f' && b.label == "Filter"),
-        "the Results frame prints `f Filter`: {:?}",
+        legend.iter().any(|b| b.key == 'f' && b.label == "filter"),
+        "the Results frame prints `f filter`: {:?}",
         legend
             .iter()
             .map(|b| (b.key, b.label.clone()))

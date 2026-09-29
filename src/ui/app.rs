@@ -696,12 +696,19 @@ impl App {
     pub fn frame_info(&self, id: ZoneId, area: Rect, config: &Config) -> String {
         match id {
             ZoneId::Results => {
-                let counts = format!(" ({}/{})", self.filtered_indices.len(), self.results.len());
-                let sources = format!("[{}]", sources_summary(config));
+                // The counter leads, zero-padded and directly after the
+                // zone's name; which sources are checked is the Trackers
+                // panel's answer, so it is not repeated here (printing
+                // it twice is how the two disagree).
+                let counts = format!(
+                    "({:03}/{:03})",
+                    self.filtered_indices.len(),
+                    self.results.len()
+                );
                 if self.zones.filter_input.is_empty() {
-                    format!("{} {}", sources, counts)
+                    counts
                 } else {
-                    format!(" [F: {}] {} {}", self.zones.filter_input, sources, counts)
+                    format!("{} [F: {}]", counts, self.zones.filter_input)
                 }
             }
             ZoneId::Trackers => {
@@ -767,10 +774,11 @@ impl App {
         // keyboard way in, exactly as they were when the category was a
         // row inside the panel.
         //
-        // The name is padded to the widest category so the arrows stay
-        // in the same columns no matter which one is showing -- `◀ TV ▶`
-        // and `◀ Movies ▶` line up, instead of the right arrow sliding
-        // four columns to the right on the longer name.
+        // The name is centred in a slot as wide as the widest category
+        // so the arrows stay in the same columns no matter which one is
+        // showing -- `◀..TV..▶` and `◀Movies▶` line up, instead of the
+        // right arrow sliding four columns to the right on the longer
+        // name (extra padding lands on the right, as in btop's headers).
         if id == ZoneId::Results {
             let width = self
                 .group_tabs
@@ -782,7 +790,7 @@ impl App {
             buttons.push(FrameButton {
                 slot: FrameSlot::TopRight,
                 key: 'g',
-                label: format!("◀ {:<width$} ▶", name, width = width),
+                label: format!("◀ {:^width$} ▶", name, width = width),
             });
         }
 
