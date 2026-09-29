@@ -41,7 +41,7 @@ fn test_default_layout_visibility() {
     assert!(zones.is_visible(ZoneId::Results));
     assert!(zones.is_visible(ZoneId::Torrent));
     assert!(zones.is_visible(ZoneId::Log));
-    assert!(!zones.is_visible(ZoneId::Extra));
+    assert!(zones.is_visible(ZoneId::Sources));
     assert_eq!(zones.focused, ZoneId::Results);
     assert_eq!(zones.fullscreen, None);
 }
@@ -49,14 +49,33 @@ fn test_default_layout_visibility() {
 #[test]
 fn test_toggle_flips_visibility_and_focuses_when_shown() {
     let mut zones = ZoneLayout::new();
-    assert!(!zones.is_visible(ZoneId::Extra));
+    zones.set_visible(ZoneId::Log, false);
+    assert!(!zones.is_visible(ZoneId::Log));
 
-    zones.toggle(ZoneId::Extra);
-    assert!(zones.is_visible(ZoneId::Extra));
-    assert_eq!(zones.focused, ZoneId::Extra);
+    zones.toggle(ZoneId::Log);
+    assert!(zones.is_visible(ZoneId::Log));
+    assert_eq!(zones.focused, ZoneId::Log);
 
-    zones.toggle(ZoneId::Extra);
-    assert!(!zones.is_visible(ZoneId::Extra));
+    zones.toggle(ZoneId::Log);
+    assert!(!zones.is_visible(ZoneId::Log));
+}
+
+/// Sources took the `4` slot (the TBD Extra zone is gone), so the panel
+/// the user actually reaches for sits next to Log instead of hiding
+/// behind a fifth key. Digits `1`-`4` are the whole zone keyboard now.
+#[test]
+fn test_sources_owns_the_four_slot() {
+    assert_eq!(ZoneId::from_key('4'), Some(ZoneId::Sources));
+    assert_eq!(ZoneId::from_key('5'), None);
+    assert_eq!(
+        ZoneId::all(),
+        &[
+            ZoneId::Results,
+            ZoneId::Torrent,
+            ZoneId::Log,
+            ZoneId::Sources
+        ]
+    );
 }
 
 #[test]
@@ -93,7 +112,6 @@ fn test_apply_preset_shows_exactly_the_named_zones() {
     assert!(zones.is_visible(ZoneId::Results));
     assert!(!zones.is_visible(ZoneId::Torrent));
     assert!(zones.is_visible(ZoneId::Log));
-    assert!(!zones.is_visible(ZoneId::Extra));
     assert!(!zones.is_visible(ZoneId::Sources));
 }
 
@@ -113,7 +131,6 @@ fn test_apply_preset_ignores_unknown_characters() {
     assert!(zones.is_visible(ZoneId::Results));
     assert!(zones.is_visible(ZoneId::Log));
     assert!(!zones.is_visible(ZoneId::Torrent));
-    assert!(!zones.is_visible(ZoneId::Extra));
     assert!(!zones.is_visible(ZoneId::Sources));
 }
 
@@ -140,7 +157,7 @@ fn test_apply_preset_keeps_focus_if_still_visible() {
 #[test]
 fn test_focus_next_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
-    // Default visible order: Results, Torrent, Log, Sources (Extra hidden).
+    // Default visible order: Results, Torrent, Log, Sources.
     zones.focused = ZoneId::Results;
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Torrent);
@@ -148,7 +165,7 @@ fn test_focus_next_skips_hidden_zones_and_wraps() {
     assert_eq!(zones.focused, ZoneId::Log);
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Sources);
-    zones.focus_next(); // wraps back to Results, skipping hidden Extra
+    zones.focus_next(); // wraps back to Results
     assert_eq!(zones.focused, ZoneId::Results);
 }
 
@@ -156,7 +173,7 @@ fn test_focus_next_skips_hidden_zones_and_wraps() {
 fn test_focus_prev_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
     zones.focused = ZoneId::Results;
-    zones.focus_prev(); // wraps to the last visible zone (Sources), skipping Extra
+    zones.focus_prev(); // wraps to the last visible zone (Sources)
     assert_eq!(zones.focused, ZoneId::Sources);
 }
 
@@ -172,12 +189,12 @@ fn test_focus_next_noop_when_nothing_visible() {
 }
 
 /// Regression test for the crash reported after enabling the default
-/// "1,2,3,4" preset: Results and Extra used to each independently claim
-/// the *entire* leftover height instead of splitting it, so their
-/// combined area ran past the bottom of the terminal and panicked
-/// ratatui with an out-of-bounds buffer write. This asserts the actual
-/// invariant that bug violated, across a range of terminal sizes, so any
-/// future regression here fails a test instead of crashing the TUI.
+/// "1,2,3,4" preset: two zones used to each independently claim the
+/// *entire* leftover height instead of splitting it, so their combined
+/// area ran past the bottom of the terminal and panicked ratatui with an
+/// out-of-bounds buffer write. This asserts the actual invariant that
+/// bug violated, across a range of terminal sizes, so any future
+/// regression here fails a test instead of crashing the TUI.
 #[test]
 fn test_all_zones_visible_never_exceeds_terminal_height() {
     for &(w, h) in &[(80u16, 24u16), (100, 30), (141, 35), (60, 15), (200, 50)] {
@@ -451,7 +468,6 @@ fn test_the_preset_cycles_and_wraps() {
 #[test]
 fn test_the_split_layout_stacks_the_zones_in_two_columns() {
     let mut zones = ZoneLayout::new();
-    zones.set_visible(ZoneId::Extra, false);
     zones.cycle_preset();
     zones.update_areas(Rect::new(0, 0, 100, 30));
 
@@ -477,7 +493,6 @@ fn test_the_split_layout_stacks_the_zones_in_two_columns() {
 #[test]
 fn test_hiding_a_zone_gives_its_space_to_its_column() {
     let mut zones = ZoneLayout::new();
-    zones.set_visible(ZoneId::Extra, false);
     zones.cycle_preset();
 
     // Sources off: Log takes the whole right column.
@@ -541,7 +556,6 @@ fn test_the_search_bar_is_outside_both_presets() {
 #[test]
 fn test_the_split_layout_survives_a_tiny_terminal() {
     let mut zones = ZoneLayout::new();
-    zones.set_visible(ZoneId::Extra, false);
     zones.cycle_preset();
     zones.update_areas(Rect::new(0, 0, 40, 6));
 

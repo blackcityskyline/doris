@@ -46,7 +46,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("F", "Filter mode; Enter applies, Esc clears."),
     ("f", "Toggles fullscreen for the focused zone."),
     ("m", "Toggles the main menu."),
-    ("1, 2, 3, 4, 5", "Toggles that zone's visibility."),
+    ("1, 2, 3, 4", "Toggles that zone's visibility."),
     ("Shift+P", "Cycles the layout preset (horizontal / split)."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
     (

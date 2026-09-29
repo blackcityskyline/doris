@@ -18,28 +18,23 @@ pub enum ZoneId {
     Results = 1,
     Torrent = 2,
     Log = 3,
-    Extra = 4,
-    /// The sources checklist (П.4): which sources the search asks.
-    /// Last so the four panels that were already there keep their
-    /// numbers -- a saved preset or a muscle-memory `1`-`4` must not
-    /// move anything.
-    Sources = 5,
+    /// The sources checklist (П.4): which sources the search asks. It
+    /// took the number the "Extra" placeholder used to hold, so the
+    /// zone a user actually touches sits at `4` instead of hiding
+    /// behind a fifth key of a panel that drew nothing.
+    Sources = 4,
 }
 
 /// `(digit key, label)` per zone. One row per [`ZoneId`] -- the three
 /// lookups below all read it, so adding a zone means appending a variant
-/// and a row instead of editing three matches (REFACTOR_PLAN Phase 10).
+/// and a row instead of editing three matches.
 /// The render/navigation dispatch on `ZoneId` in `ui/app.rs` cannot be
 /// table-driven: each zone draws different state.
 const ZONE_ROWS: &[(ZoneId, char, &str)] = &[
     (ZoneId::Results, '1', "Results"),
     (ZoneId::Torrent, '2', "Torrent"),
     (ZoneId::Log, '3', "Log"),
-    (ZoneId::Extra, '4', "Extra"),
-    // Last so the four panels that were already there keep their
-    // numbers -- a saved preset or a muscle-memory `1`-`4` must not
-    // move anything.
-    (ZoneId::Sources, '5', "Sources"),
+    (ZoneId::Sources, '4', "Sources"),
 ];
 
 impl ZoneId {
@@ -48,7 +43,6 @@ impl ZoneId {
             ZoneId::Results,
             ZoneId::Torrent,
             ZoneId::Log,
-            ZoneId::Extra,
             ZoneId::Sources,
         ]
     }
@@ -145,7 +139,6 @@ impl ZoneLayout {
                 Zone::new(ZoneId::Results, true),
                 Zone::new(ZoneId::Torrent, true),
                 Zone::new(ZoneId::Log, true),
-                Zone::new(ZoneId::Extra, false),
                 Zone::new(ZoneId::Sources, true),
             ],
             preset: LayoutPreset::default(),
@@ -191,7 +184,7 @@ impl ZoneLayout {
 
     /// Apply a preset written as a comma-separated list of zone key
     /// characters (the same digits the 1/2/3/4 keybinds use), e.g.
-    /// `"1,3"` shows only Results and Log and hides Torrent/Extra. Unknown
+    /// `"1,3"` shows only Results and Log and hides the rest. Unknown
     /// characters are ignored. If focus would land on a now-hidden zone,
     /// it moves to the first visible one.
     pub fn apply_preset(&mut self, spec: &str) {
@@ -533,7 +526,7 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
         ZoneId::Results => RESULTS_BUTTONS,
         ZoneId::Torrent => TORRENT_BUTTONS,
         ZoneId::Log => LOG_BUTTONS,
-        ZoneId::Extra | ZoneId::Sources => &[],
+        ZoneId::Sources => &[],
     };
     table
         .iter()

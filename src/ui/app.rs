@@ -705,7 +705,7 @@ impl App {
                     String::new()
                 }
             }
-            ZoneId::Torrent | ZoneId::Extra => String::new(),
+            ZoneId::Torrent => String::new(),
         }
     }
 
@@ -948,7 +948,7 @@ impl App {
                 // Pause and remove live on the frame now (btop's
                 // terminate/kill row), handled by the legend test above.
             }
-            ZoneId::Log | ZoneId::Extra => {}
+            ZoneId::Log => {}
         }
         None
     }
@@ -1209,7 +1209,6 @@ impl App {
                 ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
                 ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
                 ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
-                ZoneId::Extra => self.render_extra_zone(frame, zone_area, *zone_id, config),
                 ZoneId::Sources => self.render_sources_zone(frame, zone_area, *zone_id, config),
             }
         }
@@ -1234,7 +1233,6 @@ impl App {
                     ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
-                    ZoneId::Extra => self.render_extra_zone(frame, zone_area, *zone_id, config),
                     ZoneId::Sources => self.render_sources_zone(frame, zone_area, *zone_id, config),
                 }
             }
@@ -1646,16 +1644,6 @@ impl App {
         frame.render_widget(log_panel, area);
         // The "(n/m)" scroll position moved from the title onto the
         // frame, next to the `detail` button.
-        self.render_frame(frame, id, area, config);
-    }
-
-    fn render_extra_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
-        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self
-            .themed_block(border_color, config)
-            .title(super::zones::zone_title(id, &self.theme));
-        let paragraph = Paragraph::new("Zone 4 — TBD").block(block);
-        frame.render_widget(paragraph, area);
         self.render_frame(frame, id, area, config);
     }
 

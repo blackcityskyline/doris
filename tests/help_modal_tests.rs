@@ -49,7 +49,7 @@ fn test_help_text_names_the_documented_keybinds() {
         "F",
         "f",
         "m",
-        "1, 2, 3, 4, 5",
+        "1, 2, 3, 4",
         "Shift+P",
         "Tab, Shift+Tab",
         "j, k, Up, Down",
