@@ -422,19 +422,20 @@ fn test_stop_words_are_not_insisted_on() {
 }
 
 #[test]
-fn test_a_filter_that_would_take_every_row_gives_the_page_back() {
+fn test_a_page_nothing_answers_comes_back_empty() {
     // 20 rows from the server, none of which carries both words --
-    // live, that is `dune 1080p` on five pages in a row and
-    // `frieren 2026` on twelve. Decision with the user: the page comes
-    // back exactly as the site answered it, because the other answer
-    // (an empty table) is a dead end in the TUI -- `needs_more` will
-    // not fetch page 2 from a list that has no rows to scroll.
+    // live, that is `dune 1080p` on five pages in a row and `frieren
+    // 2026` on twelve. The page is NOT handed back raw: that fallback
+    // is where the "Games" tab full of Sims/GTA RELOADED repacks came
+    // from, rows the query never asked for. An empty table is the
+    // honest answer, and it is no longer a dead end -- `needs_more` no
+    // longer needs rows to scroll, so Down fetches page 2.
     let raw: Vec<TorrentItem> = (0..PAGE_SIZE).map(|i| row(&format!("Row {}", i))).collect();
     let page = to_page(raw, "frieren crack", 40);
-    assert_eq!(
-        page.items.len(),
-        PAGE_SIZE,
-        "the whole page, as the site gave it"
+    assert!(
+        page.items.is_empty(),
+        "no row answered, so no row is shown: {:?}",
+        page.items.iter().map(|i| &i.title).collect::<Vec<_>>()
     );
     assert!(page.has_more, "a full page is still a full page");
     assert_eq!(

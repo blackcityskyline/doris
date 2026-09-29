@@ -1086,12 +1086,19 @@ impl App {
         }
     }
 
+    /// True when the list is at (or within three rows of) its end and
+    /// the server says there is another page.
+    ///
+    /// No `!results.is_empty()`: an empty table is still a place the
+    /// user is stuck, and refusing to fetch page 2 from it is what
+    /// forced 1337x to hand back pages raw (the "Games" tab full of
+    /// repacks the query never mentioned). With no rows the cursor is at
+    /// the end by definition.
     pub fn needs_more(&self) -> bool {
         self.search_query.is_some()
             && !self.all_loaded
             && self.state == AppState::Idle
             && self.selected >= self.results.len().saturating_sub(3)
-            && !self.results.is_empty()
     }
 
     pub fn navigate_up(&mut self) -> bool {

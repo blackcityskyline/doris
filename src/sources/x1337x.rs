@@ -76,13 +76,13 @@
 //!   `dune 1080p`, `frieren 2026` and `frieren crack` keep **none** on
 //!   every page checked (5 pages of `dune 1080p`, 12 of
 //!   `frieren 2026`, 3 of `frieren crack` -- and `/category-search/`
-//!   answers the same junk). An empty table is not an answer either:
-//!   the TUI's auto-paging refuses to ask for page 2 from an empty
-//!   list (`needs_more`) and has no key of its own, so the user would
-//!   be stuck on nothing. Hence the fallback, decided with the user:
-//!   **a filter that would take every row leaves the page exactly as
-//!   the site answered it**, with a line in the log saying so -- and
-//!   only a page the site itself left empty stays empty.
+//!   answers the same junk). An empty page is therefore the honest
+//!   answer rather than something to paper over: the way out is
+//!   `needs_more`, which no longer needs rows to scroll, so Down fetches
+//!   page 2 (or stops, once the server's pages run out). The raw-page
+//!   fallback this source used to have is what filled a category tab
+//!   with rows the query never mentioned -- a "Games" search answering
+//!   in repacks of other titles.
 //!
 //! - **A page number in an offset costume.** `/search/<q>/<N>/` steps
 //!   by pages of 20 (pages 1 and 2 of `dune` share zero rows), so
@@ -471,31 +471,6 @@ pub fn filter_rows(items: &[TorrentItem], query: &str) -> Vec<TorrentItem> {
         .collect()
 }
 
-/// The rows a page shows: the filter's survivors, or -- when it would
-/// take every row -- the page exactly as the site answered it, said
-/// out loud in the log (decision with the user, module doc).
-///
-/// The alternative, an empty table, is a dead end rather than an
-/// answer: the TUI loads another page only from a list it can scroll
-/// (`needs_more`), and a page nobody can reach is worth nothing to
-/// anybody.
-pub fn filter_or_raw(raw: Vec<TorrentItem>, query: &str) -> Vec<TorrentItem> {
-    let kept = filter_rows(&raw, query);
-    if !kept.is_empty() || raw.is_empty() {
-        return kept;
-    }
-    crate::log::log(
-        "1337x",
-        &format!(
-            "no row of this page carries every word of \"{}\" -- showing the {} rows \
-             the site answered with instead",
-            query,
-            raw.len()
-        ),
-    );
-    raw
-}
-
 /// The rows fetched *inside* a selected category claim it; with no
 /// selection they claim nothing. Live 26.09.2026, every row the
 /// category paths answered with carried the matching `/sub/` link
@@ -524,10 +499,17 @@ pub fn stamp_category(rows: Vec<TorrentItem>, category: Option<Group>) -> Vec<To
 /// page and *then* the filter applied: a full page trimmed to three
 /// rows is still a full page, and `next_offset` steps by the site's
 /// pages, not by the survivors (the nnmclub dead-row lesson).
+///
+/// A page the filter empties stays empty. The site ORs a multi-word
+/// query, so "no row carries every word" is a real answer, not a
+/// failure -- and an empty table is no longer a dead end: `needs_more`
+/// fetches page 2 without needing rows to scroll. Handing the raw page
+/// back instead (what this used to do) showed torrents the query never
+/// asked for.
 pub fn to_page(raw: Vec<TorrentItem>, query: &str, offset: usize) -> SearchPage {
     let has_more = raw.len() >= PAGE_SIZE;
     SearchPage {
-        items: filter_or_raw(raw, query),
+        items: filter_rows(&raw, query),
         has_more,
         next_offset: has_more.then_some(offset + PAGE_SIZE),
     }

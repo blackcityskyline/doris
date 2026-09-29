@@ -134,7 +134,7 @@ async fn live_a_selected_category_is_what_the_path_and_the_rows_say() {
 
 #[tokio::test]
 #[ignore = "requires network access to 1337x"]
-async fn live_two_words_never_leave_the_ui_an_empty_page() {
+async fn live_a_page_nothing_answers_is_empty_and_still_pages() {
     if require_host().await.is_none() {
         return;
     }
@@ -143,30 +143,26 @@ async fn live_two_words_never_leave_the_ui_an_empty_page() {
         .search(&SearchRequest::new("frieren crack", 0))
         .await
         .expect("live 1337x search");
-    let both = page
-        .items
-        .iter()
-        .filter(|row| {
-            let title = row.title.to_lowercase();
-            title.contains("frieren") && title.contains("crack")
-        })
-        .count();
     println!(
-        "rows={}, carrying both words={}, has_more={}, next_offset={:?}",
+        "rows={}, has_more={}, next_offset={:?}",
         page.items.len(),
-        both,
         page.has_more,
         page.next_offset
     );
 
     // The engine ORs this query, and on 25.09.2026 not one of its
-    // first three pages held a row with *both* words in the title --
-    // so the filter reaches its fallback (decision) and hands the page
-    // over as the site answered it. The one thing that must never
-    // happen is an empty table: the TUI will not fetch page 2 from a
-    // list with no rows to scroll, so an empty page here is a user
-    // stuck at nothing.
-    assert!(!page.items.is_empty(), "the fallback guarantees a row");
+    // first three pages held a row with *both* words in the title.
+    // Nothing matching means an empty table: the raw-page fallback that
+    // used to guarantee a row is exactly what put unrelated torrents in
+    // front of the user (a "Games" search full of repacks the query
+    // never mentioned). What the page must still carry is the way out --
+    // the cursor on the server's own full page, so the TUI's
+    // `needs_more` can ask for page 2 from a table with no rows in it.
+    assert!(
+        page.items.is_empty(),
+        "no row answered, so no row is shown: {:#?}",
+        page.items
+    );
     assert!(page.has_more, "the server's page was full");
     assert_eq!(
         page.next_offset,
