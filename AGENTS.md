@@ -17,13 +17,15 @@
 
 ## Architecture
 
-This tree reflects the current, refactored layout (see ROADMAP.md for the
-full audit + phase history of how it got here from the original "FIXED"
-version of this document). It's still the intended shape going forward,
-just no longer frozen — Phase 3/10 of that refactor deliberately restructured
-`sources/` toward a `Source`-trait model, split `ui/app.rs`'s widgets out, and
--- in Phase 10's last step -- split its three modals into `ui/modals/*`, so
-`ui/app.rs` is now the non-modal UI only.
+This is the current layout. The audit that reshaped it (the "FIXED" version
+of this document -> a `Source` trait, `ui/app.rs`'s widgets split out, and
+its three modals split into `ui/modals/*`, leaving `ui/app.rs` the
+non-modal UI only) is a closed chapter: `ROADMAP.md`, `REFACTOR_PLAN.md`
+and `UI_REFACTOR_PLAN.md` were retired from the repository, together with
+their history. A copy of all three lives outside the tree at
+`/home/black/dev/me/doris-plans-backup/`. Markers in the comments below
+("bug B3", "Phase 7", "B8 wave 3") name sections of that retired document,
+nothing else.
 
 ```
 src/
@@ -63,7 +65,8 @@ src/
 │   ├── subsplease.rs # Anime, one row per episode
 │   ├── nyaa.rs      # Anime; per-row group from nyaa:categoryId
 │   ├── nnmclub.rs   # windows-1251 tracker; f[] forum-id category filter
-│   └── x1337x.rs    # Mirrors, category paths, client-side OR-filter fallback
+│   ├── torentino.rs # Games only, DLE tracker: POST search, no browse feed
+│   └── x1337x.rs    # Mirrors, category paths, client-side AND filter
 ├── torrserver/
 │   ├── mod.rs
 │   └── api.rs       # TorrServer HTTP API (list/get/pause/resume/remove)
@@ -77,7 +80,7 @@ src/
 └── ui/
     ├── mod.rs       # UI module declarations
     ├── app.rs       # TUI state + non-modal rendering (zones, menu, main view, modal dispatcher)
-    ├── modals/      # modal dialogs; split out in Phase 10 (see ROADMAP.md)
+    ├── modals/      # modal dialogs, split out of `ui/app.rs`
     │   ├── mod.rs
     │   ├── settings.rs # typed descriptor table: Options modal (pagination, keys, item builders)
     │   ├── login.rs   # login modal: resource tabs, Ctrl+S save, saved-indicator
@@ -104,19 +107,22 @@ list, the tab bar and the CLI all derive from it.
 - Search input: top bar (always visible, not a zone)
 - Zones below search bar
 
-### Zone System (5 zones)
+### Zone System (4 zones)
+
+Keys `1`-`4` toggle a zone; `5` is deliberately unused.
+
 - **Zone 1 (Results)**: Table with torrent results (seeds, size, date, title)
   - Navigation: j/k, PgUp/PgDn, Enter to play
   - f key: filter results (matches title, size, source, category; type filter text, Enter to apply, Esc to clear)
-- **Zone 2 (Torrent)**: Live status of the tracked torrent, polled from TorrServer by `torrent::Manager` (not static/decorative -- see ROADMAP.md bug B3)
+  - `v` logs the selected row's details, `d` downloads it to disk, `Shift+Enter`/`D` opens the detail modal
+- **Zone 2 (Torrent)**: Live status of the tracked torrent, polled from TorrServer by `torrent::Manager` (a background poller, never a static panel)
   - Hash, title, status (shows "(paused)" when client-side-paused)
   - btop-style braille/block/dot history sparkline (`ui/widgets/graph.rs`), not a plain fill bar
   - DL/UL speed, downloaded/total, seeds, peers
   - `p`: pause/resume (TorrServer `drop`/`get`), `d`: remove -- both keyboard and click (see the frame legend below)
 - **Zone 3 (Log)**: Short log panel
-  - Scroll with mouse/j/k
-- **Zone 4 (Extra)**: TBD
-- **Zone 5 (Sources)**: the sources checklist -- `[x] all` on top, then one row per
+  - Scroll with mouse/j/k; `L` flips to the full log
+- **Zone 4 (Sources)**: the sources checklist -- `[x] all` on top, then one row per
   registered source. j/k move the cursor (wrapping), Enter switches the row, clicking
   a row switches it. This is the only place sources are switched: the Results tab
   bar it replaced now just *displays* the selection on its frame (`[all]`,
@@ -128,7 +134,12 @@ Keybinds for a zone are written **on its border**, not inside it (btop's
 `filter`/`pause`/`kill`/`signals` row). The word is `title` colour and the
 character that triggers it is `hi_fg` + bold -- the highlight marks the
 hotkey, not the alphabet, so `pause` leads with `p` only because that key is
-free here, while `info`/`play` trail their `v`/`⏎`.
+free here. What is drawn today: `f Filter` and `g group` on Results,
+`p pause` and `d delete` on Torrent, `L detail` on Log, and nothing on
+Sources (its rows *are* the controls). The bottom action row
+(`play ⏎` / `download d` / `info v`) is gone -- those three are keyboard
+and help-page actions now, and a legend that repeats them would be a
+second place documenting the same keys.
 
 - Buttons come from `zone_buttons()` (`src/ui/zones.rs`), one table per zone;
   `zone_title()` draws the superscript number in `hi_fg` + bold and the label
@@ -142,7 +153,7 @@ free here, while `info`/`play` trail their `v`/`⏎`.
   `click_at`; the rest come back as a `UiAction` for the orchestrator.
 
 ### Menu System
-- ASCII art banner "T-HUNTER"
+- ASCII art banner "DORIS"
 - 3 items: Options, Help, Quit
 - Navigation: j/k/Tab, Enter to select
 - `m` key toggles menu from any view
@@ -164,7 +175,7 @@ free here, while `info`/`play` trail their `v`/`⏎`.
 ### Zone Controls
 - Tab/Shift+Tab: cycle focus between visible zones
 - F: toggle fullscreen for focused zone
-- 1-5: toggle zone visibility
+- 1-4: toggle zone visibility
 
 ## Key Bindings
 - `s`/`i`: enter search input mode
@@ -176,27 +187,29 @@ free here, while `info`/`play` trail their `v`/`⏎`.
 - `f`: enter filter mode (type to filter results — matches title, size, source, category)
 - `F`: toggle fullscreen for focused zone
 - `m`: open main menu
-- `1-5`: toggle zone visibility
+- `1-4`: toggle zone visibility
 - `Shift+P`: cycle the layout preset -- `Horizontal` (every zone full width, equal
   heights; the default) or `Split` (Results on top at full width, then Torrent down
   the left and Log + Sources stacked down the right)
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
 - `g`/`G`: cycle the category (forward/back; an empty query is browse mode, not a category) -- the `◀ name ▶` button on the Results frame does the same by mouse
-- `p`/`d`: pause-or-resume / remove the tracked torrent, when the Torrent zone is focused
+- `p`/`d`: with the Torrent zone focused, pause-or-resume / remove the tracked torrent; with Results focused, `d` downloads the row's `.torrent` to disk
+- `v`: with Results focused, log the selected row's details to the Log zone
 - `Esc`: close modal / exit input mode / exit filter mode
 - `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)
 - Mouse: click any zone to focus it, click a frame button to
   trigger it, click a Sources checkbox to switch that source, click the
   search box to start typing, scroll wheel over any zone to
-  scroll/navigate it -- see ROADMAP.md Phase 9
+  scroll/navigate it
 
 ## Dependencies
 
-Kept stable unless a phase in ROADMAP.md has a specific, documented reason to
-change the list (Phase 3 added `async-trait` for the `Source` trait object;
-Phase 10 removed the unused `chromiumoxide`/`chromiumoxide_cdp`). Otherwise,
-don't add or bump dependencies speculatively.
+The core list below; `Cargo.toml` is the full and current one. Don't add or
+bump a dependency speculatively -- the two changes worth remembering
+(`async-trait` for the `Source` trait object, and dropping the unused
+`chromiumoxide`/`chromiumoxide_cdp`) were each made against a stated
+reason, and that is the bar.
 
 - ratatui 0.29
 - crossterm 0.28

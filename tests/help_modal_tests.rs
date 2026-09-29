@@ -222,3 +222,42 @@ fn test_help_draws_the_header_and_the_keys() {
         assert!(found, "'{}' is not in the key column of page 1", expected);
     }
 }
+
+/// The page pairs a key with what it actually does; the keys alone are
+/// not enough to catch a swap. `f` filters and `F` goes fullscreen
+/// (`app.rs` routes them that way, and the Results frame legend prints
+/// `f Filter`), but the table had them the other way round -- the page
+/// sent the user to the wrong binding while the key list test passed.
+#[test]
+fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() {
+    let desc = |key: &str| {
+        HELP_TEXT
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, d)| *d)
+            .unwrap_or_else(|| panic!("no help row for `{key}`"))
+    };
+
+    assert_eq!(
+        desc("f"),
+        "Filter mode; Enter applies, Esc clears.",
+        "`f` is the filter, as routed in `handle_key`"
+    );
+    assert_eq!(
+        desc("F"),
+        "Toggles fullscreen for the focused zone.",
+        "`F` is fullscreen"
+    );
+
+    // The frame legend is the other place these keys are named, so the
+    // two tables have to agree about `f` or one of them is lying.
+    let legend = doris::ui::zones::zone_buttons(doris::ui::zones::ZoneId::Results);
+    assert!(
+        legend.iter().any(|b| b.key == 'f' && b.label == "Filter"),
+        "the Results frame prints `f Filter`: {:?}",
+        legend
+            .iter()
+            .map(|b| (b.key, b.label.clone()))
+            .collect::<Vec<_>>()
+    );
+}
