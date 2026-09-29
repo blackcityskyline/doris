@@ -538,12 +538,12 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
 }
 
 /// The zone's own title, btop `createBox` style: superscript number in
-/// `hi_fg` + bold, label in `title` (`btop_draw.cpp:290` for the
+/// `secondary` + bold, label in `primary` (`btop_draw.cpp:290` for the
 /// numbering colour, `:332` for where it is drawn).
 pub fn zone_title(id: ZoneId, theme: &Theme) -> Line<'static> {
-    let word = Style::default().fg(theme.title.to_color());
+    let word = Style::default().fg(theme.primary_color());
     let number = Style::default()
-        .fg(theme.hi_fg.to_color())
+        .fg(theme.secondary_color())
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
         Span::styled(" ", word),
@@ -560,20 +560,22 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
     (4 + id.label().chars().count()) as u16
 }
 
-/// Spans for one button: `title` for the word, `hi_fg` + bold for the
-/// hotkey. `active` bolds the whole word, which is how btop marks a
-/// toggle that is currently on (`Fx::b` around `pause` when
-/// `pause_proc_list`, around `tree` when `proc_tree`, ...).
+/// Spans for one button: `primary` for the word, `on_hover` + bold for
+/// the hotkey -- the glyph that acts is coloured the way a hover marks
+/// the actionable part. `active` bolds the whole word, which is how
+/// btop marks a toggle that is currently on (`Fx::b` around `pause`
+/// when `pause_proc_list`, around `tree` when `proc_tree`, ...).
 ///
 /// The category button is the exception: it has no single hotkey, but
 /// two arrow cells that are mouse targets, so both arrows take the
-/// `hi_fg` + bold treatment and the name between them stays `title` --
-/// btop draws its sortable column headers the same way (`◀ name ▶`).
+/// `on_hover` + bold treatment and the name between them stays
+/// `primary` -- btop draws its sortable column headers the same way
+/// (`◀ name ▶`).
 pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Span<'static>> {
     let text = button.text();
-    let word_style = Style::default().fg(theme.title.to_color());
+    let word_style = Style::default().fg(theme.primary_color());
     let hotkey_style = Style::default()
-        .fg(theme.hi_fg.to_color())
+        .fg(theme.on_hover_color())
         .add_modifier(Modifier::BOLD);
 
     if button.is_category() {
@@ -605,9 +607,11 @@ pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Sp
     ]
 }
 
+/// The frame's colour: `primary` for the zone the cursor is in,
+/// `div_line` for the rest.
 pub fn zone_border_color(id: ZoneId, focused: ZoneId, theme: &Theme) -> Color {
     if id == focused {
-        theme.hi_fg.to_color()
+        theme.primary_color()
     } else {
         theme.div_line.to_color()
     }

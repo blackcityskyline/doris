@@ -278,11 +278,12 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
 
 // --- the frame legend (btop's buttons drawn on the border) ----------------
 
-/// btop's box title: superscript number in `hi_fg` + bold, the label in
-/// `title` (`btop_draw.cpp:290` + `:332`). Ours used to be one flat
-/// string, so nothing distinguished the zone number from its name.
+/// btop's box title: superscript number + bold, the label plain -- ours
+/// used to be one flat string, so nothing distinguished the zone number
+/// from its name. The colours are the theme's structure tokens: the
+/// number `secondary`, the label `primary`.
 #[test]
-fn test_zone_title_marks_the_number_hi_fg_and_the_label_title() {
+fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
     let theme = Theme::dark();
     let line = zone_title(ZoneId::Results, &theme);
     let spans = line.spans;
@@ -291,12 +292,12 @@ fn test_zone_title_marks_the_number_hi_fg_and_the_label_title() {
     assert_eq!(spans[1].content.to_string(), "\u{00B9}");
 
     let number = spans[1].style;
-    assert_eq!(number.fg, Some(theme.hi_fg.to_color()));
+    assert_eq!(number.fg, Some(theme.secondary_color()));
     assert!(number.add_modifier.contains(Modifier::BOLD));
 
     assert_eq!(spans[3].content.to_string(), "Results");
     let label = spans[3].style;
-    assert_eq!(label.fg, Some(theme.title.to_color()));
+    assert_eq!(label.fg, Some(theme.primary_color()));
     assert!(!label.add_modifier.contains(Modifier::BOLD));
 }
 
@@ -340,8 +341,8 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
             );
             assert_eq!(
                 spans[1].style.fg,
-                Some(theme.hi_fg.to_color()),
-                "{}: hotkey is hi_fg",
+                Some(theme.on_hover_color()),
+                "{}: hotkey is on_hover",
                 text
             );
         }
@@ -349,10 +350,10 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
 }
 
 /// The category button's arrows are the mouse targets, so both take the
-/// `hi_fg` + bold treatment and the name between them stays `title` --
-/// btop draws its sortable column headers the same way. The button is
-/// built in `frame_layout` (its label names the current category), so
-/// that is where the test reads it from.
+/// `on_hover` + bold treatment and the name between them stays
+/// `primary` -- btop draws its sortable column headers the same way.
+/// The button is built in `frame_layout` (its label names the current
+/// category), so that is where the test reads it from.
 #[test]
 fn test_the_category_button_highlights_both_arrows() {
     let theme = Theme::dark();
@@ -376,7 +377,7 @@ fn test_the_category_button_highlights_both_arrows() {
     for arrow in [&spans[0], &spans[2]] {
         assert_eq!(
             arrow.style.fg,
-            Some(theme.hi_fg.to_color()),
+            Some(theme.on_hover_color()),
             "an arrow is a mouse target, drawn like a hotkey"
         );
         assert!(
@@ -386,7 +387,7 @@ fn test_the_category_button_highlights_both_arrows() {
     }
     assert_eq!(
         spans[1].style.fg,
-        Some(theme.title.to_color()),
+        Some(theme.primary_color()),
         "the name is display-only"
     );
 }

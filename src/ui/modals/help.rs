@@ -147,7 +147,12 @@ impl App {
         let popup = centered_rect(90, 85, area);
         frame.render_widget(Clear, popup);
 
-        let mut block = self.modal_block(Color::Cyan, config).title(" help ");
+        let mut block = self
+            .modal_block(self.theme.primary_color(), config)
+            .title(Span::styled(
+                " help ",
+                Style::default().fg(self.theme.primary_color()),
+            ));
         let inner = block.inner(popup);
         let visible = (inner.height as usize).max(1);
         let pages = HELP_TEXT.len().div_ceil(visible);
@@ -169,11 +174,14 @@ impl App {
         }
         frame.render_widget(block, popup);
 
+        // Structure in `primary`, the keybind column in `on_hover`:
+        // the key column is the actionable half of every row, the same
+        // rule the frame legend uses for a hotkey inside a word.
         let header_style = Style::default()
-            .fg(self.theme.title.to_color())
+            .fg(self.theme.primary_color())
             .add_modifier(Modifier::BOLD);
         let key_style = Style::default()
-            .fg(self.theme.hi_fg.to_color())
+            .fg(self.theme.on_hover_color())
             .add_modifier(Modifier::BOLD);
         let desc_style = Style::default().fg(self.theme.main_fg.to_color());
 

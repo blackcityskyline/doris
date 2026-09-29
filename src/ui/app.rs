@@ -327,14 +327,32 @@ fn source_status_text(status: &SourceStatus) -> String {
 }
 
 /// The status's own colour, so a failure reads at a glance: dim while
-/// still in flight, the informational mid-bright for an answer, red for
-/// a refusal. The label says it in words too, so colour is never the
-/// only channel carrying the meaning.
+/// still in flight, the informational mid-bright for an answer, the
+/// error accent for a refusal. The label says it in words too, so
+/// colour is never the only channel carrying the meaning.
 fn source_status_style(status: &SourceStatus, theme: &Theme) -> Style {
     match status {
         SourceStatus::Pending => Style::default().fg(theme.inactive_fg.to_color()),
         SourceStatus::Ok(_) => Style::default().fg(theme.graph_text.to_color()),
-        SourceStatus::Timeout | SourceStatus::Error(_) => Style::default().fg(Color::Red),
+        SourceStatus::Timeout | SourceStatus::Error(_) => Style::default().fg(theme.error_color()),
+    }
+}
+
+/// The detail log's line colour: the error accent for a refusal,
+/// `secondary` for a success, `primary` for a warning, the body colour
+/// for everything else. Severity is spelled in the line as well
+/// (`ERROR`/`OK`/`WARN`), so the colour is a second channel, never the
+/// only one -- and never a colour the theme did not choose: these were
+/// hardcoded red/green/yellow before the tokens existed.
+fn detail_log_style(line: &str, theme: &Theme) -> Style {
+    if line.contains("ERROR") || line.contains("FAIL") || line.contains("error:") {
+        Style::default().fg(theme.error_color())
+    } else if line.contains("OK") || line.contains("SUCCESS") || line.contains("logged in") {
+        Style::default().fg(theme.secondary_color())
+    } else if line.contains("WARN") {
+        Style::default().fg(theme.primary_color())
+    } else {
+        Style::default().fg(theme.main_fg.to_color())
     }
 }
 
@@ -837,7 +855,7 @@ impl App {
         if layout.info.width > 0 {
             let info = Span::styled(
                 layout.info_text,
-                Style::default().fg(self.theme.title.to_color()),
+                Style::default().fg(self.theme.primary_color()),
             );
             frame.render_widget(Paragraph::new(Line::from(info)), layout.info);
         }
@@ -1312,21 +1330,25 @@ impl App {
 
         let input_border = self
             .themed_block(
-                if self.input_mode {
-                    Color::Yellow
-                } else if self.zones.filter_mode {
-                    Color::Cyan
+                if self.input_mode || self.zones.filter_mode {
+                    // The box under the cursor takes the same accent a
+                    // focused zone frame takes; the title says which of
+                    // the two boxes it is.
+                    self.theme.primary_color()
                 } else {
                     self.theme.div_line.to_color()
                 },
                 config,
             )
-            .title(title);
+            .title(Span::styled(
+                title,
+                Style::default().fg(self.theme.primary_color()),
+            ));
 
         let inner = input_border.inner(bar_area);
         let input = Paragraph::new(editing)
             .block(input_border)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(self.theme.main_fg.to_color()));
 
         frame.render_widget(input, bar_area);
 
@@ -1411,7 +1433,7 @@ impl App {
         ])
         .style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(self.theme.primary_color())
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -1422,16 +1444,22 @@ impl App {
         // the informational mid-bright `graph_text` instead (≈6.7:1 on
         // `main_bg`, versus ≈2.3:1 for `inactive_fg`), which the cursor
         // row then writes in the theme's `selected_fg`.
+        // Accents, not a repaint: the row keeps the body colour and only
+        // two columns carry a token -- the seed count in the secondary
+        // accent (seed health), the date in the informational mid-bright
+        // next to the source badge. Size and title stay plain.
         let badge_style = Style::default().fg(self.theme.graph_text.to_color());
+        let seed_style = Style::default().fg(self.theme.secondary_color());
+        let date_style = Style::default().fg(self.theme.graph_text.to_color());
         let rows: Vec<Row> = self
             .filtered_indices
             .iter()
             .filter_map(|&idx| self.results.get(idx))
             .map(|item| {
                 Row::new(vec![
-                    Cell::from(item.seeds.as_str()),
+                    Cell::from(item.seeds.as_str()).style(seed_style),
                     Cell::from(item.size.as_str()),
-                    Cell::from(item.date.as_str()),
+                    Cell::from(item.date.as_str()).style(date_style),
                     Cell::from(source_badge(item)).style(badge_style),
                     Cell::from(item.title.as_str()),
                 ])
@@ -1583,49 +1611,56 @@ impl App {
         // hash arriving there is real work in flight (session, magnet,
         // add, upload) and no value to print, and an empty
         // `Hash:   Status:` read as "nothing is happening".
+        // Labels take the secondary accent, values the body colour: the
+        // panel is data, so only the words that name a value are
+        // accented. A finished transfer gets the primary accent rather
+        // than the hardcoded green the theme never knew about.
+        let label = Style::default().fg(self.theme.secondary_color());
+        let value = Style::default().fg(self.theme.main_fg.to_color());
+
         let header = if s.hash.is_empty() && self.state == AppState::Streaming {
             Line::from(vec![
-                Span::styled("Status: ", Style::default().fg(Color::Yellow)),
-                Span::raw("Starting stream..."),
+                Span::styled("Status: ", label),
+                Span::styled("Starting stream...", value),
             ])
         } else {
             Line::from(vec![
-                Span::styled("Hash: ", Style::default().fg(Color::Yellow)),
-                Span::raw(&s.hash),
-                Span::styled("  Status: ", Style::default().fg(Color::Yellow)),
-                Span::raw(status_display),
+                Span::styled("Hash: ", label),
+                Span::styled(s.hash.as_str(), value),
+                Span::styled("  Status: ", label),
+                Span::styled(status_display, value),
             ])
         };
 
         let lines = vec![
             header,
             Line::from(vec![
-                Span::styled("Progress: ", Style::default().fg(Color::Yellow)),
+                Span::styled("Progress: ", label),
                 Span::styled(
                     format!("{} {}%", sparkline, progress_pct),
-                    Style::default().fg(if progress_pct >= 100 {
-                        Color::Green
+                    if progress_pct >= 100 {
+                        Style::default().fg(self.theme.primary_color())
                     } else {
-                        Color::Cyan
-                    }),
+                        value
+                    },
                 ),
             ]),
             Line::from(vec![
-                Span::styled("DL: ", Style::default().fg(Color::Green)),
-                Span::raw(&dl_speed),
-                Span::raw("  "),
-                Span::styled("UL: ", Style::default().fg(Color::Blue)),
-                Span::raw(&ul_speed),
+                Span::styled("DL: ", label),
+                Span::styled(&dl_speed, value),
+                Span::styled("  ", value),
+                Span::styled("UL: ", label),
+                Span::styled(&ul_speed, value),
             ]),
             Line::from(vec![
-                Span::styled("Downloaded: ", Style::default().fg(Color::Yellow)),
-                Span::raw(&dl_total),
-                Span::raw(" / "),
-                Span::raw(&total),
-                Span::styled("  Seeds: ", Style::default().fg(Color::Yellow)),
-                Span::raw(s.seeds.to_string()),
-                Span::styled("  Peers: ", Style::default().fg(Color::Yellow)),
-                Span::raw(s.peers.to_string()),
+                Span::styled("Downloaded: ", label),
+                Span::styled(&dl_total, value),
+                Span::styled(" / ", value),
+                Span::styled(&total, value),
+                Span::styled("  Seeds: ", label),
+                Span::styled(s.seeds.to_string(), value),
+                Span::styled("  Peers: ", label),
+                Span::styled(s.peers.to_string(), value),
             ]),
         ];
 
@@ -1675,17 +1710,7 @@ impl App {
             .iter()
             .skip(scroll)
             .take(visible)
-            .map(|l| {
-                if l.contains("ERROR") || l.contains("FAIL") || l.contains("error:") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Red)))
-                } else if l.contains("OK") || l.contains("SUCCESS") || l.contains("logged in") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Green)))
-                } else if l.contains("WARN") {
-                    Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Yellow)))
-                } else {
-                    Line::from(l.as_str())
-                }
-            })
+            .map(|l| Line::from(Span::styled(l.as_str(), detail_log_style(l, &self.theme))))
             .collect();
 
         let title = format!(
@@ -1694,8 +1719,13 @@ impl App {
             total
         );
 
-        let log_panel =
-            Paragraph::new(lines).block(self.themed_block(Color::Cyan, config).title(title));
+        let log_panel = Paragraph::new(lines).block(
+            self.themed_block(self.theme.primary_color(), config)
+                .title(Span::styled(
+                    title,
+                    Style::default().fg(self.theme.primary_color()),
+                )),
+        );
 
         frame.render_widget(log_panel, area);
     }
@@ -1791,4 +1821,67 @@ pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+#[cfg(test)]
+mod colour_tests {
+    use super::{detail_log_style, source_status_style};
+    use crate::sources::orchestrator::SourceStatus;
+    use crate::ui::theme::Theme;
+    use ratatui::style::Color;
+
+    /// Severity decides the accent, and the accent is the theme's:
+    /// these lines were hardcoded red/green/yellow before the tokens,
+    /// so a theme could recolour the app and leave the log behind.
+    #[test]
+    fn test_detail_log_lines_take_their_severity_from_the_theme() {
+        let theme = Theme::dark();
+        assert_eq!(
+            detail_log_style("ERROR: fetch failed", &theme).fg,
+            Some(theme.error_color())
+        );
+        assert_eq!(
+            detail_log_style("logged in OK", &theme).fg,
+            Some(theme.secondary_color())
+        );
+        assert_eq!(
+            detail_log_style("WARN: slow source", &theme).fg,
+            Some(theme.primary_color())
+        );
+        assert_eq!(
+            detail_log_style("searching rutor", &theme).fg,
+            Some(theme.main_fg.to_color())
+        );
+
+        let mut accented = Theme::dark();
+        accented.primary = Some(crate::ui::theme::ColorDef::new(1, 2, 3));
+        assert_eq!(
+            detail_log_style("WARN: slow source", &accented).fg,
+            Some(Color::Rgb(1, 2, 3)),
+            "a theme that spells the token out wins over the fallback"
+        );
+    }
+
+    /// A refusal reads as the error accent wherever a source reports
+    /// one -- the Sources panel marks the same fact in words.
+    #[test]
+    fn test_a_refusing_source_reads_as_the_error_accent() {
+        let theme = Theme::dark();
+        assert_eq!(
+            source_status_style(&SourceStatus::Error("403".into()), &theme).fg,
+            Some(theme.error_color())
+        );
+        assert_eq!(
+            source_status_style(&SourceStatus::Timeout, &theme).fg,
+            Some(theme.error_color())
+        );
+        assert_eq!(
+            source_status_style(&SourceStatus::Pending, &theme).fg,
+            Some(theme.inactive_fg.to_color())
+        );
+        assert_eq!(
+            source_status_style(&SourceStatus::Ok(3), &theme).fg,
+            Some(theme.graph_text.to_color())
+        );
+    }
 }

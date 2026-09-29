@@ -101,7 +101,7 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
             Paragraph::new(Span::styled(
                 *line,
                 Style::default()
-                    .fg(theme.hi_fg.to_color())
+                    .fg(theme.primary_color())
                     .add_modifier(Modifier::BOLD),
             )),
             render_area,

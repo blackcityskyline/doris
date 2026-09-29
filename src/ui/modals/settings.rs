@@ -722,13 +722,16 @@ impl App {
             let popup = centered_rect(80, 80, area);
             frame.render_widget(Clear, popup);
 
-            let border_color = self.theme.hi_fg.to_color();
+            let border_color = self.theme.primary_color();
             let main_block = self.modal_block(border_color, config);
             let inner = main_block.inner(popup);
             frame.render_widget(main_block, popup);
 
-            let hi_color = self.theme.hi_fg.to_color();
-            let title_color = self.theme.title.to_color();
+            let hi_color = self.theme.secondary_color();
+            let title_color = self.theme.primary_color();
+            // The glyphs that *are* keys (the paging arrows) take the
+            // hover accent, the same rule the frame legend uses.
+            let key_color = self.theme.on_hover_color();
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
 
@@ -900,12 +903,12 @@ impl App {
                     frame.render_widget(
                         Paragraph::new(Line::from(vec![
                             Span::styled("┘", Style::default().fg(hi_color)),
-                            Span::styled("↑ ", Style::default().fg(hi_color)),
+                            Span::styled("↑ ", Style::default().fg(key_color)),
                             Span::styled(
                                 format!("page {}/{} ", page + 1, pages),
                                 Style::default().fg(title_color),
                             ),
-                            Span::styled("↓", Style::default().fg(hi_color)),
+                            Span::styled("↓", Style::default().fg(key_color)),
                             Span::styled("└", Style::default().fg(hi_color)),
                         ])),
                         Rect::new(

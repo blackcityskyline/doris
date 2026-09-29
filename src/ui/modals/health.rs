@@ -135,30 +135,50 @@ impl App {
             frame.render_widget(Clear, popup);
 
             let block = self
-                .modal_block(Color::Green, config)
-                .title(" Health Check ");
+                .modal_block(self.theme.primary_color(), config)
+                .title(Span::styled(
+                    " Health Check ",
+                    Style::default().fg(self.theme.primary_color()),
+                ));
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
 
+            // The same severity mapping the detail log uses: a pass in
+            // the secondary accent, a failure in the error accent, a
+            // warning and a section header in the primary -- the marks
+            // (✔/✘/⚠) say it in glyphs too, so colour is a second
+            // channel and never the theme-blind one.
             let display_lines: Vec<Line> = lines
                 .iter()
                 .map(|l| {
                     if l.contains("\u{2714}") {
-                        Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Green)))
+                        Line::from(Span::styled(
+                            l.as_str(),
+                            Style::default().fg(self.theme.secondary_color()),
+                        ))
                     } else if l.contains("\u{2718}") {
-                        Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Red)))
+                        Line::from(Span::styled(
+                            l.as_str(),
+                            Style::default().fg(self.theme.error_color()),
+                        ))
                     } else if l.contains("\u{26a0}") {
-                        Line::from(Span::styled(l.as_str(), Style::default().fg(Color::Yellow)))
+                        Line::from(Span::styled(
+                            l.as_str(),
+                            Style::default().fg(self.theme.primary_color()),
+                        ))
                     } else if l.starts_with("===") {
                         Line::from(Span::styled(
                             l.as_str(),
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(self.theme.primary_color())
                                 .add_modifier(Modifier::BOLD),
                         ))
                     } else {
-                        Line::from(l.as_str())
+                        Line::from(Span::styled(
+                            l.as_str(),
+                            Style::default().fg(self.theme.main_fg.to_color()),
+                        ))
                     }
                 })
                 .collect();

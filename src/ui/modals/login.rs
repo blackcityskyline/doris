@@ -167,7 +167,12 @@ impl App {
             let bg_color = self.theme.main_bg.to_color();
             let fg_color = self.theme.main_fg.to_color();
 
-            let block = self.modal_block(Color::Yellow, config).title(" Login ");
+            let block = self
+                .modal_block(self.theme.primary_color(), config)
+                .title(Span::styled(
+                    " Login ",
+                    Style::default().fg(self.theme.primary_color()),
+                ));
 
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
@@ -194,7 +199,7 @@ impl App {
                         Span::styled(
                             label,
                             Style::default()
-                                .fg(Color::Yellow)
+                                .fg(self.theme.primary_color())
                                 .add_modifier(Modifier::BOLD),
                         )
                     } else {
@@ -207,25 +212,31 @@ impl App {
                 .collect();
             frame.render_widget(Paragraph::new(Line::from(tabs)), rows[0]);
 
+            // A field's border is its focus indicator: the primary
+            // accent while the cursor is in it, the divider line
+            // otherwise -- the same rule the zone frames follow.
             let user_style = if state.focus == LoginField::Username {
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(self.theme.primary_color())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(fg_color)
+                Style::default().fg(self.theme.div_line.to_color())
             };
 
             let pass_style = if state.focus == LoginField::Password {
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(self.theme.primary_color())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(fg_color)
+                Style::default().fg(self.theme.div_line.to_color())
             };
 
             let user_block = self
                 .modal_block(user_style.fg.unwrap_or(fg_color), config)
-                .title("Username");
+                .title(Span::styled(
+                    "Username",
+                    Style::default().fg(self.theme.secondary_color()),
+                ));
             frame.render_widget(
                 Paragraph::new(state.username.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -255,7 +266,10 @@ impl App {
 
             let pass_block = self
                 .modal_block(pass_style.fg.unwrap_or(fg_color), config)
-                .title("Password");
+                .title(Span::styled(
+                    "Password",
+                    Style::default().fg(self.theme.secondary_color()),
+                ));
             frame.render_widget(
                 Paragraph::new(pass_display.as_str())
                     .style(Style::default().bg(bg_color).fg(fg_color))
@@ -266,7 +280,10 @@ impl App {
             // Ctrl+S feedback, when there is any.
             if let Some(message) = state.message.as_deref() {
                 frame.render_widget(
-                    Paragraph::new(Span::styled(message, Style::default().fg(Color::Green))),
+                    Paragraph::new(Span::styled(
+                        message,
+                        Style::default().fg(self.theme.secondary_color()),
+                    )),
                     rows[4],
                 );
             }

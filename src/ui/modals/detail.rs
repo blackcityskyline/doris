@@ -27,14 +27,17 @@ impl App {
         frame.render_widget(Clear, popup);
 
         let block = self
-            .modal_block(Color::Cyan, config)
-            .title(" Torrent details ");
+            .modal_block(self.theme.primary_color(), config)
+            .title(Span::styled(
+                " Torrent details ",
+                Style::default().fg(self.theme.primary_color()),
+            ));
 
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
 
         let label = Style::default()
-            .fg(self.theme.hi_fg.to_color())
+            .fg(self.theme.secondary_color())
             .add_modifier(Modifier::BOLD);
         let value = Style::default().fg(self.theme.main_fg.to_color());
         let mut lines: Vec<Line> = vec![

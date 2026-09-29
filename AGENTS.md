@@ -131,8 +131,8 @@ Keys `1`-`4` toggle a zone; `5` is deliberately unused.
 ### Frame legend (btop-style)
 
 Keybinds for a zone are written **on its border**, not inside it (btop's
-`filter`/`pause`/`kill`/`signals` row). The word is `title` colour and the
-character that triggers it is `hi_fg` + bold -- the highlight marks the
+`filter`/`pause`/`kill`/`signals` row). The word is `primary` colour and the
+character that triggers it is `on_hover` + bold -- the highlight marks the
 hotkey, not the alphabet, so `pause` leads with `p` only because that key is
 free here. What is drawn today: `f Filter` and `g group` on Results,
 `p pause` and `d delete` on Torrent, `L detail` on Log, and nothing on
@@ -142,8 +142,8 @@ and help-page actions now, and a legend that repeats them would be a
 second place documenting the same keys.
 
 - Buttons come from `zone_buttons()` (`src/ui/zones.rs`), one table per zone;
-  `zone_title()` draws the superscript number in `hi_fg` + bold and the label
-  in `title`.
+  `zone_title()` draws the superscript number in `secondary` + bold and the
+  label in `primary`.
 - `App::frame_layout()` (`src/ui/app.rs`) is the single source of truth for
   where each button lands: the renderer draws into those rects and
   `click_at` tests them, so drawn == clickable. Anything that does not fit
@@ -151,6 +151,31 @@ second place documenting the same keys.
   exactly like btop's `if (width > 60 + sort_len)`).
 - Buttons `ui::App` can act on (filter, group) happen inside
   `click_at`; the rest come back as a `UiAction` for the orchestrator.
+
+### Colour distribution (theme tokens)
+
+One rule for every theme, implemented once in `Theme` (`src/ui/theme.rs`):
+four **optional** accents -- `primary`, `secondary`, `error`, `on_hover` --
+each falling back to the classic field it replaced when a theme file omits
+it (`title`, `hi_fg`, red, `hi_fg`), so all 43 bundled themes keep drawing
+exactly as before without a single edit. Where each one lands:
+
+- `primary` -- frames (focused border, zone/button words, frame info),
+  modal and menu titles, section headers, the warning colour of a log line
+- `on_hover` -- every keybind glyph: the letter inside a frame word, the
+  arrows of the category button, help's key column, the paging arrows
+- `secondary` -- labels that name a value (torrent facts, login fields),
+  the zone's superscript number, the seed column, a success line
+- `error` -- a refused source, an `ERROR`/`✘` log line
+- `main_fg` / `graph_text` / `div_line` -- body text, informational
+  metadata (date, source badge), anything not under the cursor
+
+No `Color::Yellow`/`Green`/`Red`/`Cyan` left in zone, table or modal
+rendering; the theme decides. The noctalia template
+(`~/.config/noctalia/user-templates/doris/noctalia-theme.toml`) writes
+`primary`/`error`/`on_hover` from its palette and leaves `secondary` to
+the fallback, which is `tertiary` there -- that keeps the seed column from
+colliding with the rose its `secondary` gives the date and badge columns.
 
 ### Menu System
 - ASCII art banner "DORIS"

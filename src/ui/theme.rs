@@ -24,6 +24,15 @@ pub struct Theme {
     pub gradient_start: ColorDef,
     pub gradient_mid: ColorDef,
     pub gradient_end: ColorDef,
+    /// Palette accents, all optional. A theme that spells them out (the
+    /// noctalia template does) uses its own; a theme that omits them --
+    /// every bundled one does -- gets the classic field each replaces,
+    /// so the colour distribution is one rule for every theme instead of
+    /// a special case per file.
+    pub primary: Option<ColorDef>,
+    pub secondary: Option<ColorDef>,
+    pub error: Option<ColorDef>,
+    pub on_hover: Option<ColorDef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +161,10 @@ impl Theme {
             gradient_start: ColorDef::new(0, 188, 212),
             gradient_mid: ColorDef::new(38, 166, 154),
             gradient_end: ColorDef::new(77, 182, 172),
+            primary: None,
+            secondary: None,
+            error: None,
+            on_hover: None,
         }
     }
 
@@ -171,6 +184,39 @@ impl Theme {
         Style::default()
             .fg(self.selected_fg.to_color())
             .bg(self.selected_bg.to_color())
+    }
+
+    /// Structure accent: frame borders, zone/button words, modal and
+    /// menu titles. Falls back to `title`, which is what drew them
+    /// before the tokens existed.
+    pub fn primary_color(&self) -> Color {
+        self.primary
+            .as_ref()
+            .map_or_else(|| self.title.to_color(), ColorDef::to_color)
+    }
+
+    /// Secondary accent: frame furniture that must stay distinguishable
+    /// from the primary -- zone numbers, table headers, row accents.
+    /// Falls back to `hi_fg`.
+    pub fn secondary_color(&self) -> Color {
+        self.secondary
+            .as_ref()
+            .map_or_else(|| self.hi_fg.to_color(), ColorDef::to_color)
+    }
+
+    /// Failure colour (source refusals, error log lines). Falls back to
+    /// plain red, the only failure colour the renderer ever used.
+    pub fn error_color(&self) -> Color {
+        self.error.as_ref().map_or(Color::Red, ColorDef::to_color)
+    }
+
+    /// The colour a keybind glyph is drawn in: what a hover would put
+    /// on the accent, so the hotkey reads as the actionable part of the
+    /// word. Falls back to `hi_fg`.
+    pub fn on_hover_color(&self) -> Color {
+        self.on_hover
+            .as_ref()
+            .map_or_else(|| self.hi_fg.to_color(), ColorDef::to_color)
     }
 
     pub fn from_config(path: &std::path::Path) -> Option<Self> {
