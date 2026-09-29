@@ -742,6 +742,26 @@ fn test_render_draws_the_table_header_under_the_frame() {
 
 // --- the frame legend actually reaches the border (П.5) --------------------
 
+/// Render `app` with `id`'s detail view open and hand back the buffer.
+fn render_detail(app: &mut UiApp, id: ZoneId, w: u16, h: u16) -> ratatui::buffer::Buffer {
+    app.detail_view = Some(id);
+    let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+fn all_text(buf: &ratatui::buffer::Buffer) -> String {
+    (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol().to_string())
+                .collect::<String>()
+        })
+        .collect::<String>()
+}
+
 fn row_text(terminal: &Terminal<TestBackend>, y: u16) -> String {
     let buf = terminal.backend().buffer();
     let width = buf.area.width;
@@ -980,4 +1000,93 @@ fn test_the_default_tiling_draws_two_columns() {
         "the Trackers frame"
     );
     assert!(row_text(log.y).contains("Log"), "the Log frame");
+}
+
+// --- detail views (T / R) ----------------------------------------------------
+
+/// The Torrent detail view is a full-frame takeover: it prints every
+/// fact the panel knows -- name, hash, status, progress, speeds,
+/// totals, seeds, peers -- where the panel itself only has room for
+/// some of them.
+#[test]
+fn test_the_torrent_detail_view_prints_every_known_field() {
+    let mut app = make_test_app();
+    app.torrent_status = doris::ui::app::TorrentStatus {
+        hash: "abcdef0123456789".into(),
+        title: "Some.Torrent.2024".into(),
+        progress: 0.5,
+        download_speed: 1024,
+        upload_speed: 512,
+        seeds: 12,
+        peers: 3,
+        downloaded: 2048,
+        total_size: 4096,
+        status: "working".into(),
+    };
+    app.torrent_paused = true;
+
+    let buf = render_detail(&mut app, ZoneId::Torrent, 100, 30);
+    let text = all_text(&buf);
+
+    for expected in [
+        "Some.Torrent.2024",
+        "abcdef0123456789",
+        "working (paused)",
+        "DL:",
+        "UL:",
+        "Seeds:",
+        "Peers:",
+    ] {
+        assert!(
+            text.contains(expected),
+            "detail view must show `{}`",
+            expected
+        );
+    }
+    // The panel gives the bar a 50-column cap; the detail view has the
+    // whole frame, so it must not be drawing the short one.
+    assert!(text.contains("50%"), "the progress percentage is printed");
+}
+
+/// The Results detail view is the table again, but full-frame, with a
+/// preview line under it naming the row under the cursor -- the facts
+/// the detail modal shows, without opening a modal.
+#[test]
+fn test_the_results_detail_view_shows_the_table_and_a_preview_line() {
+    let mut app = make_test_app();
+    app.results = make_results(3);
+    app.results[1].source = "rutor".into();
+    app.results[1].info_hash = "deadbeefcafe".into();
+    app.update_filter();
+    app.selected = 1;
+
+    let buf = render_detail(&mut app, ZoneId::Results, 120, 30);
+    let text = all_text(&buf);
+
+    // The table is still there -- every row of it.
+    for i in 0..3 {
+        assert!(
+            text.contains(&format!("Torrent {}", i)),
+            "row {} is on screen",
+            i
+        );
+    }
+    // And the preview line names the selected row's facts.
+    assert!(text.contains("deadbeefcafe"), "the preview shows the hash");
+    assert!(text.contains("rutor"), "the preview shows the source");
+}
+
+/// A detail view paints over the search bar too -- it is a takeover,
+/// not a zone.
+#[test]
+fn test_a_detail_view_covers_the_search_bar() {
+    let mut app = make_test_app();
+    app.search_input = "typing in the box".into();
+
+    let buf = render_detail(&mut app, ZoneId::Torrent, 80, 24);
+    let text = all_text(&buf);
+    assert!(
+        !text.contains("typing in the box"),
+        "the search bar must be behind the detail view"
+    );
 }

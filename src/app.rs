@@ -619,7 +619,7 @@ impl App {
 
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                if self.ui.detail_log_mode {
+                if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(3);
                 } else if self.ui.modal == Modal::None {
                     if let Some(id) = self.ui.zone_at(mouse.row, mouse.column) {
@@ -638,7 +638,7 @@ impl App {
                 }
             }
             MouseEventKind::ScrollDown => {
-                if self.ui.detail_log_mode {
+                if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll =
                         (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
                 } else if self.ui.modal == Modal::None {
@@ -657,7 +657,7 @@ impl App {
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if self.ui.detail_log_mode {
+                if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
                 } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
                     // The input box is the only thing left to hit on
@@ -1021,29 +1021,43 @@ impl App {
             return self.handle_menu_key(key).await;
         }
 
-        if self.ui.detail_log_mode {
+        // A detail view owns the keyboard until it is dismissed: no
+        // zone digits, no search box, no menu -- only the keys it
+        // answers. Esc closes it, its own key closes it, and the other
+        // two detail keys switch straight to that view instead.
+        if let Some(view) = self.ui.detail_view {
+            // The zone's own key closes it, any other detail key jumps
+            // straight to that view -- a takeover you have to walk back
+            // out of one at a time is a trap, not a mode.
+            let target = match key.code {
+                KeyCode::Char(c) => ZoneId::all()
+                    .iter()
+                    .copied()
+                    .find(|id| id.detail_key() == Some(c)),
+                _ => None,
+            };
             match key.code {
-                KeyCode::Char('L') | KeyCode::Esc => {
-                    self.ui.detail_log_mode = false;
-                }
-                KeyCode::Char('j') if self.config.vim_keys => {
+                KeyCode::Esc => self.ui.detail_view = None,
+                _ if target == Some(view) => self.ui.detail_view = None,
+                _ if target.is_some() => self.ui.detail_view = target,
+                KeyCode::Char('j') if self.config.vim_keys && view == ZoneId::Log => {
                     self.ui.detail_log_scroll =
                         (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
                 }
-                KeyCode::Down => {
+                KeyCode::Down if view == ZoneId::Log => {
                     self.ui.detail_log_scroll =
                         (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
                 }
-                KeyCode::Char('k') if self.config.vim_keys => {
+                KeyCode::Char('k') if self.config.vim_keys && view == ZoneId::Log => {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
                 }
-                KeyCode::Up => {
+                KeyCode::Up if view == ZoneId::Log => {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
                 }
-                KeyCode::PageUp => {
+                KeyCode::PageUp if view == ZoneId::Log => {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(20);
                 }
-                KeyCode::PageDown => {
+                KeyCode::PageDown if view == ZoneId::Log => {
                     self.ui.detail_log_scroll =
                         (self.ui.detail_log_scroll + 20).min(self.ui.detail_logs.len());
                 }
@@ -1201,7 +1215,7 @@ impl App {
                     }
                     SettingsAction::OpenLog => {
                         self.ui.modal = Modal::None;
-                        self.ui.detail_log_mode = true;
+                        self.ui.detail_view = Some(ZoneId::Log);
                     }
                     SettingsAction::RunHealthCheck => {
                         let results = self.ui.health_check().await;
@@ -1517,7 +1531,15 @@ impl App {
                 self.start_search(String::new()).await;
             }
             KeyCode::Char('L') => {
-                self.ui.toggle_detail_log();
+                self.ui.toggle_detail_view(ZoneId::Log);
+            }
+            // The other two detail views: `T` the torrent's full
+            // readout, `R` the results table with its preview line.
+            KeyCode::Char('T') => {
+                self.ui.toggle_detail_view(ZoneId::Torrent);
+            }
+            KeyCode::Char('R') => {
+                self.ui.toggle_detail_view(ZoneId::Results);
             }
             // The help page (btop binds `F1`/`?`/`h`); `h` stays free
             // for future vim navigation, so the three triggers are `?`,
@@ -2550,6 +2572,63 @@ mod key_routing_tests {
     }
 
     /// The other empty-dispatch: nothing checked at all. The line has to
+    /// `L`, `T` and `R` each open their zone's detail view -- the same
+    /// full-frame takeover the detailed log already had -- and the same
+    /// key closes it again. Esc closes whichever is open.
+    #[tokio::test]
+    async fn l_t_and_r_open_and_close_their_detail_views() {
+        for (code, view) in [
+            (KeyCode::Char('L'), ZoneId::Log),
+            (KeyCode::Char('T'), ZoneId::Torrent),
+            (KeyCode::Char('R'), ZoneId::Results),
+        ] {
+            let mut app = app_focused_on_sources(None).await;
+
+            app.handle_key(press(code)).await.expect("open");
+            assert_eq!(
+                app.ui.detail_view,
+                Some(view),
+                "{code:?} opens {:?}'s detail view",
+                view
+            );
+
+            app.handle_key(press(code)).await.expect("close again");
+            assert_eq!(
+                app.ui.detail_view, None,
+                "{code:?} closes it again -- the key is a toggle"
+            );
+
+            app.handle_key(press(code)).await.expect("reopen");
+            app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+            assert_eq!(
+                app.ui.detail_view, None,
+                "Esc closes {:?}'s detail view",
+                view
+            );
+        }
+    }
+
+    /// While a detail view is open it owns the keys: the zone digits
+    /// must not toggle visibility underneath the takeover, and the
+    /// search box must not be reachable.
+    #[tokio::test]
+    async fn a_detail_view_owns_the_keyboard() {
+        let mut app = app_focused_on_sources(None).await;
+        app.handle_key(press(KeyCode::Char('T'))).await.expect("T");
+
+        app.handle_key(press(KeyCode::Char('1'))).await.expect("1");
+
+        assert_eq!(
+            app.ui.detail_view,
+            Some(ZoneId::Torrent),
+            "the digit must not reach the zone toggles"
+        );
+        assert!(
+            !app.ui.search_box_at(0),
+            "the search box is covered by the detail view"
+        );
+    }
+
     /// The menu's Help item opens the very same modal `?` does: one
     /// help page, two ways to reach it -- a menu item that toggled its
     /// own private flag drew nothing.

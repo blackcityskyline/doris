@@ -291,23 +291,73 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
 /// used to be one flat string, so nothing distinguished the zone number
 /// from its name. The colours are the theme's structure tokens: the
 /// number `secondary`, the label `primary`.
+///
+/// The label is split at its first letter: that letter is the key that
+/// opens the zone's detail view (`L`/`T`/`R`), so it carries the same
+/// `on_hover` + bold mark a frame button's hotkey carries, and the rest
+/// of the word stays plain `primary`.
 #[test]
 fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
     let theme = Theme::dark();
     let line = zone_title(ZoneId::Results, &theme);
     let spans = line.spans;
 
-    assert_eq!(spans.len(), 5);
+    assert_eq!(spans.len(), 6);
     assert_eq!(spans[1].content.to_string(), "\u{00B9}");
 
     let number = spans[1].style;
     assert_eq!(number.fg, Some(theme.secondary_color()));
     assert!(number.add_modifier.contains(Modifier::BOLD));
 
-    assert_eq!(spans[3].content.to_string(), "Results");
-    let label = spans[3].style;
+    // The detail-view key leads the word...
+    assert_eq!(spans[3].content.to_string(), "R");
+    assert_eq!(spans[3].style.fg, Some(theme.on_hover_color()));
+    assert!(spans[3].style.add_modifier.contains(Modifier::BOLD));
+
+    // ...and the rest of the label is still plain primary.
+    assert_eq!(spans[4].content.to_string(), "esults");
+    let label = spans[4].style;
     assert_eq!(label.fg, Some(theme.primary_color()));
     assert!(!label.add_modifier.contains(Modifier::BOLD));
+}
+
+/// Every zone whose label starts with its detail key gets the mark;
+/// Trackers has no detail view, so its label stays one plain span.
+#[test]
+fn test_zone_title_marks_the_detail_key_of_each_zone_that_has_one() {
+    let theme = Theme::dark();
+    for (id, key) in [
+        (ZoneId::Log, "L"),
+        (ZoneId::Torrent, "T"),
+        (ZoneId::Results, "R"),
+    ] {
+        let spans = zone_title(id, &theme).spans;
+        assert_eq!(spans.len(), 6, "{:?} splits its label", id);
+        assert_eq!(spans[3].content.to_string(), key, "{:?} leads", id);
+        assert_eq!(
+            spans[3].style.fg,
+            Some(theme.on_hover_color()),
+            "{:?} hotkey is on_hover",
+            id
+        );
+        assert!(spans[3].style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    let trackers = zone_title(ZoneId::Trackers, &theme).spans;
+    assert_eq!(trackers.len(), 5, "Trackers has no detail view to name");
+    assert_eq!(trackers[3].content.to_string(), "Trackers");
+    assert!(!trackers[3].style.add_modifier.contains(Modifier::BOLD));
+}
+
+/// The Log frame no longer advertises `detail`: `L` moved into the
+/// zone's own title, and two marks for one key is one too many.
+#[test]
+fn test_the_log_frame_carries_no_detail_button() {
+    let buttons = zone_buttons(ZoneId::Log);
+    assert!(
+        buttons.is_empty(),
+        "the Log frame must not advertise a detail button"
+    );
 }
 
 /// `zone_title_width` is what positions the whole frame legend, so it has

@@ -121,7 +121,12 @@ pub struct App {
     pub logs: VecDeque<String>,
     pub log_scroll: usize,
     pub detail_logs: Vec<String>,
-    pub detail_log_mode: bool,
+    /// Which zone has taken over the whole frame (`L`/`T`/`R`). `None`
+    /// is the normal tiled view; a `Some` is a full-frame takeover that
+    /// owns the keyboard until Esc or the same key again. It used to be
+    /// a `detail_log_mode` bool, which could only ever say "log, or
+    /// not".
+    pub detail_view: Option<ZoneId>,
     pub detail_log_scroll: usize,
     pub state: AppState,
     /// What each source answered for the running search: pending, how
@@ -424,7 +429,7 @@ impl App {
             logs: VecDeque::new(),
             log_scroll: 0,
             detail_logs: Vec::new(),
-            detail_log_mode: false,
+            detail_view: None,
             detail_log_scroll: 0,
             state: AppState::Idle,
             source_status: HashMap::new(),
@@ -487,8 +492,14 @@ impl App {
         }
     }
 
-    pub fn toggle_detail_log(&mut self) {
-        self.detail_log_mode = !self.detail_log_mode;
+    /// Open `id`'s detail view, or close it if it is the one already
+    /// showing -- the key that opens a takeover is the key that ends it.
+    pub fn toggle_detail_view(&mut self, id: ZoneId) {
+        self.detail_view = if self.detail_view == Some(id) {
+            None
+        } else {
+            Some(id)
+        };
     }
 
     pub fn scroll_logs_up(&mut self) {
@@ -1262,8 +1273,16 @@ impl App {
     fn render_main_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         self.zones.update_areas(area);
 
-        if self.detail_log_mode {
-            self.render_full_log(frame, area, config);
+        // A zone with no detail view (`Trackers`) simply has nothing to
+        // take over with, so it falls through to the tiled render rather
+        // than panicking on a state no key can produce.
+        let detail = self.detail_view.filter(|id| id.detail_key().is_some());
+        if let Some(view) = detail {
+            match view {
+                ZoneId::Log => self.render_full_log(frame, area, config),
+                ZoneId::Torrent => self.render_detail_torrent(frame, area, config),
+                _ => self.render_detail_results(frame, area, config),
+            }
         } else {
             self.render_search_bar(frame, area, config);
 
@@ -1302,7 +1321,7 @@ impl App {
     /// it: fullscreen stretches a zone across the whole frame and the
     /// detail log takes it too.
     pub fn search_box_at(&self, row: u16) -> bool {
-        let covered = self.zones.fullscreen.is_some() || self.detail_log_mode;
+        let covered = self.zones.fullscreen.is_some() || self.detail_view.is_some();
         !covered && row < SEARCH_BAR_HEIGHT
     }
 
@@ -1738,6 +1757,215 @@ impl App {
         );
 
         frame.render_widget(log_panel, area);
+    }
+
+    /// The Torrent detail view (`T`): the same facts the panel draws in
+    /// four tight lines, given the whole frame -- so the name gets a
+    /// line of its own and the bar is as wide as the terminal instead
+    /// of the panel's 50-column cap.
+    fn render_detail_torrent(&self, frame: &mut Frame, area: Rect, config: &Config) {
+        let s = &self.torrent_status;
+        let progress_pct = (s.progress * 100.0) as u32;
+        // `Progress: NN% ` leads, so the sparkline gets what is left
+        // rather than eating the number off the end of a too-wide line.
+        let prefix = format!("Progress: {}% ", progress_pct).len() as u16;
+        let bar_width = area.width.saturating_sub(prefix + 2) as usize;
+
+        let history: Vec<f64> = self.progress_history.iter().copied().collect();
+        let sparkline =
+            super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
+
+        let status_display = if self.torrent_paused && !s.hash.is_empty() {
+            format!("{} (paused)", s.status)
+        } else {
+            s.status.clone()
+        };
+
+        // Same split as the panel: labels in the secondary accent, the
+        // values they name in the body colour.
+        let label = Style::default().fg(self.theme.secondary_color());
+        let value = Style::default().fg(self.theme.main_fg.to_color());
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("Name: ", label),
+                Span::styled(s.title.clone(), value),
+            ]),
+            Line::from(vec![
+                Span::styled("Hash: ", label),
+                Span::styled(s.hash.clone(), value),
+            ]),
+            Line::from(vec![
+                Span::styled("Status: ", label),
+                Span::styled(status_display, value),
+            ]),
+        ];
+        lines.push(Line::from(vec![
+            Span::styled("Progress: ", label),
+            Span::styled(
+                format!("{}%", progress_pct),
+                if progress_pct >= 100 {
+                    Style::default().fg(self.theme.primary_color())
+                } else {
+                    value
+                },
+            ),
+            Span::styled(" ", value),
+            Span::styled(sparkline, value),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("DL: ", label),
+            Span::styled(format_bytes(s.download_speed), value),
+            Span::styled("  ", value),
+            Span::styled("UL: ", label),
+            Span::styled(format_bytes(s.upload_speed), value),
+            Span::styled("  Downloaded: ", label),
+            Span::styled(format_bytes(s.downloaded), value),
+            Span::styled(" / ", value),
+            Span::styled(format_bytes(s.total_size), value),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Seeds: ", label),
+            Span::styled(s.seeds.to_string(), value),
+            Span::styled("  Peers: ", label),
+            Span::styled(s.peers.to_string(), value),
+        ]));
+
+        let title = Span::styled(
+            " Torrent detail [T/Esc] close ",
+            Style::default().fg(self.theme.primary_color()),
+        );
+        let paragraph = Paragraph::new(lines).block(
+            self.themed_block(self.theme.primary_color(), config)
+                .title(title),
+        );
+        frame.render_widget(paragraph, area);
+    }
+
+    /// The Results detail view (`R`): the table again, full frame, with
+    /// a preview line under it naming the facts of the row under the
+    /// cursor -- the detail modal's header row, without the modal.
+    fn render_detail_results(&self, frame: &mut Frame, area: Rect, config: &Config) {
+        let title = Span::styled(
+            " Results detail [R/Esc] close ",
+            Style::default().fg(self.theme.primary_color()),
+        );
+        let block = self
+            .themed_block(self.theme.primary_color(), config)
+            .title(title);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(inner);
+
+        let header = Row::new(vec![
+            Cell::from("Seeds"),
+            Cell::from("Size"),
+            Cell::from("Date"),
+            Cell::from("Src"),
+            Cell::from("Title"),
+        ])
+        .style(
+            Style::default()
+                .fg(self.theme.primary_color())
+                .add_modifier(Modifier::BOLD),
+        );
+        let badge_style = Style::default().fg(self.theme.graph_text.to_color());
+        let seed_style = Style::default().fg(self.theme.secondary_color());
+        let date_style = Style::default().fg(self.theme.graph_text.to_color());
+        let rows: Vec<Row> = self
+            .filtered_indices
+            .iter()
+            .filter_map(|&idx| self.results.get(idx))
+            .map(|item| {
+                Row::new(vec![
+                    Cell::from(item.seeds.as_str()).style(seed_style),
+                    Cell::from(item.size.as_str()),
+                    Cell::from(item.date.as_str()).style(date_style),
+                    Cell::from(source_badge(item)).style(badge_style),
+                    Cell::from(item.title.as_str()),
+                ])
+            })
+            .collect();
+
+        if rows.is_empty() {
+            let placeholder = Paragraph::new(self.results_placeholder())
+                .style(Style::default().fg(self.theme.graph_text.to_color()))
+                .wrap(Wrap { trim: true });
+            frame.render_widget(placeholder, chunks[0]);
+            return;
+        }
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(8),
+                Constraint::Length(10),
+                Constraint::Length(12),
+                Constraint::Length(SOURCE_BADGE_WIDTH),
+                Constraint::Min(30),
+            ],
+        )
+        .header(header)
+        .row_highlight_style(self.theme.selection_style());
+
+        let mut state = TableState::default();
+        if let Some(local_pos) = self
+            .filtered_indices
+            .iter()
+            .position(|&i| i == self.selected)
+        {
+            state.select(Some(local_pos));
+        }
+        frame.render_stateful_widget(table, chunks[0], &mut state);
+
+        // The preview line: label accents on, facts in the body colour.
+        let label = Style::default().fg(self.theme.secondary_color());
+        let value = Style::default().fg(self.theme.main_fg.to_color());
+        let fact = self
+            .filtered_indices
+            .iter()
+            .find(|&&i| i == self.selected)
+            .and_then(|&i| self.results.get(i));
+        let preview = match fact {
+            None => Line::from(Span::styled("no row selected", label)),
+            Some(item) => {
+                let hash = if item.info_hash.is_empty() {
+                    "-".to_string()
+                } else {
+                    item.info_hash.clone()
+                };
+                Line::from(vec![
+                    Span::styled("Src: ", label),
+                    Span::styled(source_badge(item), value),
+                    Span::styled("  Group: ", label),
+                    Span::styled(
+                        item.group
+                            .map_or("-".to_string(), |g| g.label().to_string()),
+                        value,
+                    ),
+                    Span::styled("  Size: ", label),
+                    Span::styled(item.size.clone(), value),
+                    Span::styled("  Date: ", label),
+                    Span::styled(item.date.clone(), value),
+                    Span::styled("  Seeds: ", label),
+                    Span::styled(item.seeds.clone(), value),
+                    Span::styled("  Hash: ", label),
+                    Span::styled(hash, value),
+                    Span::styled("  Magnet: ", label),
+                    Span::styled(
+                        if item.magnet.is_some() { "yes" } else { "no" }.to_string(),
+                        value,
+                    ),
+                    Span::styled("  Page: ", label),
+                    Span::styled(item.page_url.clone(), value),
+                ])
+            }
+        };
+        frame.render_widget(Paragraph::new(preview), chunks[1]);
     }
 
     fn render_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {

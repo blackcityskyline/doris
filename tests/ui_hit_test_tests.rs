@@ -52,7 +52,7 @@ fn test_search_box_is_not_a_target_when_something_covers_it() {
     assert!(!app.search_box_at(0));
 
     app.zones.fullscreen = None;
-    app.detail_log_mode = true;
+    app.detail_view = Some(ZoneId::Log);
     assert!(!app.search_box_at(0));
 }
 

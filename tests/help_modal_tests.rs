@@ -45,6 +45,8 @@ fn test_help_text_names_the_documented_keybinds() {
         "Shift+Enter, D",
         "b",
         "L",
+        "T",
+        "R",
         "F",
         "f",
         "m",

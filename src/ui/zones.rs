@@ -64,6 +64,19 @@ impl ZoneId {
             .find(|&(_, key, _)| *key == c)
             .map(|&(id, ..)| id)
     }
+
+    /// The key that takes over the frame with this zone's detail view
+    /// (`L`/`T`/`R`), or `None` for a zone that has none. It is the
+    /// label's first letter, which is what lets `zone_title` highlight
+    /// it without a second table to keep in step.
+    pub fn detail_key(&self) -> Option<char> {
+        match self {
+            ZoneId::Results => Some('R'),
+            ZoneId::Torrent => Some('T'),
+            ZoneId::Trackers => None,
+            ZoneId::Log => Some('L'),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -442,9 +455,6 @@ const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::BottomLeft, 'd', "delete"),
 ];
 
-/// The Log panel's only real action: jump to the full-screen detail log.
-const LOG_BUTTONS: &[(FrameSlot, char, &str)] = &[(FrameSlot::TopRight, 'L', "detail")];
-
 /// The buttons drawn on `id`'s frame; empty for zones with no actions.
 ///
 /// The Trackers panel has none on purpose: its rows are the actions, and
@@ -455,7 +465,7 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
     let table: &[(FrameSlot, char, &str)] = match id {
         ZoneId::Results => RESULTS_BUTTONS,
         ZoneId::Torrent => TORRENT_BUTTONS,
-        ZoneId::Log => LOG_BUTTONS,
+        ZoneId::Log => &[],
         ZoneId::Trackers => &[],
     };
     table
@@ -471,18 +481,34 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
 /// The zone's own title, btop `createBox` style: superscript number in
 /// `secondary` + bold, label in `primary` (`btop_draw.cpp:290` for the
 /// numbering colour, `:332` for where it is drawn).
+///
+/// The label leads with its detail-view key (`L`/`T`/`R`), drawn the
+/// way a frame button draws its hotkey -- `on_hover` + bold -- so the
+/// letter that opens the full-frame takeover is visible where the zone
+/// is. Trackers has no detail view, so its label stays one plain span.
 pub fn zone_title(id: ZoneId, theme: &Theme) -> Line<'static> {
     let word = Style::default().fg(theme.primary_color());
     let number = Style::default()
         .fg(theme.secondary_color())
         .add_modifier(Modifier::BOLD);
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(" ", word),
         Span::styled(superscript_digit(id as u8), number),
         Span::styled(" ", word),
-        Span::styled(id.label(), word),
-        Span::styled(" ", word),
-    ])
+    ];
+    match id.detail_key() {
+        Some(key) => {
+            let hot = Style::default()
+                .fg(theme.on_hover_color())
+                .add_modifier(Modifier::BOLD);
+            let rest = id.label().chars().skip(1);
+            spans.push(Span::styled(key.to_string(), hot));
+            spans.push(Span::styled(rest.collect::<String>(), word));
+        }
+        None => spans.push(Span::styled(id.label(), word)),
+    }
+    spans.push(Span::styled(" ", word));
+    Line::from(spans)
 }
 
 /// Columns [`zone_title`] occupies, so the frame row starts right after

@@ -42,6 +42,8 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("Shift+Enter, D", "Shows the selected row's details."),
     ("b", "Browse: freshest rows from every source."),
     ("L", "Toggles the detailed log view."),
+    ("T", "Toggles the torrent detail view."),
+    ("R", "Toggles the results detail view."),
     ("f", "Filter mode; Enter applies, Esc clears."),
     ("F", "Toggles fullscreen for the focused zone."),
     ("m", "Toggles the main menu (Options lives there)."),
