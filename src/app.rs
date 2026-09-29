@@ -577,18 +577,12 @@ impl App {
                         match id {
                             ZoneId::Log => self.ui.scroll_logs_up(),
                             ZoneId::Results => self.handle_nav_up(),
-                            // Torrent and Extra have nothing scrollable yet
-                            // (a single status readout, and an unbuilt
-                            // placeholder respectively) -- focusing them on
-                            // hover is still correct, there's just no list
-                            // to move within.
-                            // Torrent and Extra have nothing scrollable yet
-                            // (a single status readout, and an unbuilt
-                            // placeholder respectively), and Sources
-                            // scrolls its cursor rather than a list --
-                            // focusing any of them on hover is still
-                            // correct.
-                            ZoneId::Torrent | ZoneId::Extra | ZoneId::Sources => {}
+                            // Torrent is a single status readout and
+                            // Sources scrolls its cursor rather than a
+                            // list -- focusing them on hover is still
+                            // correct, there's just no list to move
+                            // within.
+                            ZoneId::Torrent | ZoneId::Sources => {}
                         }
                     }
                 }
@@ -603,13 +597,11 @@ impl App {
                         match id {
                             ZoneId::Log => self.ui.scroll_logs_down(),
                             ZoneId::Results => self.handle_nav_down().await,
-                            // Torrent and Extra have nothing scrollable yet
-                            // (a single status readout, and an unbuilt
-                            // placeholder respectively), and Sources
-                            // scrolls its cursor rather than a list --
-                            // focusing any of them on hover is still
+                            // Torrent is a single status readout and
+                            // Sources scrolls its cursor rather than a
+                            // list -- focusing them on hover is still
                             // correct.
-                            ZoneId::Torrent | ZoneId::Extra | ZoneId::Sources => {}
+                            ZoneId::Torrent | ZoneId::Sources => {}
                         }
                     }
                 }
@@ -1282,9 +1274,6 @@ impl App {
                 self.ui.zones.toggle(ZoneId::Log);
             }
             KeyCode::Char('4') if !self.ui.input_mode => {
-                self.ui.zones.toggle(ZoneId::Extra);
-            }
-            KeyCode::Char('5') if !self.ui.input_mode => {
                 self.ui.zones.toggle(ZoneId::Sources);
             }
             // Shift+P: cycle the layout preset (П.8). Lowercase `p` is
