@@ -193,6 +193,28 @@ pub fn enter_action(
     }
 }
 
+/// What the Log zone says after "Enable TorrServer" was switched on.
+///
+/// `start` is `None` when the server already answered the ping, `Some(Ok)`
+/// when `systemctl start` ran it, and `Some(Err(reason))` when the unit
+/// could not be started at all. doris has no password to give, so the
+/// refusal is the whole point: the user needs to see `Access denied`
+/// here, next to the switch that did nothing, rather than infer it from
+/// a stream that fails later with no reason attached.
+pub fn torrserver_enable_message(url: &str, start: Option<Result<String, String>>) -> String {
+    match start {
+        None => format!("TorrServer: reachable at {url}"),
+        Some(Ok(_)) => format!(
+            "TorrServer is not answering at {url}; `systemctl start torrserver` ran, \
+             it may take a moment to bind"
+        ),
+        Some(Err(reason)) => format!(
+            "TorrServer is not answering at {url} and could not be started: {reason} \
+             (run `sudo systemctl start torrserver`)"
+        ),
+    }
+}
+
 /// Merge a detail modal's file list into the modal (П.7).
 ///
 /// A free function over `&mut UiApp` for the same reason as
@@ -884,6 +906,54 @@ impl App {
         }
     }
 
+    /// A line the user must not miss: the Log zone, the full log `L`
+    /// opens, and the file on disk. TorrServer's failures used to reach
+    /// only the last of the three, so the panel said nothing while the
+    /// app already knew the answer.
+    fn report(&mut self, module: &str, msg: &str) {
+        self.ui.add_log(msg);
+        self.ui.add_detail(msg);
+        crate::log::log(module, msg);
+    }
+
+    /// Turning TorrServer on says out loud whether it is actually up.
+    ///
+    /// The switch used to invert a bool and stop there: with the systemd
+    /// unit stopped nothing happened until a stream was started, and the
+    /// reason lived in the file log. So the moment it is enabled the
+    /// server is pinged; if it does not answer, the `systemctl` that
+    /// would start it gets one unprivileged chance -- never with a
+    /// password, which cannot be answered from here and would only hang
+    /// or fail silently -- and whatever it said is reported verbatim.
+    async fn check_torrserver_on_enable(&mut self) {
+        let url = self.torrserver.base_url().to_string();
+        let started = if self.torrserver.is_reachable().await {
+            None
+        } else {
+            Some(
+                match std::process::Command::new("systemctl")
+                    .args(["start", "torrserver.service"])
+                    .output()
+                {
+                    Ok(out) if out.status.success() => Ok(String::new()),
+                    Ok(out) => {
+                        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                        // An empty stderr would read as "no reason given";
+                        // the exit status still says how it failed.
+                        Err(if err.is_empty() {
+                            out.status.to_string()
+                        } else {
+                            err
+                        })
+                    }
+                    Err(e) => Err(e.to_string()),
+                },
+            )
+        };
+        let msg = torrserver_enable_message(&url, started);
+        self.report("torrserver", &msg);
+    }
+
     /// Move the selection down in the focused zone, loading the next page
     /// of results if the Results zone just scrolled near its end. Shared
     /// by the Down arrow (always active) and the vim-style 'j' (only when
@@ -1002,6 +1072,9 @@ impl App {
                         }
                     };
                 }
+                // Captured before the chain flips it: turning TorrServer
+                // *on* is the one toggle that owes the user an answer.
+                let torrserver_was_on = self.config.enable_torrserver;
                 let toggled = toggle!(ToggleCloseBrowserOnExit, close_browser_on_exit)
                     || toggle!(ToggleSaveCookies, save_cookies)
                     || toggle!(ToggleSaveCredentials, save_credentials)
@@ -1024,6 +1097,9 @@ impl App {
                         &self.config,
                         self.browser_visibility == BrowserVisibility::Hidden,
                     );
+                    if self.config.enable_torrserver && !torrserver_was_on {
+                        self.check_torrserver_on_enable().await;
+                    }
                 }
                 match action {
                     SettingsAction::ToggleBrowserVisibility => {
@@ -1084,11 +1160,13 @@ impl App {
                     }
                     SettingsAction::CheckTorrserverStatus => {
                         let reachable = self.torrserver.is_reachable().await;
-                        self.ui.add_log(if reachable {
-                            "TorrServer: reachable"
+                        let url = self.torrserver.base_url().to_string();
+                        let msg = if reachable {
+                            format!("TorrServer: reachable at {url}")
                         } else {
-                            "TorrServer: not reachable"
-                        });
+                            format!("TorrServer: not answering at {url}")
+                        };
+                        self.report("torrserver", &msg);
                         self.ui.open_settings(
                             &self.config,
                             self.browser_visibility == BrowserVisibility::Hidden,
@@ -2174,6 +2252,125 @@ mod key_routing_tests {
         assert!(
             text.contains(id),
             "`{id}` must be in the saved config:\n{text}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The path every "you should know this" line takes: the Log zone,
+    /// the full log `L` opens, and the file. TorrServer's answer used to
+    /// reach none of the first two, so a switch that could not work
+    /// showed nothing at all.
+    #[tokio::test]
+    async fn report_reaches_both_logs() {
+        let mut app = app_focused_on_sources(None).await;
+
+        app.report("torrserver", "a line worth seeing");
+
+        assert!(
+            app.ui
+                .logs
+                .iter()
+                .any(|l| l.contains("a line worth seeing")),
+            "short log: {:?}",
+            app.ui.logs
+        );
+        assert!(
+            app.ui
+                .detail_logs
+                .iter()
+                .any(|l| l.contains("a line worth seeing")),
+            "full log: {:?}",
+            app.ui.detail_logs
+        );
+    }
+
+    /// A local server answering 200 on whatever port it is given, so the
+    /// "TorrServer is up" branch can be tested without the real one --
+    /// and without ever reaching the `systemctl` fallback.
+    async fn fake_torrserver() -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let _ = sock.read(&mut buf).await;
+                    let _ = sock
+                        .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+                        .await;
+                });
+            }
+        });
+        port
+    }
+
+    /// Put the Settings cursor on the row whose action is `action`, so a
+    /// test can press Enter on it without walking the modal's layout.
+    fn focus_setting(app: &mut App, action: SettingsAction) {
+        let Modal::Settings(state) = &mut app.ui.modal else {
+            panic!("settings modal is not open");
+        };
+        let found = state.categories.iter().enumerate().find_map(|(c, cat)| {
+            cat.items
+                .iter()
+                .position(|i| i.action == action)
+                .map(|r| (c, r))
+        });
+        match found {
+            Some((c, r)) => {
+                state.selected_category = c;
+                state.selected = r;
+            }
+            None => panic!("no settings row for {action:?}"),
+        }
+    }
+
+    /// Switching TorrServer on has to say whether it is actually there:
+    /// the toggle used to invert a bool in silence, and with the unit
+    /// stopped nothing happened until a stream was started -- with no
+    /// reason attached there either.
+    #[tokio::test]
+    async fn enabling_torrserver_reports_where_it_answers() {
+        let port = fake_torrserver().await;
+        let dir = std::env::temp_dir().join(format!("doris-ts-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::remove_file(&path);
+
+        let config = Config {
+            bridge_port: 0,
+            enabled_sources: Vec::new(),
+            vim_keys: true,
+            enable_torrserver: false, // off, so Enter turns it on
+            torrserver_url: format!("http://127.0.0.1:{port}"),
+            ..Config::default()
+        };
+        let mut app = App::new(
+            Args::parse_from(["doris", "--config", path.to_str().expect("utf-8")]),
+            config,
+        )
+        .await
+        .expect("app");
+        app.ui.show_menu = false;
+        app.ui.open_settings(&app.config, true);
+        focus_setting(&mut app, SettingsAction::ToggleEnableTorrserver);
+
+        app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+        assert!(app.config.enable_torrserver, "the switch flipped on");
+        let url = format!("http://127.0.0.1:{port}");
+        let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            logs.contains(&format!("reachable at {url}")),
+            "the Log zone must name the answer:\n{logs}"
+        );
+        let full = app.ui.detail_logs.join("\n");
+        assert!(
+            full.contains(&format!("reachable at {url}")),
+            "the full log must have it too:\n{full}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
