@@ -524,3 +524,50 @@ fn test_the_legacy_capitalized_shape_still_parses() {
     assert_eq!(list[0].status_string, "Downloading");
     assert_eq!(list[0].progress(), 0.25);
 }
+
+// --- the line "Enable TorrServer" writes into the Log zone -----------------
+
+use doris::app::torrserver_enable_message;
+
+const URL: &str = "http://127.0.0.1:8090";
+
+#[test]
+fn test_enable_reports_where_the_server_answers() {
+    let msg = torrserver_enable_message(URL, None);
+    assert!(msg.contains(URL), "the URL must be named: {msg}");
+    assert!(msg.contains("reachable"), "{msg}");
+    assert!(!msg.contains("systemctl"), "nothing to start: {msg}");
+}
+
+/// `systemctl start` succeeded but says nothing -- worth telling the user
+/// it was actually run, so the next line (a still-quiet server) is not
+/// mistaken for a no-op toggle.
+#[test]
+fn test_enable_reports_that_the_unit_was_started() {
+    let msg = torrserver_enable_message(URL, Some(Ok(String::new())));
+    assert!(msg.contains("systemctl"), "{msg}");
+    assert!(msg.contains(URL), "{msg}");
+}
+
+/// doris has no password to give, so `systemctl` refuses; its own words
+/// are the whole point of the message. A toggle that hides them is the
+/// bug this replaces -- the user was left with a silent switch and a
+/// stream that failed later with no reason attached.
+#[test]
+fn test_enable_reports_why_the_unit_would_not_start() {
+    let msg = torrserver_enable_message(
+        URL,
+        Some(Err(
+            "Failed to start torrserver.service: Access denied.".to_string()
+        )),
+    );
+    assert!(
+        msg.contains("Failed to start torrserver.service: Access denied."),
+        "{msg}"
+    );
+    assert!(
+        msg.contains("sudo systemctl start torrserver"),
+        "and the one command that can fix it: {msg}"
+    );
+    assert!(msg.contains(URL), "{msg}");
+}

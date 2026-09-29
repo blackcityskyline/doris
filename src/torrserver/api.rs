@@ -75,6 +75,12 @@ impl TorrServer {
         }
     }
 
+    /// The server this client talks to, for messages that have to name
+    /// it (`TorrServer: reachable at http://...`).
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub async fn is_reachable(&self) -> bool {
         self.client
             .get(&self.base_url)
