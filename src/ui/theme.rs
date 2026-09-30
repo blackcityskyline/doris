@@ -85,7 +85,6 @@ const BUNDLED_THEMES: &[&str] = &[
     include_str!("../../themes/flexoki-dark.toml"),
     include_str!("../../themes/flexoki-light.toml"),
     include_str!("../../themes/gotham.toml"),
-    include_str!("../../themes/greyscale.toml"),
     include_str!("../../themes/gruvbox_dark.toml"),
     include_str!("../../themes/gruvbox_dark_v2.toml"),
     include_str!("../../themes/gruvbox_light.toml"),
@@ -109,7 +108,6 @@ const BUNDLED_THEMES: &[&str] = &[
     include_str!("../../themes/tokyo-storm.toml"),
     include_str!("../../themes/tomorrow-night.toml"),
     include_str!("../../themes/twilight.toml"),
-    include_str!("../../themes/whiteout.toml"),
 ];
 
 impl Theme {

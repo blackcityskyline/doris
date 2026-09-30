@@ -1575,7 +1575,11 @@ impl App {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let block = self
             .themed_block(border_color, config)
-            .title(super::zones::zone_title(id, &self.theme));
+            .title(super::zones::zone_title(
+                id,
+                &self.theme,
+                id == self.zones.focused,
+            ));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -1683,7 +1687,11 @@ impl App {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let block = self
             .themed_block(border_color, config)
-            .title(super::zones::zone_title(id, &self.theme));
+            .title(super::zones::zone_title(
+                id,
+                &self.theme,
+                id == self.zones.focused,
+            ));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -1848,7 +1856,11 @@ impl App {
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let block = self
             .themed_block(border_color, config)
-            .title(super::zones::zone_title(id, &self.theme));
+            .title(super::zones::zone_title(
+                id,
+                &self.theme,
+                id == self.zones.focused,
+            ));
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
 
@@ -1870,10 +1882,10 @@ impl App {
             .collect();
 
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let log_panel = Paragraph::new(visible_logs).block(
-            self.themed_block(border_color, config)
-                .title(super::zones::zone_title(id, &self.theme)),
-        );
+        let log_panel =
+            Paragraph::new(visible_logs).block(self.themed_block(border_color, config).title(
+                super::zones::zone_title(id, &self.theme, id == self.zones.focused),
+            ));
 
         frame.render_widget(log_panel, area);
         // The "(n/m)" scroll position moved from the title onto the

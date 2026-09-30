@@ -329,7 +329,7 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
 #[test]
 fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
     let theme = Theme::dark();
-    let line = zone_title(ZoneId::Results, &theme);
+    let line = zone_title(ZoneId::Results, &theme, false);
     let spans = line.spans;
 
     assert_eq!(spans.len(), 6);
@@ -361,7 +361,7 @@ fn test_zone_title_marks_the_detail_key_of_each_zone_that_has_one() {
         (ZoneId::Torrent, "T"),
         (ZoneId::Results, "R"),
     ] {
-        let spans = zone_title(id, &theme).spans;
+        let spans = zone_title(id, &theme, false).spans;
         assert_eq!(spans.len(), 6, "{:?} splits its label", id);
         assert_eq!(spans[3].content.to_string(), key, "{:?} leads", id);
         assert_eq!(
@@ -373,7 +373,7 @@ fn test_zone_title_marks_the_detail_key_of_each_zone_that_has_one() {
         assert!(spans[3].style.add_modifier.contains(Modifier::BOLD));
     }
 
-    let trackers = zone_title(ZoneId::Trackers, &theme).spans;
+    let trackers = zone_title(ZoneId::Trackers, &theme, false).spans;
     assert_eq!(trackers.len(), 5, "Trackers has no detail view to name");
     assert_eq!(trackers[3].content.to_string(), "Trackers");
     assert!(!trackers[3].style.add_modifier.contains(Modifier::BOLD));
@@ -397,7 +397,7 @@ fn test_the_log_frame_carries_no_detail_button() {
 fn test_zone_title_width_matches_the_drawn_title() {
     for &id in ZoneId::all() {
         let theme = Theme::dark();
-        let drawn: usize = zone_title(id, &theme)
+        let drawn: usize = zone_title(id, &theme, false)
             .spans
             .iter()
             .map(|s| s.content.chars().count())

@@ -800,16 +800,32 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
 /// way a frame button draws its hotkey -- `on_hover` + bold -- so the
 /// letter that opens the full-frame takeover is visible where the zone
 /// is. Trackers has no detail view, so its label stays one plain span.
-pub fn zone_title(id: ZoneId, theme: &Theme) -> Line<'static> {
+///
+/// `focused` adds a `▸` marker, and it exists because colour is not
+/// always enough: `zone_border_color` gives the focused zone `primary`
+/// and the rest `div_line`, and in five bundled themes those two are the
+/// *same* colour -- so the frame said nothing about which zone the
+/// keyboard was driving, and pressing `1`-`4` appeared to do nothing. A
+/// theme chooses its colours; it cannot choose whether a glyph is there.
+/// The marker is that second channel, and it is why those five themes
+/// are usable at all.
+pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
     let word = Style::default().fg(theme.primary_color());
     let number = Style::default()
         .fg(theme.secondary_color())
         .add_modifier(Modifier::BOLD);
-    let mut spans = vec![
-        Span::styled(" ", word),
+    let mut spans = vec![Span::styled(
+        if focused { "▸ " } else { "  " },
+        if focused {
+            word.add_modifier(Modifier::BOLD)
+        } else {
+            word
+        },
+    )];
+    spans.extend([
         Span::styled(superscript_digit(id as u8), number),
         Span::styled(" ", word),
-    ];
+    ]);
     match id.detail_key() {
         Some(key) => {
             let hot = Style::default()
@@ -827,8 +843,11 @@ pub fn zone_title(id: ZoneId, theme: &Theme) -> Line<'static> {
 
 /// Columns [`zone_title`] occupies, so the frame row starts right after
 /// it: space + superscript + space + label + space.
+/// How many columns `zone_title` draws, which is what positions the
+/// frame legend beside it. The marker is two cells in both states (`▸ `
+/// or `  `) so the legend does not shift when focus moves.
 pub fn zone_title_width(id: ZoneId) -> u16 {
-    (4 + id.label().chars().count()) as u16
+    (5 + id.label().chars().count()) as u16
 }
 
 /// Spans for one button: `primary` for the word, `on_hover` + bold for
