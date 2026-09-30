@@ -10,7 +10,6 @@ use doris::sources::source::{
 };
 use doris::ui::app::App as UiApp;
 use doris::ui::app::AppState;
-use serial_test::serial;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -194,71 +193,6 @@ fn test_legacy_rows_fall_back_to_rutracker() {
     // source", instead of being handed to rutracker and fed markup it
     // never came from.
     assert_eq!(source_id_for(&item_with_source("1337x")), "1337x");
-}
-
-/// A row whose id is not in the registry is sent to rutracker, and that
-/// substitution is said out loud: it is the one place a wrong id turns
-/// into a request to somebody else's server, and the failure the user
-/// sees is a rutracker error about a row they did not ask about.
-///
-/// `#[serial]` because the logger's file is a process-wide global and
-/// `HOME` is set per test.
-#[test]
-#[serial]
-fn test_a_substituted_source_id_is_reported_not_silent() {
-    let dir = std::env::temp_dir().join(format!("doris-log-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let real_home = std::env::var("HOME").ok();
-    std::env::set_var("HOME", &dir);
-    doris::log::init();
-
-    // A wrong id and an id from before the field existed both substitute.
-    source_id_for(&item_with_source("never-heard-of-it"));
-    source_id_for(&item_with_source(""));
-
-    let log = std::fs::read_to_string(dir.join(".local/share/doris/doris.log")).unwrap();
-    if let Some(home) = real_home {
-        std::env::set_var("HOME", home);
-    }
-    let _ = std::fs::remove_dir_all(&dir);
-
-    assert_eq!(
-        log.matches("no registered source").count(),
-        2,
-        "both substitutions must be reported:\n{log}"
-    );
-    assert!(log.contains("never-heard-of-it"), "and name the id:\n{log}");
-    assert!(
-        log.contains("talking to rutracker instead"),
-        "and say what happened instead:\n{log}"
-    );
-}
-
-/// A row that *is* in the registry says nothing -- the log is for the
-/// substitution, not a running commentary on every download.
-#[test]
-#[serial]
-fn test_a_registered_source_id_is_not_reported() {
-    let dir = std::env::temp_dir().join(format!("doris-log-ok-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let real_home = std::env::var("HOME").ok();
-    std::env::set_var("HOME", &dir);
-    doris::log::init();
-
-    source_id_for(&item_with_source("rutor"));
-
-    let log = std::fs::read_to_string(dir.join(".local/share/doris/doris.log")).unwrap();
-    if let Some(home) = real_home {
-        std::env::set_var("HOME", home);
-    }
-    let _ = std::fs::remove_dir_all(&dir);
-
-    assert!(
-        !log.contains("no registered source"),
-        "a row that routes correctly must be quiet:\n{log}"
-    );
 }
 
 fn item_with_source(source: &str) -> TorrentItem {

@@ -61,6 +61,8 @@ fn test_help_text_names_the_documented_keybinds() {
         "Esc",
         "q, ctrl + c",
         "? , /, F1",
+        "PageUp, PageDown",
+        "ctrl + u, ctrl + w",
     ] {
         assert!(
             keys.iter().any(|k| k == &expected),
@@ -68,6 +70,44 @@ fn test_help_text_names_the_documented_keybinds() {
             expected
         );
     }
+}
+
+/// The help page has to say what the app does, not what it used to do.
+///
+/// Four things were wrong at once, and every one of them is a key a user
+/// can press and get something the page does not describe:
+///
+/// - it said `Esc` "closes a modal", and in the main view `Esc` *opens*
+///   the menu;
+/// - it said a click hits "tabs", which stopped being a thing when the
+///   Trackers panel became a list of checkboxes;
+/// - `ctrl + u` and `ctrl + w` have always worked and were never written
+///   down, so nobody could know to use them;
+/// - it did not say that `d` on a torrent asks first.
+#[test]
+fn the_page_describes_what_the_keys_do_now() {
+    let page: Vec<String> = HELP_TEXT
+        .iter()
+        .flat_map(|(k, d)| [k.to_string(), d.to_string()])
+        .collect();
+    let text = page.join("\n");
+
+    assert!(
+        !text.contains("tabs"),
+        "there are no tabs: the Trackers panel is a list of checkboxes"
+    );
+    assert!(
+        text.contains("opens the menu"),
+        "Esc opens the main menu outside a modal, and the page must say so"
+    );
+    assert!(
+        text.contains("ctrl + u") && text.contains("ctrl + w"),
+        "the input editing keys are undocumented"
+    );
+    assert!(
+        text.contains("Confirms the removal"),
+        "`d` on a torrent asks before it removes; the page must say so"
+    );
 }
 
 /// The description column is whatever is left of the box after the

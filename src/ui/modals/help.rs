@@ -38,12 +38,11 @@ const KEY_WIDTH: usize = 20;
 /// `help_text` (`btop_menu.cpp:174`). Kept public so a test can check
 /// it still names every keybind AGENTS.md documents.
 pub const HELP_TEXT: &[(&str, &str)] = &[
-    (
-        "Mouse 1",
-        "Clicks zones, frame buttons, tabs, the search box.",
-    ),
+    ("Mouse 1", "Clicks zones and frame buttons; the box types."),
     ("Mouse scroll", "Scrolls what is under the cursor."),
+    ("Mouse move", "Marks the frame button under the pointer."),
     ("s, i, S", "Enters search input mode."),
+    ("ctrl + u, ctrl + w", "Clears the input / deletes a word."),
     ("Enter", "Searches / plays; in Trackers, switches the row."),
     ("Shift+Enter, D", "Shows row details; D works everywhere."),
     ("b", "Browse: freshest rows from every source."),
@@ -65,10 +64,11 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
         "Pages the results or the log (Log focused).",
     ),
     ("g, G", "Cycles the category forward / back."),
-    ("d", "Downloads a row / removes the torrent (twice)."),
+    ("d", "Downloads a row / removes the torrent (Torrent)."),
+    ("d, again", "Confirms the removal; any other key cancels."),
     ("v", "Logs the selected result's details."),
     ("p", "Pauses / resumes the tracked torrent."),
-    ("Esc", "Closes a modal; leaves input / filter mode."),
+    ("Esc", "Closes a modal / leaves input; opens the menu."),
     ("q, ctrl + c", "Quits program."),
     ("←, →", "Switches help section (keys / filter)."),
     ("? , /, F1", "Shows this window."),
