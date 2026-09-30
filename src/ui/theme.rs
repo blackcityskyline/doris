@@ -13,17 +13,9 @@ pub struct Theme {
     pub inactive_fg: ColorDef,
     pub div_line: ColorDef,
     pub graph_text: ColorDef,
-    pub meter_bg: ColorDef,
-    pub search_box: ColorDef,
-    pub log_box: ColorDef,
-    pub player_box: ColorDef,
-    pub menu_bg: ColorDef,
     pub menu_fg: ColorDef,
     pub menu_selected_bg: ColorDef,
     pub menu_selected_fg: ColorDef,
-    pub gradient_start: ColorDef,
-    pub gradient_mid: ColorDef,
-    pub gradient_end: ColorDef,
     /// Palette accents, all optional. A theme that spells them out (the
     /// noctalia template does) uses its own; a theme that omits them --
     /// every bundled one does -- gets the classic field each replaces,
@@ -56,23 +48,6 @@ impl From<ColorDef> for Color {
     fn from(def: ColorDef) -> Self {
         def.to_color()
     }
-}
-
-pub fn gradient_array(start: &ColorDef, mid: &ColorDef, end: &ColorDef, len: usize) -> Vec<Color> {
-    let mut result = Vec::with_capacity(len);
-    let half = len / 2;
-    for i in 0..len {
-        let (from, to, t) = if i < half {
-            (start, mid, i as f64 / half as f64)
-        } else {
-            (mid, end, (i - half) as f64 / (len - half).max(1) as f64)
-        };
-        let r = from.r as f64 + (to.r as f64 - from.r as f64) * t;
-        let g = from.g as f64 + (to.g as f64 - from.g as f64) * t;
-        let b = from.b as f64 + (to.b as f64 - from.b as f64) * t;
-        result.push(Color::Rgb(r as u8, g as u8, b as u8));
-    }
-    result
 }
 
 impl Default for Theme {
@@ -150,17 +125,9 @@ impl Theme {
             inactive_fg: ColorDef::new(55, 85, 105),
             div_line: ColorDef::new(25, 60, 95),
             graph_text: ColorDef::new(100, 165, 195),
-            meter_bg: ColorDef::new(15, 32, 55),
-            search_box: ColorDef::new(79, 195, 247),
-            log_box: ColorDef::new(38, 166, 154),
-            player_box: ColorDef::new(0, 188, 212),
-            menu_bg: ColorDef::new(10, 22, 40),
             menu_fg: ColorDef::new(144, 164, 174),
             menu_selected_bg: ColorDef::new(20, 50, 80),
             menu_selected_fg: ColorDef::new(128, 222, 234),
-            gradient_start: ColorDef::new(0, 188, 212),
-            gradient_mid: ColorDef::new(38, 166, 154),
-            gradient_end: ColorDef::new(77, 182, 172),
             primary: None,
             secondary: None,
             error: None,

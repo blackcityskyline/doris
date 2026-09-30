@@ -44,21 +44,6 @@ div_line.b = 143
 graph_text.r = 177
 graph_text.g = 204
 graph_text.b = 196
-meter_bg.r = 63
-meter_bg.g = 73
-meter_bg.b = 70
-search_box.r = 132
-search_box.g = 214
-search_box.b = 195
-log_box.r = 171
-log_box.g = 202
-log_box.b = 228
-player_box.r = 177
-player_box.g = 204
-player_box.b = 196
-menu_bg.r = 14
-menu_bg.g = 21
-menu_bg.b = 19
 menu_fg.r = 222
 menu_fg.g = 228
 menu_fg.b = 225
@@ -68,15 +53,15 @@ menu_selected_bg.b = 195
 menu_selected_fg.r = 0
 menu_selected_fg.g = 56
 menu_selected_fg.b = 47
-gradient_start.r = 132
-gradient_start.g = 214
-gradient_start.b = 195
-gradient_mid.r = 177
-gradient_mid.g = 204
-gradient_mid.b = 196
-gradient_end.r = 171
-gradient_end.g = 202
-gradient_end.b = 228
+primary.r = 228
+primary.g = 144
+primary.b = 160
+error.r = 224
+error.g = 108
+error.b = 117
+on_hover.r = 250
+on_hover.g = 200
+on_hover.b = 190
 "#;
 
 /// A fresh per-test directory under the system temp dir, emptied first so
@@ -110,7 +95,99 @@ fn test_rendered_noctalia_theme_parses() {
     assert_eq!(noctalia.main_bg.g, 21);
     assert_eq!(noctalia.main_bg.b, 19);
     assert_eq!(noctalia.main_fg.r, 222);
-    assert_eq!(noctalia.gradient_end.b, 228);
+    // The four optional accents are what a rendered theme is actually
+    // for -- the template writes them and leaves `secondary` to the
+    // fallback, so they are the field to check the parse reached.
+    assert_eq!(
+        noctalia.primary_color(),
+        ratatui::style::Color::Rgb(228, 144, 160)
+    );
+    assert_eq!(
+        noctalia.error_color(),
+        ratatui::style::Color::Rgb(224, 108, 117)
+    );
+    assert_eq!(
+        noctalia.on_hover_color(),
+        ratatui::style::Color::Rgb(250, 200, 190)
+    );
+}
+
+/// A theme file that still spells out the fields `Theme` no longer has
+/// must still load. Serde ignores unknown keys, so the bundled files and
+/// any user theme written against an older doris keep working -- the
+/// alternative would be making every stale theme vanish from the list the
+/// moment one field was dropped.
+///
+/// Written with every field `Theme` *does* have, because the required
+/// ones are not optional: a file missing `title` is a different failure
+/// and would hide the thing this is about.
+#[test]
+fn test_a_theme_from_an_older_build_still_loads() {
+    let mut file = String::from("name = \"stale\"\n");
+    for f in [
+        "main_bg",
+        "main_fg",
+        "title",
+        "hi_fg",
+        "selected_bg",
+        "selected_fg",
+        "inactive_fg",
+        "div_line",
+        "graph_text",
+        "menu_fg",
+        "menu_selected_bg",
+        "menu_selected_fg",
+    ] {
+        file.push_str(&format!("{f}.r = 10\n{f}.g = 20\n{f}.b = 30\n"));
+    }
+    // The fields this build dropped, still spelled out.
+    for f in [
+        "meter_bg",
+        "search_box",
+        "log_box",
+        "player_box",
+        "menu_bg",
+        "gradient_start",
+        "gradient_mid",
+        "gradient_end",
+    ] {
+        file.push_str(&format!("{f}.r = 99\n{f}.g = 99\n{f}.b = 99\n"));
+    }
+
+    let dir = temp_theme_dir("stale");
+    write_theme(&dir, "stale.toml", &file);
+
+    let themes = Theme::load_themes_from(Some(&dir));
+    let stale = themes
+        .iter()
+        .find(|t| t.name == "stale")
+        .expect("a theme written by an older build must still load");
+
+    assert_eq!(stale.main_bg.b, 30);
+    assert_eq!(stale.main_fg.r, 10);
+}
+
+/// The fields that were dropped were never read by anything, so a theme
+/// that stops naming them draws identically. That is the claim the
+/// removal rests on, and it is checkable: the colours the panel actually
+/// uses come from `primary`/`div_line`/`main_fg`, and those are unchanged.
+#[test]
+fn test_zone_border_colours_do_not_come_from_the_dropped_fields() {
+    let theme = Theme::dark();
+    // The focused zone and the unfocused ones differ, which is what makes
+    // the focus visible -- and that difference is `primary` vs
+    // `div_line`, never `search_box`/`log_box`/`player_box`.
+    let focused = doris::ui::zones::zone_border_color(
+        doris::ui::zones::ZoneId::Results,
+        doris::ui::zones::ZoneId::Results,
+        &theme,
+    );
+    let unfocused = doris::ui::zones::zone_border_color(
+        doris::ui::zones::ZoneId::Results,
+        doris::ui::zones::ZoneId::Log,
+        &theme,
+    );
+    assert_ne!(focused, unfocused, "the focus must be visible");
 }
 
 /// User themes are appended to the bundled list rather than replacing it,
