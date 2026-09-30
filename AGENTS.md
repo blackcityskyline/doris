@@ -109,7 +109,9 @@ list, the tab bar and the CLI all derive from it.
 
 ### Zone System (4 zones)
 
-Keys `1`-`4` toggle a zone; `5` is deliberately unused.
+Keys `1`-`4` move the focus to that zone (showing it first if it was
+hidden); a second press on the zone already focused hides it, and the
+focus walks to the next zone still on screen. `5` is deliberately unused.
 
 - **Zone 1 (Results)**: Table with torrent results (seeds, size, date, title)
   - Navigation: j/k, PgUp/PgDn, Enter to play
@@ -235,7 +237,7 @@ words -- a token that silently matches nothing reads as a broken app.
 ### Zone Controls
 - Tab/Shift+Tab: cycle focus between visible zones
 - F: toggle fullscreen for focused zone
-- 1-4: toggle zone visibility
+- 1-4: focus that zone; press it again on the focused zone to hide it
 
 ## Key Bindings
 - `s`/`i`/`S`: enter search input mode (all three; `S` used to be Settings)
@@ -247,7 +249,7 @@ words -- a token that silently matches nothing reads as a broken app.
   takeover; Esc or the same key closes it, the other two jump across)
 - `f`: enter filter mode -- see "Filter syntax" above
 - `F`: toggle fullscreen for focused zone
-- `1-4`: toggle zone visibility
+- `1-4`: focus that zone; press it again on the focused zone to hide it
 - `Shift+P`: cycle the layout presets -- `config.presets`, a list of tiling
   specs written **rows via `,`**, **columns via `|`**, each zone named by its
   1/2/3/4 digit (`"1,3|4"` = Results across the top, Trackers beside Log

@@ -144,6 +144,58 @@ impl ZoneLayout {
         }
     }
 
+    /// What a zone digit means.
+    ///
+    /// A zone the user is not standing in is a zone they want to look
+    /// at, so the first press *focuses* it (showing it if it was
+    /// hidden); only the zone already under the focus is taken away --
+    /// and when it goes, the focus walks to the next zone still on
+    /// screen instead of parking somewhere nobody can see.
+    pub fn focus_or_toggle(&mut self, id: ZoneId) {
+        if self.fullscreen == Some(id) {
+            self.fullscreen = None;
+            return;
+        }
+        let state = self
+            .zones
+            .iter()
+            .find(|z| z.id == id)
+            .map(|z| (z.visible, self.focused == id));
+        match state {
+            None => {}
+            Some((false, _)) => {
+                self.set_visible(id, true);
+                if self.fullscreen.is_none() {
+                    self.focused = id;
+                }
+            }
+            Some((true, false)) => {
+                if self.fullscreen.is_none() {
+                    self.focused = id;
+                }
+            }
+            Some((true, true)) => {
+                self.set_visible(id, false);
+                self.focus_after_hiding(id);
+            }
+        }
+    }
+
+    /// Move the focus to the first zone that is still visible *after*
+    /// `hidden` in zone order, wrapping around -- `focus_next` starts
+    /// from the cursor's own position, and the cursor's own position is
+    /// the zone that has just disappeared.
+    fn focus_after_hiding(&mut self, hidden: ZoneId) {
+        let all = ZoneId::all();
+        let start = all.iter().position(|z| *z == hidden).unwrap_or(0);
+        let next = (1..=all.len())
+            .map(|step| all[(start + step) % all.len()])
+            .find(|&id| id != hidden && self.is_visible(id));
+        if let Some(id) = next {
+            self.focused = id;
+        }
+    }
+
     /// Set a zone's visibility directly, rather than flipping it. Used by
     /// [`apply_preset`](Self::apply_preset) so a preset can show exactly
     /// the zones it names instead of toggling from an unknown starting

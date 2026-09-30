@@ -736,3 +736,53 @@ fn test_a_fresh_layout_stacks_every_zone() {
     assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 7));
     assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 24, 100, 6));
 }
+
+/// The digit key's three answers, on the layout state alone: show it,
+/// look at it, or -- only when it is already the focused one -- take it
+/// away and stand somewhere else.
+#[test]
+fn focus_or_toggle_walks_the_three_states_in_order() {
+    let mut zones = ZoneLayout::new();
+    zones.set_visible(ZoneId::Log, false);
+    zones.focused = ZoneId::Results;
+
+    zones.focus_or_toggle(ZoneId::Log);
+    assert!(zones.is_visible(ZoneId::Log), "hidden: the digit shows it");
+    assert_eq!(zones.focused, ZoneId::Log, "and focuses it");
+
+    zones.focused = ZoneId::Results;
+    zones.focus_or_toggle(ZoneId::Log);
+    assert!(zones.is_visible(ZoneId::Log), "visible elsewhere: it stays");
+    assert_eq!(zones.focused, ZoneId::Log, "and takes the focus");
+
+    zones.focus_or_toggle(ZoneId::Log);
+    assert!(
+        !zones.is_visible(ZoneId::Log),
+        "focused: the second press hides"
+    );
+    assert_ne!(zones.focused, ZoneId::Log, "and focus moves on");
+    assert!(
+        zones.is_visible(zones.focused),
+        "to a zone that is still on screen: {:?}",
+        zones.focused
+    );
+}
+
+/// Hiding the zone the cursor stands in walks to the *next* visible one
+/// in zone order, wrapping -- not to whatever happens to be first.
+#[test]
+fn hiding_a_zone_parks_the_focus_on_the_next_visible_one() {
+    let mut zones = ZoneLayout::new();
+    // Results, Trackers visible; Torrent and Log hidden.
+    zones.set_visible(ZoneId::Torrent, false);
+    zones.set_visible(ZoneId::Log, false);
+    zones.focused = ZoneId::Trackers;
+
+    zones.focus_or_toggle(ZoneId::Trackers);
+    assert!(!zones.is_visible(ZoneId::Trackers));
+    assert_eq!(
+        zones.focused,
+        ZoneId::Results,
+        "Trackers is third, so the next one that is left is Results"
+    );
+}

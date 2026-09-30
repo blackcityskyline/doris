@@ -1416,16 +1416,16 @@ impl App {
                 }
             }
             KeyCode::Char('1') => {
-                self.ui.zones.toggle(ZoneId::Results);
+                self.ui.zones.focus_or_toggle(ZoneId::Results);
             }
             KeyCode::Char('2') => {
-                self.ui.zones.toggle(ZoneId::Torrent);
+                self.ui.zones.focus_or_toggle(ZoneId::Torrent);
             }
             KeyCode::Char('3') => {
-                self.ui.zones.toggle(ZoneId::Trackers);
+                self.ui.zones.focus_or_toggle(ZoneId::Trackers);
             }
             KeyCode::Char('4') => {
-                self.ui.zones.toggle(ZoneId::Log);
+                self.ui.zones.focus_or_toggle(ZoneId::Log);
             }
             // Shift+P: cycle the layout presets (П.8), the same list the
             // Options row cycles -- one list, not two. Lowercase `p` is
@@ -2270,21 +2270,54 @@ mod key_routing_tests {
     }
 
     /// The zone digits follow the zone table, not a stale copy of it:
-    /// `3` toggles Trackers and `4` toggles Log, the renumbered way.
+    /// `3` is Trackers and `4` is Log, the renumbered way -- and a digit
+    /// is *focus first, hide second*: the zone you are standing in is
+    /// the one you mean to take away, every other digit is a zone you
+    /// want to look at.
     #[tokio::test]
-    async fn zone_digit_keys_toggle_the_zone_they_name() {
+    async fn zone_digit_keys_focus_first_and_hide_second() {
         let mut app = app_focused_on_sources(None).await;
         assert!(app.ui.zones.is_visible(ZoneId::Trackers));
         assert!(app.ui.zones.is_visible(ZoneId::Log));
+        assert_eq!(app.ui.zones.focused, ZoneId::Trackers, "the fixture");
 
-        app.handle_key(press(KeyCode::Char('3'))).await.expect("3");
+        // Visible but not focused: `4` looks at Log, it does not close it.
+        app.handle_key(press(KeyCode::Char('4'))).await.expect("4");
         assert!(
-            !app.ui.zones.is_visible(ZoneId::Trackers),
-            "`3` must toggle Trackers"
+            app.ui.zones.is_visible(ZoneId::Log),
+            "a digit on a zone the user is not in must not hide it"
+        );
+        assert_eq!(
+            app.ui.zones.focused,
+            ZoneId::Log,
+            "and it must put the focus there"
         );
 
-        app.handle_key(press(KeyCode::Char('4'))).await.expect("4");
-        assert!(!app.ui.zones.is_visible(ZoneId::Log), "`4` must toggle Log");
+        // Focused already: the second press is the one that hides it,
+        // and focus has to leave the zone nobody can see any more.
+        app.handle_key(press(KeyCode::Char('4')))
+            .await
+            .expect("4 again");
+        assert!(
+            !app.ui.zones.is_visible(ZoneId::Log),
+            "the second press hides"
+        );
+        assert_ne!(
+            app.ui.zones.focused,
+            ZoneId::Log,
+            "focus on a hidden zone is focus nowhere"
+        );
+        assert!(
+            app.ui.zones.is_visible(app.ui.zones.focused),
+            "and it landed on a zone that is still there"
+        );
+
+        // A hidden zone comes back under focus.
+        app.handle_key(press(KeyCode::Char('4')))
+            .await
+            .expect("4 back");
+        assert!(app.ui.zones.is_visible(ZoneId::Log));
+        assert_eq!(app.ui.zones.focused, ZoneId::Log);
     }
 
     /// A fresh app applies `presets[preset_index]`, and the default
