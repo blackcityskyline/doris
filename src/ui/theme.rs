@@ -1,5 +1,6 @@
 use ratatui::style::{Color, Style};
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Theme {
@@ -193,9 +194,30 @@ impl Theme {
         toml::from_str(content).ok()
     }
 
+    /// Every theme doris can offer: the bundled ones plus whatever the
+    /// user has in `~/.config/doris/themes`.
+    ///
+    /// Parsed once per process. It was 3.9 ms a call, and the Options
+    /// modal asks twice on every keypress -- a key that changes nothing
+    /// measurable was spending eight milliseconds re-parsing forty files
+    /// that cannot have changed.
+    ///
+    /// The cost of the cache is that a theme file written *while doris is
+    /// running* is not picked up until the next start. That is the right
+    /// way round for a file a user edits once and forgets, and the
+    /// alternative -- re-reading to notice -- is what this cache is.
+    /// [`load_themes_from`](Self::load_themes_from) is the uncached
+    /// entry point, and it is what the tests use, since a test's themes
+    /// live in a temp directory that changes between cases.
     pub fn load_themes() -> Vec<Self> {
-        let user_dir = dirs::home_dir().map(|h| h.join(".config").join("doris").join("themes"));
-        Self::load_themes_from(user_dir.as_deref())
+        static CACHE: OnceLock<Vec<Theme>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                let user_dir =
+                    dirs::home_dir().map(|h| h.join(".config").join("doris").join("themes"));
+                Self::load_themes_from(user_dir.as_deref())
+            })
+            .clone()
     }
 
     /// `load_themes()` with the user themes directory made explicit, so
