@@ -1,4 +1,4 @@
-//! Registry-driven concurrent fan-out for one search (ROADMAP.md B3).
+//! Registry-driven concurrent fan-out for one search .
 //!
 //! `app.rs` decides *which* sources run (Results tab + Options) and owns
 //! their instances; everything about *how* they run lives here so it can

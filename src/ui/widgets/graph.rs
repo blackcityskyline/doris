@@ -1,4 +1,4 @@
-//! btop-style history sparklines (ROADMAP.md Phase 8).
+//! btop-style history sparklines .
 //!
 //! Replaces the old static `[####    ] 0%` progress bar in the Torrent
 //! panel with a compact graph of *recent* progress, matching btop's CPU/

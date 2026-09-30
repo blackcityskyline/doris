@@ -1,6 +1,6 @@
 //! `Source` is the seam the whole app is meant to depend on instead of
-//! reaching into `rutracker.rs` by name (see ROADMAP.md, "Architecture
-//! problems" A2). Adding a new content source is meant to be:
+//! reaching into `rutracker.rs` by name. Adding a new content source is
+//! meant to be:
 //!
 //! 1. Write `src/sources/<name>.rs` implementing [`Source`].
 //! 2. Add one entry to [`KNOWN_SOURCES`].
@@ -10,7 +10,7 @@
 //! the concrete list of sources.
 //!
 //! (Phase 3's original note about rewiring `app.rs`/`main.rs` onto this
-//! trait is what ROADMAP.md phase B2 closes.)
+//! trait is what the registry is for.)
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -36,7 +36,7 @@ use super::yts::YtsSearcher;
 /// Content categories a source can attribute its results to. Declared
 /// here, next to the registry it describes (and not in `models.rs`) so
 /// `TorrentItem.group` is typed against the same enum the `Source` trait
-/// hands out -- see ROADMAP.md B1/B6.
+/// hands out.
 ///
 /// Serde renders variants as plain strings (`"Games"`), which is what
 /// `TorrentItem`'s JSON needs.
@@ -162,8 +162,9 @@ pub trait Source: Send + Sync {
     fn requires_browser(&self) -> bool;
 
     /// Whether it can answer a `SearchRequest` with an empty `query`
-    /// (browse mode). Both current sources need real search terms, so
-    /// both return `false` until B9 builds browsing on top.
+    /// (browse mode -- the `b` key). A source that has a fresh-releases
+    /// page answers; one that only accepts search terms does not, and the
+    /// Browse key is then answered by the sources that do.
     fn supports_browse(&self) -> bool;
 
     /// Establish (or verify) a session, reusing cached state when the
@@ -196,7 +197,7 @@ pub trait Source: Send + Sync {
     /// empty list rather than an error: the modal is opened on demand,
     /// so a source with nothing to add should leave the row's own facts
     /// on screen, not fail the modal. A source that can list files
-    /// overrides this the same way [`resolve_magnet`] is overridden --
+    /// overrides this the same way `resolve_magnet` is overridden --
     /// one method with a default, so no source has to change and the
     /// orchestrator does not know the method exists.
     async fn details(&self, _page_url: &str) -> Result<Vec<FileEntry>> {

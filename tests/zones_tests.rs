@@ -46,7 +46,7 @@ fn test_zone_id_key_char_and_from_key_round_trip() {
     assert_eq!(ZoneId::from_key('x'), None);
 }
 
-// Phase 10 (REFACTOR_PLAN.md): key_char/label/from_key all read one
+// Phase 10 key_char/label/from_key all read one
 // ZONE_ROWS entry. Guard against a variant with no row (or two variants
 // sharing a digit) -- that would silently break the `1`-`5` zone keys.
 #[test]

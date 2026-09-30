@@ -1,4 +1,4 @@
-//! The health check modal (ROADMAP Phase 10 split, item 3): what the
+//! The health check modal: what the
 //! check reports and how the results are drawn. Extracted from
 //! `ui/app.rs` together with the login modal; `render_modal` dispatches
 //! to `render_health_modal`.

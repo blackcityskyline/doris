@@ -57,7 +57,8 @@ fn test_display_uses_proper_case_names() {
 #[test]
 fn test_chrome_and_chromium_are_distinct_kinds() {
     // Regression guard: these two used to be folded into a single
-    // "Chrome/Chromium" variant before ROADMAP.md Phase 2.
+    // "Chrome/Chromium" variant, which cannot be driven the same way:
+    // they resolve different binaries.
     assert_ne!(BrowserKind::Chrome, BrowserKind::Chromium);
     assert_ne!(
         BrowserKind::Chrome.config_key(),
@@ -118,7 +119,7 @@ fn test_detect_browser_with_unknown_requested_name_errors() {
     assert!(result.is_err());
 }
 
-// Phase 9 (REFACTOR_PLAN.md): BrowserKind's four properties (config key,
+// Phase 9 BrowserKind's four properties (config key,
 // aliases, binary names, label) now come from one table row each. This is
 // the guard that makes "add a browser = append one row" safe: a row with a
 // missing or duplicate key, or an empty binary list, fails here instead of

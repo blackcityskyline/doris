@@ -1,4 +1,4 @@
-//! YTS's JSON API (ROADMAP.md B8 wave 1), ported from torio's `yts.ts`.
+//! YTS's JSON API ported from torio's `yts.ts`.
 //!
 //! Why it is the first wave-1 source to land: it is pure JSON over
 //! plain HTTP -- no browser, no login, no HTML -- and it is the source

@@ -1,4 +1,4 @@
-//! The login modal (ROADMAP Phase 10 split, item 2): the resource tabs,
+//! The login modal: the resource tabs,
 //! the username/password fields, the saved-indicator and the Ctrl+S
 //! save-without-login. Extracted from `ui/app.rs` so that file stops
 //! being the whole UI in one place; this is the modal's own state and

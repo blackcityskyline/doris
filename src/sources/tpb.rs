@@ -1,12 +1,12 @@
-//! The Pirate Bay through apibay.org's JSON (ROADMAP.md B8 wave 1).
+//! The Pirate Bay through apibay.org's JSON .
 //!
 //! apibay is the front door torio uses too, and it has one quirk worth
 //! the module doc: **the same field arrives as a string and as a number
 //! depending on the endpoint** -- checked live 25.09.2026:
 //! `q.php` answers `"size":"1992277407"`, the precompiled top-100 lists
 //! answer `"size":3808117223`. A parser that only reads one spelling
-//! silently zeroes the other, so [`ApibayItem`] types those fields
-//! against [`FlexNum`](super::models::FlexNum) and accepts both.
+//! silently zeroes the other, so `ApibayItem` types those fields
+//! against [`FlexNum`] and accepts both.
 //!
 //! Two more live facts shape the code:
 //!
@@ -97,7 +97,7 @@ fn group_cats(group: Group) -> &'static [i64] {
 /// The search URL for one query. A selected category becomes apibay's
 /// `cat=` list -- comma-separated, which the API takes (live
 /// 26.09.2026: `cat=201,202,207,209` returned only those four rows),
-/// built from [`GROUP_CATS`] so the trim and the row attribution can
+/// built from `GROUP_CATS` so the trim and the row attribution can
 /// never drift apart. `None` keeps B8's unfiltered URL: with no
 /// category selected the whole corpus is the honest answer.
 pub fn search_url(query: &str, category: Option<Group>) -> String {

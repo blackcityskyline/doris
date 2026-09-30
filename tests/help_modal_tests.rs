@@ -1,4 +1,4 @@
-//! The help page (UI_REFACTOR_PLAN §3): btop's `helpMenu`
+//! The help page: btop's `helpMenu`
 //! (`btop_menu.cpp:1743`) rebuilt as a modal.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

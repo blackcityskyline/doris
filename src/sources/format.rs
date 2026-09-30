@@ -1,5 +1,5 @@
 //! Size/date parsing and formatting shared by every source
-//! (ROADMAP.md B1 for parsing, B8 wave 1 for formatting).
+//! .
 //!
 //! [`parse_size`] is a port of torio's `util/format.ts` `parseSize`,
 //! keeping its unit table and its one non-obvious rule: Russian units

@@ -1,4 +1,4 @@
-//! Fixture tests for the EZTV source (ROADMAP.md B8 wave 1).
+//! Fixture tests for the EZTV source .
 //!
 //! The fixture is the live response's shape (checked against
 //! `eztvx.to/api/get-torrents` on 25.09.2026): `size_bytes` arrives as

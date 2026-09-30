@@ -59,7 +59,7 @@ fn browse_priority(source: &str) -> u8 {
 
 /// The default order: healthiest first (`seeds_n` descending), then
 /// newest `added` first. Browse mode ("fresh releases") instead ranks
-/// sources by [`BROWSE_SOURCE_PRIORITY`] and then by `added`.
+/// sources by `BROWSE_SOURCE_PRIORITY` and then by `added`.
 pub fn default_order(items: &[TorrentItem], browsing: bool) -> Vec<TorrentItem> {
     let mut out = items.to_vec();
     if browsing {

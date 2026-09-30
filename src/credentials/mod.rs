@@ -1,7 +1,7 @@
 //! Encrypted credential storage.
 //!
 //! Storage is keyed by resource id (`"rutracker"`, later `"rutor"`, ...) so
-//! the multi-tab Login modal (ROADMAP.md Phase 6) can hold one saved login
+//! the multi-tab Login modal  can hold one saved login
 //! per source without them clobbering each other. The payload is JSON
 //! before encryption, not a hand-rolled `"user:pass"` string — the old
 //! colon-joined format silently corrupted any password containing `:`.
@@ -270,7 +270,7 @@ pub fn delete_credential_at(path: &Path, resource_id: &str) -> Result<()> {
 
 // --- Backward-compatible single-resource API -------------------------------
 // Existing call sites (login modal, health check) predate the multi-source
-// Login panel (ROADMAP.md Phase 6) and only ever deal with Rutracker. These
+// Login panel  and only ever deal with Rutracker. These
 // wrappers keep them working unchanged.
 
 pub fn save_credentials(username: &str, password: &str) -> Result<()> {

@@ -152,7 +152,7 @@ pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String
 impl RutrackerSearcher {
     /// Rutracker's forum index — used as the generic "domain home page" a
     /// hidden-mode browser session navigates to before cookie injection.
-    /// Once the `Source` trait lands (ROADMAP.md Phase 3) this becomes
+    /// Once the `Source` trait lands  this becomes
     /// `Source::home_url()` and callers stop reaching into this searcher
     /// just to get a URL constant.
     pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";

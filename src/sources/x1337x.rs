@@ -1,4 +1,4 @@
-//! 1337x over its search HTML (ROADMAP.md B8 wave 3), shaped by live
+//! 1337x over its search HTML shaped by live
 //! probes on 25.09.2026 -- three of which are the reason this source
 //! differs from every other one in the tree.
 //!

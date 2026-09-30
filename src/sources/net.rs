@@ -1,5 +1,5 @@
 //! Retrying HTTP fetch with backoff and challenge short-circuiting
-//! (ROADMAP.md B5), ported from torio's `util/net.ts`.
+//! ported from torio's `util/net.ts`.
 //!
 //! Why this exists: retrying a *challenge* page is what turns a momentary
 //! block into a 90-second stall. `503` from a CDN front (`ddos-guard`,

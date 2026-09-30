@@ -1,5 +1,4 @@
-//! Torentino -- a DLE-based games tracker -- over its HTML (ROADMAP.md
-//! B8 wave 3), probed live on 26.09.2026.
+//! Torentino -- a DLE-based games tracker -- over its HTML //! B8 wave 3), probed live on 26.09.2026.
 //!
 //! What the live host established, and what the code therefore does:
 //!

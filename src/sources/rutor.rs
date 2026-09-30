@@ -3,7 +3,7 @@
 //! (September 2026): search results and .torrent downloads are both
 //! plain, unauthenticated HTTP GETs. This makes it a much lighter-weight
 //! `Source` than Rutracker's, and a good first proof that the `Source`
-//! abstraction from ROADMAP.md Phase 3 actually pays off: adding a second
+//! abstraction actually pays off: adding a second
 //! real source didn't require touching the browser layer at all.
 //!
 //! Why rutor.info and not rutor.org (live check, 25.09.2026): both
@@ -31,7 +31,7 @@
 //!   `//d.rutor.info/download/{id}` on rutor.info), and a magnet link
 //!   (`magnet:?xt=urn:btih:{40 hex}...` inline on rutor.info). The
 //!   parser builds download/page URLs from the numeric id plus
-//!   [`RutorSearcher::BASE`] instead of copying the row's hrefs, so the
+//!   `RutorSearcher::BASE` instead of copying the row's hrefs, so the
 //!   same code works on either mirror.
 //! - Size ("2.27 GB" / "82.73&nbsp;MB"), a seed count after an
 //!   `alt="S"` up-arrow icon, and a peer/leech count after an
@@ -63,7 +63,7 @@
 //! If rutor changes its markup, this is the file (and
 //! `tests/rutor_parse_tests.rs`, which pins down the exact row shape seen
 //! live) to fix -- same spirit as the TorrServer JSON-shape caveat
-//! elsewhere in ROADMAP.md.
+//! above.
 
 use anyhow::Result;
 use regex::Regex;

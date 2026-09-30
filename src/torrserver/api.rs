@@ -191,7 +191,7 @@ impl TorrServer {
     /// the same way [`upload_torrent`](Self::upload_torrent) does, so the
     /// caller has one thing to hold on to either way.
     ///
-    /// Verified before use (the ROADMAP caveat): the request fields come
+    /// Verified before use: the request fields come
     /// from TorrServer's own `torrReqJS` (`link` required for `add`,
     /// plus `title`/`poster`/`category`/`data`/`save_to_db`), and a
     /// live `POST {"action":"add"}` answers `400 {"error":"link is

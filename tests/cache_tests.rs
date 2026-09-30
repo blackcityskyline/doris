@@ -1,4 +1,4 @@
-//! TTL cache tests (ROADMAP.md B5): hit within the TTL, miss after it,
+//! TTL cache tests: hit within the TTL, miss after it,
 //! per-key isolation, and the orchestrator's two cache entry points --
 //! the write path (`cached_fetch`) and the read path
 //! (`cached_source_done`) that lets a hit skip the spawn entirely.

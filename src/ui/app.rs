@@ -201,7 +201,7 @@ pub struct App {
     /// Set when the category is switched (`g`/`G` or a click), cleared by
     /// the next `start_search`: Enter means "re-search with the new
     /// selection" for this row too. The other half of a switch happens
-    /// right there in [`UiApp::set_group`] -- the view is re-derived from
+    /// right there in [`App::set_group`] -- the view is re-derived from
     /// the rows already on screen -- so nothing here implies a request
     /// was already made.
     pub group_changed: bool,
@@ -223,7 +223,7 @@ pub struct App {
     /// (previously both always cycled forward).
     pub last_cycle_direction: i8,
     /// Rolling progress history feeding the Torrent panel's sparkline
-    /// (ROADMAP.md Phase 8). Oldest first; capped in app.rs's
+    /// . Oldest first; capped in app.rs's
     /// TorrentListUpdate handler so a long session doesn't grow this
     /// unboundedly.
     pub progress_history: std::collections::VecDeque<f64>,
@@ -650,8 +650,7 @@ impl App {
 
     /// Move the category row one tab, forward for `g` and back for `G`
     /// (wraps). The row always holds "all", so the modulo is safe even
-    /// with every source switched off -- same reasoning as
-    /// [`UiApp::cycle_source`].
+    /// with every source switched off.
     pub fn cycle_group(&mut self, forward: bool) {
         let pos = self
             .group_tabs
@@ -667,7 +666,7 @@ impl App {
         self.set_group(self.group_tabs[next]);
     }
 
-    /// [`UiApp::new`] takes no config, so the caller that *does* have
+    /// [`App::new`] takes no config, so the caller that *does* have
     /// one applies the rows it implies; chaining keeps that from being
     /// an easy line to forget at construction.
     pub fn with_group_tabs(mut self, config: &Config) -> Self {
@@ -1388,8 +1387,8 @@ impl App {
     /// re-derives this from the rows already on screen, so a selected
     /// category never sits above a table still showing every group.
     /// Rows a source could not attribute (`item.group = None`) belong to
-    /// the "all" view only -- hiding them here is what makes that
-    /// ROADMAP rule mean something instead of being a comment.
+    /// the "all" view only -- hiding them here is what makes that rule
+    /// mean something instead of being a comment.
     pub fn update_filter(&mut self) {
         let filter = crate::filter::Filter::parse(&self.zones.filter_input);
         // The filter matches any field a result carries, not just the
@@ -1542,10 +1541,10 @@ impl App {
         // A label, not a keybind cheat-sheet: where the keys live is
         // the help page (`?`) and the frame legends now, and what this
         // box needs to say is what it is holding. The only thing that
-        // changes is an active filter; the mode is the border colour
-        // (yellow while typing into the query, cyan while the filter is
-        // live) -- the same "colour says state, text says content"
-        // split btop's boxes use.
+        // changes is an active filter; while the box has the keyboard it
+        // takes the accent a focused zone frame takes, and otherwise the
+        // divider colour -- the same "colour says state, text says
+        // content" split btop's boxes use.
         let filter_on = self.zones.filter_mode || !self.zones.filter_input.is_empty();
         // While `f` is open the text lives in the box, so the border
         // names the mode only -- repeating it there was the third copy
@@ -1818,8 +1817,8 @@ impl App {
             })
             .collect();
 
-        // The panel can be turned off (`5`) and the terminal can be too
-        // short for the roster, so the window follows the cursor -- the
+        // The panel can be hidden (`1`-`4` again) and the terminal can
+        // be too short for the roster, so the window follows the cursor -- the
         // rule the detail modal's file list already uses. Without it the
         // rows past the end were simply not drawn while `j`/`k` kept
         // walking every one of them, and the cursor could stand on a row

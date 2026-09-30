@@ -1,4 +1,4 @@
-//! Nyaa's RSS feed (ROADMAP.md B8 wave 2), parsed from the markup as
+//! Nyaa's RSS feed parsed from the markup as
 //! it actually came back on 25.09.2026 -- one live response of 75 items,
 //! captured before `ddos-guard` started answering 504 to this network on
 //! every path (curl, the harness fetch, a plain browser UA).
@@ -27,8 +27,8 @@
 //! consequently not claimed anywhere in this file: pagination (`&p=2`),
 //! an empty-query feed (browse), and the reachability of the `.torrent`
 //! and view links. Hence `has_more: false` (one feed page, cursor
-//! unknown -- not "there is no second page"), `supports_browse` false,
-//! and the follow-up marker in ROADMAP. Returning them on a hunch would
+//! unknown -- not "there is no second page"), and `supports_browse`
+//! false. Returning a second page on a hunch would
 //! repeat eztv's near-miss from the other side: an empty table reads as
 //! "no results", and a cursor that does not move reads as a broken app.
 

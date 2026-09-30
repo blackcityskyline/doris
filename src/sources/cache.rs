@@ -1,4 +1,4 @@
-//! TTL cache for search pages (ROADMAP.md B5), ported from torio's
+//! TTL cache for search pages, ported from torio's
 //! `sources/cache.ts`.
 //!
 //! What it is for: re-running the same query (a fresh search, going back

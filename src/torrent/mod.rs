@@ -1,6 +1,6 @@
-//! Background polling for live torrent status (ROADMAP.md Phase 7, fixes
-//! bug B3: the Torrent panel used to be permanently frozen at its default
-//! values because nothing ever polled TorrServer for status).
+//! Background polling for live torrent status. It exists because the
+//! Torrent panel used to be permanently frozen at its default values:
+//! nothing ever polled TorrServer for status.
 //!
 //! `Manager` owns nothing but the spawned task itself -- the actual
 //! "current status" state lives on `ui::App` (`torrent_status`,

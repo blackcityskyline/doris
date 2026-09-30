@@ -29,7 +29,7 @@ pub struct Config {
     #[serde(default = "default_cookie_file")]
     pub cookie_file: String,
 
-    // --- Options / "general" category (ROADMAP.md Phase 5) -----------------
+    // --- Options / "general" category  -----------------
     // These mirror btop++'s general settings page. Values here are the
     // single source of truth the Options modal reads and writes -- unlike
     // the pre-Phase-5 UI, which displayed hardcoded literals with no
@@ -59,15 +59,15 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub show_boxes: bool,
     /// Poll interval, in milliseconds, for the torrent status panel
-    /// (consumed by `torrent::Manager`, ROADMAP.md Phase 7).
+    /// (consumed by `torrent::Manager`).
     #[serde(default = "default_update_ms")]
     pub update_ms: u64,
     #[serde(default = "default_true")]
     pub rounded_corners: bool,
     #[serde(default = "default_true")]
     pub terminal_sync: bool,
-    /// Symbol set for graph/sparkline widgets (ROADMAP.md Phase 8's
-    /// btop-style dot progress bar). One of "braille", "block", "dot".
+    /// Symbol set for graph/sparkline widgets (the btop-style dot
+    /// progress bar). One of "braille", "block", "dot".
     #[serde(default = "default_graph_symbol")]
     pub graph_symbol: String,
     #[serde(default)]
@@ -80,7 +80,7 @@ pub struct Config {
     #[serde(default)]
     pub known_sources: Vec<String>,
 
-    // --- Options / "streaming" category (ROADMAP.md Phase 6) ---------------
+    // --- Options / "streaming" category  ---------------
     /// Kill the automated browser when Doris exits. Note: this is already
     /// the default outcome of `Browser`'s `Drop` impl regardless of this
     /// flag; setting this to `false` intentionally leaks the browser
@@ -97,7 +97,7 @@ pub struct Config {
     #[serde(default = "default_enabled_sources")]
     pub enabled_sources: Vec<String>,
 
-    // --- Options / "download" category (ROADMAP.md Phase 6) ----------------
+    // --- Options / "download" category  ----------------
     #[serde(default = "default_true")]
     pub download_enabled: bool,
     /// "default" (OS Downloads folder) or "custom1"/"custom2"/"custom3"
@@ -260,7 +260,7 @@ impl Config {
     /// The line between "new to this build" and "the user turned it
     /// off" is [`Config::known_sources`]: an id this config has already
     /// seen is never re-added. A config predating the field is
-    /// recognised by being empty and seeded with [`LEGACY_SOURCES`],
+    /// recognised by being empty and seeded with `LEGACY_SOURCES`,
     /// which is what keeps somebody who disabled `rutor` back then from
     /// having it silently switched back on, while `tpb` -- an id they
     /// have never seen -- arrives enabled.

@@ -1,4 +1,4 @@
-//! The torrent detail modal (UI_REFACTOR_PLAN §7): the row's own facts,
+//! The torrent detail modal: the row's own facts,
 //! the file list its source can read off the row's page, and the keys
 //! that move the cursor, play and download.
 

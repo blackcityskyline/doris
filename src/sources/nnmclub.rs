@@ -1,4 +1,4 @@
-//! NNM-Club over its tracker HTML (ROADMAP.md B8 wave 3), parsed from
+//! NNM-Club over its tracker HTML parsed from
 //! the markup as it came back live on 25.09.2026: windows-1251 in both
 //! the header and the `<meta>`, cloudflare-fronted, but a browser UA
 //! alone was enough -- no JS challenge, no login, no cookie jar.

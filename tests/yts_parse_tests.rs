@@ -1,4 +1,4 @@
-//! Fixture tests for the YTS source (ROADMAP.md B8 wave 1).
+//! Fixture tests for the YTS source .
 //!
 //! The JSON is reconstructed from the live API's shape (checked against
 //! `yts.gg`/`movies-api.accel.li` on 25.09.2026), not saved off the

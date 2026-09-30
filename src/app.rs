@@ -234,7 +234,8 @@ pub enum EnterAction {
     SubmitQuery,
     /// Input focused but the query is empty: Enter only leaves input mode.
     DoNothing,
-    /// A tab row was switched and needs a re-search instead of playing.
+    /// The source selection or the category changed and needs a
+    /// re-search instead of playing.
     RestartSearch,
     /// Play the highlighted result.
     Play,
@@ -1324,7 +1325,7 @@ impl App {
                         // owner; the modal reads a session copy on open.
                         // Previously this toggle only updated the display
                         // label and had zero effect on the next launch
-                        // (ROADMAP.md bug B6).
+                        // .
                         self.browser_visibility = match self.browser_visibility {
                             BrowserVisibility::Hidden => BrowserVisibility::Visible,
                             BrowserVisibility::Visible => BrowserVisibility::Hidden,
@@ -1732,8 +1733,8 @@ impl App {
                 }
             }
             EnterAction::RestartSearch => {
-                // A tab row was just switched (`]`/click or
-                // `g`/`G`/click): re-search with the new selection
+                // The source selection or the category was just switched
+                // (`g`/`G`, or a click): re-search with the new selection
                 // instead of playing a torrent. Both flags clear here
                 // as well as in `start_search`, for the only path where
                 // no search follows -- nothing has ever been searched,

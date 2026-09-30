@@ -1,4 +1,4 @@
-//! EZTV's JSON API (ROADMAP.md B8 wave 1), ported from torio's `eztv.ts`.
+//! EZTV's JSON API, ported from torio's `eztv.ts`.
 //!
 //! Live-checked 25.09.2026, and three findings shape this file:
 //!

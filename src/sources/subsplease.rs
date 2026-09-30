@@ -1,4 +1,4 @@
-//! SubsPlease's JSON API (ROADMAP.md B8 wave 1), ported from torio's
+//! SubsPlease's JSON API ported from torio's
 //! `subsplease.ts`.
 //!
 //! The API is a map keyed by `"<show> - <episode>"`, and three live

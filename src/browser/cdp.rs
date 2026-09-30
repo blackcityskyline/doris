@@ -135,7 +135,7 @@ impl Browser {
     /// before injecting cookies extracted from the browser's native (real)
     /// profile — it must be a page on the same domain those cookies belong
     /// to. Callers pass the active search source's home page; this module
-    /// stays source-agnostic on purpose (see ROADMAP.md Phase 3).
+    /// stays source-agnostic on purpose: the caller names what to block.
     pub async fn launch(
         binary: &Path,
         mode: BrowserVisibility,
@@ -1204,8 +1204,8 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
 ///
 /// Pure data: visibility picks `--headless=new`, Xvfb picks
 /// `--ozone-platform=x11` (and suppresses headless), the temp profile
-/// picks `--user-data-dir`. Extracted from `launch` (REFACTOR_PLAN
-/// Phase 5) so the list is testable without spawning chromedriver.
+/// picks `--user-data-dir`. Extracted from `launch` so the list is
+/// testable without spawning chromedriver.
 fn build_chrome_args(
     mode: BrowserVisibility,
     use_xvfb: bool,
@@ -1338,7 +1338,7 @@ mod tests {
         );
     }
 
-    // Phase 5 (REFACTOR_PLAN.md): the 40-line chrome-args wall inside
+    // The 40-line chrome-args wall inside
     // `launch` is data, not control flow -- pin its contract so the
     // extraction can't silently drop a flag.
     fn arg(args: &[String], prefix: &str) -> bool {

@@ -1,4 +1,4 @@
-//! Live probe for B6's blocking question (ROADMAP): does rutracker's
+//! Live probe of one open question: does rutracker's
 //! `tracker.php` honour a category the way its own search form offers
 //! it, and which forums a category is made of -- the input B6 needs to
 //! route `SearchRequest.category` down to this source at all.

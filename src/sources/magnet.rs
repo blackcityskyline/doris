@@ -1,4 +1,4 @@
-//! Magnet link parsing and building (ROADMAP.md B7), ported from torio's
+//! Magnet link parsing and building, ported from torio's
 //! `magnet.ts`.
 //!
 //! Why this exists: a result row that carries a magnet can go to

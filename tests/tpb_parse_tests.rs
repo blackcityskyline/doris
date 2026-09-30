@@ -1,4 +1,4 @@
-//! Fixture tests for the apibay-backed TPB source (ROADMAP.md B8 wave 1).
+//! Fixture tests for the apibay-backed TPB source .
 //!
 //! Both live endpoint shapes are pinned side by side on purpose: `q.php`
 //! sends every numeric-ish field as a *string*, the precompiled top-100

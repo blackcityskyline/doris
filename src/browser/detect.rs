@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// Every browser Doris knows how to drive. All four are Chromium-based and
 /// speak the same CDP/WebDriver protocol (see `browser::cdp`).
 ///
-/// Adding a fifth means appending one [`BROWSER_ROWS`] entry (key, extra
+/// Adding a fifth means appending one `BROWSER_ROWS` entry (key, extra
 /// accepted keys, binary names, label) and one enum variant -- nothing else
 /// in the browser layer changes. The four methods below read the row, so
 /// the table is the only place a browser's details live.

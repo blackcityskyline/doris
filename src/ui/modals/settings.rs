@@ -1,5 +1,5 @@
-//! The settings modal (ROADMAP Phase 10 split, item 1 of 3 -- and the
-//! largest): the typed descriptor table the Options modal renders, its
+//! The settings modal (the largest of the three): the typed descriptor
+//! table the Options modal renders, its
 //! pagination and key handling, and the per-category item builders
 //! (general/streaming/download plus the derived sources list). The
 //! `App` struct and the `Modal` enum stay in `ui/app.rs`; this file is
@@ -28,7 +28,7 @@ pub struct SettingsState {
     /// Items shown per page, computed from the real terminal size the last
     /// time this modal was rendered. `settings_key`'s pagination reads this
     /// instead of guessing, so paging can never desync from what's on
-    /// screen (see ROADMAP.md bug B2). Starts at 1 (never 0, which would
+    /// screen. Starts at 1 (never 0, which would
     /// divide-by-zero in pagination math) until the first render sets it.
     pub visible_items: usize,
     pub categories: Vec<SettingsCategory>,
@@ -262,8 +262,8 @@ fn center_str(s: &str, width: usize) -> String {
 impl App {
     /// Build the Settings modal from real, current state. Every `value`
     /// here is computed from `self`/`config`, never a hardcoded literal --
-    /// see ROADMAP.md bug B5, where roughly half of these used to be
-    /// decorative strings with no backing field at all.
+    /// roughly half of these used to be decorative strings with no
+    /// backing field at all.
     pub fn open_settings(&mut self, config: &Config, browser_hidden: bool) {
         self.settings_browser_hidden = browser_hidden;
         let mode_str = if self.stream_mode {
