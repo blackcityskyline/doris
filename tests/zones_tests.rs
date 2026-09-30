@@ -2,9 +2,39 @@ use doris::sources::source::Group;
 use doris::ui::theme::Theme;
 use doris::ui::zones::{
     button_spans, zone_buttons, zone_title, zone_title_width, FrameSlot, ZoneId, ZoneLayout,
+    SEARCH_BAR_HEIGHT,
 };
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
+
+/// The layout rule the assertions below are written against, restated
+/// here instead of called: the search bar owns the top
+/// `SEARCH_BAR_HEIGHT` rows, what is left is split over `count` equal
+/// rows, the first `area.height % count` taking one more. Writing the
+/// current constants (`3`, `14`) instead would make each of these a
+/// test of `SEARCH_BAR_HEIGHT`'s value -- red on a change that merely
+/// moves the whole grid down a row. `distribute`'s arithmetic itself
+/// is pinned in `src/ui/zones.rs` (`layout_math_tests`).
+fn rows(area: Rect, count: usize) -> Vec<Rect> {
+    let spare = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
+    let each = spare / count as u16;
+    let mut rest = spare % count as u16;
+    let mut y = area.y + SEARCH_BAR_HEIGHT;
+    (0..count)
+        .map(|_| {
+            let h = each + u16::from(rest > 0);
+            rest = rest.saturating_sub(1);
+            let row = Rect::new(area.x, y, area.width, h);
+            y += h;
+            row
+        })
+        .collect()
+}
+
+/// A cell of `row`: from column `x`, `wide` columns, the row's height.
+fn cell(row: Rect, x: u16, wide: u16) -> Rect {
+    Rect::new(x, row.y, wide, row.height)
+}
 
 #[test]
 fn test_zone_id_key_char_and_from_key_round_trip() {
@@ -593,13 +623,14 @@ fn test_a_preset_spec_writes_rows_and_columns() {
 fn test_the_default_tiling_is_results_over_trackers_and_log() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,3|4");
-    zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = Rect::new(0, 0, 100, 30);
+    zones.update_areas(area);
 
-    // 27 rows below the search bar, split over two rows: 14 then 13.
-    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 14));
-    // The second row splits its width between its two cells.
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 17, 50, 13));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 17, 50, 13));
+    // Two rows below the search bar, the second split in half.
+    let r = rows(area, 2);
+    assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Trackers), cell(r[1], 0, 50));
+    assert_eq!(zones.get_area(ZoneId::Log), cell(r[1], 50, 50));
     assert_eq!(zones.get_area(ZoneId::Torrent), Rect::default());
 }
 
@@ -609,14 +640,16 @@ fn test_the_default_tiling_is_results_over_trackers_and_log() {
 fn test_a_flat_spec_still_stacks_zones_full_width() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,2,3,4");
-    zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = Rect::new(0, 0, 100, 30);
+    zones.update_areas(area);
 
-    // 27 rows over four zones: 7, 7, 7, 6 -- the first three get the
-    // remainder, so no row of the terminal is wasted.
-    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 7));
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 10, 100, 7));
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 17, 100, 7));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 24, 100, 6));
+    // One full-width row each, the remainder to the first rows, so no
+    // row of the terminal is wasted.
+    let r = rows(area, 4);
+    assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Torrent), cell(r[1], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Trackers), cell(r[2], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Log), cell(r[3], 0, 100));
 }
 
 /// A cell switched off hands its width to the rest of its row, so the
@@ -626,9 +659,10 @@ fn test_hiding_a_cell_gives_its_width_to_its_row() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,3|4");
     zones.set_visible(ZoneId::Trackers, false);
-    zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = Rect::new(0, 0, 100, 30);
+    zones.update_areas(area);
 
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 17, 100, 13));
+    assert_eq!(zones.get_area(ZoneId::Log), cell(rows(area, 2)[1], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Trackers), Rect::default());
 }
 
@@ -639,11 +673,12 @@ fn test_hiding_a_row_gives_its_height_to_the_rest() {
     zones.apply_preset("1,3|4");
     zones.set_visible(ZoneId::Trackers, false);
     zones.set_visible(ZoneId::Log, false);
-    zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = Rect::new(0, 0, 100, 30);
+    zones.update_areas(area);
 
     assert_eq!(
         zones.get_area(ZoneId::Results),
-        Rect::new(0, 3, 100, 27),
+        rows(area, 1)[0],
         "Results takes everything below the search bar"
     );
 }
@@ -655,13 +690,15 @@ fn test_a_zone_shown_by_hand_gets_its_own_row() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,3|4");
     zones.toggle(ZoneId::Torrent);
-    zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = Rect::new(0, 0, 100, 30);
+    zones.update_areas(area);
 
-    // Three rows over 27: 9 each.
-    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 9));
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 12, 50, 9));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(50, 12, 50, 9));
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 21, 100, 9));
+    // Three rows, Trackers | Log sharing the middle one.
+    let r = rows(area, 3);
+    assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Trackers), cell(r[1], 0, 50));
+    assert_eq!(zones.get_area(ZoneId::Log), cell(r[1], 50, 50));
+    assert_eq!(zones.get_area(ZoneId::Torrent), cell(r[2], 0, 100));
 }
 
 /// A terminal too short for the tiling still gets a layout: nothing
@@ -730,11 +767,13 @@ fn test_fullscreen_overrides_the_tiling() {
 #[test]
 fn test_a_fresh_layout_stacks_every_zone() {
     let mut zones = ZoneLayout::new();
-    zones.update_areas(Rect::new(0, 0, 100, 30));
+    let area = Rect::new(0, 0, 100, 30);
+    zones.update_areas(area);
 
     assert!(zones.is_visible(ZoneId::Torrent), "all four start on");
-    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 100, 7));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 24, 100, 6));
+    let r = rows(area, 4);
+    assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Log), cell(r[3], 0, 100));
 }
 
 /// The digit key's three answers, on the layout state alone: show it,
@@ -796,14 +835,20 @@ fn hiding_a_zone_parks_the_focus_on_the_next_visible_one() {
 #[test]
 fn test_equal_weights_reproduce_the_untouched_grid() {
     let mut zones = ZoneLayout::new();
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = Rect::new(0, 0, 80, 24);
+    zones.update_areas(area);
 
-    // 24 - 3 = 21 rows over 4 zones: 5 each, the first taking the one
-    // leftover cell.
-    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 80, 6));
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 9, 80, 5));
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 14, 80, 5));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 19, 80, 5));
+    // The whole tiling restated as the rule it must obey: four equal
+    // rows below the search bar, each full width, in zone order.
+    let r = rows(area, 4);
+    for (id, row) in [
+        (ZoneId::Results, &r[0]),
+        (ZoneId::Torrent, &r[1]),
+        (ZoneId::Trackers, &r[2]),
+        (ZoneId::Log, &r[3]),
+    ] {
+        assert_eq!(zones.get_area(id), cell(*row, 0, 80), "{id:?}");
+    }
 }
 
 /// Grab the border between two rows, pull it down one row: the pair
@@ -813,24 +858,42 @@ fn test_equal_weights_reproduce_the_untouched_grid() {
 #[test]
 fn test_dragging_the_row_border_splits_that_pair_only() {
     let mut zones = ZoneLayout::new();
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = Rect::new(0, 0, 80, 24);
+    zones.update_areas(area);
+    let results = zones.get_area(ZoneId::Results);
+    let torrent = zones.get_area(ZoneId::Torrent);
+    let trackers_h = zones.get_area(ZoneId::Trackers).height;
+    let log_h = zones.get_area(ZoneId::Log).height;
 
-    // Torrent's top border is the divider under Results.
+    // Torrent's top border is the divider under Results -- wherever
+    // the default split happened to put it.
     assert!(
-        zones.resize_start(9, 40),
+        zones.resize_start(torrent.y, 40),
         "the top border of the second row is a handle"
     );
-    zones.resize_drag(10, 40);
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    zones.resize_drag(torrent.y + 1, 40);
+    zones.update_areas(area);
 
-    assert_eq!(zones.get_area(ZoneId::Results).height, 7, "ended at y=10");
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 10, 80, 4));
-    assert_eq!(zones.get_area(ZoneId::Trackers).height, 5, "untouched");
-    assert_eq!(zones.get_area(ZoneId::Log).height, 5, "untouched");
-    // The rows still tile: no gap, no overlap, nothing off screen.
     assert_eq!(
-        zones.get_area(ZoneId::Log).y + zones.get_area(ZoneId::Log).height,
-        24,
+        zones.get_area(ZoneId::Results).height,
+        results.height + 1,
+        "pulled down one row"
+    );
+    assert_eq!(
+        zones.get_area(ZoneId::Torrent),
+        Rect::new(0, torrent.y + 1, area.width, torrent.height - 1)
+    );
+    assert_eq!(
+        zones.get_area(ZoneId::Trackers).height,
+        trackers_h,
+        "untouched"
+    );
+    assert_eq!(zones.get_area(ZoneId::Log).height, log_h, "untouched");
+    // The rows still tile: no gap, no overlap, nothing off screen.
+    let log = zones.get_area(ZoneId::Log);
+    assert_eq!(
+        log.y + log.height,
+        area.height,
         "the last row still ends at the bottom"
     );
 }
@@ -840,20 +903,27 @@ fn test_dragging_the_row_border_splits_that_pair_only() {
 #[test]
 fn test_a_drag_stops_at_the_minimum_zone() {
     let mut zones = ZoneLayout::new();
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = Rect::new(0, 0, 80, 24);
+    zones.update_areas(area);
+    let results = zones.get_area(ZoneId::Results);
+    let torrent = zones.get_area(ZoneId::Torrent);
+    // The rows the two of them share, wherever the divider starts.
+    let pair = torrent.y + torrent.height - results.y;
 
     // Far above the divider: the upper row may not go under the floor.
-    zones.resize_start(9, 40);
-    zones.resize_drag(3, 40);
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    zones.resize_start(torrent.y, 40);
+    zones.resize_drag(results.y, 40);
+    zones.update_areas(area);
     assert_eq!(
         zones.get_area(ZoneId::Results).height,
         doris::ui::zones::RESIZE_MIN_HEIGHT
     );
-    // The pair shares rows y=3..14 -- 11 cells -- so the row under the
-    // floor gets the other 8, not the whole terminal's 21.
-    let torrent = zones.get_area(ZoneId::Torrent);
-    assert_eq!(torrent.height, 11 - doris::ui::zones::RESIZE_MIN_HEIGHT);
+    // The pair only has `pair` rows between them, so the row under the
+    // floor gets the rest of those, not the whole terminal.
+    assert_eq!(
+        zones.get_area(ZoneId::Torrent).height,
+        pair - doris::ui::zones::RESIZE_MIN_HEIGHT
+    );
 
     // And far below it: the lower row keeps its floor too. The divider
     // has moved with the first drag, so it is found where it now is.
@@ -863,8 +933,8 @@ fn test_a_drag_stops_at_the_minimum_zone() {
         zones.resize_start(torrent.y, 40),
         "the divider is where the last drag left it"
     );
-    zones.resize_drag(60, 40);
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    zones.resize_drag(area.height + 1, 40);
+    zones.update_areas(area);
     assert_eq!(
         zones.get_area(ZoneId::Torrent).height,
         doris::ui::zones::RESIZE_MIN_HEIGHT
@@ -877,18 +947,32 @@ fn test_a_drag_stops_at_the_minimum_zone() {
 fn test_dragging_the_column_border_splits_that_row() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("3|4");
-    zones.update_areas(Rect::new(0, 0, 80, 24));
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 3, 40, 21));
+    let area = Rect::new(0, 0, 80, 24);
+    zones.update_areas(area);
+    let log = zones.get_area(ZoneId::Log);
+    assert_eq!(
+        zones.get_area(ZoneId::Trackers).width + log.width,
+        area.width,
+        "the two cells span the row exactly"
+    );
+    assert_eq!(zones.get_area(ZoneId::Trackers).y, log.y, "one row");
 
     assert!(
-        zones.resize_start(5, 40),
+        zones.resize_start(log.y + 2, log.x),
         "the left border of the second cell is a handle"
     );
-    zones.resize_drag(5, 30);
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    // The pointer lands at x=30: an input, not layout.
+    zones.resize_drag(log.y + 2, 30);
+    zones.update_areas(area);
 
-    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 3, 30, 21));
-    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(30, 3, 50, 21));
+    assert_eq!(
+        zones.get_area(ZoneId::Trackers),
+        Rect::new(0, log.y, 30, log.height)
+    );
+    assert_eq!(
+        zones.get_area(ZoneId::Log),
+        Rect::new(30, log.y, area.width - 30, log.height)
+    );
 }
 
 /// A body click is not a handle, and the first row's top border is the
@@ -896,16 +980,26 @@ fn test_dragging_the_column_border_splits_that_row() {
 #[test]
 fn test_only_the_borders_between_zones_are_handles() {
     let mut zones = ZoneLayout::new();
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = Rect::new(0, 0, 80, 24);
+    zones.update_areas(area);
+    let results = zones.get_area(ZoneId::Results);
+    let torrent = zones.get_area(ZoneId::Torrent);
+    let log = zones.get_area(ZoneId::Log);
 
-    assert!(!zones.resize_start(5, 40), "inside Results");
-    assert!(!zones.resize_start(3, 40), "the first row's own top edge");
-    assert!(!zones.resize_start(40, 0), "below every zone");
+    assert!(!zones.resize_start(results.y + 2, 40), "inside Results");
+    assert!(
+        !zones.resize_start(results.y, 40),
+        "the first row's own top edge"
+    );
+    assert!(!zones.resize_start(area.height + 1, 0), "below every zone");
     assert!(zones.resize.is_none(), "and nothing was armed");
 
-    assert!(zones.resize_start(9, 0), "Torrent's top border, left edge");
+    assert!(
+        zones.resize_start(torrent.y, 0),
+        "Torrent's top border, left edge"
+    );
     zones.resize_end();
-    assert!(zones.resize_start(19, 40), "Log's top border");
+    assert!(zones.resize_start(log.y, 40), "Log's top border");
     zones.resize_end();
     assert!(zones.resize.is_none());
 }
@@ -916,19 +1010,22 @@ fn test_only_the_borders_between_zones_are_handles() {
 #[test]
 fn test_applying_a_preset_resets_the_weights() {
     let mut zones = ZoneLayout::new();
-    zones.update_areas(Rect::new(0, 0, 80, 24));
-    zones.resize_start(9, 40);
-    zones.resize_drag(10, 40);
-    zones.update_areas(Rect::new(0, 0, 80, 24));
+    let area = Rect::new(0, 0, 80, 24);
+    zones.update_areas(area);
+    let before = zones.get_area(ZoneId::Results).height;
+    let torrent = zones.get_area(ZoneId::Torrent);
+    zones.resize_start(torrent.y, 40);
+    zones.resize_drag(torrent.y + 1, 40);
+    zones.update_areas(area);
     assert_ne!(
         zones.get_area(ZoneId::Results).height,
-        6,
+        before,
         "the drag took hold"
     );
 
     zones.apply_preset("1,3|4");
-    zones.update_areas(Rect::new(0, 0, 80, 24));
-    // Two rows: 21 over 2 -> 11 and 10, first taking the remainder.
-    assert_eq!(zones.get_area(ZoneId::Results).height, 11);
-    assert_eq!(zones.get_area(ZoneId::Trackers).height, 10);
+    zones.update_areas(area);
+    let r = rows(area, 2);
+    assert_eq!(zones.get_area(ZoneId::Results).height, r[0].height);
+    assert_eq!(zones.get_area(ZoneId::Trackers).height, r[1].height);
 }

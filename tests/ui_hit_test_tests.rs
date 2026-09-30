@@ -989,9 +989,10 @@ fn test_a_border_click_arms_the_resize_but_a_legend_click_does_not() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     // Trackers' top border separates it from Torrent, and Trackers has
-    // no legend on it.
-    assert_eq!(app.zone_at(14, 40), Some(ZoneId::Trackers));
-    assert_eq!(app.click_at(14, 40, &mut config), None);
+    // no legend on it. The border is where the split put it.
+    let border = app.zones.get_area(ZoneId::Trackers).y;
+    assert_eq!(app.zone_at(border, 40), Some(ZoneId::Trackers));
+    assert_eq!(app.click_at(border, 40, &mut config), None);
     assert!(app.zones.resize.is_some(), "the drag is armed");
     app.zones.resize_end();
 

@@ -152,3 +152,45 @@ fn test_the_menu_box_carries_a_border_like_a_modal() {
         "the top border is titled, got {title_row:?}"
     );
 }
+
+/// The pure geometry, no rendering: the box wraps the banner and the
+/// three items on a terminal that can hold them, is centred on the
+/// screen, and is *absent* one row or one column short of that --
+/// `None` is what tells the renderer to draw the menu without a
+/// backdrop, the way it did before there was one, rather than clipping
+/// a frame around something bigger than itself.
+#[test]
+fn test_the_backdrop_rect_is_centred_and_refuses_a_terminal_that_cannot_hold_it() {
+    let full = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
+        .expect("a 120x40 terminal holds the menu");
+
+    let left_margin = full.x;
+    let right_margin = 120 - (full.x + full.width);
+    assert!(
+        left_margin.abs_diff(right_margin) <= 1,
+        "centred (odd widths round down): left={left_margin} right={right_margin}"
+    );
+    let top_margin = full.y;
+    let bottom_margin = 40 - (full.y + full.height);
+    assert!(
+        top_margin.abs_diff(bottom_margin) <= 1,
+        "vertically centred too: top={top_margin} bottom={bottom_margin}"
+    );
+
+    assert!(
+        doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, full.width - 1, full.height)).is_none(),
+        "one column short of the widest line and there is no box"
+    );
+    assert!(
+        doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, full.width, full.height - 1)).is_none(),
+        "one row short of banner + items + border and there is no box"
+    );
+    assert!(
+        doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, full.width, full.height)).is_some(),
+        "and exactly that size is enough"
+    );
+    assert!(
+        doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 10, 6)).is_none(),
+        "a menu is not drawn into 10x6"
+    );
+}
