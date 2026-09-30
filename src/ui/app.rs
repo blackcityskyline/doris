@@ -209,6 +209,12 @@ pub struct App {
     /// modal displays and toggles it; the orchestrator owns the value.
     pub settings_browser_hidden: bool,
     pub filtered_indices: Vec<usize>,
+    /// The row the cursor stood on before a filter pushed it off the
+    /// list, kept so that widening the filter can put it back instead
+    /// of leaving the cursor parked on the first match. Cleared when
+    /// the user moves the cursor by hand -- a row nobody is standing on
+    /// any more is not one to return to.
+    pub filter_anchor: Option<usize>,
 }
 
 /// Width of the `Src` column in the results table. Fixed on purpose:
@@ -462,6 +468,7 @@ impl App {
             progress_history: std::collections::VecDeque::new(),
             settings_browser_hidden: false,
             filtered_indices: Vec::new(),
+            filter_anchor: None,
         }
     }
 
@@ -971,7 +978,7 @@ impl App {
                 }
                 let data_row = (table_row - 1) as usize;
                 if let Some(&idx) = self.filtered_indices.get(data_row) {
-                    self.selected = idx;
+                    self.move_selection_to(idx);
                 }
             }
             ZoneId::Trackers => {
@@ -1113,7 +1120,7 @@ impl App {
                 .position(|&i| i == self.selected)
                 .unwrap_or(0);
             if local_idx < filtered_len - 1 {
-                self.selected = self.filtered_indices[local_idx + 1];
+                self.move_selection_to(self.filtered_indices[local_idx + 1]);
                 true
             } else {
                 !self.all_loaded && self.state == AppState::Idle
@@ -1146,7 +1153,7 @@ impl App {
                 .position(|&i| i == self.selected)
                 .unwrap_or(0);
             if local_idx > 0 {
-                self.selected = self.filtered_indices[local_idx - 1];
+                self.move_selection_to(self.filtered_indices[local_idx - 1]);
             }
             true
         } else {
@@ -1156,13 +1163,13 @@ impl App {
 
     pub fn navigate_first(&mut self) {
         if let Some(&first) = self.filtered_indices.first() {
-            self.selected = first;
+            self.move_selection_to(first);
         }
     }
 
     pub fn navigate_last(&mut self) {
         if let Some(&last) = self.filtered_indices.last() {
-            self.selected = last;
+            self.move_selection_to(last);
         }
     }
 
@@ -1207,7 +1214,7 @@ impl App {
         // title -- a size, a source, a category or a word from the
         // title all answer to the same prompt -- and `field:value`
         // narrows it further (src/filter.rs holds the syntax).
-        self.filtered_indices = self
+        let visible: Vec<usize> = self
             .results
             .iter()
             .enumerate()
@@ -1218,9 +1225,40 @@ impl App {
             .filter(|(_, item)| filter.matches(item))
             .map(|(i, _)| i)
             .collect();
-        if !self.filtered_indices.is_empty() && !self.filtered_indices.contains(&self.selected) {
-            self.selected = self.filtered_indices[0];
+
+        // The row the cursor was pushed off is back on screen: stand on
+        // it again. Checked before the jump below so that a filter that
+        // widens back over both the anchor and wherever the cursor has
+        // since landed prefers the anchor -- that is the row the user
+        // was reading when they started typing.
+        let hidden = !visible.is_empty() && !visible.contains(&self.selected);
+        match (self.filter_anchor, hidden) {
+            // The row the cursor came from is visible again: stand on
+            // it. This wins over the jump below, which is the point --
+            // the anchor is the row the user was reading.
+            (Some(anchor), _) if visible.contains(&anchor) => {
+                self.selected = anchor;
+                self.filter_anchor = None;
+            }
+            // Already displaced, and pushed off again by a narrower
+            // filter: keep the original anchor, only move the cursor.
+            (Some(_), true) => self.selected = visible[0],
+            // First displacement: remember the row being left behind.
+            (None, true) => {
+                self.filter_anchor = Some(self.selected);
+                self.selected = visible[0];
+            }
+            _ => {}
         }
+        self.filtered_indices = visible;
+    }
+
+    /// Move the cursor by the user's own hand (keys, click). Any anchor
+    /// a filter was holding is released: this is the moment the cursor
+    /// stops being "temporarily displaced".
+    fn move_selection_to(&mut self, idx: usize) {
+        self.filter_anchor = None;
+        self.selected = idx;
     }
 
     /// Draw the main view. `config` rides along because the zones read

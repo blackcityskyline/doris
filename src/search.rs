@@ -89,6 +89,9 @@ fn present_results(ui: &mut UiApp) {
     let anchor = ui.results.get(ui.selected).cloned();
 
     ui.results = default_order(&dedupe_by_hash(&ui.results), ui.browsing);
+    // Reordering moves rows under every saved index, the filter anchor
+    // included: a row it names may not be the row it named.
+    ui.filter_anchor = None;
 
     let removed = before - ui.results.len();
     if removed > 0 {

@@ -1745,6 +1745,7 @@ impl App {
         // per-source records belong to the old query and go with it.
         self.ui.results.clear();
         self.ui.selected = 0;
+        self.ui.filter_anchor = None;
         self.ui.update_filter();
         self.ui.source_status.clear();
         self.source_has_more.clear();
