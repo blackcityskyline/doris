@@ -10,6 +10,25 @@
 //! legacy `"user:pass"` payload is recognised and transparently treated as
 //! the `rutracker` entry, so nobody has to re-enter a saved login just
 //! because of this change.
+//!
+//! # What the encryption does and does not buy
+//!
+//! The key is `SHA256(hostname + username + "doris-cred-salt-v1")` -- both
+//! inputs are readable by anyone who can read this file (`/etc/hostname`,
+//! `whoami`), so **this does not protect against a local reader running as
+//! your user**: such a process derives the same key and decrypts the store.
+//! Verified by doing exactly that against a real store.
+//!
+//! What it does buy: the file is not a plaintext password sitting in a
+//! config directory (so a stray `cat`, a grep, a crash reporter, a backup
+//! that gets attached to a bug report, or an editor that autosaves it does
+//! not hand the password over), and the file is 0600, which does stop
+//! every *other* account on the machine -- the realistic case for a desktop
+//! with more than one user.
+//!
+//! Protecting against a process running as you would need a key you never
+//! write down (a passphrase, or libsecret), which is a UX cost, so it is
+//! not done here. That is a deliberate boundary, not an oversight.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -51,6 +70,42 @@ pub fn credentials_path() -> PathBuf {
 /// its own I/O, and every test that saved a fake login overwrote the
 /// real one.
 pub const STORE_FILE: &str = "credentials.enc";
+
+/// Write a file only its owner can read or write, and repair the mode of
+/// one that already exists.
+///
+/// Both files doris keeps that hold a live login -- this store and the
+/// saved rutracker cookies, where `bb_session` *is* the session -- go
+/// through here, so "this file is secret" is one rule in one place
+/// instead of a `fs::write` each somebody can forget. `fs::write` creates
+/// 0644 under the default umask 022, which makes both readable by every
+/// account on the machine.
+///
+/// The `mode` on `OpenOptions` only applies when it *creates* the file, so
+/// a store an older build already wrote at 0644 would keep that mode
+/// forever; the explicit `set_permissions` is what actually repairs it.
+#[cfg(unix)]
+pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(contents)?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+/// No file modes to set off unix.
+#[cfg(not(unix))]
+pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
+    std::fs::write(path, contents)?;
+    Ok(())
+}
 
 fn derive_key() -> Result<[u8; KEY_LEN]> {
     let hostname = hostname::get()
@@ -117,9 +172,9 @@ fn encrypt_and_write(path: &Path, plaintext: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(
+    write_private(
         path,
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &output),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &output).as_bytes(),
     )?;
     Ok(())
 }

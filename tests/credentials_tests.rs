@@ -88,6 +88,30 @@ fn test_delete_credential() {
     assert_eq!(load_credential_at(&path, "rutracker"), None);
 }
 
+/// The credential store is the user's rutracker password, and
+/// `encrypt_and_write` went through `fs::write` -- 0644 under the default
+/// umask 022, so any account on the machine could read the blob (and any
+/// process belonging to the user could decrypt it, key derivation being
+/// `SHA256(hostname + username + salt)`). The mode is the part that
+/// actually stops a stranger, so the file is created 0600 and an
+/// existing 0644 file is repaired: the `mode` argument on `OpenOptions`
+/// applies only when it creates the file.
+#[test]
+#[cfg(unix)]
+fn test_store_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = scratch("perms");
+    save_credential_at(&path, "rutracker", "u", "p").unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "a fresh store must be owner-only");
+
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    save_credential_at(&path, "rutracker", "u", "p2").unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "an existing 0644 store must be repaired");
+}
+
 #[test]
 fn test_saving_one_resource_keeps_the_other() {
     // `save_credential` reads the whole store, inserts, and writes it

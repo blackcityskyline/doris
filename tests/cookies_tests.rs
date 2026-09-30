@@ -121,3 +121,32 @@ fn test_save_and_reload() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A saved cookie file is a live login: `bb_session` is the session, and
+/// anyone who reads it can act as the user on rutracker. `save_to_file`
+/// went through `fs::write`, which creates 0644 under the default umask
+/// 022 -- readable by every account on the machine. 0600 is the whole
+/// protection here, so the file is created with it and *repaired* on a
+/// file that already exists: the mode argument only applies at creation,
+/// so a store written by an older build keeps its 0644 otherwise.
+#[test]
+#[cfg(unix)]
+fn test_saved_cookies_are_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("doris-cook-perm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("cookies.txt");
+
+    save_to_file(&path, &[]).unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "a fresh save must be owner-only");
+
+    // An already-world-readable file is tightened, not left as it was.
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    save_to_file(&path, &[]).unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "an existing 0644 file must be repaired");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

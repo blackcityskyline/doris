@@ -58,7 +58,7 @@ pub fn save_to_file(path: &Path, cookies: &[Cookie]) -> Result<()> {
         ));
     }
 
-    std::fs::write(path, content)?;
+    crate::credentials::write_private(path, content.as_bytes())?;
     Ok(())
 }
 
