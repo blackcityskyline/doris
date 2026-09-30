@@ -1250,7 +1250,8 @@ impl App {
                         self.ui.detail_view = Some(ZoneId::Log);
                     }
                     SettingsAction::RunHealthCheck => {
-                        let results = self.ui.health_check().await;
+                        let cookie_file = self.resolve_cookie_file();
+                        let results = self.ui.health_check(cookie_file.as_deref()).await;
                         self.ui.modal = Modal::HealthCheck(results);
                     }
                     SettingsAction::CycleTheme => {

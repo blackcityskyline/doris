@@ -11,8 +11,34 @@ use crate::config::Config;
 use crate::torrserver::api::TorrServer;
 use crate::ui::app::{centered_rect, App, Modal};
 
+/// One line of the health check about the saved cookie file.
+///
+/// It used to be `Path::new("cookies.txt")` written into the check
+/// itself: a path relative to whatever directory doris was started in,
+/// naming a file nothing else in the app reads. With the cookie path now
+/// configurable -- and `--cookie-file` able to point somewhere else
+/// entirely -- a user with a real session elsewhere was told their file
+/// was missing while a stray `cookies.txt` in the current directory was
+/// the one being measured. The path is the one the app will actually
+/// use, passed in.
+pub fn cookie_file_status(path: &std::path::Path) -> String {
+    if !path.exists() {
+        return format!("\u{26a0} Cookie file: not found ({})", path.display());
+    }
+    match crate::sources::cookies::load_from_file(path) {
+        Ok(c) if !c.is_empty() => {
+            format!(
+                "\u{2714} Cookie file: {} cookies ({})",
+                c.len(),
+                path.display()
+            )
+        }
+        _ => format!("\u{26a0} Cookie file: empty/invalid ({})", path.display()),
+    }
+}
+
 impl App {
-    pub async fn health_check(&self) -> Vec<String> {
+    pub async fn health_check(&self, cookie_file: Option<&std::path::Path>) -> Vec<String> {
         let mut results = Vec::new();
 
         results.push("=== HEALTH CHECK ===".into());
@@ -96,16 +122,12 @@ impl App {
             None => results.push(format!("{} Saved credentials: none", "\u{2718}")),
         }
 
-        let cookie_path = std::path::Path::new("cookies.txt");
-        if cookie_path.exists() {
-            match crate::sources::cookies::load_from_file(cookie_path) {
-                Ok(c) if !c.is_empty() => {
-                    results.push(format!("{} Cookie file: {} cookies", "\u{2714}", c.len()))
-                }
-                _ => results.push(format!("{} Cookie file: empty/invalid", "\u{26a0}")),
-            }
-        } else {
-            results.push(format!("{} Cookie file: not found", "\u{26a0}"));
+        match cookie_file {
+            Some(path) => results.push(cookie_file_status(path)),
+            None => results.push(format!(
+                "{} Cookie file: not saved (Options -> general)",
+                "\u{26a0}"
+            )),
         }
 
         let sources_line = crate::sources::source::KNOWN_SOURCES
