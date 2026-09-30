@@ -135,7 +135,18 @@ fn test_the_download_link_is_the_item_pages_file_link() {
 
 #[test]
 fn test_the_searcher_is_constructible_offline() {
-    // The same shape every other source's tests pin: `new()` must not
-    // need a browser or a session, so the registry can build it.
-    let _searcher = TorentinoSearcher::new();
+    // The same shape the other sources pin: `new()` must not need a
+    // browser or a session, so the registry can build it -- and the
+    // searcher must agree with the row `KNOWN_SOURCES` filed it under.
+    // An `id()` that disagrees leaves it unreachable behind its own
+    // row, and constructing it would never show that.
+    use doris::sources::source::{self, Source};
+    let searcher = TorentinoSearcher::new();
+    let info = source::get_source("torentino").expect("torentino must be registered");
+    assert!(info.implemented, "the Options checklist prints this flag");
+    assert_eq!(searcher.id(), info.id);
+    assert_eq!(searcher.label(), info.label);
+    assert_eq!(searcher.groups(), info.groups);
+    assert_eq!(searcher.requires_browser(), info.requires_browser);
+    assert!(searcher.home_url().starts_with("http"), "{}", info.home_url);
 }
