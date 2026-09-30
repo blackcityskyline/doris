@@ -376,7 +376,10 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        let mut terminal = tui::init()?;
+        // The keyboard protocol is what makes Shift+Enter arrive as
+        // Shift+Enter; `false_tty` asks for a terminal that may not
+        // know the sequence, so it stays off there.
+        let mut terminal = tui::init(!self.config.false_tty)?;
         self.terminal_size = terminal
             .size()
             .map(|s| (s.width, s.height))
@@ -2572,6 +2575,47 @@ mod key_routing_tests {
     /// `L`, `T` and `R` each open their zone's detail view -- the same
     /// full-frame takeover the detailed log already had -- and the same
     /// key closes it again. Esc closes whichever is open.
+    /// Shift+Enter is the documented "show me the details" key next to
+    /// `D`. It has to reach `open_detail_modal` from the Results panel,
+    /// which is the only panel that has a row to show -- and it has to
+    /// do so *before* Enter's other meanings (Trackers switches a row),
+    /// because a modifier is what says the key is not plain Enter.
+    #[tokio::test]
+    async fn shift_enter_opens_the_detail_modal() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.zones.focused = ZoneId::Results;
+        app.ui.results = vec![crate::sources::models::TorrentItem {
+            title: "Dune 2024".into(),
+            source: "rutor".into(),
+            // Loopback, refused instantly: the modal opens before the
+            // file list arrives, and the fetch behind it must not leave
+            // the test machine.
+            page_url: "http://127.0.0.1:1/".into(),
+            ..Default::default()
+        }];
+        app.ui.update_filter();
+
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT))
+            .await
+            .expect("Shift+Enter");
+
+        assert!(
+            matches!(app.ui.modal, crate::ui::app::Modal::TorrentDetail(_)),
+            "Shift+Enter opens the detail modal, got {:?}",
+            app.ui.modal
+        );
+
+        // Plain Enter in the same place still plays.
+        app.ui.modal = crate::ui::app::Modal::None;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await
+            .expect("Enter");
+        assert!(
+            !matches!(app.ui.modal, crate::ui::app::Modal::TorrentDetail(_)),
+            "plain Enter must not open the details"
+        );
+    }
+
     /// Every mode that grabs the keyboard -- the menu, the search box, a
     /// modal, a detail view -- answers before the plain-view Ctrl+C arm
     /// is ever reached, so quitting has to be the *first* thing
