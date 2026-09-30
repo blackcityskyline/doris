@@ -285,11 +285,18 @@ fn test_requires_browser_falls_back_to_true_for_unknown_ids() {
 }
 
 #[test]
-fn test_get_source_and_sources_by_group_view_the_same_registry() {
+fn test_get_source_and_the_group_filter_view_the_same_registry() {
     assert!(source::get_source("rutracker").is_some());
     assert!(source::get_source("nope").is_none());
 
-    let games = source::sources_by_group(Group::Games);
+    let in_group = |g: Group| {
+        KNOWN_SOURCES
+            .iter()
+            .filter(|s| s.groups.contains(&g))
+            .collect::<Vec<_>>()
+    };
+
+    let games = in_group(Group::Games);
     assert!(games.iter().any(|s| s.id == "rutracker"));
     assert!(games.iter().any(|s| s.id == "rutor"));
     assert!(games.iter().all(|s| s.groups.contains(&Group::Games)));
@@ -309,9 +316,7 @@ fn test_get_source_and_sources_by_group_view_the_same_registry() {
         );
         for group in [Group::Games, Group::Movies, Group::TV, Group::Anime] {
             assert!(
-                source::sources_by_group(group)
-                    .iter()
-                    .all(|s| s.id != planned.id),
+                in_group(group).iter().all(|s| s.id != planned.id),
                 "{} must not be in the {:?} view",
                 planned.id,
                 group

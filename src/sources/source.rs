@@ -584,15 +584,6 @@ pub fn get_source(id: &str) -> Option<&'static SourceInfo> {
     KNOWN_SOURCES.iter().find(|s| s.id == id)
 }
 
-/// Which sources belong to a group, for B6's category -> source mapping
-/// and for the Options UI grouping rows by what they can filter.
-pub fn sources_by_group(group: Group) -> Vec<&'static SourceInfo> {
-    KNOWN_SOURCES
-        .iter()
-        .filter(|s| s.groups.contains(&group))
-        .collect()
-}
-
 /// Whether orchestrating `id` needs a browser session launched first.
 /// Unknown ids fall back to `true`: the conservative answer, because
 /// guessing "no browser" for a source we don't know about would send its

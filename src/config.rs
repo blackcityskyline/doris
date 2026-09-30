@@ -5,7 +5,6 @@ use crate::sources::source::KNOWN_SOURCES;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
-#[allow(dead_code)]
 pub struct Config {
     pub browser: Option<String>,
     /// Browser window visibility: "visible" or "hidden". Defaults to hidden
@@ -29,7 +28,6 @@ pub struct Config {
     pub bridge_port: u16,
     #[serde(default = "default_cookie_file")]
     pub cookie_file: String,
-    pub keybindings: Option<Keybindings>,
 
     // --- Options / "general" category (ROADMAP.md Phase 5) -----------------
     // These mirror btop++'s general settings page. Values here are the
@@ -136,7 +134,6 @@ impl Default for Config {
             enable_torrserver: default_true(),
             bridge_port: default_bridge_port(),
             cookie_file: default_cookie_file(),
-            keybindings: None,
             theme_name: None,
             theme_background: true,
             truecolor: true,
@@ -168,16 +165,6 @@ impl Default for Config {
             close_torrent_core_on_exit: true,
         }
     }
-}
-
-#[derive(Debug, Deserialize, Serialize, Default)]
-#[allow(dead_code)]
-pub struct Keybindings {
-    pub quit: Option<String>,
-    pub focus_search: Option<String>,
-    pub cursor_up: Option<String>,
-    pub cursor_down: Option<String>,
-    pub select: Option<String>,
 }
 
 fn default_torrserver_url() -> String {

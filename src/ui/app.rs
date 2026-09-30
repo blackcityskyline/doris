@@ -1244,18 +1244,6 @@ impl App {
         }
     }
 
-    pub fn navigate_first(&mut self) {
-        if let Some(&first) = self.filtered_indices.first() {
-            self.move_selection_to(first);
-        }
-    }
-
-    pub fn navigate_last(&mut self) {
-        if let Some(&last) = self.filtered_indices.last() {
-            self.move_selection_to(last);
-        }
-    }
-
     pub fn quit(&mut self) {
         self.running = false;
     }

@@ -13,13 +13,8 @@ torrserver_url = "http://127.0.0.1:8090"
 # Extension Bridge port (set 0 to disable)
 bridge_port = 14141
 
-# Cookie file path
-cookie_file = "cookies.txt"
-
-# Keybindings (future use)
-# [keybindings]
-# quit = "q"
-# focus_search = "s"
-# cursor_up = "k"
-# cursor_down = "j"
-# select = "enter"
+# Cookie file path. Leave it out to get ~/.config/doris/cookies.txt.
+# A relative path is resolved against this file's directory and rewritten
+# absolute on the next load, so it stays the same file whichever directory
+# doris is started from.
+# cookie_file = "/home/you/.config/doris/cookies.txt"

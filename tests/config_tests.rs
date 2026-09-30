@@ -332,19 +332,6 @@ fn test_config_legacy_browser_mode_alias_still_works() {
     assert_eq!(config.browser_visibility, "gui");
 }
 
-#[test]
-fn test_config_parse_with_keybindings() {
-    let toml_str = r#"
-        [keybindings]
-        quit = "ctrl+x"
-        focus_search = "/"
-    "#;
-    let config: Config = toml::from_str(toml_str).unwrap();
-    let kb = config.keybindings.unwrap();
-    assert_eq!(kb.quit.as_deref(), Some("ctrl+x"));
-    assert_eq!(kb.focus_search.as_deref(), Some("/"));
-}
-
 // --- enabled_sources migration (B8 wave 1 fallout) --------------------------
 
 /// What a config written before wave 1 looks like: it lists the two
