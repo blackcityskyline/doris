@@ -712,9 +712,14 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
         "a fresh app is on the all category: {text}"
     );
 
-    // The right arrow steps forward through the category row.
+    // The right arrow steps forward through the category row and asks
+    // for it -- the click says so, because only the orchestrator can
+    // re-query (the `g` key does the same thing inline).
     let right_arrow = rect.x + rect.width - 1;
-    assert_eq!(app.click_at(rect.y, right_arrow, &mut config), None);
+    assert_eq!(
+        app.click_at(rect.y, right_arrow, &mut config),
+        Some(UiAction::ReaskCategory)
+    );
     assert_eq!(
         app.active_group,
         Some(Group::Movies),
@@ -732,7 +737,10 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
             .map(|(_, r)| *r)
             .expect("the category button")
     };
-    assert_eq!(app.click_at(rect.y, rect.x, &mut config), None);
+    assert_eq!(
+        app.click_at(rect.y, rect.x, &mut config),
+        Some(UiAction::ReaskCategory)
+    );
     assert_eq!(app.active_group, None, "the left arrow steps back to all");
 
     // The name between the arrows is display-only, not a target.
@@ -767,7 +775,10 @@ fn test_the_group_button_still_cycles_the_category() {
             .map(|(_, r)| *r)
             .expect("the group button")
     };
-    assert_eq!(app.click_at(rect.y, rect.x, &mut config), None);
+    assert_eq!(
+        app.click_at(rect.y, rect.x, &mut config),
+        Some(UiAction::ReaskCategory)
+    );
     assert_eq!(app.active_group, Some(Group::Movies));
     assert!(app.group_changed);
 }

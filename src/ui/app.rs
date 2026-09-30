@@ -43,6 +43,9 @@ pub enum UiAction {
     /// config itself, so it has to say so for the orchestrator to
     /// persist it).
     TrackersChanged,
+    /// The Results frame's category arrows were clicked: the same re-ask
+    /// `g` fires, which needs an async caller -- `click_at` has none.
+    ReaskCategory,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -215,6 +218,10 @@ pub struct App {
     /// the user moves the cursor by hand -- a row nobody is standing on
     /// any more is not one to return to.
     pub filter_anchor: Option<usize>,
+    /// Set when a search starts *without* dropping the rows -- see
+    /// [`App::begin_search`]. The first answer of the new round spends
+    /// it, so the table never blanks on the way out.
+    pub pending_clear: bool,
 }
 
 /// Width of the `Src` column in the results table. Fixed on purpose:
@@ -469,6 +476,52 @@ impl App {
             settings_browser_hidden: false,
             filtered_indices: Vec::new(),
             filter_anchor: None,
+            pending_clear: false,
+        }
+    }
+
+    /// The start of a search for `query`, decided in one place: a
+    /// *re-ask* of the query already on screen (a category switch, which
+    /// `g` fires itself now) keeps the rows the user is looking at until
+    /// the first answer of the new round lands -- blanking the table on
+    /// every `g` would trade one wrong answer for a flicker. A different
+    /// query drops them at once: that table is not the one being asked
+    /// about any more.
+    pub fn begin_search(&mut self, query: &str) {
+        let reask = self.search_query.as_deref() == Some(query);
+        self.state = AppState::Searching;
+        self.search_query = Some(query.to_string());
+        self.all_loaded = false;
+        // Whatever a tab switch owed this point is now paid: the search
+        // below runs against the selection as it stands, so Enter goes
+        // back to meaning "play" instead of restarting (`group_changed`
+        // and the older `source_changed` clear here for that reason).
+        self.source_changed = false;
+        self.group_changed = false;
+        if reask && !self.results.is_empty() {
+            self.pending_clear = true;
+        } else {
+            self.drop_results();
+        }
+    }
+
+    /// The rows no longer answer for the selection above them: drop
+    /// them, the cursor with them, and re-match what is left.
+    pub fn drop_results(&mut self) {
+        self.results.clear();
+        self.selected = 0;
+        self.filter_anchor = None;
+        self.pending_clear = false;
+        self.update_filter();
+    }
+
+    /// Spend a `pending_clear` the moment it is certain no answer is
+    /// coming (nothing checked, or nothing to dispatch): holding rows a
+    /// question nobody is answering left behind is the same lie with a
+    /// delay.
+    pub fn take_pending_clear(&mut self) {
+        if self.pending_clear {
+            self.drop_results();
         }
     }
 
@@ -548,10 +601,12 @@ impl App {
     /// Two halves of the same decision: the view is re-derived from the
     /// rows already on screen, so "Movies" means Movies *now* and not
     /// after the next search; and `group_changed` tells Enter that the
-    /// sources still owe the server-side answer. Neither half makes a
-    /// request on its own -- one keypress stays one keypress, and the
-    /// search that follows is the Enter that was always required after
-    /// switching a tab.
+    /// sources still owe the server-side answer. This half makes no
+    /// request on its own -- it has neither an `async` caller nor a
+    /// config to ask with. The re-ask lives in `App::reask_for_category`,
+    /// which every entry point (`g`, `G`, the frame arrows, the `g`
+    /// button) fires immediately after this returns; browse's `b` is the
+    /// one caller that skips it, and it is about to search anyway.
     pub fn set_group(&mut self, group: Option<Group>) {
         if self.active_group == group {
             return;
@@ -915,8 +970,10 @@ impl App {
                 self.cycle_group(false);
             } else if col == rect.x + rect.width.saturating_sub(1) {
                 self.cycle_group(true);
+            } else {
+                return None;
             }
-            return None;
+            return Some(UiAction::ReaskCategory);
         }
         match (id, button.key) {
             (ZoneId::Results, 'f') => {
@@ -925,7 +982,7 @@ impl App {
             }
             (ZoneId::Results, 'g') => {
                 self.cycle_group(true);
-                None
+                Some(UiAction::ReaskCategory)
             }
             (ZoneId::Results, '⏎') => Some(UiAction::Play),
             (ZoneId::Results, 'd') => Some(UiAction::Download),

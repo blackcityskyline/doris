@@ -260,7 +260,11 @@ words -- a token that silently matches nothing reads as a broken app.
   `disable_presets`; that first default preset is what hides Torrent.
 - `Tab`/`Shift+Tab`: cycle zone focus
 - `j`/`k`/`Up`/`Down`: navigate within focused zone (`j`/`k` only when Options -> general -> Vim keys is on; arrows always work)
-- `g`/`G`: cycle the category (forward/back; an empty query is browse mode, not a category) -- the `◀ name ▶` button on the Results frame does the same by mouse
+- `g`/`G`: cycle the category (forward/back; an empty query is browse mode, not a category) --
+  the `◀ name ▶` button on the Results frame does the same by mouse -- and **re-ask the
+  checked sources for it**: rutracker/rutor/x1337x can only tag a row with the category they
+  were *asked* for, so an `all`-searched table filtered to Movies would hide them. The re-ask
+  keeps the old rows on screen until the first answer of the new round lands
 - `p`/`d`: with the Torrent zone focused, pause-or-resume / remove the tracked torrent; with Results focused, `d` downloads the row's `.torrent` to disk
 - `v`: with Results focused, log the selected row's details to the Log zone
 - `Esc`: close modal / exit input mode / exit filter mode

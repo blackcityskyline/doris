@@ -48,6 +48,10 @@ pub fn apply_source_done(
         Some(err) => Err(err.to_string()),
     };
     ui.add_log(&source_outcome_line(source, &outcome));
+    // The first answer of a re-ask is what retires the old rows: they
+    // were kept on screen while the new ones travelled, and mixing the
+    // two generations would put rows of two questions in one table.
+    ui.take_pending_clear();
     ui.results.extend(items);
     ui.update_filter();
     true

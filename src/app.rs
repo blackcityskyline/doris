@@ -671,6 +671,7 @@ impl App {
                 } else if self.ui.modal == Modal::None {
                     match self.ui.click_at(mouse.row, mouse.column, &mut self.config) {
                         Some(UiAction::TrackersChanged) => self.persist_config(),
+                        Some(UiAction::ReaskCategory) => self.reask_for_category().await,
                         Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,
                         Some(UiAction::Remove) => self.remove_active_torrent().await,
                         Some(UiAction::Download) => self.download_selected_to_disk().await,
@@ -1447,14 +1448,16 @@ impl App {
                 self.show_selected_info();
             }
             // The category row's keys, next to `g`/`G` and gated the same
-            // way: `g` steps forward, `G` (shift) back. Both only ever
-            // move the row and re-derive the view -- the search still
-            // waits for Enter, exactly as it does after a category switch.
+            // way: `g` steps forward, `G` (shift) back. Both move the row
+            // *and* re-ask the sources for it -- a category is a request,
+            // not only a view (see `reask_for_category`).
             KeyCode::Char('g') if self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_group(true);
+                self.reask_for_category().await;
             }
             KeyCode::Char('G') if self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_group(false);
+                self.reask_for_category().await;
             }
             // The Trackers panel's own keys: `j`/`k` move the cursor
             // (wrapping, like every other list in the app), Enter switches
@@ -1731,25 +1734,32 @@ impl App {
         });
     }
 
+    /// A category switch asks again rather than re-labelling what is
+    /// already on screen. Two sources can only tag a row with the
+    /// category they were *asked* for (`rutracker`, `rutor`, `x1337x` do
+    /// `item.group = category`), so rows an "all" search fetched carry
+    /// no category at all: switching to Movies afterwards used to hide
+    /// them and show only the sources that read the category off the
+    /// row -- the reported "rutracker/rutor live in `all` only" bug.
+    ///
+    /// Nothing to re-ask with before the first search: the category is
+    /// then a plain filter, and Enter keeps the debt it always had.
+    async fn reask_for_category(&mut self) {
+        if let Some(query) = self.ui.search_query.clone() {
+            self.start_search(query).await;
+        }
+    }
+
     async fn start_search(&mut self, query: String) {
-        self.ui.state = AppState::Searching;
-        self.ui.search_query = Some(query.clone());
-        self.ui.all_loaded = false;
-        // Whatever a tab switch owed this point is now paid: the search
-        // below runs against the selection as it stands, so Enter must
-        // go back to meaning "play" instead of restarting (B6's
-        // `group_changed` and the older `source_changed` clear here for
-        // the same reason).
-        self.ui.source_changed = false;
-        self.ui.group_changed = false;
+        // The row drop (and the flags Enter reads) belong to
+        // `begin_search`, which decides it from whether this is a new
+        // query or a re-ask of the one on screen.
+        self.ui.begin_search(&query);
         // Rows now arrive one source at a time (B3), so there is no
         // single moment where the old list gets replaced by the new one:
-        // the table empties here, and each source appends into it. The
-        // per-source records belong to the old query and go with it.
-        self.ui.results.clear();
-        self.ui.selected = 0;
-        self.ui.filter_anchor = None;
-        self.ui.update_filter();
+        // the table empties on the first answer to arrive, and each
+        // source appends into it. The per-source records belong to the
+        // old query and go with it.
         self.ui.source_status.clear();
         self.source_has_more.clear();
         self.source_offsets.clear();
@@ -1812,6 +1822,10 @@ impl App {
             };
             self.ui.add_log(&reason);
             self.ui.state = AppState::Idle;
+            // No source was even asked, so no answer will arrive to
+            // spend a deferred row drop: spend it here or the table
+            // keeps rows for a question that was refused outright.
+            self.ui.take_pending_clear();
             return;
         }
 
@@ -1820,7 +1834,9 @@ impl App {
         if plan.is_empty() {
             // Every selected source already reported its last page, so no
             // SourceDone is coming: close the generation here instead of
-            // leaving the UI Searching.
+            // leaving the UI Searching -- and spend the deferred row
+            // drop, which the answer that will never arrive would have.
+            self.ui.take_pending_clear();
             finish_search(
                 &mut self.ui,
                 generation,
@@ -2576,6 +2592,75 @@ mod key_routing_tests {
         app.handle_key(press(KeyCode::Char('g'))).await.expect("g");
         assert_eq!(app.ui.active_group, parked, "typing must not move it");
         assert_eq!(app.ui.search_input, "g", "the letter belongs to the query");
+    }
+
+    /// A category is a request, not only a view. `g` re-asks the
+    /// sources for the category it just selected, because rutracker,
+    /// rutor and x1337x can only tag a row with the category they were
+    /// *asked* for -- the rows an "all" search left behind carry no
+    /// category, and showing them under Movies was the reported bug.
+    ///
+    /// Nothing is checked in this fixture, so dispatch has nothing to
+    /// send; what the test reads is that the re-ask happened: the log
+    /// line names the new category, the debt `group_changed` held is
+    /// paid, and the untagged row is gone rather than shown under
+    /// something it was never filed under.
+    #[tokio::test]
+    async fn switching_the_category_reasks_the_sources() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.zones.focused = ZoneId::Results;
+        app.ui.group_tabs = vec![None, Some(source::Group::Movies)];
+        app.ui.search_query = Some("world war z".into());
+        app.ui.results = vec![crate::sources::models::TorrentItem {
+            title: "untagged row".into(),
+            ..Default::default()
+        }];
+        app.ui.update_filter();
+        assert_eq!(app.ui.active_group, None, "the fixture starts on all");
+
+        app.handle_key(press(KeyCode::Char('g'))).await.expect("g");
+
+        assert_eq!(
+            app.ui.active_group,
+            Some(source::Group::Movies),
+            "the category moved"
+        );
+        assert!(
+            !app.ui.group_changed,
+            "the re-ask fired on the spot, so Enter owes nothing"
+        );
+        let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            logs.contains("Searching 'world war z' [Movies]"),
+            "the new search names the new category:\n{logs}"
+        );
+        assert!(
+            app.ui.results.is_empty(),
+            "the row for the old category does not answer for the new one"
+        );
+    }
+
+    /// Before anything has been searched there is no query to re-ask
+    /// with: the category is only a filter, and Enter keeps the debt it
+    /// always had (nothing to restart, nothing to play).
+    #[tokio::test]
+    async fn switching_the_category_before_any_search_does_not_dispatch() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.zones.focused = ZoneId::Results;
+        app.ui.group_tabs = vec![None, Some(source::Group::Movies)];
+
+        app.handle_key(press(KeyCode::Char('g'))).await.expect("g");
+
+        assert_eq!(app.ui.active_group, Some(source::Group::Movies));
+        assert!(
+            app.ui.group_changed,
+            "nothing was asked, so Enter still owes the search"
+        );
+        let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            !logs.contains("Searching '"),
+            "and no search was announced:\n{logs}"
+        );
     }
 
     /// The category travels with the search: it is named in the line the
