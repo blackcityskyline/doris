@@ -1,36 +1,24 @@
-//! Nyaa's RSS feed parsed from the markup as
-//! it actually came back on 25.09.2026 -- one live response of 75 items,
-//! captured before `ddos-guard` started answering 504 to this network on
-//! every path (curl, the harness fetch, a plain browser UA).
+//! Nyaa's RSS feed, parsed from the markup as it actually came back on
+//! 25.09.2026 -- one live response of 75 items, captured before
+//! `ddos-guard` started answering 504 to this network on every path.
 //!
-//! What that response established, and what the code therefore claims:
+//! - **One `<item>` per release, everything we show inside it.** All of
+//!   title, hash, size, seeders, leechers, category id, pubDate and both
+//!   links were present in 75 of 75, so all are filled in -- links
+//!   included, because a link we *saw* is markup, and whether it answers
+//!   is the same question as whether search itself answers.
+//! - **No magnets**: 0 of 75 carry one, so a row's magnet is built from
+//!   its hash with the shared trackers.
+//! - **Every category is requested** (`c=0_0`), so a row's group comes
+//!   from its own `nyaa:categoryId` rather than from the query: `1_*`
+//!   *is* anime on the site, and whatever else `c=0_0` drags in (Audio)
+//!   has no group to claim and stays `None`.
 //!
-//! - **One `<item>` per release, everything we show inside it** --
-//!   `<title>` (HTML entities, never CDATA), `<nyaa:infoHash>` (hex40),
-//!   `nyaa:size` as a human string (`6.6 GiB`), `nyaa:seeders` /
-//!   `nyaa:leechers`, `nyaa:categoryId`, an RFC-2822 `<pubDate>`,
-//!   `<link>` pointing at the `.torrent` file, and
-//!   `<guid isPermaLink="true">` at the view page. All present in 75 of
-//!   75 items, so all are filled in -- links included, because a link we
-//!   *saw* is markup; whether it answers is the same question as whether
-//!   search itself answers.
-//! - **No magnets**: 0 of 75 items carry one. nyaa ships hashes, so the
-//!   row's magnet is built from the hash with the shared trackers
-//!   (`build_magnet`) -- what torio does for the same feed.
-//! - **Every category is requested** (`c=0_0`, the wave-2 decision), so
-//!   a row's group comes from its own `nyaa:categoryId` rather than from
-//!   the query: category `1_*` *is* anime on the site (1_2/1_3/1_4 seen
-//!   live), and whatever else `c=0_0` drags in (2_1/2_2 = Audio) has no
-//!   group to claim and stays `None`.
-//!
-//! What could **not** be verified while the host is down, and is
+//! What could **not** be verified while the host was down, and is
 //! consequently not claimed anywhere in this file: pagination (`&p=2`),
-//! an empty-query feed (browse), and the reachability of the `.torrent`
-//! and view links. Hence `has_more: false` (one feed page, cursor
-//! unknown -- not "there is no second page"), and `supports_browse`
-//! false. Returning a second page on a hunch would
-//! repeat eztv's near-miss from the other side: an empty table reads as
-//! "no results", and a cursor that does not move reads as a broken app.
+//! an empty-query feed, and the reachability of the `.torrent` and view
+//! links. Hence `has_more: false` -- one feed page with an unknown
+//! cursor, not "there is no second page" -- and `supports_browse` false.
 
 use anyhow::Result;
 use async_trait::async_trait;

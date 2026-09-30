@@ -1,69 +1,36 @@
-//! Rutor search + download (host: rutor.info). Unlike Rutracker, this
-//! needs no browser session, no login, and no cookies -- confirmed live
-//! (September 2026): search results and .torrent downloads are both
-//! plain, unauthenticated HTTP GETs. This makes it a much lighter-weight
-//! `Source` than Rutracker's, and a good first proof that the `Source`
-//! abstraction actually pays off: adding a second
-//! real source didn't require touching the browser layer at all.
+//! Rutor search + download (host: rutor.info). Plain, unauthenticated
+//! HTTP -- no browser session, no login, no cookies (confirmed live,
+//! September 2026), which makes it the lightest `Source` in the tree.
 //!
-//! Why rutor.info and not rutor.org (live check, 25.09.2026): both
-//! mirrors serve identical search results and share torrent ids, but
-//! rutor.org now answers `302 -> /login` for `/download/{id}` and
-//! `/magnet/{id}` to a logged-out client -- downloading there returns an
-//! HTML login page instead of a .torrent, which is exactly what got
-//! uploaded to TorrServer. On rutor.info the same `/download/{id}`
-//! answers `200 application/x-bittorrent` (redirecting to
-//! `d.rutor.info`), and rows carry an inline `magnet:?xt=urn:btih:...`
-//! link rutor.org does not have.
+//! **Why rutor.info and not rutor.org.** Both mirrors serve identical
+//! results and share torrent ids, but rutor.org answers `302 -> /login`
+//! for `/download/{id}` and `/magnet/{id}` to a logged-out client -- a
+//! download there returns an HTML login page, and an HTML login page was
+//! what once got uploaded to TorrServer. rutor.info answers `200
+//! application/x-bittorrent` on the same path and carries an inline
+//! magnet per row, which rutor.org does not.
 //!
-//! Page structure (verified by fetching both mirrors and a live search
-//! results page while writing this, not guessed at from memory):
-//! - Search: `GET {BASE}/search/{page}/{category}/000/0/{urlencoded query}`,
-//!   `page` starts at 1, `category` 0 = all categories. The site's own
-//!   advanced form (`/search`) builds the same URL: its third segment is
-//!   `{search_method}{search_in}0` (000 = "фразу полностью", в титуле)
-//!   and the fourth is a sort id -- neither changes what matches, see
-//!   [`RutorSearcher::search_page`] for rutor's real (AND, stopword-
-//!   sensitive) semantics and the fallback built on top of them.
-//! - Each result row has a title link `<a href="/torrent/{id}[/{slug}]">`
-//!   (only rutor.info adds the slug; the id is the first path segment
-//!   either way), a download link (protocol-relative
-//!   `//d.rutor.info/download/{id}` on rutor.info), and a magnet link
-//!   (`magnet:?xt=urn:btih:{40 hex}...` inline on rutor.info). The
-//!   parser builds download/page URLs from the numeric id plus
-//!   `RutorSearcher::BASE` instead of copying the row's hrefs, so the
-//!   same code works on either mirror.
-//! - Size ("2.27 GB" / "82.73&nbsp;MB"), a seed count after an
-//!   `alt="S"` up-arrow icon, and a peer/leech count after an
-//!   `alt="L"` down-arrow icon all live in the same table row as the
-//!   title link. Live markup wraps the counts as
-//!   `<img ... alt="S">&nbsp;6` (seeds) and
-//!   `<img ... alt="L"><span class="red">&nbsp;2</span>` (peers) -- note
-//!   the literal `&nbsp;` entity and the extra `<span>` before peers.
-//! - The date cell is the first `<td>`: `06 Сен 26` with plain spaces on
-//!   rutor.org, `06&nbsp;Сен&nbsp;26` (entity separators) on
-//!   rutor.info -- the parser accepts both and normalizes to spaces.
-//! - A page holds a fixed 100 rows (verified: "matrix" = 219 hits ->
-//!   pages of 100/100/22/0 rows; page 0 and page 1 are the same page).
+//! **A category is a fan-out over rubric ids, not a comma list.** The
+//! search URL filters server-side, while a row carries no category at
+//! all -- the rubric is named only on the torrent's own page. So a
+//! selected group becomes one GET per id of `GROUP_IDS`, asked one after
+//! another (rutor answers 503 under load, so no burst), merged and
+//! deduped by `page_url`, and each row claims the category that fetched
+//! it. A comma list is not a shortcut: live, `cat=1,5` answered
+//! byte-for-byte the rows of `cat=1` and silently lost all 96 of `cat=5`,
+//! while an unknown id answers 0 rows rather than everything. No
+//! selection keeps `cat=0` and rows claim nothing.
 //!
-//! - **B6: a category is a fan-out over rubric ids, not a comma list**
-//!   (live 26.09.2026): `/search/{page}/{cat}/000/0/{q}` filters
-//!   server-side, while a row carries no category at all -- the rubric
-//!   is named only on the torrent's own page ("Категория Зарубежные
-//!   фильмы"). So a selected group becomes one GET per id of
-//!   [`GROUP_IDS`], asked one after another (rutor answers 503 under
-//!   load, so no burst), merged and deduped by `page_url` -- and the
-//!   rows claim the category that fetched them, which the site's own
-//!   rubric just proved. A comma list is not a shortcut: live,
-//!   `cat=1,5` answered byte-for-byte the rows of `cat=1` and silently
-//!   lost all 96 of `cat=5`, while an unknown id (`cat=999`) answers 0
-//!   rows rather than everything. No selection keeps `cat=0` and rows
-//!   claim nothing -- the honesty gap `source.rs` records.
+//! Markup notes worth knowing before changing the parser: the counts sit
+//! in the title's own row behind `alt="S"` / `alt="L"` icons with a
+//! literal `&nbsp;` entity and an extra `<span>` before peers; the date
+//! cell is the first `<td>` and uses `06 Сен 26` on one mirror and
+//! `06&nbsp;Сен&nbsp;26` on the other (both accepted, normalised to
+//! spaces); a page holds exactly 100 rows; and rows carry no category,
+//! which is why the fan-out above claims one on their behalf.
 //!
-//! If rutor changes its markup, this is the file (and
-//! `tests/rutor_parse_tests.rs`, which pins down the exact row shape seen
-//! live) to fix -- same spirit as the TorrServer JSON-shape caveat
-//! above.
+//! If the markup changes, this file and `tests/rutor_parse_tests.rs`,
+//! which pins the exact row shape seen live, are what to fix.
 
 use anyhow::Result;
 use regex::Regex;

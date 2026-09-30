@@ -1,61 +1,41 @@
-//! NNM-Club over its tracker HTML parsed from
-//! the markup as it came back live on 25.09.2026: windows-1251 in both
-//! the header and the `<meta>`, cloudflare-fronted, but a browser UA
-//! alone was enough -- no JS challenge, no login, no cookie jar.
+//! NNM-Club over its tracker HTML, parsed from the markup as it came
+//! back live on 25.09.2026: windows-1251 in both the header and the
+//! `<meta>`, cloudflare-fronted, but a browser UA alone was enough -- no
+//! JS challenge, no login, no cookie jar.
 //!
-//! What the live pages established, and what the code therefore does:
+//! Five things the live pages established, which the code therefore does:
 //!
-//! - **The search page is enough.** Each result row carries its title
-//!   (and `viewtopic.php?t=`), a `download.php?id=` link, raw bytes
-//!   inside `<u>`, seeders, leechers, and the topic's own timestamp in
-//!   a second `<u>` -- so no row needs a second request. torio fetches
-//!   up to eight *detail* pages per search just to scrape a magnet out
-//!   of them; doris does not have to: `spawn_stream` already falls back
-//!   to downloading the `.torrent` and handing the bytes to TorrServer,
-//!   and `download.php?id=` was checked live to answer
-//!   `302 -> application/x-bittorrent` with a real bencoded file.
-//!   Decision with the user; the cost is that rows carry no
-//!   `info_hash`, which `dedupe_by_hash` explicitly lets through
-//!   untouched rather than collapsing.
+//! - **One request per search.** Each row carries its title, a
+//!   `download.php?id=` link, raw bytes, seeders, leechers and its own
+//!   timestamp, so no row needs a second request; `download.php?id=` was
+//!   checked live to answer `302 -> application/x-bittorrent` with a real
+//!   bencoded file. The cost is that rows carry no `info_hash`, which
+//!   `dedupe_by_hash` lets through untouched rather than collapsing.
 //!
-//! - **One URL for a query, one for browse, `start=` for page two.**
-//!   `f=-1&nm=<q>` for a query (multi-word: the site matches *every*
-//!   token -- live-checked, 2/2 rows for "frieren 2026"), and
-//!   `f=-1&o=2&sd=desc` for browse (50 newest topics). Both paginate at
-//!   50, verified by fetching page 2 of each and comparing topic ids:
-//!   zero overlap. Hence `has_more` on a full page and
-//!   `next_offset = offset + 50`, spelled out rather than derived from
-//!   the row count so a single dropped row cannot misalign the cursor
-//!   -- the lesson yts taught this codebase.
+//! - **`start=` for page two, not an offset derived from rows.** Both the
+//!   query and browse URLs paginate at 50 with zero id overlap between
+//!   pages, so `next_offset = offset + 50` is spelled out: a single
+//!   dropped row must not be able to misalign the cursor.
 //!
-//! - **A group per row, and a group per request (B6).** The row carries
-//!   its own forum cell (`tracker.php?f=<id>`, live in every row), and
-//!   the ids behind every group come from one live inventory of the
-//!   `<select name="f[]">` on `tracker.php` -- 698 forums in 18
-//!   optgroups, parent sections holding no rows of their own because
-//!   the tracker lists leaves only. So attribution is a table lookup
-//!   like nyaa's: a tab switch filters rows already on screen, and a
-//!   category request asks the tracker for *that group's* forums in a
-//!   single GET (`f%5B%5D=` repeated -- accepted live, all of them),
-//!   which is why this source needs none of rutor's fan-out: rutor
-//!   silently keeps the first rubric id of a multi-id request, this
-//!   site honours the whole list. Sections outside the four groups
-//!   (music, books, programs) map to no group and live in "all" only,
-//!   like a row whose forum id the table does not know.
+//! - **A group per row, and one request per group.** Every row carries
+//!   its own forum id, and the ids behind each group come from a live
+//!   inventory of the forum select (698 forums in 18 optgroups; parent
+//!   sections hold no rows). So a category request asks the tracker for
+//!   that group's forums in a single GET with `f[]=` repeated -- the
+//!   whole list is honoured, which is why this source needs none of
+//!   rutor's fan-out. Sections outside the four groups (music, books,
+//!   programs) map to no group and live in "all" only.
 //!
 //! - **Dead rows are rows.** Roughly two thirds of a browse page came
-//!   back with no seeders, and the site spells that by replacing the
-//!   seeder cell's `title="Seeders"` with `title=" Last seen: ..."`
-//!   and emptying the cell (`class="seedmed"` stays). They are kept as
-//!   rows with `seeds = 0` -- which is also what keeps a full page
-//!   reading as a full page, and pagination alive with it.
-//!   See `nnmclub_parse_tests` for the regression.
+//!   back with no seeders, spelled by the site as an emptied cell whose
+//!   title changed from `Seeders` to `Last seen: ...`. They are kept with
+//!   `seeds = 0`, which is also what keeps a full page reading as a full
+//!   page and pagination alive with it. Regression in `nnmclub_parse_tests`.
 //!
 //! - **A miss is a miss, and a block is an error.** A query with no
-//!   matches answers 200 with the results table present and
-//!   `Не найдено` inside it (live), so zero rows mean an empty page;
-//!   a page with no results table at all means something else -- a
-//!   challenge, a moved layout, a login wall -- and says so, because to
+//!   matches answers 200 with the results table present and `Не найдено`
+//!   inside it; a page with no results table at all is something else --
+//!   a challenge, a moved layout, a login wall -- and says so, because to
 //!   a user those three all look like "the tracker found nothing".
 
 use std::sync::OnceLock;

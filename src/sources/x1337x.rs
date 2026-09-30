@@ -1,109 +1,38 @@
-//! 1337x over its search HTML shaped by live
-//! probes on 25.09.2026 -- three of which are the reason this source
-//! differs from every other one in the tree.
+//! 1337x over its search HTML, shaped by live probes on 25.09.2026.
+//! Four things about this site are not visible from the code.
 //!
-//! - **Mirrors, and why `requires_browser` is false.** torio's four
-//!   hosts (`1337x.to`, `1337x.st`, `x1337x.ws`, `1337xx.to`) were all
-//!   probed from this network: the first three answer **403 with a
-//!   Cloudflare JS challenge** (`cf-mitigated: challenge`, "Just a
-//!   moment...") to any plain client, while `1337xx.to` 301s to
-//!   `www.1337xx.to`, and that one answers **200 on every path
-//!   checked** -- search, category-search, detail, `/home/`,
-//!   `/popular-*` -- to the very same client. So the challenge belongs
-//!   to those mirrors rather than to the site or the network, the
-//!   mirror that answered leads the failover order, and there is no
-//!   browser to launch (decision; `requires_browser` said `true` in the
-//!   registry until these probes came back).
+//! - **`requires_browser` is false because of one mirror, not because of
+//!   the site.** Three of the four hosts answer 403 with a Cloudflare JS
+//!   challenge to any plain client; `1337xx.to` answers 200 on every path
+//!   checked. The challenge belongs to those mirrors, so the one that
+//!   answered leads the failover order and there is no browser to launch.
 //!
-//! - **The category slot is the site's own path** (B6, live
-//!   26.09.2026): `/category-search/<q>/<label>/<page>/` answers with
-//!   rows whose `/sub/` links are *all* the requested label -- `matrix`
-//!   came back 20/20 `movies`, 20/20 `tv`, 11/11 `games`, 1/1 `anime`,
-//!   while a made-up label answers 0 rows -- and page 2 is disjoint
-//!   from page 1, so the same page cursor keeps its meaning. Browse
-//!   has the matching slot in `/popular-<label>/` (22/21/23/2 rows,
-//!   likewise all one `/sub/`). `None` keeps `/search/` and `/home/`.
-//!   A row fetched *inside* a selected category claims that category;
-//!   with no selection there is nothing to claim, and reading an
-//!   unfiltered row's `/sub/` link was left undone rather than
-//!   guessed (the honesty gap `source.rs` pins down).
+//! - **The engine ORs a multi-word query, so the client filters.** Live:
+//!   `frieren 2026` and `2026 frieren` both return 60 rows containing
+//!   "2026" and none containing "frieren", while `frieren` alone returns
+//!   20 of 20. Hence a *one-word* query is trusted exactly as answered
+//!   (the engine also matches on metadata -- 8 of 20 rows for `frieren
+//!   crack` carry neither word in the title, and dropping those would
+//!   delete rows the site vouched for), and a longer one keeps only rows
+//!   carrying every meaningful word. That filter is what stops a "Games"
+//!   tab answering in repacks of other titles; `witcher s03` keeps 4 of 20,
+//!   while `dune 1080p` keeps none on any page checked. An empty page is
+//!   then the honest answer, and `needs_more` is the way out -- it does
+//!   not need rows to scroll, so Down still fetches page 2.
 //!
-//! - **The row carries the whole table.** Title plus
-//!   `/torrent/<id>/<slug>/`, seeders, leechers, size, uploader *and
-//!   the date* (`Oct. 01st  '22` -- the same shape torio reads off the
-//!   detail page as "Date uploaded"). Every column fills from the
-//!   search page alone, so neither torio's eight detail fetches per
-//!   search nor the one shape below need to be in anybody's way.
+//! - **The list's freshest rows show a time instead of a date.** 23 of
+//!   672 live `coll-date` cells read `03:15am`, and those rows' own pages
+//!   say `Date uploaded: Sep. 23rd '26`. The day exists; the list does
+//!   not spell it out for recent uploads. Only rows the list gave no
+//!   `added` for fetch their own page, so a search pays nothing and
+//!   browse pays a handful.
 //!
-//! - **The list's freshest rows show a time instead of a date**
-//!   (decision with the user): 23 of the 672 live `coll-date` cells
-//!   read `03:15am` -- 11 of the 78 rows on `/home/`, and none at all
-//!   on any search page that day -- and fetching those rows' own pages
-//!   showed `Date uploaded: Sep. 23rd '26` behind every one of them.
-//!   The day exists; the list just does not spell it out for recent
-//!   uploads. torio never meets this because it reads the date off a
-//!   detail page for *every* row, while here it is **those rows and
-//!   only those** -- detected by the list having given them no `added`
-//!   -- that fetch their own page, four at a time, for `Date
-//!   uploaded`. Nothing extra for a query, a handful of requests for
-//!   browse, and the date sort keeps working for exactly the rows a
-//!   user sorts toward.
-//!
-//! - **No `.torrent` exists anywhere.** 1337x is an aggregator: a
-//!   detail page answers 200 with a magnet (verified live on Dune 2021,
-//!   btih `4d165eae...`) and no download link at all. The link
-//!   therefore arrives from `resolve_magnet` at *play* time -- one
-//!   request for the one row somebody picks, instead of torio's fan-out
-//!   that leaves the un-fetched rows unplayable (decision, the commit
-//!   that added that method). A row arrives with neither `magnet` nor
-//!   `download_url` nor `info_hash`, which `dedupe_by_hash` lets
-//!   through untouched, as with nnmclub.
-//!
-//! - **The engine ORs a multi-word query, so the client filters**
-//!   (decision): live, `frieren 2026` and `2026 frieren` both return
-//!   60 rows containing "2026" and *zero* containing "frieren", while
-//!   `frieren` alone returns 20 of 20. Hence a one-word query is
-//!   trusted exactly as answered -- the engine also matches on
-//!   metadata, 8 of the 20 rows for `frieren crack` carry neither word
-//!   in the title, and filtering those away would delete rows the site
-//!   vouched for -- and a longer query keeps only the rows carrying
-//!   every meaningful word (stop words, as torio lists them).
-//!
-//!   torio runs the same test over its rows, but it reads one
-//!   *category* page, keeps at most eight rows and never pages -- so
-//!   it never meets what a page-wide filter does here. Live:
-//!   `witcher s03` keeps 4 of 20 (the filter earning its keep), while
-//!   `dune 1080p`, `frieren 2026` and `frieren crack` keep **none** on
-//!   every page checked (5 pages of `dune 1080p`, 12 of
-//!   `frieren 2026`, 3 of `frieren crack` -- and `/category-search/`
-//!   answers the same junk). An empty page is therefore the honest
-//!   answer rather than something to paper over: the way out is
-//!   `needs_more`, which no longer needs rows to scroll, so Down fetches
-//!   page 2 (or stops, once the server's pages run out). The raw-page
-//!   fallback this source used to have is what filled a category tab
-//!   with rows the query never mentioned -- a "Games" search answering
-//!   in repacks of other titles.
-//!
-//! - **A page number in an offset costume.** `/search/<q>/<N>/` steps
-//!   by pages of 20 (pages 1 and 2 of `dune` share zero rows), so
-//!   `next_offset = offset + 20` is spelled out rather than counted
-//!   from the rows, and `has_more` is read off the *server's* page
-//!   **before** the filter: a full page trimmed to three rows is still
-//!   a full page, or pagination dies the first time somebody searches
-//!   two words -- the nnmclub dead-row lesson, applied to a second
-//!   mechanism.
-//!
-//! - **Browse is `/home/`.** 78 rows across the site's per-category
-//!   sections, the same markup, and no pager at all -- so browse never
-//!   promises a next page.
-//!
-//! - **A miss is a miss, and a block is an error.** A query with no
-//!   matches answers 200 with the table header present and no rows
-//!   (live: `zzqqxxnothing123`), so zero rows mean an empty page; a
-//!   page with no `table-list` at all is something else -- a challenge
-//!   that answered 200, a moved layout -- and is an error, which is
-//!   also what lets `first_ok` try the next mirror instead of calling
-//!   all of them "no results".
+//! - **A miss is a miss and a block is an error.** A query with no
+//!   matches answers 200 with the header present and no rows, so zero
+//!   rows mean an empty page; a page with no `table-list` at all is
+//!   something else -- a challenge that answered 200, a moved layout --
+//!   and is an error. That is also what lets `first_ok` try the next
+//!   mirror instead of calling all of them "no results".
 
 use std::sync::OnceLock;
 
