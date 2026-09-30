@@ -23,6 +23,34 @@ const KEY_FLAGS: KeyboardEnhancementFlags = KeyboardEnhancementFlags::DISAMBIGUA
 /// pushed and a plain VT gets no sequence it never saw arrive.
 static ENHANCED: AtomicBool = AtomicBool::new(false);
 
+/// DEC private mode 2026, synchronized output: the terminal buffers
+/// everything a frame writes and presents it in one go, so a frame is
+/// never shown half-drawn. Without it a redraw that takes longer than
+/// one frame period (a search answering, a directory with many rows)
+/// shows the old and the new content side by side on the way through.
+///
+/// Terminals that do not implement it ignore the pair, which is why the
+/// option exists at all: some users see the tearing, some would rather
+/// have the few microseconds back.
+///
+/// These are two functions rather than a guard object because a guard
+/// would have to hold the backend borrowed across `Terminal::draw`, and
+/// the draw cannot then run. Split this way the borrow ends before the
+/// frame and starts again after, and the closing sequence is written
+/// after `draw` returns whatever it returned -- a guard's one advantage
+/// was the same, and the two borrows give it without the type.
+pub const SYNC_BEGIN: &str = "\x1b[?2026h";
+pub const SYNC_END: &str = "\x1b[?2026l";
+
+/// Write a raw sequence straight to the terminal, past ratatui's buffer.
+///
+/// Errors are dropped: a terminal that will not take the mode gets no
+/// synchronized output, which is the state it was already in.
+fn write_raw(w: &mut impl Write, seq: &str) {
+    let _ = w.write_all(seq.as_bytes());
+    let _ = w.flush();
+}
+
 pub fn init(enhance_keys: bool) -> Result<Terminal> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -41,6 +69,19 @@ pub fn restore(terminal: &mut Terminal) -> Result<()> {
     )?;
     terminal.show_cursor()?;
     Ok(())
+}
+
+/// Start buffering this frame. Paired with [`end_sync`], which must be
+/// called even if the draw in between failed.
+pub fn begin_sync(terminal: &mut Terminal) {
+    write_raw(terminal.backend_mut(), SYNC_BEGIN);
+}
+
+/// Stop buffering, so the terminal presents the frame. Skipping this after
+/// a [`begin_sync`] leaves the terminal in a state the user cannot get
+/// out of.
+pub fn end_sync(terminal: &mut Terminal) {
+    write_raw(terminal.backend_mut(), SYNC_END);
 }
 
 /// Alternate screen and mouse capture, then the keyboard protocol --
@@ -141,5 +182,55 @@ mod tests {
             out.contains("\x1b[?1049l"),
             "but the screen still goes: {out:?}"
         );
+    }
+
+    /// Synchronized output is one private mode set and reset. Getting the
+    /// parameters wrong is not a syntax error the terminal complains
+    /// about -- it is a mode that never turns on, or worse one that turns
+    /// on and is never reset, leaving the terminal buffering with no way
+    /// out. So the bytes are pinned.
+    #[test]
+    fn synchronized_output_is_a_dec_2026_pair() {
+        assert_eq!(SYNC_BEGIN, "\x1b[?2026h", "begin: set mode 2026");
+        assert_eq!(SYNC_END, "\x1b[?2026l", "end: reset the same mode");
+    }
+
+    /// Every begin owes an end. `write_raw` is what both go through, and
+    /// it drops a write error rather than propagating it -- a terminal
+    /// that will not take the mode just does not get the feature -- so
+    /// what has to be checked here is that it writes and flushes, since a
+    /// buffered mode change that never reaches the terminal is the same
+    /// as no feature at all.
+    #[test]
+    fn the_sequence_is_written_and_flushed() {
+        /// A writer that records what it was asked to do.
+        struct Recorder {
+            bytes: Vec<u8>,
+            flushes: usize,
+        }
+        impl Write for Recorder {
+            fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+                self.bytes.extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                self.flushes += 1;
+                Ok(())
+            }
+        }
+
+        let mut r = Recorder {
+            bytes: Vec::new(),
+            flushes: 0,
+        };
+        write_raw(&mut r, SYNC_BEGIN);
+        write_raw(&mut r, SYNC_END);
+
+        assert_eq!(
+            String::from_utf8_lossy(&r.bytes),
+            format!("{SYNC_BEGIN}{SYNC_END}"),
+            "both, in order"
+        );
+        assert_eq!(r.flushes, 2, "each one is flushed as it is written");
     }
 }

@@ -110,16 +110,9 @@ pub struct Config {
     pub download_dir_custom_2: String,
     #[serde(default)]
     pub download_dir_custom_3: String,
-    #[serde(default)]
-    pub download_sequential: bool,
-    /// 0 means unlimited. Not yet wired to TorrServer's API -- see
-    /// ROADMAP.md Phase 7 (`torrent::Manager` is meant to own all
-    /// TorrServer interaction instead of piecemeal additions to the thin
-    /// client in `torrserver/api.rs`).
-    #[serde(default)]
-    pub download_speed_limit_kbps: u32,
-    #[serde(default)]
-    pub upload_speed_limit_kbps: u32,
+    /// Stop the download when doris exits, instead of leaving it running
+    /// on TorrServer. Kept beside the download options because that is
+    /// what it governs.
     #[serde(default = "default_true")]
     pub close_torrent_core_on_exit: bool,
 }
@@ -159,9 +152,6 @@ impl Default for Config {
             download_dir_custom_1: String::new(),
             download_dir_custom_2: String::new(),
             download_dir_custom_3: String::new(),
-            download_sequential: false,
-            download_speed_limit_kbps: 0,
-            upload_speed_limit_kbps: 0,
             close_torrent_core_on_exit: true,
         }
     }

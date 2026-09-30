@@ -67,9 +67,6 @@ pub enum SettingsAction {
     CheckTorrserverStatus,
     ToggleDownloadEnabled,
     CycleDownloadDirMode,
-    ToggleDownloadSequential,
-    CycleDownloadSpeedLimit,
-    CycleUploadSpeedLimit,
     ToggleCloseTorrentCoreOnExit,
     RunHealthCheck,
     OpenLog,
@@ -586,57 +583,16 @@ impl App {
                             action: SettingsAction::Close,
                         },
                         SettingsItem {
-                            label: "Sequential download".into(),
-                            value: bool_str(config.download_sequential),
-                            description: vec![
-                                "Download pieces in order".into(),
-                                "instead of rarest-first.".into(),
-                                "".into(),
-                                "Not yet sent to TorrServer --".into(),
-                                "see ROADMAP.md Phase 7.".into(),
-                            ],
-                            action: SettingsAction::ToggleDownloadSequential,
-                        },
-                        SettingsItem {
-                            label: "Download speed limit".into(),
-                            value: if config.download_speed_limit_kbps == 0 {
-                                "unlimited".into()
-                            } else {
-                                format!("{} KB/s", config.download_speed_limit_kbps)
-                            },
-                            description: vec![
-                                "0 = unlimited.".into(),
-                                "".into(),
-                                "Not yet sent to TorrServer --".into(),
-                                "see ROADMAP.md Phase 7.".into(),
-                            ],
-                            action: SettingsAction::CycleDownloadSpeedLimit,
-                        },
-                        SettingsItem {
-                            label: "Upload speed limit".into(),
-                            value: if config.upload_speed_limit_kbps == 0 {
-                                "unlimited".into()
-                            } else {
-                                format!("{} KB/s", config.upload_speed_limit_kbps)
-                            },
-                            description: vec![
-                                "0 = unlimited.".into(),
-                                "".into(),
-                                "Not yet sent to TorrServer --".into(),
-                                "see ROADMAP.md Phase 7.".into(),
-                            ],
-                            action: SettingsAction::CycleUploadSpeedLimit,
-                        },
-                        SettingsItem {
                             label: "Close torrent core on exit".into(),
                             value: bool_str(config.close_torrent_core_on_exit),
                             description: vec![
-                                "Stop the background torrent".into(),
-                                "engine when Doris exits.".into(),
+                                "Stop the download when Doris".into(),
+                                "exits, instead of leaving it".into(),
+                                "running on the server.".into(),
                                 "".into(),
-                                "No standalone download engine".into(),
-                                "exists yet to close -- see".into(),
-                                "ROADMAP.md Phase 7.".into(),
+                                "The torrent is paused, not".into(),
+                                "removed: it stays on disk and".into(),
+                                "resumes when asked for again.".into(),
                             ],
                             action: SettingsAction::ToggleCloseTorrentCoreOnExit,
                         },

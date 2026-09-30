@@ -1116,7 +1116,11 @@ impl App {
             BorderType::Plain
         };
         let mut block = Block::default()
-            .borders(Borders::ALL)
+            .borders(if config.show_boxes {
+                Borders::ALL
+            } else {
+                Borders::NONE
+            })
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
         if config.theme_background {

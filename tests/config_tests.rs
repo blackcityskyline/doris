@@ -57,8 +57,6 @@ fn test_config_default() {
     assert!(config.download_enabled);
     assert_eq!(config.download_dir_mode, "default");
     assert!(config.download_dir_custom_1.is_empty());
-    assert!(!config.download_sequential);
-    assert_eq!(config.download_speed_limit_kbps, 0);
     assert!(config.close_torrent_core_on_exit);
 }
 

@@ -78,6 +78,44 @@ pub fn source_needs_browser(source: &str) -> bool {
     source::requires_browser(source)
 }
 
+/// The hash to stop on the way out, or `None` to leave it downloading.
+///
+/// A free function taking the config rather than `self`, so what decides
+/// is testable without a terminal, a browser, or a running TorrServer --
+/// the exit path has all three, and is the one path nobody exercises by
+/// hand twice.
+pub fn stop_download_on_exit<'a>(config: &Config, active_hash: Option<&'a str>) -> Option<&'a str> {
+    if config.close_torrent_core_on_exit {
+        active_hash
+    } else {
+        None
+    }
+}
+
+/// Do the stop [`stop_download_on_exit`] asks for, and say what happened.
+///
+/// **`pause`, never `remove`.** Dropping the torrent is what "stop the
+/// download" means: it stays on the server and on disk and resumes the
+/// next time it is asked for. Removing it would delete the user's file on
+/// the way out of the program they were watching it with, which is not
+/// what any reading of the option asks for.
+///
+/// Returns a line to show, or `None` when there was nothing to stop --
+/// so a run with the option off stays silent rather than announcing a
+/// no-op. Free function taking the client, so the test can watch the
+/// bytes that go over the wire instead of re-typing the call.
+pub async fn stop_the_download(
+    config: &Config,
+    active_hash: Option<&str>,
+    torrserver: &crate::torrserver::api::TorrServer,
+) -> Option<String> {
+    let hash = stop_download_on_exit(config, active_hash)?;
+    Some(match torrserver.pause(hash).await {
+        Ok(()) => format!("Stopped the download on exit ({hash})."),
+        Err(e) => format!("Could not stop the download on exit: {e}"),
+    })
+}
+
 /// The file name a result title may safely have on disk: everything
 /// outside alphanumerics, spaces and the usual punctuation becomes `_`.
 /// Shared by the `.torrent` and `.magnet` paths so the two spell the
@@ -431,10 +469,7 @@ impl App {
         }
 
         loop {
-            terminal.draw(|frame| {
-                self.terminal_size = (frame.area().width, frame.area().height);
-                self.ui.render(frame, &self.config);
-            })?;
+            self.draw_frame(&mut terminal)?;
 
             tokio::select! {
                 event = self.event_handler.next() => {
@@ -584,6 +619,18 @@ impl App {
         }
 
         tui::restore(&mut terminal)?;
+
+        // "Stop the download when doris exits" -- see `stop_the_download`
+        // for why it is a pause and not a removal.
+        if let Some(message) = stop_the_download(
+            &self.config,
+            self.ui.active_torrent_hash.as_deref(),
+            &self.torrserver,
+        )
+        .await
+        {
+            eprintln!("{message}");
+        }
 
         // End the WebDriver session while the runtime is still alive: the
         // session DELETE is what makes chromedriver take the browser down
@@ -1075,6 +1122,41 @@ impl App {
         }
     }
 
+    /// One frame, bracketed by synchronized output when the option is on.
+    ///
+    /// The sequence brackets the frame and nothing else: turning it on
+    /// for the whole run would leave the terminal buffering through the
+    /// wait between frames, where there is nothing to present, and the
+    /// app would look frozen.
+    ///
+    /// `?2026h` with no `?2026l` leaves the terminal *buffering* -- the
+    /// app then looks frozen with no error and no way out but killing it
+    /// -- so the closing sequence is written whatever `draw` returned.
+    /// The two `backend_mut()` borrows are separate on purpose: holding
+    /// a guard across `draw` would be the borrow error above, and the
+    /// borrow checker is what guarantees the closing write is not skipped.
+    fn draw_frame(&mut self, terminal: &mut crate::tui::Terminal) -> Result<()> {
+        if self.config.terminal_sync {
+            crate::tui::begin_sync(terminal);
+        }
+        // The draw's result borrows the terminal (it hands back the frame
+        // it completed), so it is unwrapped to an owned `Result` before
+        // the closing sequence is written -- otherwise the borrow would
+        // still be live and the terminal could not be touched again.
+        let result = terminal
+            .draw(|frame| {
+                self.terminal_size = (frame.area().width, frame.area().height);
+                self.ui.render(frame, &self.config);
+            })
+            .map(|_| ())
+            .map_err(anyhow::Error::from);
+        if self.config.terminal_sync {
+            crate::tui::end_sync(terminal);
+        }
+        result?;
+        Ok(())
+    }
+
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // An armed removal is a question waiting for an answer, and every
         // key that is not `d` is a "no". Disarmed here, before any mode
@@ -1206,7 +1288,6 @@ impl App {
                     || toggle!(ToggleRoundedCorners, rounded_corners)
                     || toggle!(ToggleTerminalSync, terminal_sync)
                     || toggle!(ToggleDownloadEnabled, download_enabled)
-                    || toggle!(ToggleDownloadSequential, download_sequential)
                     || toggle!(ToggleCloseTorrentCoreOnExit, close_torrent_core_on_exit)
                     || toggle!(ToggleSaveOnExit, save_config_on_exit);
                 if toggled {
@@ -1367,40 +1448,6 @@ impl App {
                             None => MODES[0],
                         };
                         self.config.download_dir_mode = next.to_string();
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
-                    }
-                    SettingsAction::CycleDownloadSpeedLimit => {
-                        const STEPS: &[u32] = &[0, 128, 256, 512, 1024, 2048, 5120, 10240];
-                        let next = match STEPS
-                            .iter()
-                            .position(|&v| v == self.config.download_speed_limit_kbps)
-                        {
-                            Some(i) => {
-                                STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)]
-                            }
-                            None => STEPS[0],
-                        };
-                        self.config.download_speed_limit_kbps = next;
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
-                    }
-                    SettingsAction::CycleUploadSpeedLimit => {
-                        const STEPS: &[u32] = &[0, 64, 128, 256, 512, 1024, 2048, 5120];
-                        let next = match STEPS
-                            .iter()
-                            .position(|&v| v == self.config.upload_speed_limit_kbps)
-                        {
-                            Some(i) => {
-                                STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)]
-                            }
-                            None => STEPS[0],
-                        };
-                        self.config.upload_speed_limit_kbps = next;
                         self.ui.open_settings(
                             &self.config,
                             self.browser_visibility == BrowserVisibility::Hidden,

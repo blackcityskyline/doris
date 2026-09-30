@@ -114,3 +114,42 @@ fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// "Show boxes" was an Options row that persisted a value nothing read:
+/// `themed_block` always asked for `Borders::ALL`. It now asks for
+/// `Borders::NONE` when the option is off, and a panel without its frame
+/// is a visibly different picture -- which is the only honest way to
+/// check an Options row that claims to change what is drawn.
+#[test]
+fn the_show_boxes_option_takes_the_borders_off() {
+    let mut app = App::new("http://127.0.0.1:1".into(), None);
+    let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
+
+    let with_boxes = Config {
+        show_boxes: true,
+        ..Default::default()
+    };
+    terminal.draw(|f| app.render(f, &with_boxes)).unwrap();
+    let boxed = buffer_text(&terminal);
+    assert!(
+        boxed.contains('╭') || boxed.contains('┌'),
+        "with the option on the panels are framed:\n{boxed}"
+    );
+
+    let without = Config {
+        show_boxes: false,
+        ..Default::default()
+    };
+    terminal.draw(|f| app.render(f, &without)).unwrap();
+    let bare = buffer_text(&terminal);
+    assert!(
+        !bare.contains('╭') && !bare.contains('┌') && !bare.contains('╰'),
+        "with it off every frame goes, the search bar included:\n{bare}"
+    );
+    // The content is still there -- this removes the frames, not the
+    // panels.
+    assert!(
+        bare.contains("Results") && bare.contains("Trackers"),
+        "the panels are still drawn:\n{bare}"
+    );
+}
