@@ -861,7 +861,12 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
 /// `on_hover` + bold treatment and the name between them stays
 /// `primary` -- btop draws its sortable column headers the same way
 /// (`◀ name ▶`).
-pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Span<'static>> {
+pub fn button_spans(
+    theme: &Theme,
+    button: &FrameButton,
+    active: bool,
+    hovered: bool,
+) -> Vec<Span<'static>> {
     let text = button.text();
     let word_style = Style::default().fg(theme.primary_color());
     let hotkey_style = Style::default()
@@ -877,7 +882,14 @@ pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Sp
             .to_string();
         return vec![
             Span::styled("◀", hotkey_style),
-            Span::styled(name, word_style),
+            Span::styled(
+                name,
+                if hovered {
+                    hover_word(theme)
+                } else {
+                    word_style
+                },
+            ),
             Span::styled("▶", hotkey_style),
         ];
     }
@@ -885,16 +897,36 @@ pub fn button_spans(theme: &Theme, button: &FrameButton, active: bool) -> Vec<Sp
     let idx = button.hotkey_index();
     let key_len = button.key.len_utf8();
 
-    let mut style = word_style;
-    if active {
+    // A hovered button is underlined as well as tinted: the colour is
+    // what the theme decided, and a theme whose `on_hover` happens to
+    // sit close to `primary` would leave the pointer's position unreadable
+    // -- which is the same "one channel is not enough" problem the focus
+    // marker solves for zones. Underline is a shape, not a colour.
+    let mut style = if hovered {
+        hover_word(theme)
+    } else {
+        word_style
+    };
+    if active || hovered {
         style = style.add_modifier(Modifier::BOLD);
     }
 
+    // The hotkey glyph joins the underline. It already carries `on_hover`
+    // + bold, so leaving it out would draw a word underlined except for
+    // the one letter that says what to press.
+    let key_style = if hovered { style } else { hotkey_style };
+
     vec![
         Span::styled(text[..idx].to_string(), style),
-        Span::styled(text[idx..idx + key_len].to_string(), hotkey_style),
+        Span::styled(text[idx..idx + key_len].to_string(), key_style),
         Span::styled(text[idx + key_len..].to_string(), style),
     ]
+}
+
+fn hover_word(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme.on_hover_color())
+        .add_modifier(Modifier::UNDERLINED)
 }
 
 /// The frame's colour: `primary` for the zone the cursor is in,

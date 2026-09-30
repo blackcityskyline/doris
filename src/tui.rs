@@ -17,11 +17,24 @@ pub type Terminal = ratatui::Terminal<CrosstermBackend<io::Stdout>>;
 /// racing the ones that follow it, and -- the reason this wave pushed
 /// for it -- modified keys such as Shift+Enter arrive as *modified*
 /// keys. Terminals that do not implement the protocol ignore the push.
+/// crossterm's own sequences for mouse reporting, named here so the
+/// tests can look for them without hard-coding the numbers. 1003 is the
+/// one that matters: it reports the pointer with no button held, which is
+/// what makes a hover possible.
+#[cfg(test)]
+const MOUSE_CAPTURE_ON: &str = "\x1b[?1003h";
+#[cfg(test)]
+const MOUSE_CAPTURE_OFF: &str = "\x1b[?1000l";
+
 const KEY_FLAGS: KeyboardEnhancementFlags = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
 
 /// Whether `init` pushed the flags, so `restore` pops exactly what was
 /// pushed and a plain VT gets no sequence it never saw arrive.
 static ENHANCED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the terminal was asked to report the mouse, so `restore`
+/// disables exactly what was enabled.
+static MOUSE_CAPTURED: AtomicBool = AtomicBool::new(false);
 
 /// DEC private mode 2026, synchronized output: the terminal buffers
 /// everything a frame writes and presents it in one go, so a frame is
@@ -42,20 +55,17 @@ static ENHANCED: AtomicBool = AtomicBool::new(false);
 pub const SYNC_BEGIN: &str = "\x1b[?2026h";
 pub const SYNC_END: &str = "\x1b[?2026l";
 
-/// Write a raw sequence straight to the terminal, past ratatui's buffer.
-///
-/// Errors are dropped: a terminal that will not take the mode gets no
-/// synchronized output, which is the state it was already in.
 fn write_raw(w: &mut impl Write, seq: &str) {
     let _ = w.write_all(seq.as_bytes());
     let _ = w.flush();
 }
 
-pub fn init(enhance_keys: bool) -> Result<Terminal> {
+pub fn init(enhance_keys: bool, mouse: bool) -> Result<Terminal> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    enter(&mut stdout, enhance_keys)?;
+    enter(&mut stdout, enhance_keys, mouse)?;
     ENHANCED.store(enhance_keys, Ordering::Relaxed);
+    MOUSE_CAPTURED.store(mouse, Ordering::Relaxed);
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend)?;
     Ok(terminal)
@@ -66,6 +76,7 @@ pub fn restore(terminal: &mut Terminal) -> Result<()> {
     leave(
         terminal.backend_mut(),
         ENHANCED.swap(false, Ordering::Relaxed),
+        MOUSE_CAPTURED.swap(false, Ordering::Relaxed),
     )?;
     terminal.show_cursor()?;
     Ok(())
@@ -87,8 +98,17 @@ pub fn end_sync(terminal: &mut Terminal) {
 /// Alternate screen and mouse capture, then the keyboard protocol --
 /// last, so a terminal that rejects nothing else still has the screen
 /// it is about to draw on.
-fn enter<W: Write>(w: &mut W, enhance_keys: bool) -> io::Result<()> {
-    execute!(w, EnterAlternateScreen, EnableMouseCapture)?;
+fn enter<W: Write>(w: &mut W, enhance_keys: bool, mouse: bool) -> io::Result<()> {
+    execute!(w, EnterAlternateScreen)?;
+    // crossterm's `EnableMouseCapture` turns on 1000/1002/1003/1015/1006
+    // together, and 1003 is the one that reports the pointer with no
+    // button held -- which is what makes a hover possible at all. It used
+    // to be enabled unconditionally while "Disable mouse" only stopped the
+    // app reading the events, so a user who had switched the mouse off was
+    // still paying for a stream of them. Asking is cheaper than ignoring.
+    if mouse {
+        execute!(w, EnableMouseCapture)?;
+    }
     if enhance_keys {
         execute!(w, PushKeyboardEnhancementFlags(KEY_FLAGS))?;
     }
@@ -99,11 +119,14 @@ fn enter<W: Write>(w: &mut W, enhance_keys: bool) -> io::Result<()> {
 /// what happens, then leave the screen. Popping after
 /// `LeaveAlternateScreen` would be the same bytes with the wrong
 /// window of attention.
-fn leave<W: Write>(w: &mut W, enhanced: bool) -> io::Result<()> {
+fn leave<W: Write>(w: &mut W, enhanced: bool, mouse: bool) -> io::Result<()> {
     if enhanced {
         execute!(w, PopKeyboardEnhancementFlags)?;
     }
-    execute!(w, LeaveAlternateScreen, DisableMouseCapture)?;
+    if mouse {
+        execute!(w, DisableMouseCapture)?;
+    }
+    execute!(w, LeaveAlternateScreen)?;
     Ok(())
 }
 
@@ -122,7 +145,7 @@ mod tests {
     #[test]
     fn entering_the_screen_requests_the_keyboard_protocol() {
         let mut buf = Vec::new();
-        enter(&mut buf, true).expect("the byte sequence is infallible");
+        enter(&mut buf, true, true).expect("the byte sequence is infallible");
         let out = String::from_utf8_lossy(&buf);
 
         assert!(
@@ -130,7 +153,7 @@ mod tests {
             "alternate screen first: {out:?}"
         );
         assert!(
-            out.contains("\x1b[?1000h"),
+            out.contains(MOUSE_CAPTURE_ON),
             "mouse capture, as before: {out:?}"
         );
         assert!(
@@ -142,7 +165,7 @@ mod tests {
     #[test]
     fn a_false_tty_gets_nothing_it_cannot_understand() {
         let mut buf = Vec::new();
-        enter(&mut buf, false).expect("the byte sequence is infallible");
+        enter(&mut buf, false, false).expect("the byte sequence is infallible");
         let out = String::from_utf8_lossy(&buf);
 
         assert!(!out.contains("\x1b[>"), "no push: {out:?}");
@@ -152,7 +175,7 @@ mod tests {
     #[test]
     fn leaving_pops_the_flags_it_pushed() {
         let mut buf = Vec::new();
-        leave(&mut buf, true).expect("the byte sequence is infallible");
+        leave(&mut buf, true, false).expect("the byte sequence is infallible");
         let out = String::from_utf8_lossy(&buf);
 
         assert!(
@@ -174,13 +197,61 @@ mod tests {
     #[test]
     fn a_terminal_without_the_protocol_is_left_alone() {
         let mut buf = Vec::new();
-        leave(&mut buf, false).expect("the byte sequence is infallible");
+        leave(&mut buf, false, false).expect("the byte sequence is infallible");
         let out = String::from_utf8_lossy(&buf);
 
         assert!(!out.contains("\x1b[<"), "no pop: {out:?}");
         assert!(
             out.contains("\x1b[?1049l"),
             "but the screen still goes: {out:?}"
+        );
+    }
+
+    /// The mouse is only asked for when the user has it on, and only
+    /// given back if it was asked for.
+    ///
+    /// `EnableMouseCapture` turns on 1000/1002/1003/1015/1006 together,
+    /// and 1003 -- reporting the pointer with no button held -- is what
+    /// makes a hover possible. It used to be enabled unconditionally
+    /// while "Disable mouse" merely stopped the app reading the events,
+    /// so a user who had switched the mouse off was still paying for a
+    /// stream of them arriving.
+    #[test]
+    fn the_mouse_is_asked_for_only_when_it_is_on() {
+        let mut buf = Vec::new();
+        enter(&mut buf, false, true).expect("the byte sequence is infallible");
+        let on = String::from_utf8_lossy(&buf);
+        assert!(on.contains(MOUSE_CAPTURE_ON), "hover needs it: {on:?}");
+
+        let mut buf = Vec::new();
+        enter(&mut buf, false, false).expect("the byte sequence is infallible");
+        let off = String::from_utf8_lossy(&buf);
+        assert!(
+            !off.contains(MOUSE_CAPTURE_ON),
+            "with the mouse off the terminal must not be reporting it: {off:?}"
+        );
+        assert!(
+            off.contains("\x1b[?1049h"),
+            "but the screen still goes: {off:?}"
+        );
+    }
+
+    #[test]
+    fn the_mouse_is_only_given_back_if_it_was_asked_for() {
+        let mut buf = Vec::new();
+        leave(&mut buf, false, true).expect("the byte sequence is infallible");
+        let on = String::from_utf8_lossy(&buf);
+        assert!(
+            on.contains(MOUSE_CAPTURE_OFF),
+            "every mode asked for is given back: {on:?}"
+        );
+
+        let mut buf = Vec::new();
+        leave(&mut buf, false, false).expect("the byte sequence is infallible");
+        let off = String::from_utf8_lossy(&buf);
+        assert!(
+            !off.contains(MOUSE_CAPTURE_OFF),
+            "and a mode never entered is not reset: {off:?}"
         );
     }
 

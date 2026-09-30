@@ -417,7 +417,7 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
         let buttons = zone_buttons(id);
         for button in &buttons {
             let text = button.text();
-            let spans = button_spans(&theme, button, false);
+            let spans = button_spans(&theme, button, false, false);
 
             assert_eq!(spans.len(), 3, "{}: {}", id.label(), text);
             let joined: String = spans.iter().map(|s| s.content.to_string()).collect();
@@ -521,7 +521,7 @@ fn test_the_category_button_highlights_both_arrows() {
         .map(|(b, _)| b)
         .expect("the Results frame has a category button");
 
-    let spans = button_spans(&theme, button, false);
+    let spans = button_spans(&theme, button, false, false);
     assert_eq!(spans.len(), 3, "arrow / name / arrow");
     assert_eq!(spans[0].content.to_string(), "◀");
     assert_eq!(spans[2].content.to_string(), "▶");
@@ -554,8 +554,8 @@ fn test_active_button_bolds_the_whole_word() {
         .find(|b| b.key == 'p')
         .expect("Torrent has a pause button");
 
-    let idle = button_spans(&theme, button, false);
-    let active = button_spans(&theme, button, true);
+    let idle = button_spans(&theme, button, false, false);
+    let active = button_spans(&theme, button, true, false);
     // Idle: only the hotkey is bold, the word around it is not.
     assert!(!idle[0].style.add_modifier.contains(Modifier::BOLD));
     assert!(!idle[2].style.add_modifier.contains(Modifier::BOLD));

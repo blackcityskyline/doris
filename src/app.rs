@@ -452,7 +452,7 @@ impl App {
         // The keyboard protocol is what makes Shift+Enter arrive as
         // Shift+Enter; `false_tty` asks for a terminal that may not
         // know the sequence, so it stays off there.
-        let mut terminal = tui::init(!self.config.false_tty)?;
+        let mut terminal = tui::init(!self.config.false_tty, !self.config.disable_mouse)?;
         self.terminal_size = terminal
             .size()
             .map(|s| (s.width, s.height))
@@ -703,6 +703,13 @@ impl App {
         }
 
         match mouse.kind {
+            MouseEventKind::Moved => {
+                // Redrawn only when the hovered cell actually changed:
+                // the terminal reports every movement, and a redraw per
+                // movement would spend the CPU on frames that differ from
+                // the last one.
+                self.ui.set_hover(mouse.row, mouse.column);
+            }
             MouseEventKind::ScrollUp => {
                 if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(3);

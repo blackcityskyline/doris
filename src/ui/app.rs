@@ -166,6 +166,15 @@ pub struct App {
     /// TorrServer's disk, the same key downloads a row in the zone next
     /// door, and there is no undo -- so the first press asks.
     pub remove_armed: bool,
+    /// Where the pointer is, when the terminal reports motion (`tui.rs`
+    /// turns mode 1003 on). `None` when the pointer is outside the frame
+    /// or the terminal does not report it.
+    ///
+    /// A frame button that is only clickable looks like a word, so the
+    /// user has no way to know it is there until they click it and
+    /// something happens. Highlighting what is under the pointer is the
+    /// difference between a control and a caption.
+    pub hover: Option<(u16, u16)>,
     /// Client-side pause tracking. TorrServer has no "paused" torrent
     /// state to read back -- pausing means `drop`ping the torrent, which
     /// typically removes it from the live list entirely rather than
@@ -481,6 +490,7 @@ impl App {
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
             remove_armed: false,
+            hover: None,
             torrent_paused: false,
             // Which row of the Trackers panel the cursor sits on: 0 is
             // the `all` switch, 1.. the registry entries.
@@ -963,10 +973,15 @@ impl App {
             frame.render_widget(Paragraph::new(Line::from(info)), layout.info);
         }
         for (button, rect) in &layout.buttons {
+            // Hovered: whole-cell containment against the same rectangle
+            // `click_at` hits, so what is drawn and what is clickable are
+            // the same rectangle rather than two computations of it.
+            let hovered = self.hovers(*rect);
             let spans = super::zones::button_spans(
                 &self.theme,
                 button,
                 self.frame_button_active(id, button),
+                hovered,
             );
             frame.render_widget(Paragraph::new(Line::from(spans)), *rect);
         }
@@ -1286,6 +1301,29 @@ impl App {
             self.move_selection_to(self.filtered_indices[target]);
         }
         true
+    }
+
+    /// Note where the pointer is. Returns whether that changed anything
+    /// the next frame will look different for -- which is what decides
+    /// whether the pointer moving at all is worth a redraw.
+    pub fn set_hover(&mut self, row: u16, col: u16) -> bool {
+        match self.hover {
+            Some((r, c)) if r == row && c == col => false,
+            _ => {
+                self.hover = Some((row, col));
+                true
+            }
+        }
+    }
+
+    /// The pointer is over a frame button, given where that button is
+    /// drawn. Public for the test that ties what is drawn to what is
+    /// clickable.
+    pub fn hovers(&self, rect: Rect) -> bool {
+        self.hover.is_some_and(|(row, col)| {
+            (rect.y..rect.y + rect.height).contains(&row)
+                && (rect.x..rect.x + rect.width).contains(&col)
+        })
     }
 
     /// `d` on the Torrent zone. Returns `true` only on the second press,
