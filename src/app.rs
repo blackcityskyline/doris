@@ -1712,7 +1712,12 @@ impl App {
         self.ui.add_log(&format!("Logging in as '{}'...", username));
 
         if self.config.save_credentials {
-            let _ = crate::credentials::save_credential(resource, username, password);
+            let _ = crate::credentials::save_credential_at(
+                &self.ui.credentials_path,
+                resource,
+                username,
+                password,
+            );
         }
 
         let source = match self.get_source("rutracker").await {

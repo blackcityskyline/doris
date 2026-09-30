@@ -12,6 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 
 /// Where the search is. Failures deliberately have no variant: an error
 /// belongs to one source, not to the whole app, so it lives in
@@ -138,6 +139,11 @@ pub struct App {
     /// per row.
     pub source_status: HashMap<String, SourceStatus>,
     pub torrserver_url: String,
+    /// Where the Login modal's Ctrl+S writes the credential store. It is
+    /// a field rather than a call to `credentials::credentials_path()`
+    /// inside the modal because that call resolved `$HOME` from inside
+    /// the save, so a test of the modal overwrote the user's real login.
+    pub credentials_path: PathBuf,
     pub running: bool,
     pub input_mode: bool,
     pub modal: Modal,
@@ -456,6 +462,7 @@ impl App {
             state: AppState::Idle,
             source_status: HashMap::new(),
             torrserver_url,
+            credentials_path: crate::credentials::credentials_path(),
             running: true,
             input_mode: false,
             modal: Modal::None,

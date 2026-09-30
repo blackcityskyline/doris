@@ -14,7 +14,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 16;
@@ -37,10 +37,20 @@ pub struct Credential {
     pub password: String,
 }
 
+/// Where the app keeps its credential store.
 pub fn credentials_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".config").join("doris").join("credentials.enc")
 }
+
+/// The store's file name inside whatever directory it is kept in. The
+/// `_at` functions take a directory rather than a file so a caller (a
+/// test, or a second store) supplies a location without repeating the
+/// name -- and, more to the point, so a test can point the whole store
+/// at a scratch directory. The store used to resolve `$HOME` from inside
+/// its own I/O, and every test that saved a fake login overwrote the
+/// real one.
+pub const STORE_FILE: &str = "credentials.enc";
 
 fn derive_key() -> Result<[u8; KEY_LEN]> {
     let hostname = hostname::get()
@@ -66,9 +76,8 @@ fn aead_key() -> Result<ring::aead::LessSafeKey> {
     Ok(ring::aead::LessSafeKey::new(unbound))
 }
 
-fn decrypt_file() -> Option<Vec<u8>> {
-    let path = credentials_path();
-    let data = std::fs::read_to_string(&path).ok()?;
+fn decrypt_file(path: &Path) -> Option<Vec<u8>> {
+    let data = std::fs::read_to_string(path).ok()?;
     let decoded =
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data.trim()).ok()?;
 
@@ -89,7 +98,7 @@ fn decrypt_file() -> Option<Vec<u8>> {
     Some(plaintext.to_vec())
 }
 
-fn encrypt_and_write(plaintext: &[u8]) -> Result<()> {
+fn encrypt_and_write(path: &Path, plaintext: &[u8]) -> Result<()> {
     let key = aead_key()?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -105,12 +114,11 @@ fn encrypt_and_write(plaintext: &[u8]) -> Result<()> {
     let mut output = nonce_bytes.to_vec();
     output.extend_from_slice(&payload);
 
-    let path = credentials_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(
-        &path,
+        path,
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &output),
     )?;
     Ok(())
@@ -122,7 +130,12 @@ fn encrypt_and_write(plaintext: &[u8]) -> Result<()> {
 /// corrupt. Transparently upgrades the pre-Phase-4 `"user:pass"` format
 /// into `{ DEFAULT_RESOURCE: { username, password } }` on read.
 pub fn load_store() -> HashMap<String, Credential> {
-    let Some(plaintext) = decrypt_file() else {
+    load_store_at(&credentials_path())
+}
+
+/// [`load_store`] against an explicit store file.
+pub fn load_store_at(path: &Path) -> HashMap<String, Credential> {
+    let Some(plaintext) = decrypt_file(path) else {
         return HashMap::new();
     };
 
@@ -149,15 +162,25 @@ pub fn load_store() -> HashMap<String, Credential> {
     HashMap::new()
 }
 
-fn save_store(store: &HashMap<String, Credential>) -> Result<()> {
+fn save_store(path: &Path, store: &HashMap<String, Credential>) -> Result<()> {
     let payload = serde_json::to_vec(store)?;
-    encrypt_and_write(&payload)
+    encrypt_and_write(path, &payload)
 }
 
 /// Save (or overwrite) the credential for one resource, without disturbing
 /// any other resource's saved login.
 pub fn save_credential(resource_id: &str, username: &str, password: &str) -> Result<()> {
-    let mut store = load_store();
+    save_credential_at(&credentials_path(), resource_id, username, password)
+}
+
+/// [`save_credential`] against an explicit store file.
+pub fn save_credential_at(
+    path: &Path,
+    resource_id: &str,
+    username: &str,
+    password: &str,
+) -> Result<()> {
+    let mut store = load_store_at(path);
     store.insert(
         resource_id.to_string(),
         Credential {
@@ -165,19 +188,29 @@ pub fn save_credential(resource_id: &str, username: &str, password: &str) -> Res
             password: password.to_string(),
         },
     );
-    save_store(&store)
+    save_store(path, &store)
 }
 
 pub fn load_credential(resource_id: &str) -> Option<(String, String)> {
-    load_store()
+    load_credential_at(&credentials_path(), resource_id)
+}
+
+/// [`load_credential`] against an explicit store file.
+pub fn load_credential_at(path: &Path, resource_id: &str) -> Option<(String, String)> {
+    load_store_at(path)
         .get(resource_id)
         .map(|c| (c.username.clone(), c.password.clone()))
 }
 
 pub fn delete_credential(resource_id: &str) -> Result<()> {
-    let mut store = load_store();
+    delete_credential_at(&credentials_path(), resource_id)
+}
+
+/// [`delete_credential`] against an explicit store file.
+pub fn delete_credential_at(path: &Path, resource_id: &str) -> Result<()> {
+    let mut store = load_store_at(path);
     store.remove(resource_id);
-    save_store(&store)
+    save_store(path, &store)
 }
 
 // --- Backward-compatible single-resource API -------------------------------

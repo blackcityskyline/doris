@@ -91,7 +91,8 @@ impl App {
                     if state.username.is_empty() || state.password.is_empty() {
                         state.message = Some("Nothing to save".to_string());
                     } else {
-                        state.message = match crate::credentials::save_credential(
+                        state.message = match crate::credentials::save_credential_at(
+                            &self.credentials_path,
                             state.resource,
                             &state.username,
                             &state.password,
@@ -246,7 +247,10 @@ impl App {
 
             // The saved indicator: what the store already holds for the
             // selected resource, so the user knows before typing.
-            let saved = match crate::credentials::load_credential(state.resource) {
+            let saved = match crate::credentials::load_credential_at(
+                &self.credentials_path,
+                state.resource,
+            ) {
                 Some((user, _)) => format!("Saved: user='{}'", user),
                 None => "Not saved".to_string(),
             };

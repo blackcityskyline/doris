@@ -12,6 +12,15 @@ fn make_test_app() -> UiApp {
     UiApp::new("http://127.0.0.1:8090".into(), None)
 }
 
+/// A credential store of its own for a test, cleared first so a leftover
+/// from an earlier run cannot answer for the current one.
+fn scratch_store(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("doris-tui-{}-{}", std::process::id(), name));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch store dir");
+    dir.join(doris::credentials::STORE_FILE)
+}
+
 fn make_results(n: usize) -> Vec<TorrentItem> {
     (0..n)
         .map(|i| TorrentItem {
@@ -395,12 +404,14 @@ fn test_login_modal_enter_submits_the_selected_resource() {
 }
 
 /// Ctrl+S saves the current tab's credentials without logging in: the
-/// modal stays open and says so. The store write is real, so the test
-/// backs up whatever was saved and puts it back -- an offline test must
-/// not clobber the user's login.
+/// modal stays open and says so. The store write is real, so the app
+/// under test is pointed at a scratch store -- the modal used to resolve
+/// `$HOME` from inside the save, and this test overwrote the user's
+/// actual login.
 #[test]
 fn test_login_modal_ctrl_s_saves_without_logging_in() {
     let mut app = make_test_app();
+    app.credentials_path = scratch_store("login-ctrl-s");
     app.open_login_modal();
 
     for c in "saved-user".chars() {
@@ -420,8 +431,6 @@ fn test_login_modal_ctrl_s_saves_without_logging_in() {
         ));
     }
 
-    let before = doris::credentials::load_credential("rutracker");
-
     let ctrl_s = crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('s'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -435,20 +444,10 @@ fn test_login_modal_ctrl_s_saves_without_logging_in() {
     }
 
     // And the store really holds them, under the tab's resource.
-    let saved =
-        doris::credentials::load_credential("rutracker").expect("Ctrl+S must write the store");
+    let saved = doris::credentials::load_credential_at(&app.credentials_path, "rutracker")
+        .expect("Ctrl+S must write the store");
     assert_eq!(saved.0, "saved-user");
     assert_eq!(saved.1, "secret");
-
-    // Put back exactly what was there before.
-    match before {
-        Some((user, pass)) => {
-            let _ = doris::credentials::save_credential("rutracker", &user, &pass);
-        }
-        None => {
-            let _ = doris::credentials::delete_credential("rutracker");
-        }
-    }
 }
 
 #[test]
