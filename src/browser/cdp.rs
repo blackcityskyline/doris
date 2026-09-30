@@ -2,10 +2,87 @@ use anyhow::Result;
 use fantoccini::{Client, ClientBuilder};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::{Duration, Instant};
 
 /// Xvfb pid of a launch, recorded inside that launch's own temp profile so
 /// a later launch can reap the Xvfb if its doris never reached `Drop`.
 const XVFB_PID_FILE: &str = ".xvfb-pid";
+
+// --- the waits, named -------------------------------------------------
+//
+// Three of the four shutdown paths below do the same thing -- SIGTERM,
+// wait, then SIGKILL -- and they had drifted apart into 400ms, 600ms,
+// 600ms with nothing written down saying why one process deserved less
+// patience than another. One knob now; splitting them again is a
+// deliberate edit to this file rather than a number typed in four spots.
+//
+// The values are calibration, not derivation: a browser that ignores
+// SIGTERM needs a moment, a wedged one needs the kill. Raise this and
+// shutdown gets slower on the machines that *do* respond; lower it and a
+// slow machine gets SIGKILL'd mid-flush.
+
+/// Grace between SIGTERM and SIGKILL for anything we are tearing down.
+const SIGTERM_GRACE: Duration = Duration::from_millis(600);
+
+/// How often those short reaps check whether the process is gone. Fine
+/// enough that a normal exit is not visibly delayed, coarse enough to be
+/// free -- this runs on a blocking thread at process teardown.
+const REAP_POLL: Duration = Duration::from_millis(50);
+
+/// A stale lock file means a *previous doris run* still held the profile
+/// and has not finished releasing it. That is a different question from
+/// "is this process still dying": a clean shutdown can take seconds, so
+/// this one waits an order of magnitude longer before insisting. Polled
+/// coarsely to match -- at a ten second horizon, 200ms costs nothing.
+const STALE_LOCK_GRACE: Duration = Duration::from_secs(10);
+const STALE_LOCK_POLL: Duration = Duration::from_millis(200);
+
+/// Settle after SIGKILL, before the lock file is removed: the file is how
+/// a later run decides the profile is free, and removing it while the
+/// killed processes are still closing their files hands the next launch a
+/// directory something is still writing to.
+const SIGKILL_SETTLE: Duration = Duration::from_secs(2);
+
+// --- the startup waits -----------------------------------------------
+//
+// All three are a fixed sleep standing in for "no one has told us this is
+// ready yet", which is the honest description: there is no signal from
+// Xvfb's socket, from a spawned driver, or from a page load that we
+// currently watch for. They are the least defensible numbers in the
+// file and the most worth revisiting -- a readiness probe would delete
+// all three.
+
+/// Xvfb creates its display socket asynchronously; connecting before it
+/// exists fails, and there is no API that says "ready".
+const XVFB_SOCKET_WAIT: Duration = Duration::from_secs(1);
+
+/// chromedriver binds its port during startup. Same story: the spawn
+/// returning says nothing about the listener being up, and `connect` is
+/// the first thing that would notice.
+const DRIVER_BIND_WAIT: Duration = Duration::from_secs(2);
+
+/// The cookie-injection navigation has to finish before the cookies are
+/// written, or they land on a document that has not yet parsed.
+const PAGE_SETTLE: Duration = Duration::from_secs(3);
+
+/// Poll `done` every `poll` until it holds or `grace` elapses.
+///
+/// `true` once `done` held, `false` on timeout -- the caller's cue to
+/// escalate to SIGKILL. The condition is checked before the deadline
+/// because a process that exited during the last sleep should count as
+/// gone, not as a timeout.
+fn wait_until(grace: Duration, poll: Duration, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + grace;
+    loop {
+        if done() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(poll);
+    }
+}
 
 /// Browser window visibility. Renamed from the old "headless/gui" naming:
 /// `Visible` shows the real browser window, `Hidden` runs it off-screen
@@ -136,7 +213,7 @@ impl Browser {
             // Give Xvfb time to create its socket before anything renders
             // into it. This used to be a `std::thread::sleep` inside
             // `start_xvfb`, which parked a runtime worker for a second.
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(XVFB_SOCKET_WAIT).await;
             let mut c = std::process::Command::new(&chromedriver_path);
             c.env("DISPLAY", format!(":{}", display_num));
             c
@@ -152,7 +229,7 @@ impl Browser {
         if let Some(stderr) = child.stderr.take() {
             spawn_chromedriver_log_drain(stderr);
         }
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(DRIVER_BIND_WAIT).await;
 
         // NB: `--disable-background-timer-throttling` and
         // `--disable-backgrounding-occluded-windows` are deliberately *not*
@@ -199,7 +276,7 @@ impl Browser {
         if !injected_cookies.is_empty() {
             crate::log::log("browser", "navigating to domain for cookie injection...");
             browser.navigate(cookie_injection_url).await.ok();
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            tokio::time::sleep(PAGE_SETTLE).await;
             crate::log::log(
                 "browser",
                 &format!(
@@ -390,18 +467,16 @@ fn send_signal(pid: u32, hard: bool) {
 /// before escalating. Returns as soon as it's gone -- normally immediately.
 fn terminate_child(child: &mut std::process::Child) {
     send_signal(child.id(), false);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return,
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            Ok(None) => break,
-            Err(_) => break,
-        }
+    // `Ok(None)` is the only "still running" answer, so it is also the
+    // only one worth waiting on: an exited child *and* a child we can no
+    // longer ask about both end the wait, the second one straight into
+    // the kill below.
+    let gone = wait_until(SIGTERM_GRACE, REAP_POLL, || {
+        !matches!(child.try_wait(), Ok(None))
+    });
+    if !gone {
+        let _ = child.kill();
     }
-    let _ = child.kill();
 }
 
 /// Kill every browser process still holding `profile_dir` (matched by its
@@ -418,27 +493,22 @@ fn sweep_profile(profile_dir: &Path) {
     for pid in &pids {
         send_signal(*pid, false);
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(600);
-    loop {
-        if find_pids_by_profile(profile_dir).is_empty() {
-            crate::log::log(
-                "browser",
-                &format!("swept {} orphaned processes", pids.len()),
-            );
-            return;
-        }
-        if std::time::Instant::now() >= deadline {
-            for pid in &pids {
-                send_signal(*pid, true);
-            }
-            crate::log::log(
-                "browser",
-                &format!("SIGKILLed {} orphaned processes", pids.len()),
-            );
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    if wait_until(SIGTERM_GRACE, REAP_POLL, || {
+        find_pids_by_profile(profile_dir).is_empty()
+    }) {
+        crate::log::log(
+            "browser",
+            &format!("swept {} orphaned processes", pids.len()),
+        );
+        return;
     }
+    for pid in &pids {
+        send_signal(*pid, true);
+    }
+    crate::log::log(
+        "browser",
+        &format!("SIGKILLed {} orphaned processes", pids.len()),
+    );
 }
 
 /// Remember which Xvfb this run started, inside the run's own profile dir,
@@ -506,13 +576,8 @@ fn kill_recorded_xvfb(profile_dir: &Path) {
         return;
     }
     send_signal(pid, false);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(400);
-    while process_exists(pid) {
-        if std::time::Instant::now() >= deadline {
-            send_signal(pid, true);
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    if !wait_until(SIGTERM_GRACE, REAP_POLL, || !process_exists(pid)) {
+        send_signal(pid, true);
     }
     crate::log::log(
         "browser",
@@ -605,23 +670,18 @@ fn graceful_shutdown_if_running(profile_dir: &Path) {
         &format!("sent SIGTERM to {} processes", pids.len()),
     );
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        if !lock.symlink_metadata().is_ok() {
-            crate::log::log("browser", "browser exited cleanly");
-            return;
-        }
-        if std::time::Instant::now() >= deadline {
-            crate::log::log("browser", "timeout, sending SIGKILL");
-            for pid in &pids {
-                send_signal(*pid, true);
-            }
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            let _ = std::fs::remove_file(&lock);
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+    if wait_until(STALE_LOCK_GRACE, STALE_LOCK_POLL, || {
+        lock.symlink_metadata().is_err()
+    }) {
+        crate::log::log("browser", "browser exited cleanly");
+        return;
     }
+    crate::log::log("browser", "timeout, sending SIGKILL");
+    for pid in &pids {
+        send_signal(*pid, true);
+    }
+    std::thread::sleep(SIGKILL_SETTLE);
+    let _ = std::fs::remove_file(&lock);
 }
 
 fn find_pids_by_profile(profile_dir: &Path) -> Vec<u32> {
@@ -1192,6 +1252,91 @@ fn build_chrome_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `wait_until` decides whether a process gets to die politely or gets
+    /// killed, and every shutdown path routes through it. Two things can
+    /// go wrong and neither shows up as a crash: returning `true` when
+    /// the condition never held (a killed-but-lingering process, left to
+    /// burn CPU on its page), or spinning past the grace.
+    #[test]
+    fn wait_until_reports_a_condition_that_holds() {
+        // Holds immediately: no sleeping, and it must not wait out the
+        // grace before noticing.
+        let start = Instant::now();
+        assert!(wait_until(Duration::from_secs(30), REAP_POLL, || true));
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "an already-satisfied condition returns at once, not after the grace"
+        );
+    }
+
+    #[test]
+    fn wait_until_gives_up_at_the_grace_and_says_so() {
+        let start = Instant::now();
+        let polls = std::cell::Cell::new(0u32);
+        // Never holds. The `false` is the caller's cue to SIGKILL, so it
+        // has to arrive when the grace is up -- neither earlier (we would
+        // kill a process that was about to exit) nor never.
+        let gave_up = wait_until(
+            Duration::from_millis(150),
+            Duration::from_millis(50),
+            || {
+                polls.set(polls.get() + 1);
+                false
+            },
+        );
+        assert!(!gave_up, "a condition that never held is a timeout");
+        assert!(
+            start.elapsed() >= Duration::from_millis(150),
+            "must not escalate before the grace expires"
+        );
+        // And it has to be waiting *between* polls, not spinning. A
+        // dropped `sleep` here turns every teardown into a busy loop for
+        // the length of the grace, which no assertion above would catch.
+        assert!(
+            polls.get() < 20,
+            "polled {} times over 150ms: the poll interval is not being honoured",
+            polls.get()
+        );
+    }
+
+    /// Polling stops the instant the condition holds. The other half of
+    /// the contract -- a condition that holds *on* the deadline counts as
+    /// a success -- is what the ordering of the two checks in `wait_until`
+    /// buys, and it is deliberately not tested here: making it observable
+    /// needs the condition to flip true on the exact iteration the grace
+    /// expires, which no wall-clock test can hit reliably. It costs
+    /// nothing to be right about (the escalation it avoids is an ignored
+    /// error and one log line) and is noted in the helper's docs.
+    #[test]
+    fn wait_until_stops_polling_once_the_condition_holds() {
+        let polls = std::cell::Cell::new(0u32);
+        let held = wait_until(Duration::from_secs(30), Duration::from_millis(10), || {
+            polls.set(polls.get() + 1);
+            polls.get() >= 3
+        });
+        assert!(held, "held on the third poll, well inside the grace");
+        assert_eq!(
+            polls.get(),
+            3,
+            "and did not keep polling a condition that had already held"
+        );
+    }
+
+    /// The four shutdown paths are the same decision, so they read the
+    /// same knob. `terminate_child` is the one that runs on every exit:
+    /// if it waits long enough to be noticeable, quitting doris does.
+    #[test]
+    fn the_shutdown_grace_is_short_enough_to_be_invisible() {
+        assert!(
+            SIGTERM_GRACE <= Duration::from_millis(600),
+            "the grace is what a quitting user waits through"
+        );
+        assert!(
+            REAP_POLL < SIGTERM_GRACE,
+            "otherwise the poll interval, not the grace, is the real deadline"
+        );
+    }
 
     // Phase 5 (REFACTOR_PLAN.md): the 40-line chrome-args wall inside
     // `launch` is data, not control flow -- pin its contract so the
