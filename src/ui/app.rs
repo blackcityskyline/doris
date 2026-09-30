@@ -230,6 +230,15 @@ pub struct App {
 /// `test_every_known_source_fits_the_badge_column`.
 pub const SOURCE_BADGE_WIDTH: u16 = 10;
 
+/// How many log lines the ring buffer holds before it starts dropping
+/// the oldest. A reader who wants to scroll back further than this has
+/// to open the full log (`L`).
+const LOG_CAPACITY: usize = 500;
+
+/// How many lines PgUp/PgDn move the log scroll. One screen's worth on
+/// a typical terminal, so a page turn feels like a page turn.
+const LOG_PAGE_STEP: usize = 10;
+
 /// The `Src` cell for one result: the source id, or `-` when it is
 /// missing.
 ///
@@ -532,7 +541,7 @@ impl App {
         // halfway up a history keeps the history they were reading.
         let following = self.log_scroll >= self.logs.len();
         self.logs.push_back(format!("[{}] {}", ts, msg));
-        if self.logs.len() > 500 {
+        if self.logs.len() > LOG_CAPACITY {
             self.logs.pop_front();
             if !following {
                 self.log_scroll = self.log_scroll.saturating_sub(1);
@@ -571,11 +580,11 @@ impl App {
     }
 
     pub fn scroll_logs_page_up(&mut self) {
-        self.log_scroll = self.log_scroll.saturating_sub(10);
+        self.log_scroll = self.log_scroll.saturating_sub(LOG_PAGE_STEP);
     }
 
     pub fn scroll_logs_page_down(&mut self) {
-        self.log_scroll = (self.log_scroll + 10).min(self.logs.len());
+        self.log_scroll = (self.log_scroll + LOG_PAGE_STEP).min(self.logs.len());
     }
 
     pub fn mouse_scroll_logs(&mut self, delta: i16) {

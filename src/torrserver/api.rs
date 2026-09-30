@@ -2,6 +2,11 @@ use anyhow::Result;
 use reqwest::Client;
 use serde::Deserialize;
 
+/// The default TorrServer URL. Every place that needs to know where
+/// TorrServer lives reads this constant, so a non-default port is a
+/// one-line change instead of a five-place hunt.
+pub const DEFAULT_URL: &str = "http://127.0.0.1:8090";
+
 /// One torrent's live status, as reported by TorrServer's `/torrents`
 /// endpoint (`{"action": "list"}` or `{"action": "get", "hash": ...}`).
 ///

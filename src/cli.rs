@@ -22,7 +22,7 @@ pub struct Args {
     #[arg(long)]
     pub browser_visibility: Option<String>,
 
-    #[arg(long, default_value = "http://127.0.0.1:8090")]
+    #[arg(long, default_value = crate::torrserver::api::DEFAULT_URL)]
     pub torrserver: String,
 
     #[arg(long, default_value_t = 14141)]

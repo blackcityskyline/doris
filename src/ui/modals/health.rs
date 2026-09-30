@@ -8,6 +8,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::config::Config;
+use crate::torrserver::api::TorrServer;
 use crate::ui::app::{centered_rect, App, Modal};
 
 impl App {
@@ -73,13 +74,12 @@ impl App {
         // block_on-ing that same runtime's handle is illegal. Making
         // this function itself async and .await-ing the request, like
         // every other network call in the app, is the fix.
-        let ts_reachable = reqwest::Client::new()
-            .get(&ts_url)
-            .timeout(std::time::Duration::from_secs(2))
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false);
+        //
+        // The probe itself is `TorrServer::is_reachable` -- the same call
+        // `play` makes, with the same timeout. A second copy of it here
+        // was a copy that could answer differently from the code it is
+        // reporting on.
+        let ts_reachable = TorrServer::new(&ts_url).is_reachable().await;
         if ts_reachable {
             results.push(format!("{} TorrServer: reachable ({})", "\u{2714}", ts_url));
         } else {

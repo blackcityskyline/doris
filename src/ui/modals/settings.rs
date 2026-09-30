@@ -15,6 +15,11 @@ use crate::config::Config;
 use crate::sources::source::{Group, GROUP_ORDER, KNOWN_SOURCES};
 use crate::ui::app::{centered_rect, App, Modal};
 
+/// Column where the settings modal draws its vertical divider between
+/// the option name and its value. Capped at `bw - 3` so a narrow modal
+/// still has room for the value.
+const SETTINGS_DIVIDER_COL: usize = 30;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SettingsState {
     pub selected_category: usize,
@@ -756,7 +761,7 @@ impl App {
 
             if let Modal::Settings(ref mut state) = self.modal {
                 let bw = inner.width as usize;
-                let divider_col = 30.min(bw.saturating_sub(3));
+                let divider_col = SETTINGS_DIVIDER_COL.min(bw.saturating_sub(3));
 
                 let tab_y = inner.y;
                 let div_y = tab_y + 2;

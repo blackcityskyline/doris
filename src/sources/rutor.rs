@@ -132,6 +132,11 @@ impl Default for RutorSearcher {
 /// view to "all" before searching.
 pub const BROWSE_URL: &str = "https://rutor.info/";
 
+/// A real rutor search results page is large (many rows); a tiny
+/// response on a 2xx status is a strong sign of a challenge/interstitial
+/// page rather than genuinely zero matches.
+const EMPTY_PAGE_THRESHOLD: usize = 2000;
+
 impl RutorSearcher {
     pub const HOME_URL: &'static str = "https://rutor.info/";
     /// Search/download host. rutor.info, not rutor.org: since
@@ -393,7 +398,7 @@ impl RutorSearcher {
             ),
         );
 
-        if matched == 0 && html.len() < 2000 {
+        if matched == 0 && html.len() < EMPTY_PAGE_THRESHOLD {
             // A real rutor search results page is large (many rows); a
             // tiny response on a 2xx status is a strong sign of a
             // challenge/interstitial page rather than genuinely zero

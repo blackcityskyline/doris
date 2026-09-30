@@ -18,6 +18,10 @@ const BANNER: &[&str] = &[
 const BANNER_ROWS: u16 = 6;
 const SPACING: u16 = 1;
 
+/// Height of one menu item in rows: 3 glyph rows + 1 blank row of
+/// breathing room between items.
+const MENU_ITEM_HEIGHT: u16 = 4;
+
 const MENU_ITEMS: &[&[&str]] = &[
     &[
         "┌─┐┌─┐╶┬╴╷┌─┐┌┐╷┌─┐",
@@ -98,7 +102,7 @@ pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
         .fold(BANNER[0].width() as u16, |w, block| {
             w.max(block[0].width() as u16)
         });
-    let content_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * 4;
+    let content_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * MENU_ITEM_HEIGHT;
     if area.width < content_w + 2 || area.height < content_h + 2 {
         return None;
     }

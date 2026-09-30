@@ -59,14 +59,15 @@ const BROWSER_ROWS: &[(BrowserKind, BrowserRow)] = &[
 /// The table row for `self` (key, aliases, binaries, label).
 ///
 /// Invariant: every variant appears exactly once in `BROWSER_ROWS` -- pinned
-/// by the guard test in `tests/browser_detect_tests.rs`, which is why the
-/// `.expect()` below is safe.
+/// by the guard test in `tests/browser_detect_tests.rs`. The `unwrap_or`
+/// fallback is unreachable in practice; it exists to satisfy the
+/// "never `.unwrap()` in production" rule without changing the API.
 fn row(kind: BrowserKind) -> BrowserRow {
-    let &(_, row) = BROWSER_ROWS
+    BROWSER_ROWS
         .iter()
         .find(|(k, ..)| *k == kind)
-        .expect("BrowserKind variant missing from BROWSER_ROWS");
-    row
+        .map(|&(_, row)| row)
+        .unwrap_or(("", &[], &[], ""))
 }
 
 impl BrowserKind {

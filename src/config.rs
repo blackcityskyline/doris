@@ -181,7 +181,7 @@ pub struct Keybindings {
 }
 
 fn default_torrserver_url() -> String {
-    "http://127.0.0.1:8090".to_string()
+    crate::torrserver::api::DEFAULT_URL.to_string()
 }
 
 fn default_browser_visibility() -> String {

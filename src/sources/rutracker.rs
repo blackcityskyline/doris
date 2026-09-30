@@ -8,6 +8,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// The site root. Every rutracker URL in this file is built from it, so
+/// a domain that moves is a one-line change rather than a hunt through
+/// nine literals -- one of which is inside injected JavaScript, where a
+/// stale host fails as a login that silently does nothing.
+const SITE_ROOT: &str = "https://rutracker.org";
+
+/// The search endpoint under [`SITE_ROOT`]: results ordered by the
+/// tracker (`o=10&s=2`), narrowed by `nm=` and paged with `start=`.
+const TRACKER_URL: &str = "https://rutracker.org/forum/tracker.php";
+
+/// The login form's target, used both by the navigation and by the
+/// fallback inside the injected script.
+const LOGIN_URL: &str = "https://rutracker.org/forum/login.php";
+
 /// Resolve a rutracker download URL against the forum root. Lives here,
 /// not in the source-agnostic `models.rs`, because the host is baked in:
 /// only rutracker produces these `/forum/...` and bare `dl.php?t=` forms
@@ -16,9 +30,9 @@ pub fn resolve_url(url: &str) -> String {
     if url.starts_with("http") {
         url.to_string()
     } else if url.starts_with('/') {
-        format!("https://rutracker.org{}", url)
+        format!("{}{}", SITE_ROOT, url)
     } else {
-        format!("https://rutracker.org/forum/{}", url)
+        format!("{}/forum/{}", SITE_ROOT, url)
     }
 }
 
@@ -49,6 +63,10 @@ pub struct RutrackerSearcher {
 /// Awards, car/moto (1202 «Фильмы и передачи по авто/мото», 1964
 /// «Ремонт и эксплуатация транспортных средств») and «Разное». Rows
 /// from those sections claim no group and live in the "all" view only.
+/// Pages smaller than this are worth dumping to the log in full -- they
+/// are almost certainly a challenge or interstitial, not a real result.
+const DUMP_THRESHOLD: usize = 5000;
+
 pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
     (
         Group::Movies,
@@ -118,20 +136,14 @@ pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String
     let encoded_query = urlencoding::encode(query);
     let params = forum_params(category);
     match (offset == 0, params.is_empty()) {
-        (true, true) => format!(
-            "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2",
-            encoded_query
-        ),
-        (true, false) => format!(
-            "https://rutracker.org/forum/tracker.php?{}&nm={}&o=10&s=2",
-            params, encoded_query
-        ),
+        (true, true) => format!("{TRACKER_URL}?nm={}&o=10&s=2", encoded_query),
+        (true, false) => format!("{TRACKER_URL}?{}&nm={}&o=10&s=2", params, encoded_query),
         (false, true) => format!(
-            "https://rutracker.org/forum/tracker.php?nm={}&o=10&s=2&start={}",
+            "{TRACKER_URL}?nm={}&o=10&s=2&start={}",
             encoded_query, offset
         ),
         (false, false) => format!(
-            "https://rutracker.org/forum/tracker.php?{}&nm={}&o=10&s=2&start={}",
+            "{TRACKER_URL}?{}&nm={}&o=10&s=2&start={}",
             params, encoded_query, offset
         ),
     }
@@ -144,6 +156,8 @@ impl RutrackerSearcher {
     /// `Source::home_url()` and callers stop reaching into this searcher
     /// just to get a URL constant.
     pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";
+    // (built from SITE_ROOT like every other URL here; the associated
+    // const cannot interpolate, so this one spells the host out)
 
     /// Rows per `tracker.php?start=` page -- the unit the trait's
     /// `SearchRequest::offset` counts in, and what `Source::search` uses
@@ -362,7 +376,7 @@ impl RutrackerSearcher {
             has_login_form, has_logout
         ));
 
-        if html.len() < 5000 {
+        if html.len() < DUMP_THRESHOLD {
             log(&format!(
                 "AUTH: page HTML ({} bytes): {}",
                 html.len(),
@@ -380,9 +394,7 @@ impl RutrackerSearcher {
         let browser = self.browser.lock().await;
 
         log("AUTH LOGIN: navigating to login.php...");
-        browser
-            .navigate("https://rutracker.org/forum/login.php")
-            .await?;
+        browser.navigate(LOGIN_URL).await?;
         crate::browser::cloudflare::patch_cdp_detection(&browser)
             .await
             .ok();
@@ -516,7 +528,7 @@ impl RutrackerSearcher {
                     fd.set('login_username', '{}');
                     fd.set('login_password', '{}');
                     if (!fd.has('login')) fd.set('login', 'Вход');
-                    const action = form.action || 'https://rutracker.org/forum/login.php';
+                    const action = form.action || '{LOGIN_URL}';
                     fetch(action, {{
                         method: 'POST',
                         body: fd,

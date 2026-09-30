@@ -15,6 +15,10 @@ use crate::event::Event;
 use crate::torrserver::api::TorrServer;
 use tokio::sync::mpsc::UnboundedSender;
 
+/// Minimum interval between TorrServer polls. A config value below this
+/// is clamped up, so a typo cannot hammer the server.
+const MIN_POLL_INTERVAL_MS: u64 = 100;
+
 pub struct Manager;
 
 impl Manager {
@@ -37,7 +41,7 @@ impl Manager {
         update_ms: u64,
         event_tx: UnboundedSender<Event>,
     ) -> tokio::task::JoinHandle<()> {
-        let period = std::time::Duration::from_millis(update_ms.max(100));
+        let period = std::time::Duration::from_millis(update_ms.max(MIN_POLL_INTERVAL_MS));
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(period);
             loop {

@@ -25,11 +25,46 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use regex::Regex;
 use scraper::{Html, Selector};
+use std::sync::OnceLock;
 
 use super::format::unescape_entities;
 use super::models::TorrentItem;
 use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
+
+/// Every CSS selector this file needs, compiled once.
+///
+/// The selectors are literals in this file, so a failure to compile is a
+/// typo here and not a runtime condition -- but `parse_results`
+/// answering "no results" would hide the typo behind an empty page. One
+/// `OnceLock` for the set makes the failure a `None` every caller has to
+/// answer for, and keeps the parse off the hot path. (Same shape
+/// `format::size_regex` already uses.)
+struct Selectors {
+    entry: Selector,
+    title: Selector,
+    date: Selector,
+    size: Selector,
+    pages: Selector,
+    link: Selector,
+    download: Selector,
+}
+
+fn selectors() -> Option<&'static Selectors> {
+    static SEL: OnceLock<Option<Selectors>> = OnceLock::new();
+    SEL.get_or_init(|| {
+        Some(Selectors {
+            entry: Selector::parse("div[id^='entryID']").ok()?,
+            title: Selector::parse("h2 a").ok()?,
+            date: Selector::parse(".short_cat span").ok()?,
+            size: Selector::parse(".size_file").ok()?,
+            pages: Selector::parse("div.pages").ok()?,
+            link: Selector::parse("a").ok()?,
+            download: Selector::parse("a[href^='/load/0-0-0-']").ok()?,
+        })
+    })
+    .as_ref()
+}
 
 /// Site root; the search endpoint is `/load` under it.
 pub const HOME_URL: &str = "https://torentino.org/";
@@ -155,14 +190,13 @@ impl TorentinoSearcher {
 /// than the search itself.
 pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     let document = Html::parse_document(html);
-    let entry_sel = Selector::parse("div[id^='entryID']").expect("entry selector");
-    let title_sel = Selector::parse("h2 a").expect("title selector");
-    let date_sel = Selector::parse(".short_cat span").expect("date selector");
-    let size_sel = Selector::parse(".size_file").expect("size selector");
+    let Some(sel) = selectors() else {
+        return Vec::new();
+    };
 
     let mut items = Vec::new();
-    for entry in document.select(&entry_sel) {
-        let title_el = match entry.select(&title_sel).next() {
+    for entry in document.select(&sel.entry) {
+        let title_el = match entry.select(&sel.title).next() {
             Some(el) => el,
             None => continue,
         };
@@ -173,13 +207,13 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
         }
         // The first span reads "| Дата: 29.08.2026, 11:26".
         let date = entry
-            .select(&date_sel)
+            .select(&sel.date)
             .next()
             .map(|el| el.text().collect::<String>())
             .and_then(|text| parse_date(&text))
             .unwrap_or_default();
         let size = entry
-            .select(&size_sel)
+            .select(&sel.size)
             .next()
             .map(|el| el.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
@@ -221,20 +255,21 @@ pub fn parse_date(text: &str) -> Option<String> {
 /// single-page answer, which is what every live probe showed.
 pub fn has_next_page(html: &str) -> bool {
     let document = Html::parse_document(html);
-    let pages_sel = Selector::parse("div.pages").expect("pages selector");
-    let link_sel = Selector::parse("a").expect("link selector");
+    let Some(sel) = selectors() else {
+        return false;
+    };
     document
-        .select(&pages_sel)
-        .any(|pages| pages.select(&link_sel).next().is_some())
+        .select(&sel.pages)
+        .any(|pages| pages.select(&sel.link).next().is_some())
 }
 
 /// The item page's file link: `/load/0-0-0-<id>-<n>`, which 301s to
 /// the `.torrent` under `/_ld/`.
 pub fn find_download_link(html: &str) -> Option<String> {
     let document = Html::parse_document(html);
-    let link_sel = Selector::parse("a[href^='/load/0-0-0-']").expect("download selector");
+    let sel = selectors()?;
     document
-        .select(&link_sel)
+        .select(&sel.download)
         .next()
         .and_then(|el| el.value().attr("href"))
         .map(|href| format!("{}{}", HOME_URL.trim_end_matches('/'), href))

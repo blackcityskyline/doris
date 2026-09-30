@@ -26,6 +26,11 @@ use crate::ui::modals::settings::SettingsAction;
 use crate::ui::theme::Theme;
 use crate::ui::zones::ZoneId;
 
+/// How often the event handler wakes up to poll the terminal for keys,
+/// mouse and resize. 100 ms is the sweet spot: responsive enough that
+/// typing never feels laggy, cheap enough that an idle app does not spin.
+const EVENT_POLL_MS: u64 = 100;
+
 /// Resolve the effective download directory from `download_dir_mode` and
 /// the three custom slots (Options -> download), falling back to the OS
 /// Downloads folder for "default" or an unset/empty custom slot. A free
@@ -295,7 +300,7 @@ pub struct App {
 
 impl App {
     pub async fn new(args: Args, config: Config) -> Result<Self> {
-        let torrserver_url = if args.torrserver == "http://127.0.0.1:8090" {
+        let torrserver_url = if args.torrserver == crate::torrserver::api::DEFAULT_URL {
             config.torrserver_url.clone()
         } else {
             args.torrserver.clone()
@@ -319,7 +324,7 @@ impl App {
             }
         }
 
-        let event_handler = EventHandler::new(std::time::Duration::from_millis(100));
+        let event_handler = EventHandler::new(std::time::Duration::from_millis(EVENT_POLL_MS));
         let torrserver = TorrServer::new(&torrserver_url);
         crate::torrent::Manager::spawn(
             torrserver.clone(),
@@ -2018,7 +2023,10 @@ impl App {
             }
 
             if !torrserver.is_reachable().await {
-                log("TorrServer is not reachable! Start TorrServer on localhost:8090");
+                log(&format!(
+                    "TorrServer is not reachable! Start TorrServer on {}",
+                    crate::torrserver::api::DEFAULT_URL
+                ));
                 let _ = event_tx.send(Event::StreamError("TorrServer unreachable".into()));
                 return;
             }
@@ -2103,7 +2111,7 @@ impl App {
             let _ = event_tx.send(Event::TorrentActive(hash.clone()));
             match torrserver.play(&hash, &item.title, None).await {
                 Ok(mut child) => {
-                    let stream_url = format!("http://127.0.0.1:8090/stream/{}", hash);
+                    let stream_url = format!("{}/stream/{}", torrserver.base_url(), hash);
                     let _ = event_tx.send(Event::StreamComplete(stream_url));
 
                     if let Some(stderr) = child.stderr.take() {
