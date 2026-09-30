@@ -12,6 +12,12 @@ const BANNER: &[&str] = &[
     "╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝",
 ];
 
+/// Row counts of the layout below, named once: the backdrop has to
+/// measure the same thing the drawing does, or the two disagree about
+/// where the menu ends.
+const BANNER_ROWS: u16 = 6;
+const SPACING: u16 = 1;
+
 const MENU_ITEMS: &[&[&str]] = &[
     &[
         "┌─┐┌─┐╶┬╴╷┌─┐┌┐╷┌─┐",
@@ -79,11 +85,50 @@ impl MenuState {
     }
 }
 
-pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &Theme) {
+/// The box the menu takes: one rect around the banner *and* the three
+/// items -- the wider of the two wins, and both are centred, so the
+/// rect covers them either way -- plus the border row a box needs.
+///
+/// `None` when the terminal cannot hold it: the menu then draws without
+/// a backdrop, the way it always did, rather than clipping itself into
+/// a frame whose inside is smaller than what it frames.
+pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
+    let content_w = MENU_ITEMS
+        .iter()
+        .fold(BANNER[0].width() as u16, |w, block| {
+            w.max(block[0].width() as u16)
+        });
+    let content_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * 4;
+    if area.width < content_w + 2 || area.height < content_h + 2 {
+        return None;
+    }
+    Some(Rect::new(
+        area.x + (area.width - content_w) / 2 - 1,
+        area.y + (area.height - content_h) / 2 - 1,
+        content_w + 2,
+        content_h + 2,
+    ))
+}
+
+pub fn render_menu(
+    frame: &mut Frame,
+    area: Rect,
+    state: &MenuState,
+    theme: &Theme,
+    backdrop: Block<'static>,
+) {
+    // The box goes down first: the glyphs below are painted *over* the
+    // zones, and the rows between them carry no glyph to highlight, so
+    // without an opaque backdrop those gaps are windows onto the table.
+    if let Some(rect) = menu_backdrop_rect(area) {
+        frame.render_widget(Clear, rect);
+        frame.render_widget(backdrop, rect);
+    }
+
     let banner_w = BANNER[0].width() as u16;
-    let banner_h = BANNER.len() as u16;
+    let banner_h = BANNER_ROWS;
     let menu_count = MENU_ITEMS.len() as u16;
-    let spacing: u16 = 1;
+    let spacing = SPACING;
 
     // No keybind footer: btop's main menu (`btop_menu.cpp:1219`,
     // `mainMenu`) draws a banner and three items and nothing else --

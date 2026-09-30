@@ -1290,7 +1290,13 @@ impl App {
                 ZoneId::Trackers => self.render_trackers_zone(frame, zone_area, *zone_id, config),
             }
         }
-        super::menu::render_menu(frame, area, &self.menu, &self.theme);
+        let backdrop = self
+            .modal_block(self.theme.primary_color(), config)
+            .title(Span::styled(
+                " menu ",
+                Style::default().fg(self.theme.primary_color()),
+            ));
+        super::menu::render_menu(frame, area, &self.menu, &self.theme, backdrop);
     }
 
     fn render_main_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
