@@ -60,6 +60,10 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
         "j, k, Up, Down",
         "Moves in the focused zone (j/k: Vim keys).",
     ),
+    (
+        "PageUp, PageDown",
+        "Pages the results or the log (Log focused).",
+    ),
     ("g, G", "Cycles the category forward / back."),
     ("d", "Downloads a row / removes the torrent (twice)."),
     ("v", "Logs the selected result's details."),

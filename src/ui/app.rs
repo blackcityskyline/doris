@@ -1254,6 +1254,40 @@ impl App {
         }
     }
 
+    /// Move the selection a page at a time, for `PageUp`/`PageDown` in
+    /// the Results panel.
+    ///
+    /// `PageUp`/`PageDown` used to be answered only in the Log panel, so
+    /// in a result list of five hundred rows -- which is what a search
+    /// across ten sources returns -- scrolling back meant pressing `k`
+    /// once per row. `navigate_down` calls `load_more` when it reaches
+    /// the end of what is loaded, so a *forward* page could be made to
+    /// fetch; a *backward* one had nothing to fall back on.
+    ///
+    /// `page` is in rows and comes from the caller, which is the only
+    /// place that knows how tall the panel is. A page never goes past the
+    /// ends, and moving down stops on the last row rather than wrapping.
+    pub fn navigate_page(&mut self, page: isize) -> bool {
+        if self.results.is_empty()
+            || self.input_mode
+            || self.modal != Modal::None
+            || self.filtered_indices.is_empty()
+        {
+            return false;
+        }
+        let last = self.filtered_indices.len() - 1;
+        let here = self
+            .filtered_indices
+            .iter()
+            .position(|&i| i == self.selected)
+            .unwrap_or(0);
+        let target = (here as isize + page).clamp(0, last as isize) as usize;
+        if target != here {
+            self.move_selection_to(self.filtered_indices[target]);
+        }
+        true
+    }
+
     /// `d` on the Torrent zone. Returns `true` only on the second press,
     /// which is the one that removes.
     ///

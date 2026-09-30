@@ -1157,6 +1157,18 @@ impl App {
         Ok(())
     }
 
+    /// How many rows one `PageUp`/`PageDown` covers in the Results
+    /// panel: half the terminal, less the frame and the row the cursor
+    /// has to stay visible in. A page the size of the whole window would
+    /// put the selection off the bottom on the way back.
+    fn result_page(&self) -> isize {
+        // Two rows for the frame, one so the cursor row is still on
+        // screen. `saturating_sub` rather than a clamp: on a terminal
+        // too short to page, a page of zero would make the key do
+        // nothing at all, which is what it did before.
+        (self.terminal_size.1 / 2).saturating_sub(3).max(1) as isize
+    }
+
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // An armed removal is a question waiting for an answer, and every
         // key that is not `d` is a "no". Disarmed here, before any mode
@@ -1628,15 +1640,27 @@ impl App {
                 self.ui.zones.focus_prev();
             }
             KeyCode::PageUp => {
-                if self.ui.zones.focused == ZoneId::Log {
-                    self.ui.scroll_logs_page_up()
+                match self.ui.zones.focused {
+                    ZoneId::Log => {
+                        self.ui.scroll_logs_page_up();
+                    }
+                    ZoneId::Results => {
+                        self.ui.navigate_page(-self.result_page());
+                    }
+                    // Torrent is a status readout and Trackers is ten
+                    // rows: neither has a page to turn.
+                    ZoneId::Torrent | ZoneId::Trackers => {}
                 }
             }
-            KeyCode::PageDown => {
-                if self.ui.zones.focused == ZoneId::Log {
-                    self.ui.scroll_logs_page_down()
+            KeyCode::PageDown => match self.ui.zones.focused {
+                ZoneId::Log => {
+                    self.ui.scroll_logs_page_down();
                 }
-            }
+                ZoneId::Results => {
+                    self.ui.navigate_page(self.result_page());
+                }
+                ZoneId::Torrent | ZoneId::Trackers => {}
+            },
             // Three keys for one box: `s` and `i` as they always were,
             // plus `S` -- Settings moved to the menu, and the letter
             // this app's users already had under their pinky keeps
@@ -3001,6 +3025,66 @@ mod key_routing_tests {
             logs.contains("Trackers panel (3)"),
             "the message must name the panel's current key:\n{logs}"
         );
+    }
+
+    /// `PageUp`/`PageDown` page the Results table.
+    ///
+    /// A claim about the key *routing*, not about the movement: the
+    /// movement is `UiApp::navigate_page`, which the paging tests pin
+    /// directly. Those passed with this arm removed -- the key did
+    /// nothing in the one panel with five hundred rows in it, and no
+    /// test noticed. So this is here, where `handle_key` is reachable.
+    #[tokio::test]
+    async fn page_keys_page_the_results_and_still_page_the_log() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.zones.focused = ZoneId::Results;
+        app.terminal_size = (80, 24);
+        app.ui.results = (0..100)
+            .map(|i| crate::sources::models::TorrentItem {
+                title: format!("Torrent {i}"),
+                source: "rutor".into(),
+                ..Default::default()
+            })
+            .collect();
+        app.ui.zones.filter_input.clear();
+        app.ui.update_filter();
+
+        let start = app.ui.selected;
+        app.handle_key(press(KeyCode::PageDown))
+            .await
+            .expect("PageDown");
+        assert!(
+            app.ui.selected > start,
+            "PageDown must move the cursor, {start} -> {}",
+            app.ui.selected
+        );
+
+        let after_down = app.ui.selected;
+        app.handle_key(press(KeyCode::PageUp))
+            .await
+            .expect("PageUp");
+        assert_eq!(
+            app.ui.selected, start,
+            "PageUp must come back to where it started"
+        );
+        assert!(
+            after_down > start,
+            "sanity: the page down before it actually moved"
+        );
+
+        // And the Log panel keeps its own paging, which is where these
+        // keys worked before.
+        for i in 0..100 {
+            app.ui.add_log(&format!("line {i}"));
+        }
+        app.ui.zones.focused = ZoneId::Log;
+        app.ui.scroll_logs_page_down();
+        let scrolled = app.ui.log_scroll;
+        assert!(scrolled > 0, "the log has more than one page of log");
+        app.handle_key(press(KeyCode::PageUp))
+            .await
+            .expect("PageUp");
+        assert!(app.ui.log_scroll < scrolled, "PageUp must scroll the log");
     }
 
     /// The armed removal is cancelled by *any* other key, and that is a
