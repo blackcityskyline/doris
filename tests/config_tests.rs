@@ -1,5 +1,7 @@
 use doris::config::*;
 use doris::sources::source::KNOWN_SOURCES;
+use serial_test::serial;
+use std::path::PathBuf;
 
 #[test]
 fn test_config_default() {
@@ -8,7 +10,12 @@ fn test_config_default() {
     assert_eq!(config.torrserver_url, "http://127.0.0.1:8090");
     assert!(config.enable_torrserver);
     assert_eq!(config.bridge_port, 14141);
-    assert_eq!(config.cookie_file, "cookies.txt");
+    assert!(
+        std::path::Path::new(&config.cookie_file).is_absolute(),
+        "the default cookie file must be absolute, not a path relative to \
+         whatever directory doris happened to be started in: `cookies.txt` \
+         is how a live rutracker session ended up inside target/release/"
+    );
     assert!(config.browser.is_none());
 
     // Phase 5: Options "general" category fields must have real, sane
@@ -96,6 +103,185 @@ fn test_config_save_and_load_round_trip() {
     // Untouched fields should still round-trip with their defaults.
     assert!(loaded.truecolor);
     assert_eq!(loaded.browser_visibility, "hidden");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A config written before the default became absolute says
+/// `cookie_file = "cookies.txt"`, which resolved against the CWD -- so a
+/// session landed wherever doris was started from (that is how one ended
+/// up inside `target/release/`). The load puts the path next to the
+/// config instead, which is one stable location.
+///
+/// The relative name here is *not* the literal `cookies.txt` a real
+/// config holds: the migration looks for that name in the CWD and moves
+/// whatever it finds, which in a checkout is the developer's own session.
+/// `#[serial]` because these tests share the CWD, which is a fact about
+/// them, not a property of the code under test.
+#[test]
+#[serial]
+fn test_relative_cookie_file_migrates_next_to_the_config() {
+    let name = format!("doris-migrate-rel-{}.txt", std::process::id());
+    let dir = std::env::temp_dir().join(format!("doris-cfg-mig-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, format!("cookie_file = \"{name}\"\n")).unwrap();
+
+    let config = load(Some(&path)).unwrap();
+
+    assert!(
+        std::path::Path::new(&config.cookie_file).is_absolute(),
+        "a relative cookie_file must not survive the load"
+    );
+    assert_eq!(
+        std::path::Path::new(&config.cookie_file),
+        dir.join(&name),
+        "it belongs beside the config, not in the CWD"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The migration is a `load` fix, so it has to reach the file on disk
+/// too -- otherwise the next run resolves the same relative path again
+/// and the fix only ever exists in memory.
+#[test]
+#[serial]
+fn test_migration_is_written_back_to_the_config() {
+    let name = format!("doris-migrate-wb-{}.txt", std::process::id());
+    let dir = std::env::temp_dir().join(format!("doris-cfg-wb-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, format!("cookie_file = \"{name}\"\n")).unwrap();
+
+    load(Some(&path)).unwrap();
+    // Reload straight from the file, not from the value load returned.
+    let reloaded = load(Some(&path)).unwrap();
+
+    assert_eq!(
+        reloaded.cookie_file,
+        dir.join(&name).to_str().unwrap(),
+        "the migrated path must be persisted, not recomputed each run"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A user who already put the file somewhere absolute meant that, and a
+/// migration that moved it would be a change nobody asked for.
+#[test]
+fn test_absolute_cookie_file_is_left_alone() {
+    let dir = std::env::temp_dir().join(format!("doris-cfg-abs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    let mine = dir.join("my-session.txt");
+    std::fs::write(&path, "cookie_file = \"my-session.txt\"\n").unwrap();
+    std::fs::write(&mine, "# Netscape HTTP Cookie File\n").unwrap();
+
+    let config = load(Some(&path)).unwrap();
+
+    assert_eq!(config.cookie_file, mine.to_str().unwrap());
+    assert!(mine.exists(), "the user's own file must survive the load");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The session the old relative path pointed at is a real file with a
+/// live login in it. Pinning the path without moving that file would
+/// leave the user logged out for no reason, so the move is part of the
+/// migration -- or the migration fails loudly rather than silently
+/// costing a re-login.
+///
+/// This one has to put a file in the CWD, because a relative path *is* a
+/// path from the CWD and that is the whole thing being tested. So the
+/// name carries the pid, and a guard takes the file away again even if an
+/// assertion panics -- an earlier draft used the plain name `cookies.txt`
+/// and the migration duly moved the developer's own session file out from
+/// under the repository.
+#[test]
+#[serial]
+fn test_migration_moves_the_existing_session() {
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    let name = format!("doris-migrate-test-{}.txt", std::process::id());
+    let old = std::path::PathBuf::from(&name);
+    let _cleanup = Cleanup(old.clone());
+
+    let dir = std::env::temp_dir().join(format!("doris-cfg-move-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, format!("cookie_file = \"{name}\"\n")).unwrap();
+    std::fs::write(
+        &old,
+        "# Netscape HTTP Cookie File\n.bb_session\tTRUE\t/\tTRUE\t0\tbb_session\tlive\n",
+    )
+    .unwrap();
+
+    let config = load(Some(&path)).unwrap();
+
+    let moved = dir.join(&name);
+    assert_eq!(config.cookie_file, moved.to_str().unwrap());
+    assert!(moved.exists(), "the session must not be left behind");
+    assert!(
+        std::fs::read_to_string(&moved)
+            .unwrap()
+            .contains("bb_session"),
+        "the session's contents must survive the move"
+    );
+    assert!(
+        !old.exists(),
+        "nothing may be left at the old relative path"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `rename` cannot cross a filesystem boundary, and these two paths
+/// routinely are on different ones: the config in `~/.config` on the root
+/// filesystem, the app started from a mounted data disk or a tmpfs. The
+/// move still has to happen, or the session is left behind on the disk
+/// nobody will look on again.
+///
+/// The assertions are the same either way -- the file ends up beside the
+/// config with its contents -- so this does not check that the two paths
+/// really are on different devices. Where they are not, `rename` does the
+/// work and the test still says what it means.
+#[test]
+#[serial]
+fn test_migration_moves_across_a_filesystem_boundary() {
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    let name = format!("doris-migrate-xdev-{}.txt", std::process::id());
+    let old = std::path::PathBuf::from(&name);
+    let _cleanup = Cleanup(old.clone());
+
+    let dir = std::env::temp_dir().join(format!("doris-cfg-xdev-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, format!("cookie_file = \"{name}\"\n")).unwrap();
+    std::fs::write(&old, "session-body\n").unwrap();
+
+    let config = load(Some(&path)).unwrap();
+
+    let moved = dir.join(&name);
+    assert_eq!(std::fs::read_to_string(&moved).unwrap(), "session-body\n");
+    assert_eq!(config.cookie_file, moved.to_str().unwrap());
+    assert!(!old.exists());
 
     let _ = std::fs::remove_dir_all(&dir);
 }

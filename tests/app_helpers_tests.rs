@@ -290,12 +290,17 @@ fn test_cookie_file_cli_flag_takes_priority_over_config() {
     );
 }
 
+/// The default has to be usable as-is, and it has to be a real location
+/// rather than a name that only resolves from the directory doris was
+/// started in: a bare `cookies.txt` is how a session ended up inside
+/// `target/release/`.
 #[test]
 fn test_cookie_file_default_config_value_is_usable() {
     let config = Config::default();
     assert!(config.save_cookies);
-    let resolved = resolve_cookie_file(&config, None);
-    assert_eq!(resolved, Some(PathBuf::from("cookies.txt")));
+    let resolved = resolve_cookie_file(&config, None).expect("a default must resolve");
+    assert!(resolved.is_absolute(), "got {:?}", resolved);
+    assert_eq!(resolved.file_name().unwrap(), "cookies.txt");
 }
 
 // --- source_outcome_line (fixes B0.3: per-source errors were dropped) -------

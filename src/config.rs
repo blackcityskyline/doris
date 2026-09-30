@@ -204,8 +204,21 @@ fn default_bridge_port() -> u16 {
     14141
 }
 
+/// Where a saved rutracker session lives by default: beside the config,
+/// in `~/.config/doris/`.
+///
+/// This used to be the bare relative string `"cookies.txt"`, which the
+/// app resolved against whatever directory it was started in -- so
+/// `target/release/doris` kept its session inside `target/release/`,
+/// where the next `cargo clean` was the only thing that ever removed it.
+/// A path that moves with the CWD is not a location.
 fn default_cookie_file() -> String {
-    "cookies.txt".to_string()
+    let home = dirs::home_dir().unwrap_or_default();
+    home.join(".config")
+        .join("doris")
+        .join("cookies.txt")
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_true() -> bool {
@@ -359,9 +372,78 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
     match config_path {
         Some(p) => {
             let content = std::fs::read_to_string(&p)?;
-            from_toml(&content)
+            let mut config = from_toml(&content)?;
+            if migrate_cookie_file(&mut config, &p) {
+                // Persist the fix, or every run redoes the migration and
+                // the config on disk still says the old relative path.
+                if let Err(e) = save(&config, Some(&p)) {
+                    crate::log::log("config", &format!("cookie path migration: {e}"));
+                }
+            }
+            Ok(config)
         }
         None => Ok(Config::default()),
+    }
+}
+
+/// Resolve a relative `cookie_file` against the config's own directory and
+/// write the result back. Returns whether anything changed.
+///
+/// Only a *relative* value is touched: someone who named an absolute path
+/// meant it, and rewriting their choice would be a change nobody asked
+/// for. A relative one could not have been stable -- it named a different
+/// file depending on the shell's working directory -- so pinning it beside
+/// the config is the only reading of the user's intent that keeps
+/// working.
+///
+/// A file sitting at the old relative location is moved rather than
+/// abandoned, so the migration does not cost the session it holds. If the
+/// move cannot happen (the old path is gone, the new one is not writable)
+/// the path is still pinned: the app must not keep writing into whatever
+/// directory it happens to be run from.
+fn migrate_cookie_file(config: &mut Config, config_path: &Path) -> bool {
+    let configured = std::path::Path::new(&config.cookie_file);
+    if configured.is_absolute() {
+        return false;
+    }
+
+    let Some(dir) = config_path.parent() else {
+        return false;
+    };
+    let target = dir.join(configured);
+
+    // The old location, before anything below changes the config.
+    let old = std::path::Path::new(configured);
+    if old.is_file() && old != target {
+        if let Err(e) = move_file(old, &target) {
+            crate::log::log(
+                "config",
+                &format!(
+                    "could not move {} to {}: {e}; re-login will be needed",
+                    old.display(),
+                    target.display()
+                ),
+            );
+        }
+    }
+
+    config.cookie_file = target.to_string_lossy().into_owned();
+    true
+}
+
+/// `rename` is atomic but cannot cross a filesystem boundary, and the two
+/// ends here routinely are on different ones -- the config in `~/.config`
+/// on the root filesystem, the app started from a mounted data disk or a
+/// tmpfs. Fall back to copy-then-delete, and only delete once the copy is
+/// on disk, so a failure anywhere leaves the session where it was instead
+/// of removing it.
+fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    match std::fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            std::fs::copy(from, to)?;
+            std::fs::remove_file(from)
+        }
     }
 }
 
