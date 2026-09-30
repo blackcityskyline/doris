@@ -597,34 +597,47 @@ impl ZoneLayout {
     }
 }
 
-/// Split `total` cells over `weights`: exact shares floored, the
-/// leftovers handed to the front of the list -- which is what the old
-/// `total / n` plus "the first rows take the remainder" did, so weights
-/// of `1.0` reproduce that layout to the cell.
+/// Split `total` cells over `weights`: exact shares floored, then the
+/// leftover cells handed to the shares that lost the most to flooring
+/// (ties in list order -- which is what keeps an equal split identical
+/// to the old `total / n` plus "the first rows take the remainder").
 ///
-/// The `1e-6` keeps a share that is *meant* to be whole (`3 * 1/3`)
-/// from flooring to zero on float rounding; the sum is capped at
-/// `total` so a rounding hair can never hand out more than there is.
+/// The invariant is `sum(out) == total`: a share that overshoots puts a
+/// zone off the bottom of the terminal, one that undershoots leaves a
+/// dead band nobody can click. A `0` weight means "no opinion" (and a
+/// NaN means no arithmetic at all), so both fall back to an equal
+/// split rather than to nothing.
 fn distribute(total: u16, weights: &[f32]) -> Vec<u16> {
+    let count = weights.len();
+    if count == 0 {
+        return Vec::new();
+    }
     let sum: f32 = weights.iter().sum();
-    let mut out: Vec<u16> = if sum <= 0.0 || weights.is_empty() {
-        vec![0; weights.len()]
-    } else {
-        weights
-            .iter()
-            .map(|w| {
-                let exact = f32::from(total) * (w / sum);
-                (exact + 1e-6).min(f32::from(total)).floor() as u16
-            })
-            .collect()
-    };
-    let mut left = total.saturating_sub(out.iter().sum());
-    for cell in out.iter_mut() {
-        if left == 0 {
-            break;
+    if !sum.is_finite() || sum <= 0.0 {
+        return distribute(total, &vec![1.0; count]);
+    }
+
+    let exact: Vec<f32> = weights
+        .iter()
+        .map(|w| f32::from(total) * (w / sum))
+        .collect();
+    let mut out: Vec<u16> = exact
+        .iter()
+        .map(|e| e.floor().clamp(0.0, f32::from(total)) as u16)
+        .collect();
+
+    let left = total.saturating_sub(out.iter().sum());
+    if left > 0 {
+        let mut order: Vec<usize> = (0..count).collect();
+        order.sort_by(|&a, &b| {
+            let lost = |i: usize| exact[i] - exact[i].floor();
+            lost(b)
+                .partial_cmp(&lost(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for &i in order.iter().take(left as usize) {
+            out[i] += 1;
         }
-        *cell += 1;
-        left -= 1;
     }
     out
 }
@@ -872,5 +885,101 @@ pub fn zone_border_color(id: ZoneId, focused: ZoneId, theme: &Theme) -> Color {
         theme.primary_color()
     } else {
         theme.div_line.to_color()
+    }
+}
+
+#[cfg(test)]
+mod layout_math_tests {
+    use super::*;
+
+    /// The rule the layout had before it had weights, stated as a test:
+    /// `total / n` with the first `total % n` cells taking one more.
+    /// Weights of `1.0` must keep producing exactly that, or the whole
+    /// wave-8 resize would have quietly re-drawn every default tiling.
+    #[test]
+    fn equal_weights_split_exactly_like_integer_division() {
+        for total in 0..60u16 {
+            for n in 1..8usize {
+                let row = total / n as u16;
+                let rem = total - row * n as u16;
+                let want: Vec<u16> = (0..n).map(|i| row + u16::from((i as u16) < rem)).collect();
+                assert_eq!(
+                    distribute(total, &vec![1.0; n]),
+                    want,
+                    "total={total} n={n}"
+                );
+            }
+        }
+    }
+
+    /// The one invariant a split must never break: what comes out adds
+    /// up to what went in. A share that overshoots pushes a zone off the
+    /// bottom of the terminal; one that undershoots leaves a dead band
+    /// nobody can click.
+    #[test]
+    fn the_shares_always_add_up_to_the_total() {
+        let cases = [
+            vec![1.0],
+            vec![1.0, 1.0, 1.0, 1.0],
+            vec![0.5, 3.0, 1.0],
+            vec![10.0, 0.0],
+            vec![0.0, 0.0],
+            vec![0.1; 7],
+            vec![1000.0, 1.0, 1.0],
+            vec![f32::NAN],
+        ];
+        for weights in cases {
+            for total in [0u16, 1, 2, 7, 40, 101, 400] {
+                let out = distribute(total, &weights);
+                assert_eq!(out.len(), weights.len(), "one share per cell");
+                assert_eq!(
+                    out.iter().sum::<u16>(),
+                    total,
+                    "weights={weights:?} total={total}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_bigger_weight_gets_the_bigger_cell() {
+        assert_eq!(distribute(100, &[1.0, 3.0]), vec![25, 75]);
+        assert_eq!(distribute(97, &[1.0, 3.0]), vec![24, 73]);
+    }
+
+    #[test]
+    fn equal_shares_of_every_size_add_up() {
+        assert_eq!(distribute(3, &[1.0, 1.0, 1.0]), vec![1, 1, 1]);
+        assert_eq!(distribute(33, &[1.0, 1.0, 1.0]), vec![11, 11, 11]);
+        assert_eq!(distribute(49, &[1.0; 7]), vec![7; 7]);
+        assert_eq!(distribute(12, &[1.0; 6]), vec![2; 6]);
+    }
+
+    /// The float case worth pinning: `1.0f32 / 41.0` rounds *below*
+    /// `1/41`, so `41 * that` is `0.99999994` and every share floors to
+    /// zero -- 41 cells to hand out and none of them taken. Flooring
+    /// lost exactly `total - sum(floors)` cells, so the remainder step
+    /// has to give every one of them back, in list order.
+    #[test]
+    fn a_share_lost_to_float_rounding_comes_back_as_a_remainder() {
+        assert_eq!(distribute(41, &[1.0; 41]), vec![1; 41]);
+        assert_eq!(distribute(82, &[1.0; 41]), vec![2; 41]);
+        assert_eq!(distribute(40, &[1.0; 41]), {
+            // Fewer cells than shares: 40 ones and one zero, at the end.
+            let mut want = vec![1u16; 41];
+            want[40] = 0;
+            want
+        });
+    }
+
+    /// More cells than rows to give: the split degrades to a mix of 0s
+    /// and 1s rather than overflowing -- and it still adds up.
+    #[test]
+    fn fewer_cells_than_zones_still_adds_up() {
+        assert_eq!(
+            distribute(2, &[1.0, 1.0, 1.0, 1.0, 1.0]),
+            vec![1, 1, 0, 0, 0]
+        );
+        assert_eq!(distribute(0, &[1.0, 1.0]), vec![0, 0]);
     }
 }
