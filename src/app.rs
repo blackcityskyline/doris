@@ -78,11 +78,6 @@ pub fn source_needs_browser(source: &str) -> bool {
     source::requires_browser(source)
 }
 
-/// The registered id to talk to for a result row. Rows carry their own
-/// source id; rows from before that field existed (or with an id no
-/// longer in the registry) hold rutracker-shaped URLs, so they fall back
-/// to `"rutracker"` -- the same conservative default
-/// [`source_needs_browser`] has had since B0.1.
 /// The file name a result title may safely have on disk: everything
 /// outside alphanumerics, spaces and the usual punctuation becomes `_`.
 /// Shared by the `.torrent` and `.magnet` paths so the two spell the
@@ -124,10 +119,45 @@ pub fn magnet_only_download(
     ))
 }
 
+/// The registered id to talk to for a result row. Rows carry their own
+/// source id; rows from before that field existed (or with an id no
+/// longer in the registry) hold rutracker-shaped URLs, so they fall back
+/// to `"rutracker"` -- the same conservative default
+/// [`source_needs_browser`] has had since B0.1.
+///
+/// The fallback is quiet about what it cannot be: a row whose id is
+/// misspelled, or belongs to a source that has been removed from the
+/// registry, is sent to rutracker with a URL of another tracker's shape.
+/// The user then gets a rutracker error about a row they did not ask
+/// about, and nothing anywhere says the id was substituted. So the
+/// substitution is said out loud -- this is the one place a wrong id can
+/// turn into a request to somebody else's server, and a log line costs
+/// nothing when the id is right.
 pub fn source_id_for(item: &crate::sources::models::TorrentItem) -> &'static str {
-    source::get_source(&item.source)
-        .map(|s| s.id)
-        .unwrap_or("rutracker")
+    match source::get_source(&item.source) {
+        Some(s) => s.id,
+        None => {
+            crate::log::log(
+                "app",
+                &format!(
+                    "row '{}' has no registered source (id '{}'); talking to rutracker instead",
+                    truncate_for_log(&item.title),
+                    item.source
+                ),
+            );
+            "rutracker"
+        }
+    }
+}
+
+/// Enough of a title to identify a row in the log, without a multi-
+/// kilobyte line: track titles run to several hundred characters.
+fn truncate_for_log(s: &str) -> &str {
+    const LIMIT: usize = 60;
+    match s.char_indices().nth(LIMIT) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
 }
 
 /// Fill a row's magnet in from the row's own page, for rows that carry
