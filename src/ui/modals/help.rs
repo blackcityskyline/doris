@@ -10,6 +10,12 @@
 //! `j`/`k`/`PageUp`/`Tab` flipping pages and `Esc`/`q`/`h`/`Space`/
 //! `Enter`/`Backspace` closing it.
 //!
+//! Two tables, not one: [`HELP_TEXT`] for the keys, [`FILTER_HELP`] for
+//! the filter's syntax and for how a row gets its category -- the two
+//! things `f` and `g` do that a key list cannot explain. `←`/`→` pick
+//! the table, `j`/`k`/`Tab` keep paging through whichever is showing,
+//! and the box's title says which one it is.
+//!
 //! One structural difference: btop computes the page count inside the
 //! draw function, where the terminal size is in scope, and reads it back
 //! from `static` state when a key arrives. Rust's `&self`/`&mut self`
@@ -60,8 +66,39 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("p", "Pauses / resumes the tracked torrent."),
     ("Esc", "Closes a modal; leaves input / filter mode."),
     ("q, ctrl + c", "Quits program."),
+    ("←, →", "Switches help section (keys / filter)."),
     ("? , /, F1", "Shows this window."),
 ];
+
+/// The second table: what the filter box accepts (`src/filter.rs`) and
+/// where a row's category comes from -- written down because those two
+/// are the parts of the UI a key list cannot reach. Public so a test can
+/// check it still describes what the parser and the sources really do.
+pub const FILTER_HELP: &[(&str, &str)] = &[
+    ("f", "Opens the filter box (Results focused)."),
+    ("word", "Substring of title, size, source, group."),
+    ("-word", "Negates: keeps the rows without it."),
+    ("src:id", "That tracker only (tracker: is the alias)."),
+    ("group:name", "That category (cat: is the alias)."),
+    ("title:word", "Substring of the title alone."),
+    ("size:>1gb", "Bytes; b/kb/mb/gb/tb."),
+    ("seeds:>50", "Seed count; > < >= <= = all work."),
+    ("Esc", "Clears the filter; cursor goes back."),
+    ("all", "Category: every row, whatever it is tagged."),
+    ("g, G", "Cycles category (or the frame arrows)."),
+    ("tagged", "nnmclub, nyaa, tpb, yts, eztv, subsplease,"),
+    ("", "torentino: the category is read off the row."),
+    ("by query", "rutracker, rutor, x1337x are told the"),
+    ("", "category, so an all-search cannot tag rows"),
+    ("", "that were never asked for one."),
+    ("no group", "An untagged row is listed in all only."),
+];
+
+/// The tables the help page walks through, in order: `(title, rows)`.
+/// `HELP_TEXT` stays the first one, so a fresh page opens on the keys.
+pub fn sections() -> &'static [(&'static str, &'static [(&'static str, &'static str)])] {
+    &[("keys", HELP_TEXT), ("filter & grouping", FILTER_HELP)]
+}
 
 /// A tab-stop'd key: btop's `cjust(text, 20)` centres the key in a
 /// 20-column column, which is what makes the two columns line up.
@@ -82,6 +119,8 @@ pub struct HelpState {
     pub pages: usize,
     /// Rows that fit on one page, refreshed each render.
     pub visible: usize,
+    /// Which table is showing: an index into [`sections`], 0 = keys.
+    pub section: usize,
 }
 
 impl App {
@@ -116,6 +155,23 @@ impl App {
         let Modal::Help(state) = &mut self.modal else {
             return;
         };
+
+        // The section switch sits above the guard below: a table that
+        // fits on one screen still has another table to go to, and
+        // paging is the only other thing these keys would have done.
+        let step = match key.code {
+            KeyCode::Right => Some(1usize),
+            KeyCode::Left => Some(sections().len().saturating_sub(1)),
+            _ => None,
+        };
+        if let Some(step) = step {
+            state.section = (state.section + step) % sections().len();
+            // The new table is measured from its own top: a page number
+            // borrowed from the last one can point past its end.
+            state.page = 0;
+            return;
+        }
+
         if state.pages <= 1 {
             return;
         }
@@ -136,7 +192,7 @@ impl App {
     }
 
     /// The help page itself: the box, the header, the visible slice of
-    /// [`HELP_TEXT`] and the page indicator.
+    /// the section's table and the page indicator.
     ///
     /// `&mut self` because it publishes `pages`/`visible` for
     /// [`App::help_key`] on the way through.
@@ -148,15 +204,21 @@ impl App {
         let popup = centered_rect(90, 85, area);
         frame.render_widget(Clear, popup);
 
+        let section = match &self.modal {
+            Modal::Help(state) => state.section,
+            _ => 0,
+        };
+        let (section_name, table) = sections()[section.min(sections().len() - 1)];
+
         let mut block = self
             .modal_block(self.theme.primary_color(), config)
             .title(Span::styled(
-                " help ",
+                format!(" help: {section_name} "),
                 Style::default().fg(self.theme.primary_color()),
             ));
         let inner = block.inner(popup);
         let visible = (inner.height as usize).max(1);
-        let pages = HELP_TEXT.len().div_ceil(visible);
+        let pages = table.len().div_ceil(visible);
 
         if let Modal::Help(state) = &mut self.modal {
             state.visible = visible;
@@ -206,7 +268,7 @@ impl App {
             Modal::Help(state) => state.page * visible,
             _ => 0,
         };
-        for (key, desc) in HELP_TEXT.iter().skip(start).take(visible) {
+        for (key, desc) in table.iter().skip(start).take(visible) {
             rows.push(Line::from(vec![
                 Span::styled(cjust(key, KEY_WIDTH), key_style),
                 Span::styled(*desc, desc_style),

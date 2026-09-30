@@ -264,7 +264,9 @@ words -- a token that silently matches nothing reads as a broken app.
 - `p`/`d`: with the Torrent zone focused, pause-or-resume / remove the tracked torrent; with Results focused, `d` downloads the row's `.torrent` to disk
 - `v`: with Results focused, log the selected row's details to the Log zone
 - `Esc`: close modal / exit input mode / exit filter mode
-- `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`)
+- `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`) --
+  two tables, `keys` and `filter & grouping`, picked with `←`/`→`;
+  `j`/`k`/`Tab` page whichever is showing
 - Mouse: click any zone to focus it, click a frame button to
   trigger it, click a Trackers checkbox to switch that source, click the
   search box to start typing, scroll wheel over any zone to

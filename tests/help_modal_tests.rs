@@ -263,3 +263,137 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
             .collect::<Vec<_>>()
     );
 }
+
+/// The page grew a second table: how the filter is written and how a
+/// row gets its category -- the two things `f` and `g` do that the
+/// single key table could not explain. `←`/`→` pick the table.
+#[test]
+fn test_help_switches_sections_with_the_arrow_keys() {
+    let mut app = make_app();
+    app.open_help_modal();
+
+    let title = |app: &UiApp, rows: &[String]| match &app.modal {
+        doris::ui::app::Modal::Help(s) => rows
+            .iter()
+            .find(|r| r.contains("help:"))
+            .cloned()
+            .unwrap_or_else(|| panic!("the box is titled, section {}", s.section)),
+        other => panic!("help modal is gone: {:?}", std::mem::discriminant(other)),
+    };
+
+    let mut rows = render(&mut app, 110, 44);
+    assert!(
+        title(&app, &rows).contains("keys"),
+        "opens on the key table: {:?}",
+        title(&app, &rows)
+    );
+
+    app.help_key(key(KeyCode::Right));
+    rows = render(&mut app, 110, 44);
+    let shown = title(&app, &rows);
+    assert!(
+        shown.contains("filter"),
+        "Right moves to the filter table, got {shown:?}"
+    );
+    assert!(
+        rows.iter().any(|r| r.contains("src:id")),
+        "and its rows are drawn:\n{}",
+        rows.join("\n")
+    );
+
+    app.help_key(key(KeyCode::Left));
+    rows = render(&mut app, 110, 44);
+    assert!(title(&app, &rows).contains("keys"), "Left comes back");
+    assert!(
+        !rows.iter().any(|r| r.contains("src:id")),
+        "and the filter table is gone"
+    );
+}
+
+/// The section keys have to work on a terminal where the table fits on
+/// one page: `help_key` returns early when there is nothing to page, and
+/// that guard sits *above* the page keys.
+#[test]
+fn test_help_switches_sections_even_when_one_page_fits() {
+    let mut app = make_app();
+    app.open_help_modal();
+    render(&mut app, 150, 60);
+
+    app.help_key(key(KeyCode::Right));
+    match &app.modal {
+        doris::ui::app::Modal::Help(s) => assert_eq!(s.section, 1, "Right switched section"),
+        other => panic!("help modal is gone: {:?}", std::mem::discriminant(other)),
+    }
+    app.help_key(key(KeyCode::Left));
+    match &app.modal {
+        doris::ui::app::Modal::Help(s) => assert_eq!(s.section, 0, "and back"),
+        other => panic!("help modal is gone: {:?}", std::mem::discriminant(other)),
+    }
+}
+
+/// Every token `src/filter.rs` parses has a row that says so, or the
+/// page describes a language the parser does not speak.
+#[test]
+fn test_filter_help_names_every_token_the_parser_accepts() {
+    let text = doris::ui::modals::help::FILTER_HELP
+        .iter()
+        .map(|(k, d)| format!("{k} {d}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for token in [
+        "word",
+        "-word",
+        "src:id",
+        "tracker:",
+        "group:name",
+        "cat:",
+        "title:word",
+        "size:>1gb",
+        "seeds:>50",
+    ] {
+        assert!(
+            text.contains(token),
+            "FILTER_HELP never mentions `{token}`:\n{text}"
+        );
+    }
+
+    // And the grouping half has to name the two ways a row gets its
+    // category, because that is why the category can disagree with the
+    // rows on screen (see the `all` rule).
+    for fact in ["all", "rutracker", "nnmclub"] {
+        assert!(
+            text.contains(fact),
+            "FILTER_HELP never names `{fact}`:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn test_filter_help_descriptions_fit_an_80_column_terminal() {
+    for (key, desc) in doris::ui::modals::help::FILTER_HELP {
+        assert!(
+            desc.chars().count() <= 50,
+            "'{}' description is {} chars and would be cut off: {}",
+            key,
+            desc.chars().count(),
+            desc
+        );
+    }
+}
+
+/// The page still names every binding AGENTS.md documents, now across
+/// both tables: a key that only the second table mentions is a key the
+/// first table's test can no longer see.
+#[test]
+fn test_the_section_switch_is_itself_documented() {
+    let both = doris::ui::modals::help::HELP_TEXT
+        .iter()
+        .chain(doris::ui::modals::help::FILTER_HELP)
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>();
+    assert!(
+        both.iter().any(|k| k.contains('←') && k.contains('→')),
+        "`←`/`→` switch sections and must say so: {both:?}"
+    );
+}
