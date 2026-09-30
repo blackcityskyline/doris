@@ -117,3 +117,90 @@ fn test_tab_and_backtab_cycle_all_three_categories() {
     app.settings_key(key(KeyCode::BackTab));
     assert_eq!(get_cat(&app), 2); // wraps the other way
 }
+
+/// The `n/m` in the Color theme row is supposed to be the *theme's*
+/// position (`settings.rs:267` says so in as many words), but the
+/// renderer printed `item_idx + 1 / cat.items.len()` -- the row's
+/// position in the category. So every setup read "Color theme 1/15":
+/// wrong on both ends, since the themes number dozens and the selected
+/// one was almost never the first. The number belongs to the value, so
+/// `open_settings` is where it is measured: that is the same place the
+/// theme itself is read from disk.
+#[test]
+fn test_the_color_theme_row_counts_the_themes() {
+    let app = make_app_in_settings();
+    let themes = doris::ui::theme::Theme::load_themes();
+    let current = app.theme.name.clone();
+    let want = themes
+        .iter()
+        .position(|t| t.name == current)
+        .map(|i| (i + 1, themes.len()))
+        .unwrap_or_else(|| panic!("the running theme is one of the files: {current}"));
+
+    match &app.modal {
+        doris::ui::app::Modal::Settings(state) => {
+            let cat = &state.categories[state.selected_category];
+            assert_eq!(
+                cat.items[state.selected].action,
+                doris::ui::modals::settings::SettingsAction::CycleTheme,
+                "the first row of general is the theme"
+            );
+            assert_eq!(
+                state.theme_pos,
+                Some(want),
+                "the row counts themes: {:?}, got {:?}",
+                want,
+                state.theme_pos
+            );
+        }
+        other => panic!("expected Settings modal, got {other:?}"),
+    }
+
+    let (_, total) = want;
+    assert!(
+        total > 15,
+        "far more themes than settings rows: {total} is not the row count"
+    );
+}
+
+/// And the rendered label is the one with the theme's number in it --
+/// the number the user actually reads as "which theme am I on".
+#[test]
+fn test_the_drawn_theme_label_carries_the_theme_number() {
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = make_app_in_settings();
+    let label = match &app.modal {
+        doris::ui::app::Modal::Settings(state) => {
+            let (n, total) = state
+                .theme_pos
+                .expect("the theme row carries its own index");
+            let cat = &state.categories[state.selected_category];
+            format!("{} {}/{}", cat.items[state.selected].label, n, total)
+        }
+        other => panic!("expected Settings modal, got {other:?}"),
+    };
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let drawn: Vec<String> = (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    assert!(
+        drawn.iter().any(|line| line.contains(&label)),
+        "expected a drawn line containing {label:?}, got:\n{}",
+        drawn.join("\n")
+    );
+}

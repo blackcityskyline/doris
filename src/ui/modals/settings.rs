@@ -27,6 +27,12 @@ pub struct SettingsState {
     /// divide-by-zero in pagination math) until the first render sets it.
     pub visible_items: usize,
     pub categories: Vec<SettingsCategory>,
+    /// `(index, total)` of the *theme* the settings show, not of the row
+    /// that shows them: the one number on this modal that answers "which
+    /// one am I on" for a value with an order of its own. Measured in
+    /// `open_settings`, the same place the theme is read from disk, so
+    /// the renderer never has to load the theme files to draw a label.
+    pub theme_pos: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -268,8 +274,15 @@ impl App {
         // name (matching the reference: "<- noctalia ->"), not a bare
         // index/total -- that's genuinely useful information but belongs
         // in the *label* position indicator every settings item already
-        // gets when selected ("Color theme 46/45"), not here.
+        // gets when selected ("Color theme 7/45"), not here. The row's
+        // own "1/15" is the row's position in the category and answered
+        // neither question, which is why the label carries this instead.
         let theme_str = theme_name.clone();
+        let themes = crate::ui::theme::Theme::load_themes();
+        let theme_pos = themes
+            .iter()
+            .position(|t| t.name == theme_name)
+            .map(|i| (i + 1, themes.len()));
 
         let preset_str = config
             .presets
@@ -303,6 +316,7 @@ impl App {
             selected: prev_selected,
             page: prev_page,
             visible_items: prev_visible_items.max(1),
+            theme_pos,
             categories: vec![
                 SettingsCategory {
                     name: "general".into(),
@@ -874,7 +888,20 @@ impl App {
                         let label = if is_sel {
                             // Fixes B1: this used to hardcode "3" regardless of
                             // the actual selected position.
-                            format!("{} {}/{}", item.label, item_idx + 1, cat.items.len())
+                            //
+                            // The theme row is the one row whose `n/m` is
+                            // not about rows: there it counts themes, so
+                            // that "which theme" has an answer (it used
+                            // to print "1/15" forever -- the row's place
+                            // in the category).
+                            let suffix = match item.action {
+                                SettingsAction::CycleTheme => match state.theme_pos {
+                                    Some((n, total)) => format!("{n}/{total}"),
+                                    None => format!("{}/{}", item_idx + 1, cat.items.len()),
+                                },
+                                _ => format!("{}/{}", item_idx + 1, cat.items.len()),
+                            };
+                            format!("{} {}", item.label, suffix)
                         } else {
                             item.label.clone()
                         };

@@ -196,11 +196,16 @@ fn test_the_settings_cursor_row_uses_the_selection_colours() {
     app.open_settings(&Config::default(), false);
 
     // The cursor's own label, read out of the state rather than
-    // hardcoded: the list grows whenever an option is added.
+    // hardcoded: the list grows whenever an option is added. The first
+    // row is the theme, so its `n/m` is the theme's own index and total
+    // (`SettingsState::theme_pos`), not the row's position in the list.
     let label = match &app.modal {
         Modal::Settings(state) => {
             let cat = &state.categories[state.selected_category];
-            format!("{} 1/{}", cat.items[0].label, cat.items.len())
+            match state.theme_pos {
+                Some((n, total)) => format!("{} {}/{}", cat.items[0].label, n, total),
+                None => format!("{} 1/{}", cat.items[0].label, cat.items.len()),
+            }
         }
         other => panic!("expected the Settings modal, got {other:?}"),
     };

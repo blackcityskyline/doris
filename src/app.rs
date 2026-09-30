@@ -2649,6 +2649,40 @@ mod key_routing_tests {
         );
     }
 
+    /// The theme row's number has to survive the cycle that changes the
+    /// theme. It is measured in `open_settings`, so the only way it can
+    /// go stale is the handler skipping that rebuild -- which is the
+    /// shape of the old bug (a number that never moved).
+    #[tokio::test]
+    async fn cycling_the_theme_moves_the_row_number_with_it() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.open_settings(&app.config, false);
+        let themes = crate::ui::theme::Theme::load_themes();
+        let was = app.ui.theme.name.clone();
+
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
+            .await
+            .expect("Right");
+
+        let (pos, name) = match &app.ui.modal {
+            crate::ui::app::Modal::Settings(state) => (state.theme_pos, app.ui.theme.name.clone()),
+            other => panic!("the settings modal stays open, got {other:?}"),
+        };
+        assert_ne!(name, was, "Right cycled the theme");
+        let want = themes.iter().position(|t| t.name == name).map(|i| i + 1);
+        assert_eq!(
+            pos.map(|(n, _)| n),
+            want,
+            "{name} is number {want:?} of {} themes",
+            themes.len()
+        );
+        assert_eq!(
+            pos.map(|(_, t)| t),
+            Some(themes.len()),
+            "and the total is all of them"
+        );
+    }
+
     /// Every mode that grabs the keyboard -- the menu, the search box, a
     /// modal, a detail view -- answers before the plain-view Ctrl+C arm
     /// is ever reached, so quitting has to be the *first* thing
