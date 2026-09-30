@@ -32,11 +32,12 @@ src/
 ├── main.rs          # Entry point, CLI parsing (run_cli asks the registry's sources)
 ├── lib.rs           # Module declarations
 ├── cli.rs           # CLI argument definitions (incl. --source)
-├── config.rs        # Config file handling (~40 persisted Options fields)
+├── config.rs        # Config file handling (33 persisted fields)
 ├── event.rs         # Event enum + EventHandler
 ├── tui.rs           # Terminal init/restore
 ├── log.rs           # File logger
 ├── player_log.rs    # MPV stderr keyword filter (should_log)
+├── filter.rs        # the grep-shaped Results filter: Filter::parse / matches
 ├── search.rs        # search-domain free fns: source_outcome_line,
 │                    #   apply_source_done, finish_search, resolve_cookie_file
 ├── app.rs           # App orchestrator (event loop, spawn)
@@ -52,7 +53,7 @@ src/
 │   ├── orchestrator.rs # Concurrent dispatch: selected_sources, per-source cursors, cache wiring
 │   ├── net.rs       # fetch_resilient, first_ok multi-host failover
 │   ├── cache.rs     # TTL cache
-│   ├── ordering.rs  # dedupe_by_hash, default_order, sort cycle
+│   ├── ordering.rs  # dedupe_by_hash, default_order
 │   ├── magnet.rs    # magnet build/parse, info-hash normalization
 │   ├── format.rs    # size/date parsing shared by the HTML sources
 │   ├── models.rs    # TorrentItem + resolve_url
@@ -88,8 +89,8 @@ src/
     │   ├── help.rs    # help page (btop's `helpMenu`): Key:/Description: table + paging
     │   └── detail.rs  # torrent detail modal (П.7): row facts + the file list its source reads
     ├── menu.rs      # btop-style main menu
-    ├── theme.rs     # Theme system (colors, gradients)
-    ├── zones.rs     # Zone layout system (toggle, focus, presets);
+    ├── theme.rs     # Theme system: the four optional accents, each with a fallback
+    ├── zones.rs     # Zone layout system (toggle, focus, presets, focus marker);
     │                  #   key_char/label/from_key read one ZONE_ROWS entry
     └── widgets/
         ├── mod.rs
@@ -114,7 +115,7 @@ hidden); a second press on the zone already focused hides it, and the
 focus walks to the next zone still on screen. `5` is deliberately unused.
 
 - **Zone 1 (Results)**: Table with torrent results (seeds, size, date, title)
-  - Navigation: j/k, PgUp/PgDn, Enter to play
+  - Navigation: j/k, PgUp/PgDn (a page is half the terminal), Enter to play
   - f key: filter results -- a grep-shaped syntax (see below); type it, Enter
     to apply, Esc to clear
   - `R` takes the frame over with the detail view: the table full height plus
@@ -267,7 +268,8 @@ words -- a token that silently matches nothing reads as a broken app.
   keeps the old rows on screen until the first answer of the new round lands
 - `p`/`d`: with the Torrent zone focused, pause-or-resume / remove the tracked torrent; with Results focused, `d` downloads the row's `.torrent` to disk
 - `v`: with Results focused, log the selected row's details to the Log zone
-- `Esc`: close modal / exit input mode / exit filter mode
+- `Esc`: close a modal; leaves input / filter mode; **in the main view it
+  opens the menu** (so `m` and `Esc` are the same key there)
 - `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`) --
   two tables, `keys` and `filter & grouping`, picked with `←`/`→`;
   `j`/`k`/`Tab` page whichever is showing
@@ -280,34 +282,67 @@ words -- a token that silently matches nothing reads as a broken app.
 
 ## Dependencies
 
-The core list below; `Cargo.toml` is the full and current one. Don't add or
-bump a dependency speculatively -- the two changes worth remembering
-(`async-trait` for the `Source` trait object, and dropping the unused
-`chromiumoxide`/`chromiumoxide_cdp`) were each made against a stated
-reason, and that is the bar.
+`Cargo.toml` is the full and current list -- 29 packages. Don't add or
+bump one speculatively: `async-trait` (for the `Source` trait object) and
+the removal of the unused `chromiumoxide`/`chromiumoxide_cdp` were each
+made against a stated reason, and that is the bar. Three more came out the
+other way -- `tracing`, `tracing-subscriber` and `futures-lite` had zero
+references in `src/` and `tests/`.
 
-- ratatui 0.29
-- crossterm 0.28
-- fantoccini 0.22.1
-- reqwest (rustls-tls)
-- rusqlite (bundled)
-- ring 0.17 (AES-128-GCM)
-- tokio (full)
-- serde + toml
-- serial_test 3
-- async-trait 0.1 (dyn-compatible async fns on the `Source` trait)
+The ones worth knowing what they are *for*, because that is not guessable
+from their names:
+
+| Package | Why it is here |
+|---|---|
+| `ratatui`, `crossterm` | the TUI and the terminal |
+| `tokio` (full) | every async call in the app |
+| `reqwest` (rustls-tls, no native-tls), `rustls` | HTTP; also multipart for the `.torrent` upload |
+| `fantoccini` | the WebDriver side of the browser session |
+| `rusqlite` (bundled) | reading cookies out of a Chrome profile (`cdp.rs`) -- no system SQLite |
+| `ring` | AES-128-GCM for the credential store, SHA-256 for its key |
+| `hostname`, `whoami`, `getrandom` | the parts of key derivation and nonce generation that are not in `ring` |
+| `base64` | the credential file is base64 on disk |
+| `scraper`, `regex`, `encoding_rs` | HTML sources; `encoding_rs` decodes windows-1251 (nnmclub) |
+| `axum` | the extension bridge server |
+| `clap`, `serde`, `toml`, `serde_json` | CLI, config, JSON payloads |
+| `anyhow` | the error type every fallible call returns |
+| `dirs` | `~/.config/doris` |
+| `url`, `urlencoding`, `chrono`, `which` | URL building, query encoding, log timestamps, locating a browser |
+| `unicode-width` | the ASCII-art banner in the menu has to be measured, not counted |
+| `async-trait` | `dyn Source` needs boxed futures; native async-fn-in-traits is not object-safe |
+| `serial_test` | tests that touch process-wide state (`HOME`, the logger) |
 
 ## Testing
 
-- Run: `cargo test`
-- Tests in `tests/` directory
-- Use `#[serial]` for tests that modify global state
-- Test file logger, cookies, credentials, models, TUI, config, TorrServer
-  API parsing, and the sparkline widget
-- Live probes of a real site are `#[ignore]`d tests (`*_live_tests.rs`) run
-  with `cargo test --test <name> -- --ignored --nocapture`; give them
-  `--test-threads=1` when two browsers at once have been seen to kill a
-  session mid-test, and never let them run in CI
+- Run: `cargo test` -- 731 run, 40 `#[ignore]`d
+- 66 test files in `tests/`, plus unit tests inside `src/` where a private
+  item is what has to be tested (`app.rs` key routing, `tui.rs` byte
+  sequences, `zones.rs` layout math). The split is by reachability, not by
+  size: `src/app.rs::handle_key` is private, so the tests that pin what a
+  key does live next to it.
+- Use `#[serial]` for tests that touch process-wide state. A `#[serial]`
+  only orders against other `#[serial]` tests, so anything that sets
+  `HOME` or initialises the file logger wants a test file of its own --
+  one process, one `HOME` to change. This is not theoretical: a pair of
+  such tests shared a file with 36 others and flaked under a full
+  parallel run.
+- A test pins a *place*, not a function. Every claim here that was checked
+  by mutation passed at least once with the fix reverted, and three times
+  out of four the first version of a test did not: it called the function
+  the fix lives in, while the decision is made one level up. When the
+  claim is about routing, the test belongs where the routing is.
+- Covered: the file logger, cookies, the credential store, `TorrentItem`,
+  the TUI (rendered through `TestBackend`, so assertions are on the drawn
+  buffer), config and its migrations, TorrServer API parsing over a real
+  socket, theme contrast for all 40 bundled themes, and the sparkline.
+- Live probes of a real site are `#[ignore]`d (`11` files,
+  `*_live_tests.rs`), run with `cargo test --test <name> -- --ignored
+  --nocapture`; give them `--test-threads=1` when two browsers at once have
+  been seen to kill a session mid-test, and never let them run in CI.
+- Gate before every commit: `cargo test`, `cargo clippy --all-targets`
+  (0 warnings), `cargo fmt --check`, and `cargo doc --no-deps`
+  (0 warnings -- it catches doc links to methods that no longer exist,
+  which is worse than a broken link because it claims an API is there).
 
 ## Git
 
