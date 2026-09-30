@@ -704,6 +704,17 @@ impl App {
                     }
                 }
             }
+            // The divider follow and the release: `resize_start` armed
+            // it on the way down (a click on a border inside `click_at`),
+            // so a drag that was never armed moves nothing -- and the
+            // release always disarms, even after a click that never
+            // moved.
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if self.ui.modal == Modal::None {
+                    self.ui.zones.resize_drag(mouse.row, mouse.column);
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => self.ui.zones.resize_end(),
             _ => {}
         }
     }

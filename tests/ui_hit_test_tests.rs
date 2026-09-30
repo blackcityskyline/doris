@@ -978,3 +978,37 @@ fn test_the_help_page_documents_d_as_the_detail_fallback() {
         keys
     );
 }
+
+/// A click on a border that separates two zones arms the WM-style
+/// resize; a click on the frame legend -- which also sits on a border --
+/// stays the legend's own action and arms nothing.
+#[test]
+fn test_a_border_click_arms_the_resize_but_a_legend_click_does_not() {
+    let mut app = make_app();
+    let mut config = Config::default();
+    app.zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    // Trackers' top border separates it from Torrent, and Trackers has
+    // no legend on it.
+    assert_eq!(app.zone_at(14, 40), Some(ZoneId::Trackers));
+    assert_eq!(app.click_at(14, 40, &mut config), None);
+    assert!(app.zones.resize.is_some(), "the drag is armed");
+    app.zones.resize_end();
+
+    // Torrent's `pause` sits on the same kind of border: it pauses.
+    let area = app.zones.get_area(ZoneId::Torrent);
+    let rect = {
+        let layout = app.frame_layout(ZoneId::Torrent, area, &config);
+        layout
+            .buttons
+            .iter()
+            .find(|(b, _)| b.key == 'p')
+            .map(|(_, r)| *r)
+            .expect("the pause button")
+    };
+    assert_eq!(
+        app.click_at(rect.y, rect.x + rect.width - 1, &mut config),
+        Some(UiAction::TogglePause)
+    );
+    assert!(app.zones.resize.is_none(), "and armed nothing");
+}

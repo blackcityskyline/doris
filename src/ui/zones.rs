@@ -8,6 +8,27 @@ use ratatui::prelude::*;
 /// the zones can never drift under the box.
 pub const SEARCH_BAR_HEIGHT: u16 = 3;
 
+/// How small a mouse drag may leave a zone: still a frame, still a
+/// border to grab again, still room for the one line a panel needs to
+/// say anything. Same job a WM's minimum window size does.
+pub const RESIZE_MIN_HEIGHT: u16 = 3;
+
+/// The width floor, wider than the height one because a table that
+/// cannot show its columns is not a panel -- it is a scrollbar with
+/// ambitions.
+pub const RESIZE_MIN_WIDTH: u16 = 10;
+
+/// A border the pointer is holding, or the one a click just armed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizeKind {
+    /// The horizontal divider between the row holding `above` and the
+    /// row holding `below`.
+    Row { above: ZoneId, below: ZoneId },
+    /// The vertical divider between the cell holding `left` and the
+    /// one holding `right` -- the two are in the same row.
+    Col { left: ZoneId, right: ZoneId },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneId {
     Results = 1,
@@ -84,6 +105,13 @@ pub struct Zone {
     pub id: ZoneId,
     pub visible: bool,
     pub area: Rect,
+    /// Its share of its row's width: `1.0` is an equal split, which is
+    /// exactly what the layout did before there was a share at all.
+    pub flex: f32,
+    /// Its share of the height among rows. Written uniformly to every
+    /// zone of a row -- a row has one height whichever cell you read it
+    /// from -- and read back from the row's first cell.
+    pub row_flex: f32,
 }
 
 impl Zone {
@@ -92,7 +120,14 @@ impl Zone {
             id,
             visible,
             area: Rect::default(),
+            flex: 1.0,
+            row_flex: 1.0,
         }
+    }
+
+    fn reset_flex(&mut self) {
+        self.flex = 1.0;
+        self.row_flex = 1.0;
     }
 }
 
@@ -106,6 +141,12 @@ pub struct ZoneLayout {
     /// top to bottom. Written as `rows via ","`, `columns via "|"` --
     /// see [`ZoneLayout::apply_preset`].
     pub grid: Vec<Vec<ZoneId>>,
+    /// The border the pointer is holding, set by [`Self::resize_start`]
+    /// on a click and cleared by [`Self::resize_end`] on the release.
+    /// Transient on purpose: a split you dragged is yours until the
+    /// next preset, not a line in `config.toml` for the next run to
+    /// wonder about.
+    pub resize: Option<ResizeKind>,
 }
 
 impl Default for ZoneLayout {
@@ -128,6 +169,7 @@ impl ZoneLayout {
             fullscreen: None,
             filter_mode: false,
             filter_input: String::new(),
+            resize: None,
         }
     }
 
@@ -219,6 +261,13 @@ impl ZoneLayout {
     /// now-hidden zone, it moves to the first visible one.
     pub fn apply_preset(&mut self, spec: &str) {
         self.grid = Self::parse_spec(spec);
+        // A preset is a *new* arrangement, and the weights are a
+        // property of the old one: a Results row made tall for the
+        // four-row tiling would otherwise swallow the two-row one.
+        for zone in &mut self.zones {
+            zone.reset_flex();
+        }
+        self.resize = None;
         let wanted: std::collections::HashSet<char> =
             spec.chars().filter(|c| c.is_ascii_digit()).collect();
         for id in ZoneId::all() {
@@ -308,6 +357,48 @@ impl ZoneLayout {
     /// spec never named (switched back on with its digit key) gets a
     /// row of its own at the bottom rather than vanishing.
     fn layout_grid(&mut self, area: Rect) {
+        let rows = self.visible_rows();
+
+        if rows.is_empty() {
+            for zone in &mut self.zones {
+                zone.area = Rect::default();
+            }
+            return;
+        }
+
+        let available = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
+        let heights = distribute(
+            available,
+            &rows
+                .iter()
+                .map(|row| self.row_weight(row))
+                .collect::<Vec<_>>(),
+        );
+
+        let mut y = area.y + SEARCH_BAR_HEIGHT;
+        for (row, &h) in rows.iter().zip(heights.iter()) {
+            let weights = row.iter().map(|id| self.flex_of(*id)).collect::<Vec<_>>();
+            let widths = distribute(area.width, &weights);
+            let mut x = area.x;
+            for (&id, &w) in row.iter().zip(widths.iter()) {
+                self.set_area(id, Rect::new(x, y, w, h));
+                x += w;
+            }
+            y += h;
+        }
+
+        for zone in &mut self.zones {
+            if !zone.visible {
+                zone.area = Rect::default();
+            }
+        }
+    }
+
+    /// The rows to lay out, in drawing order: the grid's own rows with
+    /// hidden zones dropped, then any visible zone the spec never named
+    /// as a row of its own at the bottom. Read by the layout *and* by
+    /// the resize, which must see the arrangement it is moving.
+    fn visible_rows(&self) -> Vec<Vec<ZoneId>> {
         let mut rows: Vec<Vec<ZoneId>> = self
             .grid
             .iter()
@@ -324,35 +415,161 @@ impl ZoneLayout {
                 rows.push(vec![zone.id]);
             }
         }
+        rows
+    }
 
-        if rows.is_empty() {
-            for zone in &mut self.zones {
-                zone.area = Rect::default();
+    fn flex_of(&self, id: ZoneId) -> f32 {
+        self.zone(id).map_or(1.0, |z| z.flex)
+    }
+
+    fn row_flex_of(&self, id: ZoneId) -> f32 {
+        self.zone(id).map_or(1.0, |z| z.row_flex)
+    }
+
+    fn zone(&self, id: ZoneId) -> Option<&Zone> {
+        self.zones.iter().find(|z| z.id == id)
+    }
+
+    /// A row's height share, read from its first cell: a row has one
+    /// height, and the resize writes the same number to all of them.
+    fn row_weight(&self, row: &[ZoneId]) -> f32 {
+        row.first().map(|id| self.row_flex_of(*id)).unwrap_or(1.0)
+    }
+
+    /// Arm the drag when `(row, col)` sits on a border that separates
+    /// two zones: the top edge of any row but the first, or the left
+    /// edge of any cell but the first. Returns whether it armed, so the
+    /// caller can let the click fall through to focusing the panel.
+    ///
+    /// The first row's top edge is the search bar -- nothing above it
+    /// to move -- and the last row's bottom edge is the terminal, so
+    /// every divider is somebody's top edge exactly once.
+    pub fn resize_start(&mut self, row: u16, col: u16) -> bool {
+        let kind = self.resize_target(row, col);
+        self.resize = kind;
+        kind.is_some()
+    }
+
+    /// Follow the pointer while a drag is armed. The new weights come
+    /// from the geometry the pointer is over -- measured heights and
+    /// widths, with the dragged pair split at the pointer -- so the
+    /// boundary lands where the pointer is and nothing else moves (the
+    /// weights of the untouched rows are their own heights, and a
+    /// weight equal to its share of the total reproduces exactly).
+    pub fn resize_drag(&mut self, row: u16, col: u16) {
+        match self.resize {
+            Some(ResizeKind::Row { above, below }) => self.drag_row(above, below, row),
+            Some(ResizeKind::Col { left, right }) => self.drag_col(left, right, col),
+            None => {}
+        }
+    }
+
+    /// The pointer let go: nothing is being dragged any more, and the
+    /// weights it left behind stay.
+    pub fn resize_end(&mut self) {
+        self.resize = None;
+    }
+
+    fn resize_target(&self, row: u16, col: u16) -> Option<ResizeKind> {
+        let rows = self.visible_rows();
+        for (i, cells) in rows.iter().enumerate() {
+            for (j, &id) in cells.iter().enumerate() {
+                let a = self.get_area(id);
+                if a.width == 0 || a.height == 0 {
+                    continue;
+                }
+                if row < a.y || row >= a.y + a.height || col < a.x || col >= a.x + a.width {
+                    continue;
+                }
+                if j > 0 && col == a.x {
+                    return Some(ResizeKind::Col {
+                        left: cells[j - 1],
+                        right: id,
+                    });
+                }
+                if i > 0 && row == a.y {
+                    return Some(ResizeKind::Row {
+                        above: rows[i - 1][0],
+                        below: cells[0],
+                    });
+                }
             }
+        }
+        None
+    }
+
+    fn drag_row(&mut self, above: ZoneId, below: ZoneId, pointer_row: u16) {
+        let rows = self.visible_rows();
+        let i = rows.iter().position(|cells| cells.contains(&above));
+        let j = rows.iter().position(|cells| cells.contains(&below));
+        let (Some(i), Some(j)) = (i, j) else {
+            return;
+        };
+        if j != i + 1 {
             return;
         }
-
-        let available = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
-        let row_height = available / rows.len() as u16;
-        let row_remainder = available - row_height * rows.len() as u16;
-
-        let mut y = area.y + SEARCH_BAR_HEIGHT;
-        for (i, row) in rows.iter().enumerate() {
-            let h = row_height + if (i as u16) < row_remainder { 1 } else { 0 };
-            let cell_width = area.width / row.len() as u16;
-            let cell_remainder = area.width - cell_width * row.len() as u16;
-            let mut x = area.x;
-            for (j, &id) in row.iter().enumerate() {
-                let w = cell_width + if (j as u16) < cell_remainder { 1 } else { 0 };
-                self.set_area(id, Rect::new(x, y, w, h));
-                x += w;
-            }
-            y += h;
+        let first = self.get_area(rows[i][0]);
+        let second = self.get_area(rows[j][0]);
+        let (start, end) = (first.y, second.y + second.height);
+        if end.saturating_sub(start) < RESIZE_MIN_HEIGHT * 2 {
+            return;
         }
+        let target = pointer_row.clamp(start + RESIZE_MIN_HEIGHT, end - RESIZE_MIN_HEIGHT);
 
-        for zone in &mut self.zones {
-            if !zone.visible {
-                zone.area = Rect::default();
+        // Every row states its own height as its weight; the pair split
+        // at the pointer keeps their shared total, so the weights still
+        // add up to the space and the untouched rows come out unchanged.
+        for (k, cells) in rows.iter().enumerate() {
+            let h = if k == i {
+                target - start
+            } else if k == j {
+                end - target
+            } else {
+                self.get_area(cells[0]).height
+            };
+            for &id in cells {
+                if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+                    zone.row_flex = f32::from(h);
+                }
+            }
+        }
+    }
+
+    fn drag_col(&mut self, left: ZoneId, right: ZoneId, pointer_col: u16) {
+        let rows = self.visible_rows();
+        let Some(cells) = rows
+            .into_iter()
+            .find(|cells| cells.contains(&left) && cells.contains(&right))
+        else {
+            return;
+        };
+        let (Some(i), Some(j)) = (
+            cells.iter().position(|&id| id == left),
+            cells.iter().position(|&id| id == right),
+        ) else {
+            return;
+        };
+        if j != i + 1 {
+            return;
+        }
+        let first = self.get_area(left);
+        let second = self.get_area(right);
+        let (start, end) = (first.x, second.x + second.width);
+        if end.saturating_sub(start) < RESIZE_MIN_WIDTH * 2 {
+            return;
+        }
+        let target = pointer_col.clamp(start + RESIZE_MIN_WIDTH, end - RESIZE_MIN_WIDTH);
+
+        for (k, &id) in cells.iter().enumerate() {
+            let w = if k == i {
+                target - start
+            } else if k == i + 1 {
+                end - target
+            } else {
+                self.get_area(id).width
+            };
+            if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+                zone.flex = f32::from(w);
             }
         }
     }
@@ -378,6 +595,38 @@ impl ZoneLayout {
             .map(|z| z.visible)
             .unwrap_or(false)
     }
+}
+
+/// Split `total` cells over `weights`: exact shares floored, the
+/// leftovers handed to the front of the list -- which is what the old
+/// `total / n` plus "the first rows take the remainder" did, so weights
+/// of `1.0` reproduce that layout to the cell.
+///
+/// The `1e-6` keeps a share that is *meant* to be whole (`3 * 1/3`)
+/// from flooring to zero on float rounding; the sum is capped at
+/// `total` so a rounding hair can never hand out more than there is.
+fn distribute(total: u16, weights: &[f32]) -> Vec<u16> {
+    let sum: f32 = weights.iter().sum();
+    let mut out: Vec<u16> = if sum <= 0.0 || weights.is_empty() {
+        vec![0; weights.len()]
+    } else {
+        weights
+            .iter()
+            .map(|w| {
+                let exact = f32::from(total) * (w / sum);
+                (exact + 1e-6).min(f32::from(total)).floor() as u16
+            })
+            .collect()
+    };
+    let mut left = total.saturating_sub(out.iter().sum());
+    for cell in out.iter_mut() {
+        if left == 0 {
+            break;
+        }
+        *cell += 1;
+        left -= 1;
+    }
+    out
 }
 
 pub fn superscript_digit(n: u8) -> &'static str {

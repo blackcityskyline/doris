@@ -1012,7 +1012,17 @@ impl App {
         // of the panel, so it can be tested first without shadowing one.
         let layout = self.frame_layout(id, area, config);
         if let Some((button, rect)) = layout.button_at(col, row) {
+            // A legend click is a legend click: it never arms the drag,
+            // so `pause` on its own border cannot be a resize handle.
             return self.activate_frame_button(id, &button, col, &rect);
+        }
+
+        // On a border that separates two zones, this click arms the
+        // drag (the release ends it, the move does the work). The focus
+        // above still happened: a border click used to select the panel
+        // and it still does, it just may also move the divider.
+        if self.zones.resize_start(row, col) {
+            return None;
         }
 
         match id {

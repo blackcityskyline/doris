@@ -786,3 +786,149 @@ fn hiding_a_zone_parks_the_focus_on_the_next_visible_one() {
         "Trackers is third, so the next one that is left is Results"
     );
 }
+
+// --- mouse resize (WM-style) -----------------------------------------
+
+/// The regression the resize hangs off: with every weight at its
+/// default, the tiling must be pixel-for-pixel what it was before any
+/// weight existed -- same integer division, same remainder to the first
+/// rows, same search bar left outside.
+#[test]
+fn test_equal_weights_reproduce_the_untouched_grid() {
+    let mut zones = ZoneLayout::new();
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    // 24 - 3 = 21 rows over 4 zones: 5 each, the first taking the one
+    // leftover cell.
+    assert_eq!(zones.get_area(ZoneId::Results), Rect::new(0, 3, 80, 6));
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 9, 80, 5));
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 14, 80, 5));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(0, 19, 80, 5));
+}
+
+/// Grab the border between two rows, pull it down one row: the pair
+/// splits where the pointer left it, and the rows nobody touched keep
+/// the height they had -- the one thing a WM's resize must never do is
+/// move someone else's frame.
+#[test]
+fn test_dragging_the_row_border_splits_that_pair_only() {
+    let mut zones = ZoneLayout::new();
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    // Torrent's top border is the divider under Results.
+    assert!(
+        zones.resize_start(9, 40),
+        "the top border of the second row is a handle"
+    );
+    zones.resize_drag(10, 40);
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    assert_eq!(zones.get_area(ZoneId::Results).height, 7, "ended at y=10");
+    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 10, 80, 4));
+    assert_eq!(zones.get_area(ZoneId::Trackers).height, 5, "untouched");
+    assert_eq!(zones.get_area(ZoneId::Log).height, 5, "untouched");
+    // The rows still tile: no gap, no overlap, nothing off screen.
+    assert_eq!(
+        zones.get_area(ZoneId::Log).y + zones.get_area(ZoneId::Log).height,
+        24,
+        "the last row still ends at the bottom"
+    );
+}
+
+/// No zone may be dragged out of existence: the pair keeps a frame you
+/// can still read and grab again.
+#[test]
+fn test_a_drag_stops_at_the_minimum_zone() {
+    let mut zones = ZoneLayout::new();
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    // Far above the divider: the upper row may not go under the floor.
+    zones.resize_start(9, 40);
+    zones.resize_drag(3, 40);
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+    assert_eq!(
+        zones.get_area(ZoneId::Results).height,
+        doris::ui::zones::RESIZE_MIN_HEIGHT
+    );
+    // The pair shares rows y=3..14 -- 11 cells -- so the row under the
+    // floor gets the other 8, not the whole terminal's 21.
+    let torrent = zones.get_area(ZoneId::Torrent);
+    assert_eq!(torrent.height, 11 - doris::ui::zones::RESIZE_MIN_HEIGHT);
+
+    // And far below it: the lower row keeps its floor too. The divider
+    // has moved with the first drag, so it is found where it now is.
+    zones.resize_end();
+    let torrent = zones.get_area(ZoneId::Torrent);
+    assert!(
+        zones.resize_start(torrent.y, 40),
+        "the divider is where the last drag left it"
+    );
+    zones.resize_drag(60, 40);
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+    assert_eq!(
+        zones.get_area(ZoneId::Torrent).height,
+        doris::ui::zones::RESIZE_MIN_HEIGHT
+    );
+}
+
+/// The columns: a row tiled side by side splits on the vertical border
+/// the same way, and the row stays exactly as wide as the terminal.
+#[test]
+fn test_dragging_the_column_border_splits_that_row() {
+    let mut zones = ZoneLayout::new();
+    zones.apply_preset("3|4");
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 3, 40, 21));
+
+    assert!(
+        zones.resize_start(5, 40),
+        "the left border of the second cell is a handle"
+    );
+    zones.resize_drag(5, 30);
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    assert_eq!(zones.get_area(ZoneId::Trackers), Rect::new(0, 3, 30, 21));
+    assert_eq!(zones.get_area(ZoneId::Log), Rect::new(30, 3, 50, 21));
+}
+
+/// A body click is not a handle, and the first row's top border is the
+/// search bar -- there is nothing above it to move.
+#[test]
+fn test_only_the_borders_between_zones_are_handles() {
+    let mut zones = ZoneLayout::new();
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+
+    assert!(!zones.resize_start(5, 40), "inside Results");
+    assert!(!zones.resize_start(3, 40), "the first row's own top edge");
+    assert!(!zones.resize_start(40, 0), "below every zone");
+    assert!(zones.resize.is_none(), "and nothing was armed");
+
+    assert!(zones.resize_start(9, 0), "Torrent's top border, left edge");
+    zones.resize_end();
+    assert!(zones.resize_start(19, 40), "Log's top border");
+    zones.resize_end();
+    assert!(zones.resize.is_none());
+}
+
+/// A preset is a *new* arrangement: weights earned in the old one
+/// cannot be carried over, or a Results row made tall for the four-row
+/// tiling would swallow the two-row one.
+#[test]
+fn test_applying_a_preset_resets_the_weights() {
+    let mut zones = ZoneLayout::new();
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+    zones.resize_start(9, 40);
+    zones.resize_drag(10, 40);
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+    assert_ne!(
+        zones.get_area(ZoneId::Results).height,
+        6,
+        "the drag took hold"
+    );
+
+    zones.apply_preset("1,3|4");
+    zones.update_areas(Rect::new(0, 0, 80, 24));
+    // Two rows: 21 over 2 -> 11 and 10, first taking the remainder.
+    assert_eq!(zones.get_area(ZoneId::Results).height, 11);
+    assert_eq!(zones.get_area(ZoneId::Trackers).height, 10);
+}

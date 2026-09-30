@@ -274,7 +274,9 @@ words -- a token that silently matches nothing reads as a broken app.
 - Mouse: click any zone to focus it, click a frame button to
   trigger it, click a Trackers checkbox to switch that source, click the
   search box to start typing, scroll wheel over any zone to
-  scroll/navigate it
+  scroll/navigate it, drag the border between two zones to
+  resize them like a WM (rows and cells alike; the weights are
+  transient -- a `Shift+P` preset resets them)
 
 ## Dependencies
 
