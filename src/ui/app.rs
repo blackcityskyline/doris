@@ -161,6 +161,11 @@ pub struct App {
     /// via spawn_stream so pause/resume/remove act on the right torrent
     /// even if others are also active.
     pub active_torrent_hash: Option<String>,
+    /// A `d` on the Torrent zone has been pressed once and the removal is
+    /// waiting for a second one. Removing takes the torrent off
+    /// TorrServer's disk, the same key downloads a row in the zone next
+    /// door, and there is no undo -- so the first press asks.
+    pub remove_armed: bool,
     /// Client-side pause tracking. TorrServer has no "paused" torrent
     /// state to read back -- pausing means `drop`ping the torrent, which
     /// typically removes it from the live list entirely rather than
@@ -475,6 +480,7 @@ impl App {
             show_menu: false,
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
+            remove_armed: false,
             torrent_paused: false,
             // Which row of the Trackers panel the cursor sits on: 0 is
             // the `all` switch, 1.. the registry entries.
@@ -1244,6 +1250,35 @@ impl App {
         }
     }
 
+    /// `d` on the Torrent zone. Returns `true` only on the second press,
+    /// which is the one that removes.
+    ///
+    /// Removing takes the torrent off TorrServer's disk and there is no
+    /// undo, so the first press only arms the question the panel shows.
+    /// `d` again goes through; anything else calls [`App::disarm_remove`].
+    pub fn confirm_remove(&mut self) -> bool {
+        if self.remove_armed {
+            self.remove_armed = false;
+            true
+        } else {
+            self.remove_armed = true;
+            false
+        }
+    }
+
+    /// Drop an armed removal, so the next `d` asks again instead of
+    /// removing.
+    pub fn disarm_remove(&mut self) {
+        self.remove_armed = false;
+    }
+
+    /// The question line the Torrent zone shows while a removal is armed.
+    /// `None` when nothing is armed.
+    pub fn remove_prompt(&self) -> Option<String> {
+        self.remove_armed
+            .then(|| "Remove this torrent? d again to confirm, any other key to cancel".to_string())
+    }
+
     pub fn quit(&mut self) {
         self.running = false;
     }
@@ -1761,7 +1796,7 @@ impl App {
             ])
         };
 
-        let lines = vec![
+        let mut lines = vec![
             header,
             Line::from(vec![
                 Span::styled("Progress: ", label),
@@ -1792,6 +1827,19 @@ impl App {
                 Span::styled(s.peers.to_string(), value),
             ]),
         ];
+
+        // The armed removal takes the last line rather than replacing one:
+        // the facts stay readable, and the question is the only thing in
+        // the panel drawn in the error accent, which is what that accent
+        // is for.
+        if let Some(prompt) = self.remove_prompt() {
+            lines.push(Line::from(Span::styled(
+                prompt,
+                Style::default()
+                    .fg(self.theme.error_color())
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
 
         let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
         let block = self

@@ -61,7 +61,7 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
         "Moves in the focused zone (j/k: Vim keys).",
     ),
     ("g, G", "Cycles the category forward / back."),
-    ("d", "Downloads a row / removes the torrent."),
+    ("d", "Downloads a row / removes the torrent (twice)."),
     ("v", "Logs the selected result's details."),
     ("p", "Pauses / resumes the tracked torrent."),
     ("Esc", "Closes a modal; leaves input / filter mode."),

@@ -665,6 +665,11 @@ impl App {
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                // Same rule as the keyboard: a click that is not on the
+                // remove button answers the armed question with "no".
+                // Mouse clicks do not go through `handle_key`, so the
+                // disarm that happens there has to happen here too.
+                self.ui.disarm_remove();
                 if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
                 } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
@@ -678,7 +683,11 @@ impl App {
                         Some(UiAction::TrackersChanged) => self.persist_config(),
                         Some(UiAction::ReaskCategory) => self.reask_for_category().await,
                         Some(UiAction::TogglePause) => self.toggle_pause_active_torrent().await,
-                        Some(UiAction::Remove) => self.remove_active_torrent().await,
+                        Some(UiAction::Remove) => {
+                            if self.ui.confirm_remove() {
+                                self.remove_active_torrent().await;
+                            }
+                        }
                         Some(UiAction::Download) => self.download_selected_to_disk().await,
                         Some(UiAction::Info) => self.show_selected_info(),
                         Some(UiAction::Play) => {
@@ -1037,6 +1046,11 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        // An armed removal is a question waiting for an answer, and every
+        // key that is not `d` is a "no". Disarmed here, before any mode
+        // below reads the key, so no path that handles a key can miss the
+        // cancellation.
+        self.ui.disarm_remove();
         // Quit first, always. Every mode below answers and returns
         // before the plain-view match is reached -- the menu, a modal, a
         // detail view, the search box -- so a Ctrl+C arm at the bottom
@@ -1456,7 +1470,9 @@ impl App {
                 self.toggle_pause_active_torrent().await;
             }
             KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Torrent => {
-                self.remove_active_torrent().await;
+                if self.ui.confirm_remove() {
+                    self.remove_active_torrent().await;
+                }
             }
             KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Results => {
                 self.download_selected_to_disk().await;
@@ -2908,5 +2924,67 @@ mod key_routing_tests {
             logs.contains("Trackers panel (3)"),
             "the message must name the panel's current key:\n{logs}"
         );
+    }
+
+    /// The armed removal is cancelled by *any* other key, and that is a
+    /// claim about `handle_key` rather than about the state machine --
+    /// the state machine only knows that something cancelled it. So it is
+    /// checked here, where the keys are actually routed. Getting it wrong
+    /// means `d`, then `j`, then `d` removes a torrent the user thought
+    /// they had cancelled twice.
+    #[tokio::test]
+    async fn any_key_other_than_d_cancels_an_armed_removal() {
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('q'),
+            KeyCode::Down,
+            KeyCode::Enter,
+            KeyCode::Esc,
+        ] {
+            let mut app = app_focused_on_sources(None).await;
+            app.ui.zones.focused = ZoneId::Torrent;
+            app.ui.active_torrent_hash = Some("deadbeef".into());
+
+            app.ui.confirm_remove();
+            assert!(app.ui.remove_prompt().is_some(), "setup: armed");
+
+            app.handle_key(press(code)).await.expect("a key");
+
+            assert!(
+                app.ui.remove_prompt().is_none(),
+                "{code:?} must answer the armed question with no"
+            );
+            assert!(
+                app.ui.active_torrent_hash.is_some(),
+                "{code:?} must not have removed the torrent either"
+            );
+        }
+    }
+
+    /// And the second `d` is the one that goes through -- the whole point
+    /// of arming it. A cancel in between sends it back to asking.
+    #[tokio::test]
+    async fn d_arms_then_removes_and_a_cancelled_d_asks_again() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.zones.focused = ZoneId::Torrent;
+        app.ui.active_torrent_hash = Some("deadbeef".into());
+
+        app.handle_key(press(KeyCode::Char('d'))).await.expect("d");
+        assert!(
+            app.ui.active_torrent_hash.is_some(),
+            "the first d must not remove"
+        );
+        assert!(app.ui.remove_prompt().is_some(), "it must ask");
+
+        // A cancel in between.
+        app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
+        assert!(app.ui.remove_prompt().is_none());
+
+        app.handle_key(press(KeyCode::Char('d'))).await.expect("d");
+        assert!(
+            app.ui.remove_prompt().is_some(),
+            "after a cancel the next d asks again, it does not remove"
+        );
+        assert!(app.ui.active_torrent_hash.is_some());
     }
 }
