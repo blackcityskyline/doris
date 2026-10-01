@@ -15,8 +15,10 @@ use ratatui::buffer::Buffer;
 use ratatui::style::Color;
 use ratatui::Terminal;
 
+mod common;
+
 fn make_app() -> UiApp {
-    UiApp::new("http://127.0.0.1:8090".into(), None)
+    common::make_app()
 }
 
 fn buffer(app: &mut UiApp, w: u16, h: u16) -> Buffer {

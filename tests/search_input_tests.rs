@@ -7,8 +7,10 @@ use doris::ui::view::App as UiApp;
 use ratatui::backend::{Backend, TestBackend};
 use ratatui::Terminal;
 
+mod common;
+
 fn make_app() -> UiApp {
-    UiApp::new("http://127.0.0.1:8090".into(), None)
+    common::make_app()
 }
 
 /// Render `app` once at `w`x`h` and hand back the drawn rows plus the

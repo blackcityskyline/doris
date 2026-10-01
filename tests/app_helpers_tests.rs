@@ -13,10 +13,12 @@ use doris::ui::view::AppState;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod common;
+
 // --- apply_source_done (B0.2 stale-drop; B3 per-source arrival) -------------
 
 fn make_ui() -> UiApp {
-    UiApp::new("http://127.0.0.1:8090".into(), None)
+    common::make_app()
 }
 
 fn item(title: &str) -> TorrentItem {

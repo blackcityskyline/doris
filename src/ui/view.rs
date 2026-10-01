@@ -583,15 +583,18 @@ impl App {
     pub fn frame_info(&self, id: ZoneId, area: Rect, config: &Config) -> String {
         match id {
             ZoneId::Results => {
-                // The counter leads, zero-padded and directly after the
-                // zone's name; which sources are checked is the Trackers
-                // panel's answer, so it is not repeated here (printing
-                // it twice is how the two disagree).
-                let counts = format!(
-                    "({:03}/{:03})",
-                    self.filtered_indices.len(),
-                    self.results.len()
-                );
+                // The counter leads, directly after the zone's name;
+                // which sources are checked is the Trackers panel's
+                // answer, so it is not repeated here (printing it twice
+                // is how the two disagree).
+                //
+                // No zero padding: it was there to keep the frame from
+                // twitching as the number grew, and it cost the one
+                // thing that reads at a glance -- an empty table showed
+                // `(000/000)`, three digits of nothing. The panel is
+                // redrawn on every keypress, so the twitch it was
+                // preventing was not there to begin with.
+                let counts = format!("({}/{})", self.filtered_indices.len(), self.results.len());
                 if self.zones.filter_input.is_empty() {
                     counts
                 } else {

@@ -9,12 +9,14 @@ use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
 
+mod common;
+
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
 fn make_app() -> UiApp {
-    UiApp::new("http://127.0.0.1:8090".into(), None)
+    common::make_app()
 }
 
 fn item() -> TorrentItem {

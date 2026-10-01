@@ -12,8 +12,10 @@ use doris::ui::view::AppState;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
+mod common;
+
 fn make_app() -> UiApp {
-    UiApp::new("http://127.0.0.1:8090".into(), None)
+    common::make_app()
 }
 
 fn item(title: &str) -> TorrentItem {

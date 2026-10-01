@@ -371,27 +371,27 @@ fn test_the_results_info_slot_counts_without_naming_sources() {
 
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "(000/000)",
-        "zero-padded, three digits wide"
+        "(0/0)",
+        "an empty table counts nothing, in as few digits as it takes"
     );
 
     config.enabled_sources = vec!["rutracker".to_string(), "yts".to_string()];
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "(000/000)",
+        "(0/0)",
         "the checked sources never come back onto this frame"
     );
 
     config.enabled_sources.clear();
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "(000/000)",
+        "(0/0)",
         "not even as `[none]`"
     );
 }
 
 /// The counter sits directly after the zone's name -- `¹ Results
-/// (003/003)` -- and the filter trails it rather than pushing it off.
+/// (3/3)` -- and the filter trails it rather than pushing it off.
 #[test]
 fn test_the_results_counter_leads_the_info_slot() {
     let mut app = make_app();
@@ -403,14 +403,14 @@ fn test_the_results_counter_leads_the_info_slot() {
 
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "(003/003)",
+        "(3/3)",
         "filtered 3 of 3"
     );
 
     app.zones.filter_input = "rutor".to_string();
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
-        "(003/003) [F: rutor]",
+        "(3/3) [F: rutor]",
         "the count stays first, the filter trails it"
     );
 }

@@ -760,7 +760,7 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     assert!(top.contains('▶'), "Results top border: {}", top);
     // With nothing on the left but the title, the counter lands
     assert!(
-        top.contains("Results (003/003)"),
+        top.contains("Results (3/3)"),
         "counter after the zone name: {}",
         top
     );

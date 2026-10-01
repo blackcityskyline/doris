@@ -4,8 +4,10 @@
 
 use doris::ui::view::App as UiApp;
 
+mod common;
+
 fn make_app() -> UiApp {
-    UiApp::new("http://127.0.0.1:8090".into(), None)
+    common::make_app()
 }
 
 fn fill(app: &mut UiApp, n: usize) {
