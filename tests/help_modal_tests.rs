@@ -33,9 +33,7 @@ fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
         .collect()
 }
 
-/// btop draws `[key, description]` pairs from one table
-/// (`help_text`, `btop_menu.cpp:174`). Ours has to keep naming the keys
-/// AGENTS.md documents, or the page silently falls behind the bindings.
+/// btop draws `[key, description]` pairs from one table (`help_text`, `btop_menu.cpp:174`).
 #[test]
 fn test_help_text_names_the_documented_keybinds() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
@@ -73,17 +71,6 @@ fn test_help_text_names_the_documented_keybinds() {
 }
 
 /// The help page has to say what the app does, not what it used to do.
-///
-/// Four things were wrong at once, and every one of them is a key a user
-/// can press and get something the page does not describe:
-///
-/// - it said `Esc` "closes a modal", and in the main view `Esc` *opens*
-///   the menu;
-/// - it said a click hits "tabs", which stopped being a thing when the
-///   Trackers panel became a list of checkboxes;
-/// - `ctrl + u` and `ctrl + w` have always worked and were never written
-///   down, so nobody could know to use them;
-/// - it did not say that `d` on a torrent asks first.
 #[test]
 fn the_page_describes_what_the_keys_do_now() {
     let page: Vec<String> = HELP_TEXT
@@ -110,10 +97,8 @@ fn the_page_describes_what_the_keys_do_now() {
     );
 }
 
-/// The description column is whatever is left of the box after the
-/// 20-column key column, and the box is 90% of an 80-column terminal --
-/// 70 inner columns, 50 for the description. btop truncates silently if
-/// it doesn't fit; ours should simply not have anything that long.
+/// The description column is whatever is left of the box after the 20-column key column, and
+/// the box is 90% of an 80-column terminal -- 70 inner columns, 50 for the description.
 #[test]
 fn test_help_descriptions_fit_an_80_column_terminal() {
     for (key, desc) in HELP_TEXT {
@@ -166,9 +151,8 @@ fn test_help_closes_on_the_close_keys_only() {
     assert_ne!(app.modal, doris::ui::view::Modal::None, "'x' does nothing");
 }
 
-/// The page count only exists once the renderer has measured the box, so
-/// paging has to be exercised the way a user gets it: draw, then press a
-/// key. 80x24 leaves room for 18 rows of the 21-entry table -- two pages.
+/// The page count only exists once the renderer has measured the box, so paging has to be
+/// exercised the way a user gets it: draw, then press a key.
 #[test]
 fn test_help_pages_forward_and_wraps() {
     let mut app = make_app();
@@ -227,9 +211,7 @@ fn test_help_does_not_page_when_it_all_fits() {
     }
 }
 
-/// The reason the page exists: a two-column table, key in `hi_fg` +
-/// bold, description after it. If the header or the keys stopped being
-/// drawn, this is the test that notices.
+/// The reason the page exists: a two-column table, key in `hi_fg` + bold, description after it.
 #[test]
 fn test_help_draws_the_header_and_the_keys() {
     let mut app = make_app();
@@ -243,13 +225,6 @@ fn test_help_draws_the_header_and_the_keys() {
     header.find("Description:").expect("Description column");
 
     // Every visible key sits in the same 20-column column as `Key:`:
-    // `cjust(..., 20)` on both sides is what lines the table up. The
-    // column is counted in display cells, not bytes -- the rows in front
-    // of the popup carry different prefixes (`╭ ¹ │` vs `│[ru│`), so a
-    // byte offset taken from the header would land mid-glyph elsewhere.
-    // The key is read out of that column rather than searched for in the
-    // whole row, or "Enter" would match inside "Enters search input
-    // mode." on the row above it.
     let key_col = header[..header.find("Key:").unwrap()].chars().count() - 8;
     let page = &rows[rows.iter().position(|r| r.contains("Key:")).unwrap()..];
     for expected in ["s, i", "Enter", "Esc", "? , /, F1"] {
@@ -264,11 +239,8 @@ fn test_help_draws_the_header_and_the_keys() {
     }
 }
 
-/// The page pairs a key with what it actually does; the keys alone are
-/// not enough to catch a swap. `f` filters and `F` goes fullscreen
-/// (`app.rs` routes them that way, and the Results frame legend prints
-/// `f Filter`), but the table had them the other way round -- the page
-/// sent the user to the wrong binding while the key list test passed.
+/// The page pairs a key with what it actually does; the keys alone are not enough to catch a
+/// swap.
 #[test]
 fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() {
     let desc = |key: &str| {
@@ -292,7 +264,6 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
     );
 
     // The frame legend is the other place these keys are named, so the
-    // two tables have to agree about `f` or one of them is lying.
     let legend = doris::ui::layout::zone_buttons(doris::ui::layout::ZoneId::Results);
     assert!(
         legend.iter().any(|b| b.key == 'f' && b.label == "filter"),
@@ -304,9 +275,8 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
     );
 }
 
-/// The page grew a second table: how the filter is written and how a
-/// row gets its category -- the two things `f` and `g` do that the
-/// single key table could not explain. `←`/`→` pick the table.
+/// The page grew a second table: how the filter is written and how a row gets its category --
+/// the two things `f` and `g` do that the single key table could not explain.
 #[test]
 fn test_help_switches_sections_with_the_arrow_keys() {
     let mut app = make_app();
@@ -399,8 +369,6 @@ fn test_filter_help_names_every_token_the_parser_accepts() {
     }
 
     // And the grouping half has to name the two ways a row gets its
-    // category, because that is why the category can disagree with the
-    // rows on screen (see the `all` rule).
     for fact in ["all", "rutracker", "nnmclub"] {
         assert!(
             text.contains(fact),

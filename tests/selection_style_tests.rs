@@ -46,7 +46,6 @@ fn line_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
 fn find(buf: &ratatui::buffer::Buffer, needle: &str) -> Option<(u16, u16)> {
     for y in 0..buf.area.height {
         // Cell index, not byte index: a box-drawing glyph is three
-        // bytes and one cell.
         let line = line_text(buf, y);
         if let Some(byte) = line.find(needle) {
             return Some((line[..byte].chars().count() as u16, y));
@@ -120,7 +119,6 @@ fn test_menu_selection_uses_its_own_theme_colours() {
 
     let buf = buffer(&mut app, 120, 40);
     // The items are drawn as ASCII art, not as words: `Help` is the
-    // one whose art carries `┌─╴`.
     let (x, y) = find(&buf, "┌─╴").expect("the menu item is on screen");
     assert_eq!(
         buf[(x, y)].bg,
@@ -134,9 +132,8 @@ fn test_menu_selection_uses_its_own_theme_colours() {
     );
 }
 
-/// btop's menu paints the picked item, not its row: only the glyphs of
-/// the ascii-art carry `menu_selected_bg`. A background behind the
-/// spaces would be a solid stripe across the middle of the menu.
+/// btop's menu paints the picked item, not its row: only the glyphs of the ascii-art carry
+/// `menu_selected_bg`.
 #[test]
 fn test_menu_highlight_covers_the_glyphs_not_the_spaces() {
     let mut app = make_app();

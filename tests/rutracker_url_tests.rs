@@ -2,8 +2,6 @@ use doris::sources::rutracker::{resolve_url, search_url, GROUP_FORUMS};
 use doris::sources::source::Group;
 
 // Moved here from `models_tests.rs` together with `resolve_url` itself:
-// the function hardcodes rutracker's host, so it belongs to the
-// rutracker source, not to the source-agnostic models module.
 
 #[test]
 fn test_resolve_url_absolute() {

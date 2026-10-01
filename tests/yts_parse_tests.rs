@@ -236,7 +236,6 @@ fn test_yts_is_registered_as_an_implemented_browser_free_source() {
     assert_eq!(built.label(), info.label);
     assert_eq!(built.home_url(), info.home_url);
     // B9 consumes this: an empty query is a *browse* here, and YTS
-    // answers it with `sort_by=date_added`.
     assert!(built.supports_browse(), "empty query -> newest movies");
     assert!(!built.requires_browser());
 }

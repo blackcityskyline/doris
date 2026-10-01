@@ -48,8 +48,6 @@ fn test_new_line_still_follows_the_bottom() {
 fn test_reader_position_survives_the_ring_buffer_turning_over() {
     let mut app = make_app();
     // The ring holds 500 lines: once it turns, every stored index moves
-    // one place left, and a reader parked in the middle has to move
-    // with the content or silently ends up on a different line.
     fill(&mut app, 500);
     app.log_scroll = 400;
 

@@ -1,15 +1,6 @@
-//! The theme list, and the cache in front of it.
-//!
-//! `load_themes` parsed forty files on every call, and the Options modal
-//! calls it twice per keypress -- so a key that changed nothing spent
-//! about eight milliseconds re-parsing files that cannot have changed.
-//!
-//! The cache has a cost, and the point of these tests is that the cost is
-//! the one that was chosen rather than the one that was noticed later: a
-//! theme file written while doris runs is not picked up until the next
-//! start. `load_themes_from` stays uncached, because a test's themes live
-//! in a temp directory that differs between cases and a cache keyed on
-//! nothing would hand the first case's themes to all of them.
+//! The theme list, and the cache in front of it. `load_themes` parsed forty files on every
+//! call, and the Options modal calls it twice per keypress -- so a key that changed nothing
+//! spent about eight milliseconds re-parsing files that cannot have changed.
 
 use doris::ui::theme::Theme;
 use std::path::PathBuf;
@@ -63,7 +54,6 @@ menu_selected_fg.b = 12
 #[test]
 fn the_uncached_entry_point_sees_a_new_directory_each_time() {
     // This is what a test depends on, and what a cache on the default
-    // path would break: two different directories, two different answers.
     let first = scratch("a");
     std::fs::write(first.join("probe.toml"), MINIMAL).unwrap();
 
@@ -99,8 +89,6 @@ fn a_broken_theme_file_does_not_take_the_rest_with_it() {
 #[test]
 fn the_cached_list_agrees_with_itself() {
     // Not a timing assertion -- timings are not tests. This is the
-    // property the cache could plausibly break: two calls returning two
-    // different lists, so the theme cycler would flip through a duplicate.
     let a = Theme::load_themes();
     let b = Theme::load_themes();
     assert_eq!(a.len(), b.len());

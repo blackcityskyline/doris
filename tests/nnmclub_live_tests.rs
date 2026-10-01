@@ -1,16 +1,10 @@
-//! Live-network checks for the nnmclub source -- ignored by default so
-//! `cargo test` stays offline-safe. Run manually with:
-//! `cargo test --test nnmclub_live_tests -- --ignored --nocapture`
-//!
-//! Unlike wave 2, this host was reachable the whole time wave 3 was
-//! written (200 to a browser UA, 0.3 s per page, no challenge), so the
-//! assertions below are the ones the code was *written* from: the
-//! search page's row shape, the `start=` cursor being disjoint across
-//! pages, browse answering the empty query, a miss answering an empty
-//! page, and `download.php?id=` handing over a bencoded file rather
-//! than a block page. They still skip on an unreachable host for the
-//! same reason `nyaa_live_tests` does: a network problem is not
-//! evidence about the parser.
+//! Live-network checks for the nnmclub source -- ignored by default so `cargo test` stays
+//! offline-safe. Run manually with: `cargo test --test nnmclub_live_tests -- --ignored
+//! --nocapture` Unlike wave 2, this host was reachable the whole time wave 3 was written (200
+//! to a browser UA, 0.3 s per page, no challenge), so the assertions below are the ones the
+//! code was *written* from: the search page's row shape, the `start=` cursor being disjoint
+//! across pages, browse answering the empty query, a miss answering an empty page, and
+//! `download.php?id=` handing over a bencoded file rather than a block page.
 
 use doris::sources::nnmclub::{search_url, NnmclubSearcher, PAGE_SIZE};
 use doris::sources::source::{Group, SearchRequest, Source};
@@ -84,8 +78,6 @@ async fn live_rows_carry_a_link_to_a_torrent_and_a_page_to_read() {
         assert_eq!(row.magnet, None);
         assert_eq!(row.info_hash, "");
         // B6: a row claims the group of its own forum -- or nothing,
-        // for sections outside the four groups (3D, fonts and books
-        // came back in this very query, live).
         if let Some(group) = row.group {
             assert!(
                 nnm.groups().contains(&group),
@@ -99,8 +91,6 @@ async fn live_rows_carry_a_link_to_a_torrent_and_a_page_to_read() {
     }
 
     // The attribution working on real rows, not just on fixtures:
-    // "frieren" comes back from the anime forums, and those claim
-    // their group (26.09.2026: sections 169/621/626/632/644).
     assert!(
         page.items.iter().any(|row| row.group.is_some()),
         "not one row could be attributed to its forum -- the forum \
@@ -108,8 +98,6 @@ async fn live_rows_carry_a_link_to_a_torrent_and_a_page_to_read() {
     );
 
     // A narrow query is a short page, and a short page is the last one
-    // -- that is what makes `has_more == false` honest rather than a
-    // missing feature.
     assert!(
         !page.has_more,
         "{} rows cannot be a full page",
@@ -239,8 +227,6 @@ async fn live_the_torrent_a_row_ships_is_a_bencoded_file() {
         .expect("the row's own link answers");
     println!("GET {} -> {} bytes", url, bytes.len());
     // What `spawn_stream` and the `d` key will do with it: hand these
-    // bytes to TorrServer. A challenge page in their place would be
-    // accepted silently -- hence the check on the wire, not in a test.
     assert!(!bytes.is_empty(), "an empty file would reach TorrServer");
     assert_ne!(bytes.first(), Some(&b'<'), "an HTML page is not a torrent");
     assert_eq!(
@@ -250,14 +236,8 @@ async fn live_the_torrent_a_row_ships_is_a_bencoded_file() {
     );
 }
 
-///  live claim: a selected category narrows what the *server*
-/// answers, and every row that comes back claims that category from
-/// its own forum cell. Movies is the biggest list (80 `f%5B%5D=` ids,
-/// ~1 KB of URL), so it is the one that proves one request is enough;
-/// Anime is the small one that proves the attribution is not a
-/// coincidence of a single group. If the tracker ignored the params,
-/// rows from music/books/programs would come back claiming nothing and
-/// both loops below would fail.
+/// live claim: a selected category narrows what the *server* answers, and every row that comes
+/// back claims that category from its own forum cell.
 #[tokio::test]
 #[ignore = "requires network access to nnmclub.to"]
 async fn live_a_selected_category_answers_with_only_that_category() {
@@ -289,7 +269,6 @@ async fn live_a_selected_category_answers_with_only_that_category() {
             );
         }
         // The tracker rate-limits bursts (429 seen live), so the two
-        // requests do not arrive back to back.
         tokio::time::sleep(std::time::Duration::from_secs(8)).await;
     }
 }

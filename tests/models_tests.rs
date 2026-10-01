@@ -81,7 +81,6 @@ fn test_parse_size_latin_decimal_units() {
 #[test]
 fn test_parse_size_russian_units_are_binary() {
     // `ГБ`/`МБ`/`КБ` are read as GiB/MiB/KiB, and both the comma decimal
-    // separator rutor serves and the lower-case spelling must work.
     assert_eq!(parse_size("2,27 ГБ"), 2_437_393_940);
     assert_eq!(parse_size("2.27 ГБ"), 2_437_393_940);
     assert_eq!(parse_size("750 мб"), 786_432_000);
@@ -105,7 +104,6 @@ fn test_parse_size_garbage_is_zero() {
 #[test]
 fn test_parse_size_stops_at_the_second_dot_like_js_parse_float() {
     // Parity with torio: `parseFloat("2.27.5")` yields 2.27 rather than
-    // failing the way Rust's `str::parse::<f64>` would.
     assert_eq!(parse_size("2.27.5 GB"), 2_270_000_000);
 }
 
@@ -114,7 +112,6 @@ fn test_parse_size_stops_at_the_second_dot_like_js_parse_float() {
 #[test]
 fn test_b1_fields_default_when_absent_from_json() {
     // Rutracker's browser-eval script only sets the display fields, so
-    // every B1 field has to deserialize from nothing rather than fail.
     let item: TorrentItem = serde_json::from_str(r#"{"title": "Test"}"#).unwrap();
     assert_eq!(item.group, None);
     assert_eq!(item.info_hash, "");
@@ -189,11 +186,9 @@ fn test_format_bytes_matches_torios_format_bytes() {
     assert_eq!(format_bytes(511), "511 B");
     assert_eq!(format_bytes(1024), "1.00 KB");
     // torio steps by 1024 but labels the units SI -- kept identical so a
-    // YTS row reads the same as a row a tracker rendered for us.
     assert_eq!(format_bytes(511_568_773), "487.87 MB");
     assert_eq!(format_bytes(1_073_741_824), "1.00 GB");
     // Just under a unit boundary: two decimals round up rather than
-    // silently promoting the row to the next unit.
     assert_eq!(format_bytes(1_073_741_224), "1024.00 MB");
     assert_eq!(format_bytes(4_000_000_000), "3.73 GB");
 }

@@ -77,7 +77,6 @@ async fn live_browse_returns_the_latest_releases() {
     );
 
     // `f=latest` is the point of the browse path: what comes back is
-    // fresh, so every row must carry a recent release date.
     let now = chrono::Utc::now().timestamp();
     let oldest = page
         .items

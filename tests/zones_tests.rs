@@ -7,14 +7,9 @@ use doris::ui::theme::Theme;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 
-/// The layout rule the assertions below are written against, restated
-/// here instead of called: the search bar owns the top
-/// `SEARCH_BAR_HEIGHT` rows, what is left is split over `count` equal
-/// rows, the first `area.height % count` taking one more. Writing the
-/// current constants (`3`, `14`) instead would make each of these a
-/// test of `SEARCH_BAR_HEIGHT`'s value -- red on a change that merely
-/// moves the whole grid down a row. `distribute`'s arithmetic itself
-/// is pinned in `src/ui/zones.rs` (`layout_math_tests`).
+/// The layout rule the assertions below are written against, restated here instead of called:
+/// the search bar owns the top `SEARCH_BAR_HEIGHT` rows, what is left is split over `count`
+/// equal rows, the first `area.height % count` taking one more.
 fn rows(area: Rect, count: usize) -> Vec<Rect> {
     let spare = area.height.saturating_sub(SEARCH_BAR_HEIGHT);
     let each = spare / count as u16;
@@ -31,7 +26,6 @@ fn rows(area: Rect, count: usize) -> Vec<Rect> {
         .collect()
 }
 
-/// A cell of `row`: from column `x`, `wide` columns, the row's height.
 fn cell(row: Rect, x: u16, wide: u16) -> Rect {
     Rect::new(x, row.y, wide, row.height)
 }
@@ -47,8 +41,6 @@ fn test_zone_id_key_char_and_from_key_round_trip() {
 }
 
 // Phase 10 key_char/label/from_key all read one
-// ZONE_ROWS entry. Guard against a variant with no row (or two variants
-// sharing a digit) -- that would silently break the `1`-`5` zone keys.
 #[test]
 fn test_every_zone_has_one_complete_row() {
     let keys: Vec<char> = ZoneId::all().iter().map(|z| z.key_char()).collect();
@@ -62,7 +54,6 @@ fn test_every_zone_has_one_complete_row() {
     sorted.dedup();
     assert_eq!(unique, sorted.len(), "two zones share a digit key");
     // all() is the render-side list; it must match the row set exactly,
-    // or a zone would render but be unreachable from the keyboard.
     assert_eq!(ZoneId::all().len(), keys.len());
 }
 
@@ -91,9 +82,8 @@ fn test_toggle_flips_visibility_and_focuses_when_shown() {
     assert!(!zones.is_visible(ZoneId::Log));
 }
 
-/// The panel renamed to Trackers sits at `3` and Log moved to the last
-/// slot `4`, so the zone keyboard reads Results / Torrent / Trackers /
-/// Log in order. Digits `1`-`4` are the whole zone keyboard.
+/// The panel renamed to Trackers sits at `3` and Log moved to the last slot `4`, so the zone
+/// keyboard reads Results / Torrent / Trackers / Log in order.
 #[test]
 fn test_trackers_is_three_and_log_is_four() {
     assert_eq!(ZoneId::Trackers.label(), "Trackers");
@@ -110,7 +100,6 @@ fn test_trackers_is_three_and_log_is_four() {
         ]
     );
     // The superscript in the frame title is `id as u8`, so the
-    // discriminant has to agree with the key digit.
     assert_eq!(ZoneId::Trackers as u8, 3);
     assert_eq!(ZoneId::Log as u8, 4);
 }
@@ -145,7 +134,6 @@ fn test_set_visible_false_clears_matching_fullscreen() {
 #[test]
 fn test_apply_preset_shows_exactly_the_named_zones() {
     // `1,3` names zones by key digit: Results and Trackers (Log moved
-    // to `4` when Trackers took `3`).
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,4");
     assert!(zones.is_visible(ZoneId::Results));
@@ -227,13 +215,10 @@ fn test_focus_next_noop_when_nothing_visible() {
     assert_eq!(zones.focused, before);
 }
 
-/// Regression test for the crash reported after enabling the default
-/// "1,2,3,4" preset: two zones used to each independently claim the
-/// *entire* leftover height instead of splitting it, so their combined
-/// area ran past the bottom of the terminal and panicked ratatui with an
-/// out-of-bounds buffer write. This asserts the actual invariant that
-/// bug violated, across a range of terminal sizes, so any future
-/// regression here fails a test instead of crashing the TUI.
+/// Regression test for the crash reported after enabling the default "1,2,3,4" preset: two
+/// zones used to each independently claim the *entire* leftover height instead of splitting it,
+/// so their combined area ran past the bottom of the terminal and panicked ratatui with an
+/// out-of-bounds buffer write.
 #[test]
 fn test_all_zones_visible_never_exceeds_terminal_height() {
     for &(w, h) in &[(80u16, 24u16), (100, 30), (141, 35), (60, 15), (200, 50)] {
@@ -279,7 +264,6 @@ fn test_update_areas_with_only_results_visible() {
     assert!(results_area.y + results_area.height <= 24);
 
     // Hidden zones should have an empty (zero-sized) area, not a stale
-    // or overlapping one.
     for &id in ZoneId::all() {
         if id != ZoneId::Results {
             assert_eq!(zones.get_area(id), Rect::default());
@@ -317,15 +301,8 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
 
 // --- the frame legend (btop's buttons drawn on the border) ----------------
 
-/// btop's box title: superscript number + bold, the label plain -- ours
-/// used to be one flat string, so nothing distinguished the zone number
-/// from its name. The colours are the theme's structure tokens: the
-/// number `secondary`, the label `primary`.
-///
-/// The label is split at its first letter: that letter is the key that
-/// opens the zone's detail view (`L`/`T`/`R`), so it carries the same
-/// `on_hover` + bold mark a frame button's hotkey carries, and the rest
-/// of the word stays plain `primary`.
+/// btop's box title: superscript number + bold, the label plain -- ours used to be one flat
+/// string, so nothing distinguished the zone number from its name.
 #[test]
 fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
     let theme = Theme::dark();
@@ -500,11 +477,9 @@ fn test_the_category_name_is_centred_in_its_slot() {
     );
 }
 
-/// The category button's arrows are the mouse targets, so both take the
-/// `on_hover` + bold treatment and the name between them stays
-/// `primary` -- btop draws its sortable column headers the same way.
-/// The button is built in `frame_layout` (its label names the current
-/// category), so that is where the test reads it from.
+/// The category button's arrows are the mouse targets, so both take the `on_hover` + bold
+/// treatment and the name between them stays `primary` -- btop draws its sortable column
+/// headers the same way.
 #[test]
 fn test_the_category_button_highlights_both_arrows() {
     let theme = Theme::dark();
@@ -567,9 +542,8 @@ fn test_active_button_bolds_the_whole_word() {
     assert!(active[1].style.add_modifier.contains(Modifier::BOLD));
 }
 
-/// The convention the plan asks for: primary functions use their first
-/// letter for the hotkey, as long as it isn't already taken. The words
-/// that cannot trail the key instead -- see `FrameButton::text`.
+/// The convention the plan asks for: primary functions use their first letter for the hotkey,
+/// as long as it isn't already taken.
 #[test]
 fn test_primary_buttons_lead_with_their_hotkey() {
     let primary = [
@@ -596,10 +570,7 @@ fn test_primary_buttons_lead_with_their_hotkey() {
 
 // --- layout tiling (rows via `,`, columns via `|`) --------------------------
 
-/// The spec is written the way it is read: rows separated by `,`,
-/// columns inside a row by `|`. The old flat list `"1,2,3,4"` still
-/// parses -- it is four rows of one cell each -- so an existing
-/// `config.toml` keeps meaning "every zone, stacked full width".
+/// The spec is written the way it is read: rows separated by `,`, columns inside a row by `|`.
 #[test]
 fn test_a_preset_spec_writes_rows_and_columns() {
     let mut zones = ZoneLayout::new();
@@ -644,7 +615,6 @@ fn test_a_flat_spec_still_stacks_zones_full_width() {
     zones.update_areas(area);
 
     // One full-width row each, the remainder to the first rows, so no
-    // row of the terminal is wasted.
     let r = rows(area, 4);
     assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Torrent), cell(r[1], 0, 100));
@@ -839,7 +809,6 @@ fn test_equal_weights_reproduce_the_untouched_grid() {
     zones.update_areas(area);
 
     // The whole tiling restated as the rule it must obey: four equal
-    // rows below the search bar, each full width, in zone order.
     let r = rows(area, 4);
     for (id, row) in [
         (ZoneId::Results, &r[0]),
@@ -866,7 +835,6 @@ fn test_dragging_the_row_border_splits_that_pair_only() {
     let log_h = zones.get_area(ZoneId::Log).height;
 
     // Torrent's top border is the divider under Results -- wherever
-    // the default split happened to put it.
     assert!(
         zones.resize_start(torrent.y, 40),
         "the top border of the second row is a handle"
@@ -919,14 +887,12 @@ fn test_a_drag_stops_at_the_minimum_zone() {
         doris::ui::layout::RESIZE_MIN_HEIGHT
     );
     // The pair only has `pair` rows between them, so the row under the
-    // floor gets the rest of those, not the whole terminal.
     assert_eq!(
         zones.get_area(ZoneId::Torrent).height,
         pair - doris::ui::layout::RESIZE_MIN_HEIGHT
     );
 
     // And far below it: the lower row keeps its floor too. The divider
-    // has moved with the first drag, so it is found where it now is.
     zones.resize_end();
     let torrent = zones.get_area(ZoneId::Torrent);
     assert!(

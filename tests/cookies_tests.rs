@@ -2,10 +2,6 @@ use doris::sources::cookies::*;
 use serial_test::serial;
 
 /// The payload `Browser::add_cookies` wants, in a form Chrome accepts.
-/// The leading dot of a Netscape domain is the *Set-Cookie* spelling and
-/// `Network.setCookie` rejects it ("invalid cookie domain"), so the domain
-/// goes in bare -- live, this is what kept the session an app run saved
-/// from being re-injected at all, and every run from re-logging-in.
 #[test]
 fn test_to_json_drops_the_set_cookie_dot_from_the_domain() {
     let cookie = Cookie {
@@ -122,13 +118,8 @@ fn test_save_and_reload() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// A saved cookie file is a live login: `bb_session` is the session, and
-/// anyone who reads it can act as the user on rutracker. `save_to_file`
-/// went through `fs::write`, which creates 0644 under the default umask
-/// 022 -- readable by every account on the machine. 0600 is the whole
-/// protection here, so the file is created with it and *repaired* on a
-/// file that already exists: the mode argument only applies at creation,
-/// so a store written by an older build keeps its 0644 otherwise.
+/// A saved cookie file is a live login: `bb_session` is the session, and anyone who reads it
+/// can act as the user on rutracker.
 #[test]
 #[cfg(unix)]
 fn test_saved_cookies_are_owner_only() {

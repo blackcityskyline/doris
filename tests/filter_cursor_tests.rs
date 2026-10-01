@@ -11,7 +11,6 @@ use doris::ui::view::App as UiApp;
 fn make_app() -> UiApp {
     let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
     // Ten rows alternating two groups, so a filter can narrow twice:
-    // "seed0" keeps 0/2/4/6/8, adding "4" keeps only 4.
     app.results = (0..10)
         .map(|i| doris::sources::models::TorrentItem {
             title: format!("item{i} seed{}", i % 2),

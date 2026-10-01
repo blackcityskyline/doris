@@ -319,7 +319,6 @@ fn test_the_file_list_marks_the_cursor_row() {
     assert!(text.contains("file_02.mkv"), "{}", text);
 
     // The cursor row is the marked one: find it by its file name and
-    // check it carries the theme's selection background.
     let buf = {
         let mut terminal = Terminal::new(TestBackend::new(90, 30)).unwrap();
         terminal

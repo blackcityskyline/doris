@@ -52,8 +52,8 @@ async fn live_search_falls_back_for_unindexable_words() {
     assert!(!items.is_empty(), "fallback for 'world war z' still empty");
 }
 
-/// Stopword case: strict search is 0, the relaxed one must find rows and
-/// the ones actually titled "... The Matrix..." must be promoted.
+/// Stopword case: strict search is 0, the relaxed one must find rows and the ones actually
+/// titled "...
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
 async fn live_search_prefers_rows_mentioning_dropped_words() {
@@ -84,7 +84,6 @@ async fn live_download_returns_torrent_bytes() {
     println!("downloaded {} bytes, starts with {:?}", bytes.len(), head);
     assert!(bytes.len() > 100, "suspiciously small download");
     // bencode torrent files start with the dict marker `d`; an HTML login
-    // page starts with `<`.
     assert!(
         !head.starts_with('<'),
         "got HTML instead of a .torrent: {}",
@@ -92,10 +91,8 @@ async fn live_download_returns_torrent_bytes() {
     );
 }
 
-/// B2: `SearchPage.has_more` is what the Results panel now trusts instead
-/// of app.rs's `count < 50` guess -- which could never work for rutor,
-/// whose pages hold 100 rows. Pin it against the live site by asking the
-/// question it answers: if we claim there is another page, there must be.
+/// B2: `SearchPage.has_more` is what the Results panel now trusts instead of app.rs's `count <
+/// 50` guess -- which could never work for rutor, whose pages hold 100 rows.
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
 async fn live_trait_search_has_more_agrees_with_the_next_page() {
@@ -130,12 +127,9 @@ async fn live_trait_search_has_more_agrees_with_the_next_page() {
     );
 }
 
-/// B6: a selected category is one GET per rubric id of
-/// `rutor::GROUP_IDS`, and the rows it brings back stand under that
-/// category -- the live half of the table the parse tests pin offline.
-/// Rubric 8 (`Игры`) answered 100 rows for "2026" on 26.09.2026 while
-/// `cat=0` answered a different set, so an all-Games page here means
-/// the fan-out really asked that rubric.
+/// B6: a selected category is one GET per rubric id of `rutor::GROUP_IDS`, and the rows it
+/// brings back stand under that category -- the live half of the table the parse tests pin
+/// offline.
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
 async fn live_a_selected_category_answers_with_only_that_category() {
@@ -198,7 +192,6 @@ async fn live_browse_answers_with_the_homepage_index() {
         "the homepage has no pager, so browse is one page"
     );
     // A browse list is mixed by nature: rows claim no group, which is
-    // why the `b` key returns the view to "all" before searching.
     assert!(
         page.items.iter().all(|row| row.group.is_none()),
         "a mixed homepage list claims no category"

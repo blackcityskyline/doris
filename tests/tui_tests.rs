@@ -100,10 +100,8 @@ fn test_log_scroll_moves_a_line_at_a_time() {
     assert_eq!(app.log_scroll, 19);
 }
 
-/// Down is positive, the same sign `PageDown` uses, and the clamp holds
-/// at both ends -- the panel is shorter than the buffer in both
-/// directions. The three-line step is what the wheel sends (see
-/// `MOUSE_SCROLL_STEP`).
+/// Down is positive, the same sign `PageDown` uses, and the clamp holds at both ends -- the
+/// panel is shorter than the buffer in both directions.
 #[test]
 fn test_log_scroll_clamps_and_takes_a_multi_line_step() {
     let mut app = make_test_app();
@@ -363,7 +361,6 @@ fn test_login_modal_enter_submits_the_selected_resource() {
     }
 
     // With one resource the tab wraps onto itself; the point is that
-    // the id travels with the credentials.
     let right = crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Right,
         crossterm::event::KeyModifiers::NONE,
@@ -380,11 +377,8 @@ fn test_login_modal_enter_submits_the_selected_resource() {
     }
 }
 
-/// Ctrl+S saves the current tab's credentials without logging in: the
-/// modal stays open and says so. The store write is real, so the app
-/// under test is pointed at a scratch store -- the modal used to resolve
-/// `$HOME` from inside the save, and this test overwrote the user's
-/// actual login.
+/// Ctrl+S saves the current tab's credentials without logging in: the modal stays open and says
+/// so.
 #[test]
 fn test_login_modal_ctrl_s_saves_without_logging_in() {
     let mut app = make_test_app();
@@ -673,7 +667,6 @@ fn test_switching_the_category_rederives_the_view_instantly() {
 fn test_render_draws_the_table_header_under_the_frame() {
     let mut app = make_test_app();
     // A populated panel is the case that has a table to draw: an empty
-    // one answers with the empty state instead of a bare header.
     app.results = make_results(3);
     app.update_filter();
     app.zones.update_areas(Rect::new(0, 0, 120, 40));
@@ -695,8 +688,6 @@ fn test_render_draws_the_table_header_under_the_frame() {
     };
 
     // The category row is gone: the first line inside the border is the
-    // table header, and the current category lives on the frame as the
-    // `◀ all ▶` button next to `group`.
     assert!(
         row_text(results.y + 1).contains("Seeds"),
         "the table header is the first line inside the border: {}",
@@ -765,12 +756,9 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     assert!(top.contains("filter"), "Results top border: {}", top);
     assert!(top.contains("group"), "Results top border: {}", top);
     // The source tabs left the frame for their own panel, and
-    // play/download/info left for the help page -- what the border says
-    // now is the category button and the counts.
     assert!(top.contains('◀'), "Results top border: {}", top);
     assert!(top.contains('▶'), "Results top border: {}", top);
     // With nothing on the left but the title, the counter lands
-    // directly after the zone's name: `¹ Results (003/003)`.
     assert!(
         top.contains("Results (003/003)"),
         "counter after the zone name: {}",
@@ -778,7 +766,6 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     );
 
     // The bottom action row is gone: play/download/info are
-    // keyboard-and-help-page actions, not frame buttons.
     let bottom = row_text(&terminal, results.y + results.height - 1);
     assert!(
         !bottom.contains("play") && !bottom.contains("download") && !bottom.contains("info"),
@@ -797,9 +784,8 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     );
 }
 
-/// The reason the legend exists: the keybind text used to sit inside the
-/// panels and had to be deleted from every one of them. Guard against it
-/// creeping back.
+/// The reason the legend exists: the keybind text used to sit inside the panels and had to be
+/// deleted from every one of them.
 #[test]
 fn test_keybind_text_is_gone_from_the_panel_bodies() {
     let mut app = make_test_app();
@@ -846,9 +832,7 @@ fn render_rows(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
         .collect()
 }
 
-/// `TorrentItem::source` is `#[serde(default)]`, so pre-field rows
-/// arrive empty. Blank would read as "no column here"; the placeholder
-/// says "nobody knows".
+/// `TorrentItem::source` is `#[serde(default)]`, so pre-field rows arrive empty.
 #[test]
 fn test_source_badge_marks_missing_sources_with_a_dash() {
     let mut item = TorrentItem::default();
@@ -931,11 +915,8 @@ fn test_results_table_shows_which_source_returned_each_row() {
 
 // --- layout tiling -----------------------------------------------------------
 
-/// The default preset (`1,3|4`) puts Results across the top and tiles
-/// Trackers beside Log underneath. The render pass needs no change for
-/// that -- it draws into whatever rect `update_areas` handed out -- so
-/// this is a smoke test that the zones really land where the grid says
-/// and each one still draws its own frame there.
+/// The default preset (`1,3|4`) puts Results across the top and tiles Trackers beside Log
+/// underneath.
 #[test]
 fn test_the_default_tiling_draws_two_columns() {
     let mut app = make_test_app();
@@ -1020,7 +1001,6 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
         );
     }
     // The panel gives the bar a 50-column cap; the detail view has the
-    // whole frame, so it must not be drawing the short one.
     assert!(text.contains("50%"), "the progress percentage is printed");
 }
 

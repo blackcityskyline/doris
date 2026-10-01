@@ -1,20 +1,9 @@
-//! Offline tests for the 1337x parser, built from pages this network
-//! actually served on 25.09.2026 (see the source module doc for the
-//! probes behind each one). The fixture keeps the site's real spelling:
-//! the `table-list` table, `coll-2 seeds` / `coll-3 leeches` /
-//! `coll-date` / `coll-4 size mob-uploader` cells, the icon anchor that
-//! precedes the title link, the uploader cell the parser does not
-//! read -- and a *raw* `&` in a title, because the live pages carry no
-//! entities at all and a decoder that treated `&H` as one would mangle
-//! it. Rows are wrapped between tags for the column limit; only
-//! whitespace moves, which `strip_html` collapses back out.
-//!
-//! The three shapes that must never be confused: a query with no
-//! matches (200 + the table header and no rows), a page with no
-//! results table at all (a challenge that answered 200, a moved
-//! layout), and the featured links sitting *above* the table on
-//! `/home/` -- to a user the first two both read "found nothing", and
-//! the third would be a row pointing at somebody else's navigation.
+//! Offline tests for the 1337x parser, built from pages this network actually served on
+//! 25.09.2026 (see the source module doc for the probes behind each one). The fixture keeps the
+//! site's real spelling: the `table-list` table, `coll-2 seeds` / `coll-3 leeches` /
+//! `coll-date` / `coll-4 size mob-uploader` cells, the icon anchor that precedes the title
+//! link, the uploader cell the parser does not read -- and a *raw* `&` in a title, because the
+//! live pages carry no entities at all and a decoder that treated `&H` as one would mangle it.
 
 use std::sync::Arc;
 
@@ -89,8 +78,7 @@ const SEARCH_PAGE: &str = r#"<!DOCTYPE html>
 </html>
 "#;
 
-/// A query nobody could match, live as `zzqqxxnothing123`: 200, the
-/// table header, zero rows. An empty page, not an error.
+/// A query nobody could match, live as `zzqqxxnothing123`: 200, the table header, zero rows.
 const EMPTY_PAGE: &str = r#"<!DOCTYPE html>
 <html>
 <head><title>Download zzqqxxnothing123 Torrents | 1337x</title></head>
@@ -124,13 +112,11 @@ const NO_TABLE_PAGE: &str = r#"<!DOCTYPE html><html lang="en-US"><head>
 </head><body><h1>Performing security verification</h1></body></html>
 "#;
 
-/// The top of `/home/`: the "Most Popular" navigation -- real
-/// `/torrent/` links, but *above* `table-list`, so not results -- and
-/// then three rows of the first sections, live: the second one with
-/// the seeders the site renders as `0` (4 of 201 cells seen that day),
-/// the third one with a *time* where the date cell should be (11 of
-/// the 78 rows on that page, every one of them a `Sep. 23rd '26`
-/// upload once its own page was fetched).
+/// The top of `/home/`: the "Most Popular" navigation -- real `/torrent/` links, but *above*
+/// `table-list`, so not results -- and then three rows of the first sections, live: the second
+/// one with the seeders the site renders as `0` (4 of 201 cells seen that day), the third one
+/// with a *time* where the date cell should be (11 of the 78 rows on that page, every one of
+/// them a `Sep.
 const BROWSE_PAGE: &str = r#"<!DOCTYPE html>
 <html>
 <head><title>Download verified torrents: movies, music, games, software | 1337x</title></head>
@@ -231,11 +217,8 @@ fn test_a_row_carries_every_column_from_the_search_page_alone() {
         "the site's own display string, kept as written"
     );
     // Latin units are SI in this codebase (`GB` = 1e9), a torio
-    // compatibility the row's display string makes visible for the
-    // first time -- nnmclub handed over bytes and never had a unit.
     assert_eq!(first.size_bytes, 10_600_000_000);
     // The date comes out of the row itself, where torio pays for a
-    // detail page to read the same value.
     assert_eq!(format_date(first.added), "2022-10-01");
     assert_eq!(first.date, "2022-10-01");
     // Nothing to play yet: the link lives on the row's own page.
@@ -254,7 +237,6 @@ fn test_a_raw_ampersand_in_a_title_survives_decoding() {
         "live titles carry raw `&`, and no entity table touches it"
     );
     //...while the icon anchor in front of the link is still not part
-    // of the title.
     assert!(!rows[2].title.contains("flaticon"));
 }
 
@@ -287,9 +269,6 @@ fn test_a_freshest_row_keeps_its_row_and_waits_for_its_day() {
     );
     assert_eq!(fresh.size, "1.7 GB");
     // The list wrote a time, so the row has no day -- and *that* is
-    // what tells `search` to go ask this row's own page for one. It is
-    // not an error, and it is not today either: the live page behind
-    // this very row said `Sep. 23rd '26`, two days before the probe.
     assert_eq!(fresh.added, 0, "no day was claimed by the list");
     assert_eq!(fresh.date, "", "and nothing is printed until one arrives");
     assert!(
@@ -302,8 +281,6 @@ fn test_a_freshest_row_keeps_its_row_and_waits_for_its_day() {
 #[test]
 fn test_the_upload_day_comes_from_the_rows_own_page() {
     // Live detail page of the row above: the day the list would not
-    // spell out, in the same `Mon. DDth 'YY` the list uses for older
-    // rows.
     let detail = r#"<ul class="list"><li><strong>Downloads</strong><span>630</span></li>
 <li><strong>Last checked</strong><span>Sep. 23rd '26</span></li>
 <li><strong>Date uploaded</strong><span>Sep. 23rd  '26</span> </li>
@@ -320,11 +297,9 @@ fn test_a_detail_page_without_a_readable_day_adds_no_day() {
         "an unreadable page leaves the row's date empty"
     );
     // `Last checked` is the neighbour field; reading it would put the
-    // wrong day on the row.
     let neighbour = "<li><strong>Last checked</strong><span>Sep. 23rd '26</span></li>";
     assert_eq!(date_from_detail(neighbour), None);
     // A time where the date should be (should the site ever move the
-    // format) parses to nothing rather than to 1970-01-01.
     let time = "<strong>Date uploaded</strong><span>03:15am</span>";
     assert_eq!(date_from_detail(time), None);
 }
@@ -375,10 +350,6 @@ fn test_the_featured_links_above_the_table_are_not_rows() {
 #[test]
 fn test_one_word_is_taken_exactly_as_the_site_answered_it() {
     // Live: `frieren` alone came back 20 of 20 -- but the engine also
-    // matches on metadata, so a row carrying the word nowhere in its
-    // title can still be a row the site vouched for. Filtering a
-    // one-word answer would delete those (8 of the 20 rows for
-    // `frieren crack` matched through metadata that day).
     let items = vec![row("Hogwarts.Legacy.Deluxe.Edition-EMPRESS")];
     let kept = filter_rows(&items, "crack");
     assert_eq!(
@@ -391,7 +362,6 @@ fn test_one_word_is_taken_exactly_as_the_site_answered_it() {
 #[test]
 fn test_two_words_keep_only_the_rows_that_carry_both() {
     // Live: `frieren crack` returned 20 rows, 12 with "crack" in the
-    // title, none with "frieren" -- and 8 with neither word.
     let items = vec![
         row("Frieren.Crack.RELEASE-GRP"),
         row("Some.Crack.To.Go"),
@@ -408,7 +378,6 @@ fn test_stop_words_are_not_insisted_on() {
     let items = vec![
         row("The.Witcher.S03.1080p"),
         // No `the` anywhere -- kept all the same, which is the whole
-        // point: a stop word is not part of what the row must carry.
         row("Witcher.S01.720p"),
         row("Totally.Unrelated"),
     ];
@@ -424,12 +393,6 @@ fn test_stop_words_are_not_insisted_on() {
 #[test]
 fn test_a_page_nothing_answers_comes_back_empty() {
     // 20 rows from the server, none of which carries both words --
-    // live, that is `dune 1080p` on five pages in a row and `frieren
-    // 2026` on twelve. The page is NOT handed back raw: that fallback
-    // is where the "Games" tab full of Sims/GTA RELOADED repacks came
-    // from, rows the query never asked for. An empty table is the
-    // honest answer, and it is no longer a dead end -- `needs_more` no
-    // longer needs rows to scroll, so Down fetches page 2.
     let raw: Vec<TorrentItem> = (0..PAGE_SIZE).map(|i| row(&format!("Row {}", i))).collect();
     let page = to_page(raw, "frieren crack", 40);
     assert!(
@@ -448,8 +411,6 @@ fn test_a_page_nothing_answers_comes_back_empty() {
 #[test]
 fn test_a_page_some_rows_answer_keeps_only_those() {
     // The other half of the same decision, live as `witcher s03`:
-    // 4 of the 20 rows on the page carry both words, so the filter
-    // does its job and the cursor keeps walking the site's grid.
     let mut raw: Vec<TorrentItem> = (0..PAGE_SIZE).map(|i| row(&format!("Row {}", i))).collect();
     for index in [3usize, 7, 11, 18] {
         raw[index].title = format!("The.Witcher.S03.Part{}.720p", index);
@@ -471,8 +432,6 @@ fn test_a_short_page_promises_nothing() {
 #[test]
 fn test_browse_never_promises_a_second_page() {
     // `/home/` answered 78 rows on one page with no pager -- so it
-    // must not go through `to_page`, where 78 >= 20 would promise a
-    // second fetch of the same URL forever.
     let rows: Vec<TorrentItem> = (0..78).map(|i| row(&format!("Row {}", i))).collect();
     let page = to_browse_page(rows);
     assert_eq!(page.items.len(), 78);
@@ -483,7 +442,6 @@ fn test_browse_never_promises_a_second_page() {
 #[test]
 fn test_the_cursor_is_the_sites_page_number() {
     // `/search/<q>/<page>/` counts pages from 1, offsets count rows
-    // from 0, and the words go in the path the way torio spells them.
     assert_eq!(
         search_url(HOST, "dune 1080p", 0, None),
         "https://www.1337xx.to/search/dune+1080p/1/"
@@ -506,12 +464,9 @@ fn test_the_cursor_is_the_sites_page_number() {
     );
 }
 
-/// slot, in the spelling the site answers to (live 26.09.2026):
-/// the group's own label names the category path, the *same* label
-/// names browse's `/popular-<label>/`, and both keep the page cursor
-/// the plain search uses. The labels are `Group::label` -- the words
-/// in the category row -- rather than a private spelling that could
-/// drift away from what the tabs promise.
+/// slot, in the spelling the site answers to (live 26.09.2026): the group's own label names the
+/// category path, the *same* label names browse's `/popular-<label>/`, and both keep the page
+/// cursor the plain search uses.
 #[test]
 fn test_a_category_picks_the_sites_category_paths() {
     let expected = [
@@ -568,7 +523,6 @@ fn test_rows_claim_the_category_that_fetched_them() {
 #[test]
 fn test_the_magnet_comes_off_a_detail_page() {
     // Live detail page for Dune 2021: the magnet with its tracker
-    // list, written with a raw `&`, inside an anchor.
     let magnet = concat!(
         "magnet:?xt=urn:btih:4D165EAE3C3F1C8FCD467E7A9B21ADD164D6E969",
         "&dn=Dune.2021.1080p.WEBRip.DD5.1.x264-SHITBOX",
@@ -582,8 +536,6 @@ fn test_the_magnet_comes_off_a_detail_page() {
     assert_eq!(found, magnet, "raw `&` passes through untouched");
 
     // An entity in the link would be a mirror's doing; the decoder
-    // turns it into the link TorrServer needs rather than handing over
-    // `&amp;tr=`.
     let escaped = "magnet:?xt=urn:btih:abc&dn=x&amp;tr=udp%3A%2F%2Ft%3A1";
     let detail = format!("<a href=\"{}\">magnet</a>", escaped);
     let found = magnet_from_detail(&detail).expect("the page carries a magnet");
@@ -603,14 +555,10 @@ fn test_the_source_declares_what_the_probes_found() {
     assert_eq!(source.label(), "1337x");
     assert_eq!(source.home_url(), "https://1337x.to");
     // Three of torio's four mirrors answered 403 with a Cloudflare JS
-    // challenge; `www.1337xx.to` answered 200 to this same client on
-    // every path. A challenge on *those mirrors* is not a session this
-    // source needs.
     assert!(!source.requires_browser());
     // `/home/` answered 78 rows in the search page's own markup.
     assert!(source.supports_browse());
     // The four categories the site's nine map onto a `Group`; Music,
-    // Documentaries, Applications, Other and XXX have none to go to.
     assert_eq!(
         source.groups(),
         &[Group::Movies, Group::TV, Group::Games, Group::Anime]

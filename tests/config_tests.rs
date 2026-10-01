@@ -6,8 +6,6 @@ use std::path::PathBuf;
 #[test]
 fn test_config_default() {
     // The raw struct: what every "just build me a Config" caller gets.
-    // It does not know the source list -- the registry fills that in, and
-    // `Config` deliberately has no opinion about it.
     let config = Config::default();
     assert_eq!(config.browser_visibility, "hidden");
     assert_eq!(config.torrserver_url, "http://127.0.0.1:8090");
@@ -22,8 +20,6 @@ fn test_config_default() {
     assert!(config.browser.is_none());
 
     // Phase 5: Options "general" category fields must have real, sane
-    // defaults -- these used to be hardcoded display strings with no
-    // backing field at all.
     assert!(config.theme_name.is_none());
     assert!(config.theme_background);
     assert!(config.truecolor);
@@ -34,8 +30,6 @@ fn test_config_default() {
     assert!(!config.presets.is_empty());
     assert_eq!(config.preset_index, 0);
     // The tiling grammar is rows via `,` and columns via `|`, so the
-    // very first preset is the default UI the options list promises:
-    // Results on top, Trackers and Log in the row under it, no Torrent.
     assert_eq!(config.presets[0], "1,3|4");
     assert!(config.show_boxes);
     assert_eq!(config.update_ms, 1000);
@@ -49,8 +43,6 @@ fn test_config_default() {
     assert!(config.save_cookies);
     assert!(config.save_credentials);
     // The source list is not here: it is the registry's to say, and a raw
-    // `Config::default()` has none until the migration runs over it.
-    // `test_a_first_run_enables_every_implemented_source` is that test.
     assert!(config.enabled_sources.is_empty());
     assert!(config.known_sources.is_empty());
     assert!(config.download_enabled);
@@ -62,8 +54,6 @@ fn test_config_default() {
 #[test]
 fn test_config_new_fields_have_defaults_when_omitted_from_toml() {
     // A config.toml written before Phase 5 won't mention any of these
-    // keys at all; loading it must not fail, and must fall back to the
-    // same defaults as Config::default().
     let toml_str = r#"
         browser = "brave"
     "#;
@@ -104,17 +94,9 @@ fn test_config_save_and_load_round_trip() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A config written before the default became absolute says
-/// `cookie_file = "cookies.txt"`, which resolved against the CWD -- so a
-/// session landed wherever doris was started from (that is how one ended
-/// up inside `target/release/`). The load puts the path next to the
-/// config instead, which is one stable location.
-///
-/// The relative name here is *not* the literal `cookies.txt` a real
-/// config holds: the migration looks for that name in the CWD and moves
-/// whatever it finds, which in a checkout is the developer's own session.
-/// `#[serial]` because these tests share the CWD, which is a fact about
-/// them, not a property of the code under test.
+/// A config written before the default became absolute says `cookie_file = "cookies.txt"`,
+/// which resolved against the CWD -- so a session landed wherever doris was started from (that
+/// is how one ended up inside `target/release/`).
 #[test]
 #[serial]
 fn test_relative_cookie_file_migrates_next_to_the_config() {
@@ -186,18 +168,7 @@ fn test_absolute_cookie_file_is_left_alone() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The session the old relative path pointed at is a real file with a
-/// live login in it. Pinning the path without moving that file would
-/// leave the user logged out for no reason, so the move is part of the
-/// migration -- or the migration fails loudly rather than silently
-/// costing a re-login.
-///
-/// This one has to put a file in the CWD, because a relative path *is* a
-/// path from the CWD and that is the whole thing being tested. So the
-/// name carries the pid, and a guard takes the file away again even if an
-/// assertion panics -- an earlier draft used the plain name `cookies.txt`
-/// and the migration duly moved the developer's own session file out from
-/// under the repository.
+/// The session the old relative path pointed at is a real file with a live login in it.
 #[test]
 #[serial]
 fn test_migration_moves_the_existing_session() {
@@ -242,16 +213,9 @@ fn test_migration_moves_the_existing_session() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `rename` cannot cross a filesystem boundary, and these two paths
-/// routinely are on different ones: the config in `~/.config` on the root
-/// filesystem, the app started from a mounted data disk or a tmpfs. The
-/// move still has to happen, or the session is left behind on the disk
-/// nobody will look on again.
-///
-/// The assertions are the same either way -- the file ends up beside the
-/// config with its contents -- so this does not check that the two paths
-/// really are on different devices. Where they are not, `rename` does the
-/// work and the test still says what it means.
+/// `rename` cannot cross a filesystem boundary, and these two paths routinely are on different
+/// ones: the config in `~/.config` on the root filesystem, the app started from a mounted data
+/// disk or a tmpfs.
 #[test]
 #[serial]
 fn test_migration_moves_across_a_filesystem_boundary() {
@@ -321,7 +285,6 @@ fn test_config_parse_empty() {
 #[test]
 fn test_config_legacy_browser_mode_alias_still_works() {
     // Old configs written before the headless/gui -> hidden/visible rename
-    // must keep loading without an error.
     let toml_str = r#"
         browser_mode = "gui"
     "#;
@@ -331,10 +294,8 @@ fn test_config_legacy_browser_mode_alias_still_works() {
 
 // --- enabled_sources migration (B8 wave 1 fallout) --------------------------
 
-/// What a config written before wave 1 looks like: it lists the two
-/// sources that existed, and knows nothing about ids added later. This
-/// is the live case -- the finished wave ran into it on an installed
-/// config, where every new tab answered "Selected source is disabled".
+/// What a config written before wave 1 looks like: it lists the two sources that existed, and
+/// knows nothing about ids added later.
 #[test]
 fn test_a_config_from_before_wave1_gains_the_new_sources() {
     let config = from_toml(
@@ -375,8 +336,7 @@ fn test_a_source_the_user_switched_off_before_wave1_stays_off() {
     );
 }
 
-/// A config that already knows every id -- i.e. one this build has
-/// saved -- is left exactly as the user configured it.
+/// A config that already knows every id -- i.e.
 #[test]
 fn test_known_sources_are_never_re_enabled() {
     let mut config = Config {
@@ -413,15 +373,8 @@ fn test_migration_is_idempotent() {
     );
 }
 
-/// A first run's config already knows everything, so the migration must
-/// leave it untouched -- otherwise every startup would be rewriting a
-/// user's choices.
-///
-/// Through `first_run_config`, because that is what a machine with no
-/// config file actually gets. A raw `Config::default()` starts with an
-/// empty source list by design now, and migrating that on its own is the
-/// *empty file* case, which is a different situation with a different
-/// answer.
+/// A first run's config already knows everything, so the migration must leave it untouched --
+/// otherwise every startup would be rewriting a user's choices.
 #[test]
 fn test_a_fresh_config_is_not_migrated() {
     let mut config = Config::default();
@@ -464,27 +417,13 @@ fn test_a_planned_source_is_never_recorded_as_seen() {
         );
     }
     // While the planned id is written off, the implemented ones still
-    // count -- which is the half that protects a deliberate "off".
     assert_eq!(config.enabled_sources, vec!["rutracker".to_string()]);
 }
 
 /// A first run must come up with every implemented source switched on.
-///
-/// This is the path that regressed once: `load` with no config file
-/// returned a raw `Config::default()`, and after the source list moved
-/// out of `Config` that raw struct had no sources in it at all -- the app
-/// started up with nothing enabled and no error to explain why.
-///
-/// It is deliberately not written against `from_toml("")`, which is a
-/// different question: an empty file is a config that predates the field,
-/// so it seeds `LEGACY_SOURCES` and those three stay *off*. A machine
-/// with no config file has made no decision yet, which is not the same
-/// thing as having decided "off" -- and this bug is exactly that
-/// confusion, so the difference is pinned rather than assumed.
 #[test]
 fn test_a_first_run_enables_every_implemented_source() {
     // The same two calls `load` makes when there is no file -- not a copy
-    // of them, which would test the copy.
     let mut config = Config::default();
     doris::sources::source::first_run_config(&mut config);
     doris::sources::source::migrate_config(&mut config);
@@ -524,14 +463,7 @@ fn test_an_empty_config_file_keeps_the_legacy_sources_off() {
     );
 }
 
-/// `config.rs` is a settings file; the list of sources is a fact about
-/// the build. The dependency used to run the other way, and adding a
-/// source meant editing two files with nothing pointing at the omission --
-/// forget `config.rs` and the source is implemented but ships switched
-/// off, forever, with no UI able to turn it on.
-///
-/// This is checked by reading the file: a compile-time rule would need a
-/// second crate, and a comment would not be one.
+/// `config.rs` is a settings file; the list of sources is a fact about the build.
 #[test]
 fn the_config_layer_does_not_know_the_source_list() {
     let source = include_str!("../src/config.rs");
@@ -550,21 +482,11 @@ fn the_config_layer_does_not_know_the_source_list() {
 }
 
 /// The no-file branch of `load` must go through the first-run config.
-///
-/// This one has to read the source rather than call `load`: that branch
-/// fires when there is no file in `$HOME`, and a test that creates and
-/// removes the user's config to exercise it is worse than the bug it is
-/// looking for. The rule it pins caught a real regression during this
-/// change -- with the source list moved out of `Config`, the branch
-/// returned a raw `Config::default()` and a first run came up with every
-/// source switched off.
 #[test]
 fn load_without_a_file_uses_the_first_run_config() {
     let source = include_str!("../src/config.rs");
 
     // The *last* `None` arm in `load`: the first one picks the path
-    // (`None` means "look in $HOME"), the last one is what a machine
-    // without a file gets back.
     let start = source.find("pub fn load(").expect("load is defined");
     let body = &source[start..];
     let arm = body.rfind("None => {").expect("the no-file arm");

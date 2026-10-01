@@ -57,8 +57,6 @@ fn test_display_uses_proper_case_names() {
 #[test]
 fn test_chrome_and_chromium_are_distinct_kinds() {
     // Regression guard: these two used to be folded into a single
-    // "Chrome/Chromium" variant, which cannot be driven the same way:
-    // they resolve different binaries.
     assert_ne!(BrowserKind::Chrome, BrowserKind::Chromium);
     assert_ne!(
         BrowserKind::Chrome.config_key(),
@@ -114,16 +112,11 @@ fn test_default_priority_contains_all_four_kinds_exactly_once() {
 #[test]
 fn test_detect_browser_with_unknown_requested_name_errors() {
     // "firefox" isn't a supported kind at all, regardless of what's
-    // actually installed on the machine running this test.
     let result = detect_browser_with_priority(Some("firefox"), DEFAULT_PRIORITY);
     assert!(result.is_err());
 }
 
 // Phase 9 BrowserKind's four properties (config key,
-// aliases, binary names, label) now come from one table row each. This is
-// the guard that makes "add a browser = append one row" safe: a row with a
-// missing or duplicate key, or an empty binary list, fails here instead of
-// at detect time on the user's machine.
 #[test]
 fn test_every_kind_has_one_complete_unique_row() {
     let all = [
@@ -140,7 +133,6 @@ fn test_every_kind_has_one_complete_unique_row() {
         }
         assert!(!kind.to_string().is_empty(), "{kind} has no label");
         // from_config_key must accept its own key (already covered above,
-        // but through the table this catches an alias/row mix-up).
         assert_eq!(BrowserKind::from_config_key(kind.config_key()), Some(*kind));
     }
     keys.sort_unstable();

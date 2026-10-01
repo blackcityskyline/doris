@@ -1,15 +1,9 @@
-//! The chromedriver cache contract: one patched driver per browser
-//! major, and a driver is only used for the major it reports.
-//!
-//! Regression tests for the defect behind `get_or_patch_chromedriver`
-//! returning a single un-suffixed cached file for every browser: a 152
-//! driver handed to Helium 154 died with "This version of ChromeDriver
-//! only supports Chrome version 152" (live, 25.09.2026), so switching
-//! the browser priority in Options broke session startup.
-//!
-//! Everything here runs offline against temp files: the binaries are
-//! stand-ins that print a version line, exactly what `driver_serves`
-//! asks the real ones.
+//! The chromedriver cache contract: one patched driver per browser major, and a driver is only
+//! used for the major it reports. Regression tests for the defect behind
+//! `get_or_patch_chromedriver` returning a single un-suffixed cached file for every browser: a
+//! 152 driver handed to Helium 154 died with "This version of ChromeDriver only supports Chrome
+//! version 152" (live, 25.09.2026), so switching the browser priority in Options broke session
+//! startup.
 
 #![cfg(unix)]
 
@@ -30,7 +24,6 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-/// A stand-in driver that prints `version_line` when asked its version.
 fn fake_driver(dir: &Path, name: &str, version_line: &str) -> PathBuf {
     let path = dir.join(name);
     fs::write(&path, format!("#!/bin/sh\necho '{}'\n", version_line)).expect("write");
@@ -104,7 +97,6 @@ fn a_binary_without_a_readable_version_serves_nothing() {
     assert!(!driver_serves(&junk, 152));
 
     // Absent and not executable: both must read as "does not serve"
-    // rather than as an error the caller has to unwind.
     assert!(!driver_serves(&dir.join("missing"), 152));
     let unreadable = fake_driver(&dir, "unreadable", "ChromeDriver 152.0.7977.82");
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o644)).expect("chmod");
@@ -125,7 +117,6 @@ fn the_un_keyed_download_moves_only_to_the_major_it_serves() {
     );
 
     // Another browser's major: nothing moves, and 152 keeps the file it
-    // was downloaded for.
     assert!(adopt_legacy_download(&root, 154).is_none());
     assert!(
         legacy.exists(),
@@ -133,7 +124,6 @@ fn the_un_keyed_download_moves_only_to_the_major_it_serves() {
     );
 
     // Its own major: moved under the keyed path, where `find_or_download`
-    // will look for it, and still answering as 152 after the move.
     let adopted = adopt_legacy_download(&root, 152).expect("adopted");
     assert_eq!(adopted, root.join("152/chromedriver-linux64/chromedriver"));
     assert!(adopted.exists());

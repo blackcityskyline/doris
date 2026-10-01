@@ -1,15 +1,5 @@
-//! The log line written when a result row is sent to a source it does
-//! not name.
-//!
-//! In its own file on purpose. These tests set `HOME` so the file
-//! logger writes somewhere they can read, and `HOME` is a process-wide
-//! variable: another test in the same binary running at the same moment
-//! would see the temporary one. `#[serial]` only serialises tests that ask
-//! for it, and the other 36 tests in the old file did not -- which showed
-//! up as a flake under a full parallel run. One test binary, one process,
-//! one `HOME` to change. `#[serial]` still matters *inside* the file:
-//! `HOME` is per-process, not per-test, and two tests setting it at the
-//! same moment is the same race one file over.
+//! The log line written when a result row is sent to a source it does not name. In its own file
+//! on purpose.
 
 use doris::app::source_id_for;
 use doris::sources::models::TorrentItem;
@@ -51,7 +41,6 @@ fn logged_while<F: FnOnce()>(name: &str, f: F) -> String {
 fn a_substituted_source_id_is_reported_not_silent() {
     let log = logged_while("subst", || {
         // A wrong id and an id from before the field existed both
-        // substitute.
         source_id_for(&item_with_source("never-heard-of-it"));
         source_id_for(&item_with_source(""));
     });

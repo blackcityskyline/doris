@@ -58,8 +58,6 @@ fn test_equal_seeds_keep_the_first_occurrence() {
 #[test]
 fn test_rows_without_a_hash_are_never_collapsed() {
     // The deviation from torio: an empty hash proves nothing, and
-    // rutracker rows have no hash at all -- collapsing them would leave
-    // one row per search.
     let list = vec![
         with(row(""), "rutracker", 100, 3, 0),
         with(row(""), "rutracker", 100, 3, 0),
@@ -94,7 +92,6 @@ fn test_search_order_is_most_seeds_then_newest() {
 #[test]
 fn test_browse_order_ranks_the_registered_providers_first() {
     // B9 will pass `browsing: true`; for now this pins the port of
-    // torio's BROWSE_SOURCE_PRIORITY against our source ids.
     let list = vec![
         with(row("other"), "rutracker", 0, 0, 9000),
         with(row("rutor-new"), "rutor", 0, 0, 1000),

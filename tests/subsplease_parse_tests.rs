@@ -160,9 +160,7 @@ fn test_an_entry_without_a_magnet_is_skipped() {
     );
 }
 
-/// A miss answers `[]` where the success case is an object (live
-/// checked). Reading that as a parse error would show "source broken"
-/// where the truth is "nothing found".
+/// A miss answers `[]` where the success case is an object (live checked).
 #[test]
 fn test_a_miss_is_an_empty_array_not_a_parse_error() {
     let rows = parse_rows("[]").expect("an empty array is a valid answer");

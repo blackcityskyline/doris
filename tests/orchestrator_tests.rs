@@ -131,9 +131,6 @@ async fn rows_arrive_in_completion_order_and_a_deadline_does_not_block_the_rest(
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     // The hanging source is spawned first *and* listed first: if events
-    // were batched or delivered in spawn order, the fast source's rows
-    // could only show up after the 100ms deadline -- B3 exists so they
-    // show up while the slow one is still waiting.
     let slow_task = tokio::spawn(orchestrator::run_source(
         "hanging",
         7,
@@ -334,22 +331,15 @@ fn selection_follows_the_panel_checklist() {
         "nothing checked means nothing to dispatch"
     );
     // An id that is not in the registry is not asked either: the panel
-    // derives its rows from the registry, so a typo cannot become a
-    // dispatch.
     let with_unknown = vec!["rutracker".to_string(), "never-heard-of-it".to_string()];
     assert_eq!(ids(&with_unknown), vec!["rutracker"]);
 }
 
-/// B6: the category decides who gets asked, and a source that does not
-/// serve it is skipped outright -- not asked and filtered afterwards.
-/// Its rows would arrive claiming no category, the view would drop all
-/// of them, and the table would read as "this category found nothing"
-/// while the sources able to filter it server-side were the only ones
-/// really consulted.
+/// B6: the category decides who gets asked, and a source that does not serve it is skipped
+/// outright -- not asked and filtered afterwards.
 #[test]
 fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
     // yts declares only Movies and serves it by construction; tpb
-    // declares Movies and TV; the rest declare all four.
     let both = vec!["rutracker".to_string(), "yts".to_string()];
     let ids = |group: Option<Group>| -> Vec<&'static str> {
         orchestrator::selected_sources(&both, group, false)
@@ -384,11 +374,8 @@ fn the_category_narrows_the_dispatch_to_sources_that_serve_it() {
     );
 }
 
-/// The empty-dispatch message is the only hint a stuck user gets, so it
-/// has to point at the fix that works. The blocked-source branch is
-/// unreachable through the registry today (every implemented source
-/// serves its categories, which `source_registry_tests` guards), so the
-/// assertions cover the branch that can still fire.
+/// The empty-dispatch message is the only hint a stuck user gets, so it has to point at the fix
+/// that works.
 #[test]
 fn the_empty_dispatch_explains_which_fix_actually_applies() {
     // Nothing checked at all: the panel is the fix, and the line says so.
@@ -408,7 +395,6 @@ fn the_empty_dispatch_explains_which_fix_actually_applies() {
     );
 
     // Sources checked, but none serves the group: same advice, and it
-    // names the panel rather than a tab that no longer exists.
     let yts_only = vec!["yts".to_string()];
     let wrong_group = orchestrator::nothing_to_ask_reason(&yts_only, Group::TV);
     assert!(
@@ -450,11 +436,9 @@ fn a_browse_asks_only_the_sources_that_can_answer_an_empty_query() {
         assert!(browse.contains(&id), "{} must be able to browse", id);
     }
     // The two that cannot: the browser-backed one, and the one whose
-    // empty-query feed was never answered live.
     assert!(!browse.contains(&"rutracker"), "{:?}", browse);
     assert!(!browse.contains(&"nyaa"), "{:?}", browse);
     // A category search is unaffected by the browse flag: rutracker is
-    // back when the query has terms again.
     assert!(ids(false).contains(&"rutracker"));
 }
 
@@ -485,8 +469,6 @@ fn load_more_asks_only_sources_that_reported_another_page() {
     let plan = orchestrator::dispatch_plan(&selected, &offsets, &has_more);
 
     // Each source resumes at *its own* cursor: rutor's pages are 100
-    // rows, rutracker's are 50, and a shared counter walks off rutor's
-    // grid -- which it answers with nothing.
     assert_eq!(plan.len(), 1);
     let (info, offset) = plan[0];
     assert_eq!(info.id, "rutracker");
@@ -500,7 +482,6 @@ fn a_source_that_failed_gets_retried_from_where_it_stopped() {
     offsets.insert("rutracker".to_string(), 50);
     let mut has_more = std::collections::HashMap::new();
     // rutor timed out on the previous page: no verdict, so it must be
-    // asked again rather than silently dropped from later pages.
     has_more.insert("rutracker".to_string(), false);
 
     let plan = orchestrator::dispatch_plan(&selected, &offsets, &has_more);
@@ -521,10 +502,6 @@ fn both_enabled() -> Vec<String> {
 #[tokio::test]
 async fn an_empty_dispatch_still_closes_the_generation() {
     // Nothing was spawned -- every source answered from cache, or none
-    // could start -- and the UI still has to leave `Searching`. The
-    // SearchComplete must travel through the same channel, so it queues
-    // *behind* the cache hits already sent and the paging verdicts they
-    // carry are read in the right order.
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     tokio::spawn(orchestrator::coordinate(9, vec![], tx));

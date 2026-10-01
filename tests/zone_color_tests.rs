@@ -27,8 +27,6 @@ fn buffer(app: &mut UiApp, w: u16, h: u16) -> Buffer {
     terminal.backend().buffer().clone()
 }
 
-/// Where `needle` starts. The tests read a colour off a cell, so they
-/// name the cell by its text -- the way a reader finds it.
 fn find(buf: &Buffer, needle: &str) -> Option<(u16, u16)> {
     let w = needle.chars().count() as u16;
     for y in 0..buf.area.height {
@@ -73,10 +71,8 @@ fn one_result() -> TorrentItem {
     }
 }
 
-/// The header is structure (`primary`), and only two data columns carry
-/// an accent: the seed count in `secondary`, the date in the
-/// informational mid-bright. Size and title keep the body colour, so
-/// the row reads as data and not as a rainbow.
+/// The header is structure (`primary`), and only two data columns carry an accent: the seed
+/// count in `secondary`, the date in the informational mid-bright.
 #[test]
 fn test_results_accents_two_columns_and_leave_the_rest_alone() {
     let mut app = make_app();
@@ -90,7 +86,6 @@ fn test_results_accents_two_columns_and_leave_the_rest_alone() {
     assert_eq!(fg_at(&buf, "Seeds"), theme.primary_color());
     assert_eq!(fg_at(&buf, "1234"), theme.secondary_color());
     // The Date column is 8 wide, so the value is drawn truncated --
-    // the cell is what is asserted, not the whole date.
     assert_eq!(fg_at(&buf, "2020-05"), theme.graph_text.to_color());
     assert_eq!(
         fg_at(&buf, "Some Torrent"),
@@ -131,19 +126,16 @@ fn test_help_page_accents_the_header_and_the_keybind_column() {
     assert_eq!(fg_at(&buf, "s, i"), theme.on_hover_color());
 }
 
-/// The paging row is the frame rule again: the arrows are the glyphs
-/// that act, so they take `on_hover` + bold, and the `page n/m` they
-/// move is structure in `primary` -- btop draws exactly that split
-/// (`btop_menu.cpp:1655` and `:1780`), and the Settings modal already
-/// follows it. The help page drew the whole line unstyled, so the
-/// arrows read as ordinary text.
+/// The paging row is the frame rule again: the arrows are the glyphs that act, so they take
+/// `on_hover` + bold, and the `page n/m` they move is structure in `primary` -- btop draws
+/// exactly that split (`btop_menu.cpp:1655` and `:1780`), and the Settings modal already
+/// follows it.
 #[test]
 fn test_help_paging_arrows_take_the_hotkey_accent() {
     let mut app = make_app();
     app.open_help_modal();
 
     // 80x24 is the size the page-count test uses: two pages, so the
-    // indicator is drawn at all.
     let buf = buffer(&mut app, 80, 24);
     let theme = doris::ui::theme::Theme::dark();
 
@@ -152,12 +144,7 @@ fn test_help_paging_arrows_take_the_hotkey_accent() {
     assert_eq!(fg_at(&buf, "↓"), theme.on_hover_color());
 }
 
-/// The popup's content sits on the theme's own background. btop paints
-/// no content background at all (`createBox` writes plain spaces, so the
-/// box shows the terminal through), and our `modal_block` already
-/// fills with `main_bg` when "Theme background" is on -- the hardcoded
-/// `DarkGray` these two modals used overrode both, and on a light
-/// theme it put dark body text on grey.
+/// The popup's content sits on the theme's own background.
 #[test]
 fn test_modal_content_sits_on_the_theme_background() {
     let theme = doris::ui::theme::Theme::dark();
@@ -185,20 +172,15 @@ fn test_modal_content_sits_on_the_theme_background() {
     assert_eq!(buf[(x, y)].bg, theme.main_bg.to_color());
 }
 
-/// The cursor row in the Options list is a selected row like any other:
-/// btop paints it `selected_bg` + `selected_fg` (`btop_menu.cpp:1687`),
-/// and Results, Trackers and the detail modal's file list already use
-/// `selection_style()`. This list only recoloured the label to the
-/// highlight accent, so the same cursor looked different here.
+/// The cursor row in the Options list is a selected row like any other: btop paints it
+/// `selected_bg` + `selected_fg` (`btop_menu.cpp:1687`), and Results, Trackers and the detail
+/// modal's file list already use `selection_style()`.
 #[test]
 fn test_the_settings_cursor_row_uses_the_selection_colours() {
     let mut app = make_app();
     app.open_settings(&Config::default(), false);
 
     // The cursor's own label, read out of the state rather than
-    // hardcoded: the list grows whenever an option is added. The first
-    // row is the theme, so its `n/m` is the theme's own index and total
-    // (`SettingsState::theme_pos`), not the row's position in the list.
     let label = match &app.modal {
         Modal::Settings(state) => {
             let cat = &state.categories[state.selected_category];
@@ -222,11 +204,9 @@ fn test_the_settings_cursor_row_uses_the_selection_colours() {
     assert_eq!(buf[(x, y)].fg, theme.selected_fg.to_color());
 }
 
-/// The tab row marks the key, not the word: the brackets and the digit
-/// that switches to a tab take `on_hover`, the tab's own name stays
-/// structure in `primary` -- btop's split exactly (`btop_menu.cpp:1631`)
-/// and the same rule the frame legend follows. Every tab was drawn in
-/// one colour, so the digit you press looked like part of the label.
+/// The tab row marks the key, not the word: the brackets and the digit that switches to a tab
+/// take `on_hover`, the tab's own name stays structure in `primary` -- btop's split exactly
+/// (`btop_menu.cpp:1631`) and the same rule the frame legend follows.
 #[test]
 fn test_settings_tab_markers_carry_the_accent_and_the_names_do_not() {
     let mut app = make_app();

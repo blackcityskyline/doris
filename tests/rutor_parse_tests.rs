@@ -6,11 +6,6 @@ use doris::sources::rutor::{
 use doris::sources::source::Group;
 
 // A reconstructed snippet matching the row shape confirmed by fetching
-// live rutor search results pages while writing the parser (see the
-// module doc comment on rutor.rs) -- not literally saved off the wire,
-// but every field (hrefs, size format, seed/leech icon+number pattern,
-// date format) matches what was actually observed there. URL assertions
-// below expect `rutor.info` because that is the source's BASE.
 const SAMPLE_ROW: &str = r#"
 <table>
 <tr class="gai">
@@ -135,24 +130,12 @@ fn test_count_title_links_matches_parse_results_count_on_valid_rows() {
 #[test]
 fn test_count_title_links_zero_on_challenge_or_error_page() {
     // Simulates what search_page's diagnostic check is looking for: a
-    // non-search-results page (e.g. a block/challenge page) has no
-    // /torrent/ links at all.
     let challenge_page =
         "<html><body><h1>Access denied</h1><p>Please verify you are human.</p></body></html>";
     assert_eq!(count_title_links(challenge_page), 0);
 }
 
 // Row markup taken from a live rutor.info results page fetched on
-// 25.09.2026 (indentation trimmed and the decorative `class` attributes
-// dropped to fit the line limit -- neither matters to the parser). What
-// differs from the old rutor.org row and is pinned here: the download
-// link is protocol-relative and points at `d.rutor.info`, the title link
-// carries a slug after the numeric id, the magnet link is an inline
-// `magnet:?xt=urn:btih:...` URI rather than an `/magnet/{id}` endpoint,
-// and the date parts are separated by literal `&nbsp;` entities. The
-// `<table>` wrapper is required, not decoration: html5ever drops a bare
-// `<tr>` outside a table, which would make `enclosing_row` find no
-// row at all.
 const LIVE_ROW: &str = r#"
 <table><tbody>
   <tr class="gai">
@@ -181,7 +164,6 @@ fn test_parses_live_row_shape() {
 #[test]
 fn test_extracts_seeds_from_live_nbsp_markup() {
     // The regression this whole investigation started from: seeds were
-    // empty on every real row because the digits sit behind `&nbsp;`.
     let items = parse_results(LIVE_ROW);
     assert_eq!(items[0].seeds, "1");
 }
@@ -248,8 +230,6 @@ fn test_title_has_word_empty_word_never_matches() {
 }
 
 // Rows served to Russian-language clients spell the unit in Cyrillic,
-// which the original `(TB|GB|MB|KB)` pattern missed entirely: `size`
-// came back empty for `2,27 ГБ`.
 const CYRILLIC_SIZE_ROW: &str = r#"
 <table>
 <tr class="gai">
@@ -295,20 +275,12 @@ fn test_cyrillic_size_does_not_break_seeds_or_date() {
 #[test]
 fn test_live_row_urls_are_built_from_the_numeric_id_plus_base() {
     // rutor.info title links carry a slug (`/torrent/{id}/{slug}`) and
-    // protocol-relative `//d.rutor.info/download/{id}` hrefs; the parser
-    // takes the first path segment as the id and rebuilds both URLs on
-    // BASE, so either mirror's markup yields the same pair.
     let items = parse_results(LIVE_ROW);
     assert_eq!(items[0].download_url, "https://rutor.info/download/1105259");
     assert_eq!(items[0].page_url, "https://rutor.info/torrent/1105259");
 }
 
 // rutor.info carries a news table (`table#news_table`) whose links use
-// the same `/torrent/{id}` shape as real results, with ids like 472 --
-// they have no size/seeds/date and must never show up as torrents. This
-// leaked through as soon as the source moved to rutor.info, because
-// there those hrefs are relative and the title-link selector matches
-// them (on rutor.org they were absolute).
 const NEWS_AND_RESULT: &str = r#"
 <table id="news_table">
   <tr><td colspan="2"><strong>Новости трекера</strong></td></tr>
@@ -338,7 +310,6 @@ fn test_news_table_rows_are_not_results() {
 #[test]
 fn test_news_row_does_not_shadow_a_real_result_with_the_same_id() {
     // The id filter runs after the row-class filter: a news entry whose
-    // id happened to match a real result must not consume it.
     let html = NEWS_AND_RESULT.replace("/torrent/472", "/torrent/1105259");
     let items = parse_results(&html);
     assert_eq!(items.len(), 1);
@@ -383,7 +354,6 @@ fn test_sample_rows_fill_leechers_and_added() {
 #[test]
 fn test_row_without_magnet_leaves_hash_and_magnet_empty() {
     // rutor.org's rows only had an `/magnet/{id}` endpoint, not an inline
-    // magnet URI -- such rows must not invent a hash.
     let items = parse_results(SAMPLE_ROW);
     assert_eq!(items[0].magnet, None);
     assert_eq!(items[0].info_hash, "");
@@ -392,8 +362,6 @@ fn test_row_without_magnet_leaves_hash_and_magnet_empty() {
 #[test]
 fn test_base32_info_hash_is_left_for_the_magnet_pipeline() {
     // A 32-char base32 btih is a real hash, but converting it to hex is
-    // `normalize_info_hash` job -- filling it in half-way here would
-    // make dedup compare a base32 hash against a hex one.
     let html = r#"
     <table><tr class="gai">
       <td>06 Сен 26</td>
@@ -508,7 +476,6 @@ fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     assert_eq!(page.next_offset, Some(full), "one page, not N merged rows");
 
     // 60 + 60 rows in total, but neither rubric's page is full: a
-    // merged count would promise a next page the site does not have.
     let page = to_page(
         vec![rows_of(60, "a"), rows_of(60, "b")],
         Some(Group::Games),
@@ -522,7 +489,6 @@ fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     assert_eq!(page.next_offset, Some(100 + full));
 
     // The same torrent arriving from two rubric pages stays one row,
-    // and every row claims the category that fetched it.
     let shared = row("111");
     let page = to_page(
         vec![vec![shared.clone(), row("222")], vec![shared, row("333")]],
@@ -541,12 +507,10 @@ fn test_the_fanout_merges_dedups_and_reports_pages_honestly() {
     assert!(!page.has_more, "two rows per id is not a full page");
 
     // No category selected -> rows claim nothing, which is the honest
-    // reading of an unfiltered row this parser cannot attribute.
     let page = to_page(vec![rows_of(3, "x")], None, 0);
     assert!(page.items.iter().all(|item| item.group.is_none()));
 
     // A group the row itself already carries outranks the URL that
-    // fetched it -- the same rule 1337x's `stamp_category` pins down.
     let mut attributed = row("999");
     attributed.group = Some(Group::Anime);
     let page = to_page(vec![vec![attributed]], Some(Group::Movies), 0);

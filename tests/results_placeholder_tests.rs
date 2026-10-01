@@ -159,12 +159,6 @@ fn test_rows_present_render_no_placeholder() {
 }
 
 /// An empty table is still a list the TUI can leave.
-///
-/// `needs_more` used to require rows to scroll -- which is the reason
-/// 1337x handed pages back raw instead of admitting that nothing on
-/// them matched the query (the "Games" tab full of RELOADED repacks).
-/// With no rows the cursor is at the end by definition, so the next
-/// page is exactly what Down owes the user.
 #[test]
 fn test_an_empty_result_set_still_wants_the_next_page() {
     let mut app = make_app();

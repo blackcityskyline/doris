@@ -1,19 +1,8 @@
-//! Live-network checks for the nyaa source -- ignored by default so
-//! `cargo test` stays offline-safe. Run manually with:
-//! `cargo test --test nyaa_live_tests -- --ignored --nocapture`
-//!
-//! nyaa.si sits behind ddos-guard, which answered 504 to *every* path
-//! from this network on 25.09.2026 while wave 2 was being written (the
-//! feed itself was captured once, through a different route). So each
-//! check below starts with a preflight and **skips, loudly**, when the
-//! host will not answer: a blocked network says nothing about the
-//! parser, and a red test everybody learns to ignore is worse than an
-//! honest skip (the wave-2 decision, same as eztv's refusal).
-//!
-//! The assertions below are therefore the *unverified* claims -- paging,
-//! browse and the `.torrent` links -- waiting for a network that lets
-//! them through; everything else is already locked down offline in
-//! `nyaa_parse_tests.rs`.
+//! Live-network checks for the nyaa source -- ignored by default so `cargo test` stays
+//! offline-safe. Run manually with: `cargo test --test nyaa_live_tests -- --ignored
+//! --nocapture` nyaa.si sits behind ddos-guard, which answered 504 to *every* path from this
+//! network on 25.09.2026 while wave 2 was being written (the feed itself was captured once,
+//! through a different route).
 
 use doris::sources::models::TorrentItem;
 use doris::sources::nyaa::{feed_url, parse_items, NyaaSearcher};
@@ -106,7 +95,6 @@ async fn live_rows_carry_every_field_the_source_promised() {
         }
     }
     // One odd row must not condemn the page, but a page of odd rows
-    // would mean the markup moved.
     assert!(
         bad * 10 <= rows.len(),
         "{} of {} rows look wrong",
@@ -139,7 +127,6 @@ async fn live_search_offers_one_page_and_no_cursor() {
 
     assert!(!page.items.is_empty(), "live nyaa search returned nothing");
     // The decision under test: paging was never answered live, so the
-    // page must not promise a second one.
     assert!(!page.has_more, "no cursor has been verified for this feed");
     assert_eq!(page.next_offset, None);
 }
@@ -161,7 +148,6 @@ async fn live_the_torrent_link_the_feed_ships_actually_answers() {
     let response = match client.get(url).send().await {
         Ok(response) => response,
         // Same honesty as the preflight: unreachable here is not
-        // evidence that the link is wrong.
         Err(err) => {
             println!("SKIP: nyaa did not answer the link: {}", err);
             return;

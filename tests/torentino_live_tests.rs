@@ -68,8 +68,6 @@ async fn live_download_follows_the_item_page_to_a_torrent() {
         .expect("live torentino search");
 
     // Some rows are placeholders ("ИГРА ПОКА НЕ ВЫШЛА" -- the game is
-    // not out yet), so the first row with a real file is the one to
-    // download; the refusal itself is part of what is being pinned.
     let mut downloaded = None;
     for row in page.items.iter().take(10) {
         match searcher.download_torrent(&row.download_url).await {
@@ -88,7 +86,6 @@ async fn live_download_follows_the_item_page_to_a_torrent() {
         "a real .torrent is far bigger than that"
     );
     // A bencoded torrent starts with "d" (a dict) -- the same check
-    // `download_torrent`'s status guard implies, read off the bytes.
     assert_eq!(bytes[0], b'd', "the download is a bencoded torrent");
 }
 
@@ -105,10 +102,6 @@ async fn live_a_placeholder_file_is_refused_with_the_reason() {
         .expect("live torentino search");
 
     // GTA 6 is unreleased, so its rows are the placeholder shape. Two
-    // honest refusals exist and either is correct: the item page carries
-    // no file link at all, or the link resolves to the "ИГРА ПОКА НЕ
-    // ВЫШЛА" placeholder. What must never happen is the bytes coming
-    // back as if they were a torrent.
     for row in &page.items {
         let outcome = searcher.download_torrent(&row.download_url).await;
         let message = outcome

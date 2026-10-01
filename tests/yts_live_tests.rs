@@ -60,11 +60,6 @@ async fn live_browse_returns_the_newest_movies_first() {
     );
 
     // Not every YTS movie carries `date_uploaded_unix`, and what
-    // `sort_by=date_added` orders by is YTS's own site-added date, which
-    // only *tracks* `date_uploaded_unix` -- so a monotonic assertion on
-    // these timestamps would be testing the wrong thing (it fails live:
-    // the API's order does climb between neighbours). What browse owes
-    // the user is freshness: the newest row is days old, not months.
     let now = chrono::Utc::now().timestamp();
     let dated: Vec<i64> = page
         .items

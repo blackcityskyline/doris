@@ -20,7 +20,6 @@ fn test_braille_full_history_renders_full_dots() {
 #[test]
 fn test_braille_uses_two_samples_per_character() {
     // 3 visible columns need up to 6 samples; fewer than that pads with
-    // zeros on the left so the most recent samples stay right-aligned.
     let history = vec![1.0, 1.0];
     let out = render_sparkline(&history, 3, "braille");
     assert_eq!(out.chars().count(), 3);
@@ -47,7 +46,6 @@ fn test_ascii_mode_is_tty_safe() {
     let out = render_sparkline(&history, 2, "dot");
     assert_eq!(out.chars().count(), 2);
     // Every character must be plain ASCII -- this mode exists specifically
-    // for terminals that can't render Unicode block/braille glyphs.
     assert!(out.is_ascii());
 }
 

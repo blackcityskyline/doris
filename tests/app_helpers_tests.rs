@@ -73,7 +73,6 @@ fn test_rows_append_and_the_outcome_line_is_logged() {
 #[test]
 fn test_a_failing_source_logs_its_line_without_adding_rows() {
     // B0.3: a source that fails still reports, naming itself -- even
-    // though it brings no rows.
     let mut ui = make_ui();
     ui.results = vec![item("kept")];
     ui.state = AppState::Searching;
@@ -158,10 +157,6 @@ fn test_rutracker_rows_need_the_browser() {
 #[test]
 fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
     // Results fetched before the `source` field existed deserialize to "",
-    // and any future browser-backed source should default to the same
-    // client the old hardcoded path always used. An id the registry
-    // knows is not "unknown" -- its own flag answers for it, which is
-    // why 1337x left this test in wave 3.
     assert!(source_needs_browser(""));
     assert!(source_needs_browser("never-heard-of-it"));
     assert!(
@@ -181,17 +176,12 @@ fn test_rows_route_to_their_own_registered_source() {
 #[test]
 fn test_legacy_rows_fall_back_to_rutracker() {
     // Rows serialized before the `source` field existed deserialize to "",
-    // and they carry rutracker-shaped URLs -- the same conservative
-    // fallback `source_needs_browser` makes.
     assert_eq!(source_id_for(&item_with_source("")), "rutracker");
     assert_eq!(
         source_id_for(&item_with_source("never-heard-of-it")),
         "rutracker"
     );
     // An id the registry *knows* keeps itself even while it is still
-    // planned: such a row then fails at `build_source` with "no such
-    // source", instead of being handed to rutracker and fed markup it
-    // never came from.
     assert_eq!(source_id_for(&item_with_source("1337x")), "1337x");
 }
 
@@ -263,8 +253,6 @@ fn test_cookie_file_disabled_when_save_cookies_off() {
 #[test]
 fn test_cookie_file_falls_back_to_config_toml_setting() {
     // This is the actual regression: previously only the CLI flag was
-    // ever read, so with no --cookie-file given, login always ran with
-    // no cookie file at all regardless of what config.toml said.
     let config = Config {
         save_cookies: true,
         cookie_file: "my-cookies.txt".to_string(),
@@ -321,7 +309,6 @@ fn test_outcome_line_reports_a_failing_source() {
 #[test]
 fn test_outcome_line_distinguishes_sources_on_the_same_error() {
     // The whole point of B0.3: when one source fails and the other
-    // succeeds, the failure still has to name which source it came from.
     let healthy: Result<usize, String> = Ok(7);
     let broken: Result<usize, String> = Err("timeout".to_string());
     assert_eq!(source_outcome_line("rutor", &healthy), "rutor: 7 results");
@@ -336,9 +323,6 @@ fn test_outcome_line_distinguishes_sources_on_the_same_error() {
 #[test]
 fn test_enter_on_empty_query_in_input_mode_does_nothing() {
     // The regression: `submit_search()` returned None (having already left
-    // input mode) and the same key fell through to submit_selection() and
-    // spawned a stream. It must be DoNothing even with results selected
-    // and a pending source/category switch.
     assert_eq!(
         enter_action(true, false, true, false, true),
         EnterAction::DoNothing
@@ -356,7 +340,6 @@ fn test_enter_with_a_query_submits_the_search() {
         EnterAction::SubmitQuery
     );
     // A pending switch of either tab row must not steal Enter from the
-    // typed query: the search below runs against the new selection anyway.
     assert_eq!(
         enter_action(true, true, true, false, false),
         EnterAction::SubmitQuery
@@ -397,8 +380,6 @@ fn test_enter_after_category_switch_restarts_the_search_instead_of_playing() {
         EnterAction::RestartSearch
     );
     // With nothing selected yet, the owed search still wins over
-    // DoNothing: that is what stops a category switch from turning into
-    // a silent no-op Enter.
     assert_eq!(
         enter_action(false, false, false, true, false),
         EnterAction::RestartSearch
@@ -430,7 +411,6 @@ fn test_finish_search_dedupes_and_orders_the_merged_list() {
     let mut ui = make_ui();
     ui.state = AppState::Searching;
     // The same torrent arrived from two sources with different health,
-    // plus a healthier unrelated row that arrived first.
     ui.results = vec![row("other", 5), row("dup", 3), row("dup", 12)];
     ui.selected = 0;
 
@@ -472,7 +452,6 @@ fn test_finish_search_clamps_the_selection_when_dedup_removed_that_row() {
     let mut ui = make_ui();
     ui.state = AppState::Searching;
     // Same torrent, two sources named it differently -- the selected
-    // row is the copy that loses the dedup and disappears entirely.
     let loser = TorrentItem {
         title: "the one I highlighted".to_string(),
         info_hash: "deadbeef".to_string(),
@@ -538,7 +517,6 @@ fn test_a_row_with_a_download_url_keeps_going_through_its_source() {
 #[test]
 fn test_a_row_with_neither_a_url_nor_a_magnet_is_not_written_at_all() {
     // Such a row must fail in the normal path *with a message*; writing
-    // an empty `.magnet` would look like a successful download.
     let item = TorrentItem {
         title: "broken row".to_string(),
         ..Default::default()
@@ -566,10 +544,8 @@ fn test_safe_filename_escapes_path_characters_and_trims() {
 
 // --- fill_missing_magnet 1337x rows carry no link ----------------
 
-/// A source whose rows arrive with neither a magnet nor a `.torrent`
-/// link, so the row's own page is the only place one lives (1337x).
-/// Counts how often it was actually asked, because half the contract
-/// is who must *not* be asked.
+/// A source whose rows arrive with neither a magnet nor a `.torrent` link, so the row's own
+/// page is the only place one lives (1337x).
 struct LazySource {
     asked: std::sync::atomic::AtomicUsize,
 }
@@ -692,8 +668,6 @@ async fn test_a_row_that_already_has_a_way_to_play_is_never_asked() {
 #[tokio::test]
 async fn test_the_default_lookup_answers_without_touching_the_network() {
     // Six sources' rows always carry a magnet or a file; their answer
-    // to "look one up" must be no, and it must cost no request -- a
-    // URL on a domain that does not exist proves it stayed local.
     let source =
         build_source("rutor", SourceEnv { browser: None }).expect("rutor is in the registry");
     let found = source

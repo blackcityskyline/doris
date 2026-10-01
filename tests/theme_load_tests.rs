@@ -10,11 +10,8 @@
 use doris::ui::theme::Theme;
 use std::path::{Path, PathBuf};
 
-/// Verbatim output of the noctalia template engine for the doris theme
-/// template -- kept here as the format contract between the two tools.
-/// Field names and nesting (`field.r` / `field.g` / `field.b`) must match
-/// `Theme`/`ColorDef` exactly, otherwise the generated theme is silently
-/// dropped by `load_themes` (it parses to `None`).
+/// Verbatim output of the noctalia template engine for the doris theme template -- kept here as
+/// the format contract between the two tools.
 const NOCTALIA_RENDERED: &str = r#"name = "noctalia"
 
 main_bg.r = 14
@@ -96,8 +93,6 @@ fn test_rendered_noctalia_theme_parses() {
     assert_eq!(noctalia.main_bg.b, 19);
     assert_eq!(noctalia.main_fg.r, 222);
     // The four optional accents are what a rendered theme is actually
-    // for -- the template writes them and leaves `secondary` to the
-    // fallback, so they are the field to check the parse reached.
     assert_eq!(
         noctalia.primary_color(),
         ratatui::style::Color::Rgb(228, 144, 160)
@@ -112,15 +107,7 @@ fn test_rendered_noctalia_theme_parses() {
     );
 }
 
-/// A theme file that still spells out the fields `Theme` no longer has
-/// must still load. Serde ignores unknown keys, so the bundled files and
-/// any user theme written against an older doris keep working -- the
-/// alternative would be making every stale theme vanish from the list the
-/// moment one field was dropped.
-///
-/// Written with every field `Theme` *does* have, because the required
-/// ones are not optional: a file missing `title` is a different failure
-/// and would hide the thing this is about.
+/// A theme file that still spells out the fields `Theme` no longer has must still load.
 #[test]
 fn test_a_theme_from_an_older_build_still_loads() {
     let mut file = String::from("name = \"stale\"\n");
@@ -167,16 +154,12 @@ fn test_a_theme_from_an_older_build_still_loads() {
     assert_eq!(stale.main_fg.r, 10);
 }
 
-/// The fields that were dropped were never read by anything, so a theme
-/// that stops naming them draws identically. That is the claim the
-/// removal rests on, and it is checkable: the colours the panel actually
-/// uses come from `primary`/`div_line`/`main_fg`, and those are unchanged.
+/// The fields that were dropped were never read by anything, so a theme that stops naming them
+/// draws identically.
 #[test]
 fn test_zone_border_colours_do_not_come_from_the_dropped_fields() {
     let theme = Theme::dark();
     // The focused zone and the unfocused ones differ, which is what makes
-    // the focus visible -- and that difference is `primary` vs
-    // `div_line`, never `search_box`/`log_box`/`player_box`.
     let focused = doris::ui::layout::zone_border_color(
         doris::ui::layout::ZoneId::Results,
         doris::ui::layout::ZoneId::Results,
@@ -250,10 +233,7 @@ fn test_broken_user_theme_is_skipped() {
     assert!(layered.iter().any(|t| t.name == "noctalia"));
 }
 
-/// End-to-end check against the file noctalia actually generated on this
-/// machine. Skipped where it does not exist (CI / fresh installs) so the
-/// suite stays green anywhere; when present it is the real proof that the
-/// two tools still agree.
+/// End-to-end check against the file noctalia actually generated on this machine.
 #[test]
 fn test_generated_noctalia_theme_on_disk_is_valid() {
     let Some(home) = dirs::home_dir() else {

@@ -23,9 +23,6 @@ fn test_rutracker_and_rutor_are_registered_and_implemented() {
 #[test]
 fn test_future_sources_are_listed_but_not_implemented() {
     // Every source that is not implemented yet makes no promises: no
-    // groups, no browser, no category filter, no browse. Torentino used
-    // to be the example here and B8 wave 3 moved it out; with the list
-    // empty this is the invariant the next planned source has to satisfy.
     let planned: Vec<&SourceInfo> = KNOWN_SOURCES.iter().filter(|s| !s.implemented).collect();
     for source in planned {
         assert!(
@@ -67,7 +64,6 @@ fn test_all_source_ids_are_unique() {
 #[test]
 fn test_source_ids_are_lowercase_no_spaces() {
     // Source ids double as credential-store keys and Options checklist
-    // keys -- they need to be simple, stable identifiers.
     for source in KNOWN_SOURCES {
         assert_eq!(
             source.id,
@@ -98,7 +94,6 @@ fn test_at_least_one_source_is_usable_today() {
 #[test]
 fn test_implemented_sources_declare_at_least_one_group() {
     // B6 filters by group and the Options UI groups rows by it, so an
-    // implemented source with no groups would be unreachable in both.
     for source in KNOWN_SOURCES.iter().filter(|s| s.implemented) {
         assert!(
             !source.groups.is_empty(),
@@ -111,7 +106,6 @@ fn test_implemented_sources_declare_at_least_one_group() {
 #[test]
 fn test_declared_groups_are_the_four_known_ones() {
     // Guards against a typo'd variant making it into the registry (and
-    // then into JSON via `TorrentItem::group`).
     let valid = [Group::Games, Group::Movies, Group::TV, Group::Anime];
     for source in KNOWN_SOURCES {
         for group in source.groups {
@@ -120,14 +114,8 @@ fn test_declared_groups_are_the_four_known_ones() {
     }
 }
 
-/// acceptance line: a source does not get a category it cannot
-/// serve without a documented reason. `SourceInfo::category_filter` is
-/// the capability; this list is the reason column -- an implemented
-/// source sits here exactly while it declares groups it cannot filter
-/// by, and the comment beside its entry in `KNOWN_SOURCES` says why.
-/// Empty today: every implemented source serves the categories it
-/// declares, rutracker included (its `f[]` slot was verified live
-/// 26.09.2026). A new source that cannot filter belongs here.
+/// acceptance line: a source does not get a category it cannot serve without a documented
+/// reason.
 const CATEGORY_FILTER_UNVERIFIED: &[&str] = &[];
 
 #[test]
@@ -145,8 +133,6 @@ fn test_a_category_a_source_cannot_serve_is_documented_as_unverified() {
     }
 
     // Nothing stale on that list either: an entry that no longer
-    // exists, is still planned, or does claim the capability it
-    // excuses would be paperwork hiding a real behavior.
     for id in CATEGORY_FILTER_UNVERIFIED {
         let info = KNOWN_SOURCES
             .iter()
@@ -162,8 +148,6 @@ fn test_a_category_a_source_cannot_serve_is_documented_as_unverified() {
     }
 
     // The shape the roadmap named, now resolved: the browser-backed
-    // source that declares all four groups does filter them, on the
-    // strength of its own live test.
     let rutracker = KNOWN_SOURCES
         .iter()
         .find(|s| s.id == "rutracker")
@@ -215,12 +199,6 @@ fn test_group_order_offers_every_group_once_and_labels_them_distinctly() {
 #[test]
 fn test_only_browser_backed_sources_ask_for_a_browser() {
     // `requires_browser` is what makes the orchestrator skip
-    // `Browser::launch` entirely for plain-HTTP sources (and 's
-    // `source_needs_browser` ends up backed by). Rutracker is the only
-    // source that constructs a browser today -- 1337x used to be listed
-    // beside it on the strength of three mirrors answering 403, and wave
-    // 3 took it off: the fourth mirror answers every path, so the
-    // challenge is those mirrors' business, not a session it lacks.
     let browser_backed: Vec<&str> = KNOWN_SOURCES
         .iter()
         .filter(|s| s.requires_browser)
@@ -229,18 +207,12 @@ fn test_only_browser_backed_sources_ask_for_a_browser() {
     assert_eq!(browser_backed, vec!["rutracker"]);
     assert!(!source::get_source("1337x").unwrap().requires_browser);
     // A planned source still declares how its host behaves, because
-    // that is what the flag is about: probed 25.09.2026 with a browser
-    // UA, torentino answered 200 with its front page. What holds the
-    // claim back is that nothing builds it, so it cannot route a
-    // request today.
     assert!(!source::get_source("torentino").unwrap().requires_browser);
 }
 
 #[test]
 fn test_registry_metadata_matches_the_buildable_implementation() {
     // Rutor is the one source we can instantiate offline, so its
-    // registry row can be compared against the live trait impl; the
-    // browser-backed one can't be (constructing it needs a browser).
     let rutor = RutorSearcher::new();
     let info = source::get_source("rutor").expect("rutor must be registered");
     assert_eq!(rutor.id(), info.id);
@@ -251,9 +223,6 @@ fn test_registry_metadata_matches_the_buildable_implementation() {
     assert!(!rutor.requires_browser());
 
     // 1337x is constructible offline too, so its row gets the same
-    // treatment -- and this is the flip wave 3 is made of: implemented,
-    // no browser, four groups, one home URL that is not the mirror the
-    // probes found answering.
     let x = X1337xSearcher::new();
     let x_info = source::get_source("1337x").expect("1337x must be registered");
     assert_eq!(x.id(), x_info.id);
@@ -264,7 +233,6 @@ fn test_registry_metadata_matches_the_buildable_implementation() {
     assert!(!x.requires_browser());
     assert!(x_info.implemented);
     // B9: the trait's browse answer and the registry's must agree, or a
-    // browse would ask a source that answers with a broken page.
     assert!(
         rutor.supports_browse(),
         "rutor's homepage answers an empty query"
@@ -277,7 +245,6 @@ fn test_registry_metadata_matches_the_buildable_implementation() {
 #[test]
 fn test_requires_browser_falls_back_to_true_for_unknown_ids() {
     // Conservative default: guessing "no browser" for an unknown source
-    // would route its login somewhere that can't launch one.
     assert!(source::requires_browser("rutracker"));
     assert!(!source::requires_browser("rutor"));
     assert!(source::requires_browser(""));
@@ -302,7 +269,6 @@ fn test_get_source_and_the_group_filter_view_the_same_registry() {
     assert!(games.iter().all(|s| s.groups.contains(&Group::Games)));
 
     // A planned source has no rows yet, so it belongs to no group
-    // view -- and the group list is the claim it may not make.
     for planned in KNOWN_SOURCES.iter().filter(|s| !s.implemented) {
         assert!(
             planned.groups.is_empty(),
@@ -328,7 +294,6 @@ fn test_get_source_and_the_group_filter_view_the_same_registry() {
 #[test]
 fn test_implemented_sources_have_a_home_url() {
     // The orchestrator hands this to `Browser::launch` as the cookie
-    // injection target before the Source instance itself exists.
     for source in KNOWN_SOURCES.iter().filter(|s| s.implemented) {
         assert!(
             !source.home_url.is_empty(),
@@ -349,8 +314,6 @@ fn test_implemented_sources_have_a_home_url() {
 #[test]
 fn test_build_source_builds_every_browser_free_implemented_source() {
     // Whatever is marked implemented and needs no browser must actually
-    // be constructible offline -- otherwise `implemented` is a lie the
-    // Options checklist happily prints.
     for info in KNOWN_SOURCES
         .iter()
         .filter(|s| s.implemented && !s.requires_browser)
@@ -370,7 +333,6 @@ fn build_ok(id: &str) -> bool {
 #[test]
 fn test_build_source_refuses_browser_backed_sources_without_a_browser() {
     // The instance is what needs the browser, so handing in `None` must
-    // fail loudly instead of producing a source that panics later.
     let err = match source::build_source("rutracker", SourceEnv { browser: None }) {
         Ok(_) => panic!("rutracker must not build without a browser session"),
         Err(e) => e,
@@ -391,23 +353,15 @@ fn test_build_source_rejects_unknown_ids() {
 
 // --- Options rows derive from the same registry -----------------------------
 
-/// The sources checklist left Options when it moved to its own panel
-/// these tests used to pin the rows' derivation. What is left to
-/// pin is that the streaming category still builds, and that the
-/// registry remains the single list everything else reads.
+/// The sources checklist left Options when it moved to its own panel these tests used to pin
+/// the rows' derivation.
 #[test]
 fn test_the_streaming_category_still_builds_from_the_config() {
     let items = streaming_settings_items(&Config::default(), true, "Stream");
     assert!(!items.is_empty());
 }
 
-/// B9: the CLI asks what the `all` tab asks -- one list, not two. A
-/// second hand-written list in `main.rs` is how the CLI ends up skipping
-/// a source the TUI offers, or offering one the user disabled.
-/// B9: the registry's `supports_browse` is what `selected_sources` filters
-/// on, so it has to agree with what each source's `Source` impl answers.
-/// The two that cannot are the browser-backed one (rutracker) and the
-/// one whose empty-query shape was never verified (1337x).
+/// B9: the CLI asks what the `all` tab asks -- one list, not two.
 #[test]
 fn test_the_registry_says_which_sources_can_browse() {
     for (id, can) in [
@@ -482,7 +436,6 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
     );
 
     // `--source` names exactly one, and refuses what it cannot serve
-    // rather than silently falling back to a default.
     let one = source::cli_sources(Some("rutracker"), &enabled).expect("rutracker is registered");
     assert_eq!(one.len(), 1);
     assert_eq!(one[0].id, "rutracker");
@@ -491,21 +444,14 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
         "an unknown id is refused"
     );
     // Torentino is implemented now, so naming it works --
-    // and names exactly it.
     let torentino =
         source::cli_sources(Some("torentino"), &enabled).expect("torentino is implemented");
     assert_eq!(torentino.len(), 1);
     assert_eq!(torentino[0].id, "torentino");
 }
 
-/// What a source asks the browser to keep away from is declared with the
-/// source, not inside the browser layer.
-///
-/// This exists because the declaration can silently empty out: with
-/// `block_hosts: &[]` on rutracker the whole refactor still compiled, all
-/// the browser-layer tests still passed, and the ad CDN went back to
-/// keeping the compositor at two thirds of a core for as long as a page
-/// stayed open. Nothing failed; something was just slower.
+/// What a source asks the browser to keep away from is declared with the source, not inside the
+/// browser layer.
 #[test]
 fn the_source_that_needs_hosts_blocked_declares_them() {
     let rutracker = KNOWN_SOURCES

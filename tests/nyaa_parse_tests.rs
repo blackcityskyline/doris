@@ -153,7 +153,6 @@ fn test_every_field_the_live_feed_shipped_is_on_the_row() {
     assert_eq!(first.seeds_n, 36);
     assert_eq!(first.leechers, 3);
     // "6.6 GiB" is binary, and the display column re-renders bytes the
-    // way every other source does, so yts and nyaa read the same shape.
     assert_eq!(first.size_bytes, (6.6 * 1024.0_f64.powi(3)).round() as u64);
     assert_eq!(first.size, "6.60 GB");
     assert_eq!(first.date, "2026-09-12");
@@ -169,7 +168,6 @@ fn test_every_field_the_live_feed_shipped_is_on_the_row() {
     assert_eq!(first.source, "nyaa");
 
     // nyaa ships hashes rather than magnets (0 of 75 live), so the row
-    // builds one from the verified hash plus the shared trackers.
     let magnet = first.magnet.as_deref().expect("a magnet is built");
     assert!(
         magnet.starts_with("magnet:?xt=urn:btih:ef3e7ad1b12bdd9fc341691d8866cd1fa8374a4b"),
@@ -189,7 +187,6 @@ fn test_entities_come_out_as_text_not_as_markup() {
     );
 
     // The whole table torio's `unescapeEntities` spells out, so a
-    // future feed surprise lands in one known place.
     assert_eq!(
         unescape_entities("a &amp; b &#39;c&#039; d &apos;e&apos; f"),
         "a & b 'c' d 'e' f"
@@ -212,7 +209,6 @@ fn test_entities_come_out_as_text_not_as_markup() {
 fn test_a_group_comes_from_the_items_own_category_not_from_the_query() {
     let rows = rows();
     // All four rows were requested under one `c=0_0` query, so the
-    // group has to come from nyaa's own `nyaa:categoryId`.
     assert_eq!(rows[0].group, Some(Group::Anime), "1_2 is the Anime branch");
     assert_eq!(rows[1].group, Some(Group::Anime));
     assert_eq!(rows[2].group, None, "2_1 is Audio: nothing to claim");
@@ -254,7 +250,6 @@ fn test_a_date_nyaa_could_not_spell_keeps_the_row_without_inventing_a_day() {
 #[test]
 fn test_an_error_page_is_rejected_instead_of_reading_as_no_results() {
     // Exactly what ddos-guard served this network while wave 2 was
-    // being written: a tiny HTML stub, not a feed.
     let blocked = "<!DOCTYPE html><html lang=en><title>Error 504</title>\
                    <p>upstream timeout</p>";
     let err = parse_items(blocked).expect_err("a block page is not a feed");
@@ -268,8 +263,6 @@ fn test_an_error_page_is_rejected_instead_of_reading_as_no_results() {
 #[test]
 fn test_the_page_claims_only_one_page_and_no_cursor() {
     // Wave-2 decision: pagination (`&p=2`) was never answered live, so
-    // neither claim may be made -- and both are testable offline
-    // because the page is built outside `search`.
     let page = to_page(rows());
     assert!(!page.has_more, "no 'load more' into a URL nobody has seen");
     assert_eq!(page.next_offset, None);
@@ -280,8 +273,6 @@ fn test_the_page_claims_only_one_page_and_no_cursor() {
 #[tokio::test]
 async fn test_an_empty_query_is_refused_with_a_reason_before_any_request() {
     // `supports_browse` is false precisely because the empty-query feed
-    // was never verified; reaching the network here would mean the
-    // refusal moved somewhere it can no longer stop a request.
     let nyaa = NyaaSearcher::new();
     assert!(!nyaa.supports_browse(), "browse stays unclaimed");
 
@@ -314,9 +305,6 @@ fn test_the_feed_url_asks_for_every_category_and_encodes_the_query() {
 #[tokio::test]
 async fn test_a_blocked_host_is_named_in_one_attempt_inside_the_window() {
     // The decision behind `fetch_options()`: nyaa's 504 costs ~16 s a
-    // try here, the orchestrator allows 25 s total, so any retry budget
-    // above zero simply hides the cause behind `timed out after 25s`.
-    // One attempt must land inside that window *and* say why it failed.
     let (url, hits) = spawn_always_504().await;
     let client = reqwest::Client::new();
 

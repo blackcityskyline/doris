@@ -14,9 +14,8 @@ use doris::sources::net::{
     backoff_delay, fetch_resilient, first_ok, is_retryable, parse_retry_after, FetchOptions,
 };
 
-/// Serves each connection with the next entry of `script`; the last one
-/// repeats forever, so a test can say "always 503". Returns the base URL,
-/// a request counter, and the accept loop's handle.
+/// Serves each connection with the next entry of `script`; the last one repeats forever, so a
+/// test can say "always 503".
 async fn spawn_scripted(
     script: Vec<String>,
 ) -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
@@ -118,8 +117,6 @@ async fn test_gives_up_after_the_configured_retries() {
 #[tokio::test]
 async fn test_a_ddos_guard_503_is_not_retried() {
     // The bug this whole module exists to prevent: a challenge page is
-    // not "try again later", and repeating it is how a block becomes a
-    // 90-second stall.
     let (url, counter, handle) = spawn_scripted(vec![response(
         "HTTP/1.1 503 Service Unavailable",
         &[("Server", "ddos-guard")],
@@ -239,10 +236,8 @@ fn test_only_torios_retryable_statuses_are_retried() {
 
 // --- first_ok ( failover helper, first consumer yts) ---------------------
 
-/// What a multi-host source asks one host: GET it, and treat a non-2xx
-/// as a failure so the next host gets its turn. Takes owned arguments on
-/// purpose -- `first_ok`'s `Fn(&str) -> Fut` is higher-ranked over the
-/// input, so the future it returns may not borrow that `&str`.
+/// What a multi-host source asks one host: GET it, and treat a non-2xx as a failure so the next
+/// host gets its turn.
 async fn ask(client: reqwest::Client, base: String) -> anyhow::Result<u16> {
     let resp = client
         .get(&base)
@@ -261,7 +256,6 @@ async fn ask(client: reqwest::Client, base: String) -> anyhow::Result<u16> {
 #[tokio::test]
 async fn test_first_ok_falls_through_to_the_next_host() {
     // Nothing listens on port 1, so the first attempt fails at connect
-    // time -- exactly what a dead mirror looks like.
     let (url, counter, handle) =
         spawn_scripted(vec![response("HTTP/1.1 200 OK", &[], "pong")]).await;
     let client = reqwest::Client::new();
@@ -314,7 +308,6 @@ async fn test_first_ok_surfaces_the_last_error_when_every_host_fails() {
         .expect_err("nothing is listening");
 
     // torio keeps `lastError` too: the final host's error describes the
-    // list as a whole, which is what the log line has to show.
     assert!(
         err.to_string().contains("127.0.0.1:2"),
         "expected the *last* host's error, got: {}",

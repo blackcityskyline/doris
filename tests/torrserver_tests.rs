@@ -3,10 +3,6 @@ use std::sync::{Arc, Mutex};
 use doris::torrserver::api::{TorrServer, TorrentInfo};
 
 // The *older* shape: Go structs with no `json` tags, so the output uses
-// the exact capitalized Go field names. `TorrentInfo` must keep reading
-// this -- but it is no longer the only shape out there: see
-// `LIVE_LIST_JSON` below and the doc comment on TorrentInfo for why
-// accepting only this one silently emptied the Torrent zone.
 const SAMPLE_LIST_JSON: &str = r#"
 [
   {
@@ -47,8 +43,6 @@ fn test_parse_empty_torrent_list() {
 #[test]
 fn test_torrent_info_missing_fields_default_instead_of_failing() {
     // A fork with a slightly different shape (extra or missing fields)
-    // should still parse -- unknown fields are ignored by default, and
-    // every field on TorrentInfo has #[serde(default)].
     let json = r#"{"Hash": "abc123", "SomeExtraField": 42}"#;
     let t: TorrentInfo = serde_json::from_str(json).unwrap();
     assert_eq!(t.hash, "abc123");
@@ -74,20 +68,9 @@ fn test_progress_clamped_and_no_division_by_zero() {
 }
 
 // --- Mock-server integration tests for TorrServer's actual API calls ------
-//
-// These spin up a tiny hand-rolled HTTP server over a raw TcpListener
-// (no mocking crate needed -- reqwest, tokio, and serde_json are already
-// project dependencies) so list_torrents/get_torrent/pause/resume/remove/
-// is_reachable are exercised end-to-end against a real socket, not just
-// unit-tested at the JSON-parsing layer like the tests above. Each test
-// gets its own server on an OS-assigned port so they can run in parallel
-// without colliding.
 
-/// Start a minimal HTTP/1.1 server that responds to every request with the
-/// same canned `status_line` + `body`, on a freshly assigned localhost
-/// port. Good enough to exercise a client's request/response handling
-/// without needing to actually parse the incoming request -- none of the
-/// TorrServer client methods branch on anything in the request itself.
+/// Start a minimal HTTP/1.1 server that responds to every request with the same canned
+/// `status_line` + `body`, on a freshly assigned localhost port.
 async fn spawn_mock_server(
     status_line: &'static str,
     body: &'static str,
@@ -106,8 +89,6 @@ async fn spawn_mock_server(
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = [0u8; 8192];
                 // We don't need to parse the request -- none of these
-                // tests depend on it -- just drain it so the client isn't
-                // left waiting on a write that never gets read.
                 let _ = socket.read(&mut buf).await;
                 let response = format!(
                     "{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -134,7 +115,6 @@ async fn test_is_reachable_true_on_200() {
 #[tokio::test]
 async fn test_is_reachable_false_when_nothing_listening() {
     // Port 1 is reserved and essentially guaranteed not to have anything
-    // listening on it in a test environment.
     let client = TorrServer::new("http://127.0.0.1:1");
     assert!(!client.is_reachable().await);
 }
@@ -153,7 +133,6 @@ async fn test_list_torrents_parses_real_response_over_the_wire() {
 #[tokio::test]
 async fn test_list_torrents_treats_null_response_as_empty() {
     // TorrServer returns bare `null`, not `[]`, when there are no
-    // torrents -- list_torrents() must not error on that.
     let (url, handle) = spawn_mock_server("HTTP/1.1 200 OK", "null").await;
     let client = TorrServer::new(&url);
     let list = client.list_torrents().await.unwrap();
@@ -202,10 +181,6 @@ async fn test_pause_succeeds_on_200() {
 }
 
 // A refusal has to reach the caller, not vanish: these three methods
-// used to check only that the request went out, and the app's log then
-// said "Torrent removed." for a torrent that was still in TorrServer's
-// list (seen live on 25.09.2026). One test per method, since they are
-// three separate `torrents_action` calls that each forgot to look.
 
 #[tokio::test]
 async fn test_pause_reports_a_refused_status_instead_of_success() {
@@ -226,7 +201,6 @@ async fn test_pause_reports_a_refused_status_instead_of_success() {
 #[tokio::test]
 async fn test_resume_reports_a_refused_status_instead_of_success() {
     // 404 rather than 500 so both codes stay covered: a resume the
-    // server does not honour is a failed resume either way.
     let (url, handle) = spawn_mock_server("HTTP/1.1 404 Not Found", "{}").await;
     let client = TorrServer::new(&url);
     let err = client.resume("x").await.expect_err("404 must be an Err");
@@ -269,9 +243,6 @@ async fn test_remove_succeeds_on_200() {
 #[tokio::test]
 async fn test_is_reachable_and_list_torrents_share_a_client_correctly() {
     // Exercises the same TorrServer instance for two different call
-    // shapes (bare GET vs POST with a JSON body) against the same
-    // server, matching how the app::App orchestrator actually uses one
-    // long-lived TorrServer client for the whole session.
     let (url, handle) = spawn_mock_server("HTTP/1.1 200 OK", SAMPLE_LIST_JSON).await;
     let client = TorrServer::new(&url);
     assert!(client.is_reachable().await);
@@ -282,10 +253,9 @@ async fn test_is_reachable_and_list_torrents_share_a_client_correctly() {
 
 // --- add_by_link --------------------------------------------------------
 
-/// Unlike the mock above, this one *records* what it was asked -- the
-/// whole point of `add_by_link`'s tests is the shape of the request body,
-/// which is specified in TorrServer's `torrReqJS`. Returns
-/// `"<request line>\n<body>"` once a request has been seen.
+/// Unlike the mock above, this one *records* what it was asked -- the whole point of
+/// `add_by_link`'s tests is the shape of the request body, which is specified in TorrServer's
+/// `torrReqJS`.
 async fn spawn_recording_server(
     status_line: &'static str,
     response_body: &'static str,
@@ -400,7 +370,6 @@ async fn test_add_by_link_posts_the_documented_body_and_returns_the_hash() {
 #[tokio::test]
 async fn test_add_by_link_surfaces_the_reason_torrserver_rejected_the_link() {
     // What TorrServer actually answers for an unparseable link (its
-    // `addTorrent` handler aborts with this exact body).
     let (url, _record, handle) = spawn_recording_server(
         "HTTP/1.1 400 Bad Request",
         r#"{"error":"error parse link: not a magnet"}"#,
@@ -424,7 +393,6 @@ async fn test_add_by_link_surfaces_the_reason_torrserver_rejected_the_link() {
 #[tokio::test]
 async fn test_add_by_link_requires_a_hash_back() {
     // A 200 without a usable hash is a caller that cannot proceed: the
-    // stream needs something to play by.
     let (url, _record, handle) = spawn_recording_server("HTTP/1.1 200 OK", "{}").await;
     let torrserver = TorrServer::new(&url);
 
@@ -438,10 +406,6 @@ async fn test_add_by_link_requires_a_hash_back() {
 }
 
 // The shape the *running* server answered with on 25.09.2026 (`state.
-// TorrentStatus`, json-tagged). Captured from a live `{"action":"list"}`
-// -- row 1 verbatim, row 2 reconstructed so the fields that upstream
-// marks `omitempty` (and therefore drops when they are zero) are covered
-// too.
 const LIVE_LIST_JSON: &str = r#"
 [
   {
@@ -549,10 +513,8 @@ fn test_enable_reports_that_the_unit_was_started() {
     assert!(msg.contains(URL), "{msg}");
 }
 
-/// doris has no password to give, so `systemctl` refuses; its own words
-/// are the whole point of the message. A toggle that hides them is the
-/// bug this replaces -- the user was left with a silent switch and a
-/// stream that failed later with no reason attached.
+/// doris has no password to give, so `systemctl` refuses; its own words are the whole point of
+/// the message.
 #[test]
 fn test_enable_reports_why_the_unit_would_not_start() {
     let msg = torrserver_enable_message(

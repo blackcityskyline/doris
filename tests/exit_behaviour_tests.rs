@@ -1,15 +1,6 @@
-//! What happens to the download when doris exits.
-//!
-//! "Close torrent core on exit" was an Options row that persisted a value
-//! nothing read: doris left and the transfer carried on on TorrServer
-//! forever, which is the opposite of what the label says.
-//!
-//! What it must do is *pause*, not remove: `remove` would delete the
-//! user's data on the way out of the program they were watching it with.
-//! So this checks the bytes that go over the wire, not just which hash was
-//! chosen: the server records its body and the assertion is on the
-//! `action` in it. `drop` is the pause; `rem` is the delete, and a
-//! regression from one to the other would not fail any other test here.
+//! What happens to the download when doris exits. "Close torrent core on exit" was an Options
+//! row that persisted a value nothing read: doris left and the transfer carried on on
+//! TorrServer forever, which is the opposite of what the label says.
 
 use doris::app::{stop_download_on_exit, stop_the_download};
 use doris::config::Config;
@@ -87,8 +78,6 @@ async fn stopping_on_exit_pauses_and_never_removes() {
     let client = TorrServer::new(&url);
 
     // The *call* the exit path makes, not a re-typing of it: the first
-    // draft of this test called `client.pause` directly, and swapping the
-    // exit path to `remove` left it green.
     stop_the_download(&on(true), Some("abc123"), &client).await;
 
     let bodies = seen.lock().unwrap().clone();
@@ -127,8 +116,6 @@ async fn the_option_off_sends_nothing_at_all() {
 #[tokio::test]
 async fn a_failure_to_stop_is_reported_not_swallowed() {
     // The server is not running: the exit path must not turn a failed
-    // stop into silence -- a user who asked for "stop on exit" and got
-    // a transfer still going deserves to be told.
     let client = TorrServer::new("http://127.0.0.1:1");
     let message = stop_the_download(&on(true), Some("abc123"), &client)
         .await

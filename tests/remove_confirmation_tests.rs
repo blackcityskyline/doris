@@ -1,12 +1,5 @@
-//! Removing a torrent takes it off TorrServer's disk and there is no
-//! undo. One `d` used to do that, on the same key that downloads a row
-//! in the zone next door.
-//!
-//! The state machine itself is here because the removal needs a network
-//! call to run for real, and what is worth pinning is the decision: the
-//! first press arms, only the second one removes, and anything else is a
-//! "no". The question the panel shows in between is checked by rendering
-//! it, since a prompt nobody sees is not a confirmation.
+//! Removing a torrent takes it off TorrServer's disk and there is no undo. One `d` used to do
+//! that, on the same key that downloads a row in the zone next door.
 
 use doris::config::Config;
 use doris::ui::view::App;
@@ -66,9 +59,6 @@ fn nothing_is_armed_to_begin_with() {
 fn the_panel_shows_the_question_while_armed() {
     let mut app = app();
     // The first preset hides Torrent, and the question is appended after
-    // the panel's four fact lines -- so the others are folded away to
-    // give it room, which is also how it looks when a user has the zone
-    // full-height.
     app.zones
         .focus_or_toggle(doris::ui::layout::ZoneId::Torrent);
     app.zones.focus_or_toggle(doris::ui::layout::ZoneId::Log);
@@ -116,11 +106,8 @@ fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
         .join("\n")
 }
 
-/// "Show boxes" was an Options row that persisted a value nothing read:
-/// `themed_block` always asked for `Borders::ALL`. It now asks for
-/// `Borders::NONE` when the option is off, and a panel without its frame
-/// is a visibly different picture -- which is the only honest way to
-/// check an Options row that claims to change what is drawn.
+/// "Show boxes" was an Options row that persisted a value nothing read: `themed_block` always
+/// asked for `Borders::ALL`.
 #[test]
 fn the_show_boxes_option_takes_the_borders_off() {
     let mut app = App::new("http://127.0.0.1:1".into(), None);
@@ -148,7 +135,6 @@ fn the_show_boxes_option_takes_the_borders_off() {
         "with it off every frame goes, the search bar included:\n{bare}"
     );
     // The content is still there -- this removes the frames, not the
-    // panels.
     assert!(
         bare.contains("Results") && bare.contains("Trackers"),
         "the panels are still drawn:\n{bare}"

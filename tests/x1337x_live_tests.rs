@@ -1,18 +1,12 @@
-//! Live-network checks for the 1337x source -- ignored by default so
-//! `cargo test` stays offline-safe. Run manually with:
-//! `cargo test --test x1337x_live_tests -- --ignored --nocapture`
-//!
-//! These are the checks the source was written against on 25.09.2026,
-//! kept alive as the alarm that something moved: the mirror order (three
-//! of torio's four hosts answer a Cloudflare challenge, one answers
-//! everything), a query's shape through the client-side filter and its
-//! fallback, the page cursor staying on the site's grid, browse reading
-//! `/home/`, and -- the one that costs requests -- every browse row
-//! coming back with a day, which only holds if the rows whose list cell
-//! says `03:15am` really do find `Date uploaded` on their own page.
-//!
-//! They skip when the mirror cannot be reached, because an unreachable
-//! host says nothing about the parser.
+//! Live-network checks for the 1337x source -- ignored by default so `cargo test` stays
+//! offline-safe. Run manually with: `cargo test --test x1337x_live_tests -- --ignored
+//! --nocapture` These are the checks the source was written against on 25.09.2026, kept alive
+//! as the alarm that something moved: the mirror order (three of torio's four hosts answer a
+//! Cloudflare challenge, one answers everything), a query's shape through the client-side
+//! filter and its fallback, the page cursor staying on the site's grid, browse reading
+//! `/home/`, and -- the one that costs requests -- every browse row coming back with a day,
+//! which only holds if the rows whose list cell says `03:15am` really do find `Date uploaded`
+//! on their own page.
 
 use doris::sources::source::{Group, SearchRequest, Source};
 use doris::sources::x1337x::{search_url, X1337xSearcher, HOSTS, PAGE_SIZE};
@@ -80,7 +74,6 @@ async fn live_a_single_word_query_comes_back_precise_and_full() {
             row.page_url
         );
         // One word: taken exactly as the engine answered it, metadata
-        // matches included -- that is the decision the filter encodes.
         assert!(
             row.title.to_lowercase().contains("frieren"),
             "one word, 20 of 20 live -- this is one of the exceptions: {}",
@@ -90,7 +83,6 @@ async fn live_a_single_word_query_comes_back_precise_and_full() {
         assert!(row.size_bytes > 0, "{} has no size", row.title);
         assert!(row.added > 0, "{} has no date", row.title);
         // Lazy magnet (decision): the row arrives playable-looking but
-        // link-less, and `resolve_magnet` is the way to the link.
         assert_eq!(row.magnet, None);
         assert_eq!(row.download_url, "");
         assert_eq!(row.info_hash, "");
@@ -98,11 +90,8 @@ async fn live_a_single_word_query_comes_back_precise_and_full() {
     }
 }
 
-/// slot as the user meets it: a category selected in the row is
-/// what the URL says out loud, and every row it brings back stands
-/// under that category. Live on 26.09.2026 the site's own `/sub/`
-/// links agreed with the path 20 of 20 rows for each label probed;
-/// this is the same claim read back from the source.
+/// slot as the user meets it: a category selected in the row is what the URL says out loud, and
+/// every row it brings back stands under that category.
 #[tokio::test]
 #[ignore = "requires network access to 1337x"]
 async fn live_a_selected_category_is_what_the_path_and_the_rows_say() {
@@ -151,13 +140,6 @@ async fn live_a_page_nothing_answers_is_empty_and_still_pages() {
     );
 
     // The engine ORs this query, and on 25.09.2026 not one of its
-    // first three pages held a row with *both* words in the title.
-    // Nothing matching means an empty table: the raw-page fallback that
-    // used to guarantee a row is exactly what put unrelated torrents in
-    // front of the user (a "Games" search full of repacks the query
-    // never mentioned). What the page must still carry is the way out --
-    // the cursor on the server's own full page, so the TUI's
-    // `needs_more` can ask for page 2 from a table with no rows in it.
     assert!(
         page.items.is_empty(),
         "no row answered, so no row is shown: {:#?}",
@@ -201,7 +183,6 @@ async fn live_a_full_page_promises_the_next_and_the_next_is_disjoint() {
     assert!(!second.items.is_empty(), "page 2 came back empty");
 
     // The claim that licenses the cursor: `/search/<q>/<N>/` counts
-    // pages of rows, so no torrent path appears twice.
     let page_one: Vec<&str> = first
         .items
         .iter()
@@ -245,9 +226,6 @@ async fn live_browse_reads_the_freshest_rows_and_dates_every_one() {
     assert_eq!(page.next_offset, None);
 
     // The claim that costs requests: 11 of these 78 rows show `03:15am`
-    // in the list, and every one of them gets its day from its own
-    // page. If this ever fails, the date column has started lying
-    // about the freshest rows -- or the detail parser moved.
     let undated: Vec<&str> = page
         .items
         .iter()

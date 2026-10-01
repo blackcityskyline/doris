@@ -1,14 +1,9 @@
-//! A category switch re-asks the sources instead of quietly filtering
-//! what an earlier, differently-categorised search happened to leave
-//! behind.
-//!
-//! Two sources can only tag a row with the category they were *asked*
-//! for (`rutracker`, `rutor`, `x1337x` do `item.group = category`), so
-//! rows fetched under `all` carry no category at all: switching to
-//! Movies afterwards used to hide them and show nothing but the sources
-//! that read the category off the row. The fix is to ask again -- and a
-//! re-ask must not blank the table on the way out, or every `g` press
-//! trades one wrong answer for a flicker.
+//! A category switch re-asks the sources instead of quietly filtering what an earlier,
+//! differently-categorised search happened to leave behind. Two sources can only tag a row with
+//! the category they were *asked* for (`rutracker`, `rutor`, `x1337x` do `item.group =
+//! category`), so rows fetched under `all` carry no category at all: switching to Movies
+//! afterwards used to hide them and show nothing but the sources that read the category off the
+//! row.
 
 use doris::results::apply_source_done;
 use doris::sources::models::TorrentItem;

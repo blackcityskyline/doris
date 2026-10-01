@@ -1,11 +1,5 @@
-//! The health check's cookie line.
-//!
-//! It used to name `Path::new("cookies.txt")` inside the check, ignoring
-//! `config.cookie_file` and `--cookie-file`. Since the cookie path is
-//! configurable -- and now defaults to an absolute path beside the config
-//! rather than to the working directory -- a user with a real session
-//! somewhere else was told their file was missing while the check measured
-//! a file the app would never read.
+//! The health check's cookie line. It used to name `Path::new("cookies.txt")` inside the check,
+//! ignoring `config.cookie_file` and `--cookie-file`.
 
 #![cfg(unix)]
 
@@ -37,7 +31,6 @@ fn it_reports_the_file_it_was_given_not_one_in_the_working_directory() {
     save_to_file(&mine, &a_session()).unwrap();
 
     // A `cookies.txt` in the CWD is what the old hardcoded check read.
-    // It must not be what this one reads.
     let cwd_has_one = std::path::Path::new("cookies.txt").exists();
     let cwd_cookie = std::path::Path::new("cookies.txt");
     let stashed = dir.join("stashed.txt");
@@ -76,16 +69,6 @@ fn an_empty_file_is_a_warning_not_a_pass() {
 }
 
 /// The one that matters: the check must report the path it is handed.
-///
-/// Checking `cookie_file_status` alone would not have caught the original
-/// bug -- the hardcoded `cookies.txt` lived in `health_check`, upstream of
-/// that function, so testing the function passed while the check went on
-/// reading a file the app would never use. Reverting the call site to the
-/// hardcoded path is what makes this test fail.
-///
-/// It costs one GET to the configured TorrServer (`is_reachable`, 2s
-/// timeout) and a browser probe, because `health_check` does both before
-/// it gets to the cookies.
 #[tokio::test]
 async fn the_check_reports_the_path_it_is_handed() {
     let dir = scratch("wired");

@@ -1,29 +1,11 @@
-//! Live probe of one open question: does rutracker's
-//! `tracker.php` honour a category the way its own search form offers
-//! it, and which forums a category is made of -- the input B6 needs to
-//! route `SearchRequest.category` down to this source at all.
-//!
-//! The live answer, 26.09.2026: the parameter is **`f[]`**, not the
-//! `c[]` this file was written around -- the form's category control is
-//! a multi-select of *forum ids* (1339 of them, the whole tree, nested
-//! under a `|-` prefix), so a "category" here is a forum id the way it
-//! is on nnmclub, and `tracker.php?f[]=<id>` answers with that forum's
-//! topics alone (live: 50 topics for f[]=22, 8 for f[]=7, no id in
-//! both). That is what licenses `category_filter: true` and the group
-//! mapping on top of it.
-//!
-//! Ignored by default: it launches a real browser (a plain client gets
-//! a Cloudflare challenge from rutracker -- live-confirmed 403
-//! "Just a moment..." on 25.09.2026), waits it out, and needs the
-//! rutracker session it cannot establish itself: a guest is redirected
-//! to `login.php`, so the cookies the app saved in `cookies.txt` by its
-//! own login are injected instead. Without them this probe answers
-//! "0 categories" against a login wall, not against the site.
-//!
-//! Run with (one thread: two browsers at once have been seen to kill a
-//! session mid-test):
-//! `cargo test --test rutracker_live_tests -- --ignored --nocapture
-//! --test-threads=1`
+//! Live probe of one open question: does rutracker's `tracker.php` honour a category the way
+//! its own search form offers it, and which forums a category is made of -- the input B6 needs
+//! to route `SearchRequest.category` down to this source at all. The live answer, 26.09.2026:
+//! the parameter is **`f[]`**, not the `c[]` this file was written around -- the form's
+//! category control is a multi-select of *forum ids* (1339 of them, the whole tree, nested
+//! under a `|-` prefix), so a "category" here is a forum id the way it is on nnmclub, and
+//! `tracker.php?f[]=<id>` answers with that forum's topics alone (live: 50 topics for f[]=22, 8
+//! for f[]=7, no id in both).
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -34,18 +16,11 @@ use doris::sources::source::Group;
 
 const HOME: &str = "https://rutracker.org/forum/";
 
-/// Ask the site for two of the categories its own form offers. Both must
-/// answer with topics, and no topic may appear under both: a topic lives
-/// in exactly one forum, so a filter letting one through twice is not
-/// filtering -- it is ignoring the parameter.
+/// Ask the site for two of the categories its own form offers.
 #[tokio::test]
 #[ignore = "launches a browser, waits out Cloudflare, needs rutracker cookies"]
 async fn live_category_param_selects_disjoint_sections() {
     // The same priority the app would use: reading it from the config
-    // keeps this probe on the browser (and chromedriver) the user's own
-    // session runs on, instead of the built-in order's first installed
-    // one -- which here is a Helium the cached patched driver does not
-    // match, an unrelated defect this test walked straight into.
     let config = doris::config::load(None).unwrap_or_default();
     let priority = detect::parse_priority(&config.browser_priority);
     let (_, path) =
@@ -62,18 +37,10 @@ async fn live_category_param_selects_disjoint_sections() {
     .expect("browser session");
 
     // The question itself needs a session: a guest is bounced straight to
-    // login.php. The app's own login (Settings -> streaming -> Edit
-    // credentials, then any search on the rutracker tab) leaves that
-    // session in `cookies.txt`, so the probe reuses it the same way the
-    // next run of the app does. Cookies can only be set once the tab is
-    // on a real page (chrome://new-tab-page/ rejects every domain), so
-    // the navigation comes first.
     fetch(&browser, HOME).await;
     inject_saved_cookies(&browser, Some(Path::new(&config.cookie_file))).await;
 
     // One results page serves both purposes: it carries the search form
-    // (hence the categories) and proves the session is logged in well
-    // enough to see results at all.
     fetch(&browser, &format!("{HOME}tracker.php?nm=gta&o=10&s=2")).await;
     let categories = listed_categories(&browser).await;
     println!(
@@ -83,17 +50,11 @@ async fn live_category_param_selects_disjoint_sections() {
     );
     if categories.is_empty() {
         // Say what the page actually was instead of failing on a bare
-        // count: "no categories" has three very different causes (a
-        // challenge, a login wall, a form moved elsewhere) and only one
-        // of them is about `f[]` at all.
         println!("page diagnostics: {}", describe(&browser).await);
     }
     assert!(!categories.is_empty(), "tracker.php must offer categories");
 
     // Top-level sections only: the form nests its tree under a "|-"
-    // prefix, and a parent already carries its children's topics, so two
-    // parents are the honest comparison. "-1" is the form's own
-    // "every forum" value and is skipped the way rutor's `0` is.
     let top_level: Vec<&(String, String, String)> = categories
         .iter()
         .filter(|(_, id, label)| id != "-1" && !label.starts_with("|-"))
@@ -131,11 +92,10 @@ async fn live_category_param_selects_disjoint_sections() {
     );
 }
 
-/// The category control the form actually posts: parameter name, value
-/// and label, read off the page rather than hardcoded -- both the
-/// checkbox and the multi-select shapes are covered, because which one
-/// the site serves (and it is `f[]` here, not `c[]`) is exactly what is
-/// being asked. A name starting `c` or `f` is the form's own mark.
+/// The category control the form actually posts: parameter name, value and label, read off the
+/// page rather than hardcoded -- both the checkbox and the multi-select shapes are covered,
+/// because which one the site serves (and it is `f[]` here, not `c[]`) is exactly what is being
+/// asked.
 async fn listed_categories(browser: &Browser) -> Vec<(String, String, String)> {
     let script = r#"(() => {
         const out = [];
@@ -148,8 +108,6 @@ async fn listed_categories(browser: &Browser) -> Vec<(String, String, String)> {
         };
         for (const opt of document.querySelectorAll("select option")) {
             // `closest`, not `parentElement`: the tree is grouped into
-            // optgroups, so an option's parent is often a group, and
-            // only the select around it carries the parameter name.
             const select = opt.closest("select");
             if (select && select.name &&
                 (select.name.indexOf("c") === 0 || select.name.indexOf("f") === 0)) {
@@ -172,12 +130,7 @@ async fn listed_categories(browser: &Browser) -> Vec<(String, String, String)> {
     serde_json::from_str(json).expect("the script returns an array of triples")
 }
 
-/// Topic ids of the results table's rows. Every rutracker page carries
-/// other topic links (nav, sidebar, banners), and the results table is
-/// the one whose class starts with "forumline" -- its tablesorter hash
-/// suffix differs per page, so the class prefix is the only stable
-/// handle. A row links its topic (`viewtopic.php?t=<id>`) and nothing
-/// else identifying, so the filter is read off the ids themselves.
+/// Topic ids of the results table's rows.
 async fn result_topic_ids(browser: &Browser) -> BTreeSet<String> {
     let script = r#"(() => {
         const table = document.querySelector('table[class*="forumline"]');
@@ -195,11 +148,8 @@ async fn result_topic_ids(browser: &Browser) -> BTreeSet<String> {
     ids.into_iter().collect()
 }
 
-/// Reuse the session the app saved at `cookie_file` (Netscape format,
-/// written by `RutrackerSearcher::ensure_logged_in` after a successful
-/// login). Names and counts only -- this probe reads the category
-/// parameter off the search form, and the login that produced the file
-/// is the app's own.
+/// Reuse the session the app saved at `cookie_file` (Netscape format, written by
+/// `RutrackerSearcher::ensure_logged_in` after a successful login).
 async fn inject_saved_cookies(browser: &Browser, cookie_file: Option<&Path>) {
     let Some(path) = cookie_file else {
         return;

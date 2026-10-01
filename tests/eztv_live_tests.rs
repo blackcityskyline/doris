@@ -41,7 +41,6 @@ async fn live_browse_returns_the_newest_releases_with_a_working_cursor() {
     }
 
     // The cursor must actually walk the index: page 2 is a different
-    // page, not a repeat of page 1.
     let cursor = first.next_offset.expect("the page hands back its cursor");
     let second = eztv
         .search(&SearchRequest::new("", cursor))

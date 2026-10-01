@@ -1,10 +1,6 @@
-//! Fixture tests for the apibay-backed TPB source.
-//!
-//! Both live endpoint shapes are pinned side by side on purpose: `q.php`
-//! sends every numeric-ish field as a *string*, the precompiled top-100
-//! lists send them as *numbers* (checked 25.09.2026). A parser that
-//! reads only one spelling zeroes the other silently, which is exactly
-//! the kind of bug a single-fixture test never catches.
+//! Fixture tests for the apibay-backed TPB source. Both live endpoint shapes are pinned side by
+//! side on purpose: `q.php` sends every numeric-ish field as a *string*, the precompiled
+//! top-100 lists send them as *numbers* (checked 25.09.2026).
 
 use doris::sources::source::{self, Group, SourceEnv};
 use doris::sources::tpb::{parse_rows, search_url, TOP_MOVIES_URL, TOP_TV_URL};
@@ -161,8 +157,6 @@ fn test_every_row_is_magnet_only_and_carries_its_magnet() {
 #[test]
 fn test_the_no_results_placeholder_never_becomes_a_row() {
     // A miss answers with one row that *looks* like a result: id "0",
-    // all-zero hash, name "No results returned". Rendering it would
-    // show a fake torrent for every failed search.
     let rows = parse_rows(
         r#"[
         {"id":"0","name":"No results returned",
@@ -178,7 +172,6 @@ fn test_the_no_results_placeholder_never_becomes_a_row() {
     );
 
     // The same rule on a real answer, where the placeholder is a
-    // third row -- it must not cost the two real ones.
     let mixed = parse_rows(SEARCH_BODY).expect("mixed body parses");
     assert_eq!(mixed.len(), 2);
 }
@@ -212,13 +205,10 @@ fn group_of(category: i64) -> Option<Group> {
         .group
 }
 
-/// The wave-1 decision in one test, widened by live classification:
-/// TPB attributes rows to the two groups it declares (Movies, TV) and
-/// leaves everything else -- concerts, animation, the 206 mix, games,
-/// music, apps, books, XXX -- unattributed rather than claiming a group
-/// the registry does not promise this source speaks for. 211 (UHD films)
-/// and 212 (2160p episodes) are the ids torio's lists predate; 203/204/
-/// 206 are the ids a naive "everything under 200" rule would swallow.
+/// The wave-1 decision in one test, widened by live classification: TPB attributes rows to the
+/// two groups it declares (Movies, TV) and leaves everything else -- concerts, animation, the
+/// 206 mix, games, music, apps, books, XXX -- unattributed rather than claiming a group the
+/// registry does not promise this source speaks for.
 #[test]
 fn test_only_the_declared_groups_are_attributed() {
     for category in [201, 202, 207, 209, 211] {
@@ -252,8 +242,6 @@ fn test_the_search_url_carries_the_selected_category() {
         "https://apibay.org/q.php?q=the%20matrix&cat=205,208,212"
     );
     // The two groups tpb does not declare ask for nothing at all: it is
-    // never asked for them (the registry gates the dispatch), so this
-    // branch cannot answer with rows claiming someone else's category.
     assert!(!search_url("x", Some(Group::Games)).contains("cat="));
     assert!(!search_url("x", Some(Group::Anime)).contains("cat="));
 
@@ -263,10 +251,8 @@ fn test_the_search_url_carries_the_selected_category() {
     );
 }
 
-/// acceptance in one direction: every id the server is trimmed by
-/// parses back into exactly the group it was asked for. Without this,
-/// a stale `cat=` list would fetch rows the view drops as unattributed
-/// and report an empty category while the corpus had hits.
+/// acceptance in one direction: every id the server is trimmed by parses back into exactly the
+/// group it was asked for.
 #[test]
 fn test_every_id_in_the_category_filter_parses_back_into_that_group() {
     for group in [Group::Movies, Group::TV] {

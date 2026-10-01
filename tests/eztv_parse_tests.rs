@@ -161,7 +161,6 @@ fn test_the_cursor_advances_by_whole_pages_not_by_rows_kept() {
         "https://eztvx.to/api/get-torrents?limit=100&page=3"
     );
     // `eztv.re` only 301s (live), and `search=` is ignored (live) --
-    // neither may appear in what we ask for.
     let url = torrents_url(0);
     assert!(!url.contains("eztv.re"), "{}", url);
     assert!(!url.contains("search="), "{}", url);

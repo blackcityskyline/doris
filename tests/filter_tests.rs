@@ -1,16 +1,5 @@
-//! The Results filter's syntax: a grep-shaped mini-language rather
-//! than one opaque substring. Every token is ANDed with the rest, so
-//! narrowing is the default and widening needs a `-`.
-//!
-//!     dune            substring of title+size+source+group
-//!     -cam            NOT that
-//!     src:rutor       the tracker id (`tracker:` is the alias)
-//!     group:movies    the category (`cat:` is the alias)
-//!     title:dune      the title alone
-//!     size:>1gb       size_bytes, units b/kb/mb/gb/tb
-//!     seeds:>50       seeds_n
-//!
-//! An unknown `word:` is a plain word, not a silently dead token.
+//! The Results filter's syntax: a grep-shaped mini-language rather than one opaque substring.
+//! Every token is ANDed with the rest, so narrowing is the default and widening needs a `-`.
 
 use doris::filter::Filter;
 use doris::sources::models::TorrentItem;
@@ -139,7 +128,6 @@ fn seeds_compares_the_peer_count() {
 #[test]
 fn an_unknown_field_is_just_a_word() {
     // `magnet:` is not a field; the token must still match rows that
-    // contain it literally rather than matching nothing at all.
     let f = Filter::parse("magnet:x");
     assert!(f.matches(&row("has magnet:x in it", "rutor", None)));
     assert!(!f.matches(&row("nothing here", "rutor", None)));

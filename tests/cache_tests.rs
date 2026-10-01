@@ -97,8 +97,6 @@ fn test_the_query_is_normalized_like_torio() {
 #[tokio::test]
 async fn test_put_sweeps_expired_entries() {
     // torio leaves expired entries in the map forever; we drop them
-    // while the lock is held anyway, so the cache cannot grow without
-    // bound over a long session.
     let cache = Arc::new(SearchCache::with_ttl(Duration::from_millis(50)));
     cache.put(key("old"), page(1, false));
     tokio::time::sleep(Duration::from_millis(80)).await;

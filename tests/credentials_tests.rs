@@ -1,10 +1,5 @@
-//! The credential store's own tests, against a scratch directory.
-//!
-//! Every test here used to save and delete `~/.config/doris/credentials.enc`
-//! -- the user's real one. `cargo test` therefore overwrote whatever login
-//! was saved (verified: the file came back as `{}`), and the tests needed
-//! `#[serial]` to at least keep from racing each other. They now name the
-//! file they mean, so nothing outside the temp directory is touched.
+//! The credential store's own tests, against a scratch directory. Every test here used to save
+//! and delete `~/.config/doris/credentials.enc` -- the user's real one.
 
 use doris::credentials::{
     delete_credential_at, load_credential_at, load_store_at, save_credential_at, STORE_FILE,
@@ -49,9 +44,6 @@ fn test_special_chars() {
 #[test]
 fn test_password_containing_colon_roundtrips() {
     // Regression test for the pre-Phase-4 bug: storage used to join as
-    // "username:password" and split on the first ':', silently truncating
-    // any password containing one. Storage is JSON now, so this must
-    // round-trip exactly.
     let path = scratch("colon");
     save_credential_at(&path, "rutracker", "user", "pass:with:colons").unwrap();
     assert_eq!(
@@ -76,7 +68,6 @@ fn test_multiple_resources_do_not_clobber_each_other() {
     );
     assert_eq!(load_credential_at(&path, "nnmclub"), None);
     // Still exactly one resource in the store: saving a second login
-    // merges rather than replacing.
     assert_eq!(load_store_at(&path).len(), 2);
 }
 
@@ -88,14 +79,10 @@ fn test_delete_credential() {
     assert_eq!(load_credential_at(&path, "rutracker"), None);
 }
 
-/// The credential store is the user's rutracker password, and
-/// `encrypt_and_write` went through `fs::write` -- 0644 under the default
-/// umask 022, so any account on the machine could read the blob (and any
-/// process belonging to the user could decrypt it, key derivation being
-/// `SHA256(hostname + username + salt)`). The mode is the part that
-/// actually stops a stranger, so the file is created 0600 and an
-/// existing 0644 file is repaired: the `mode` argument on `OpenOptions`
-/// applies only when it creates the file.
+/// The credential store is the user's rutracker password, and `encrypt_and_write` went through
+/// `fs::write` -- 0644 under the default umask 022, so any account on the machine could read
+/// the blob (and any process belonging to the user could decrypt it, key derivation being
+/// `SHA256(hostname + username + salt)`).
 #[test]
 #[cfg(unix)]
 fn test_store_is_owner_only() {
@@ -115,7 +102,6 @@ fn test_store_is_owner_only() {
 #[test]
 fn test_saving_one_resource_keeps_the_other() {
     // `save_credential` reads the whole store, inserts, and writes it
-    // back -- so the second save is where a clobber would show up.
     let path = scratch("merge");
     save_credential_at(&path, "rutracker", "alice", "alice-pass").unwrap();
     save_credential_at(&path, "rutor", "bob", "bob-pass").unwrap();

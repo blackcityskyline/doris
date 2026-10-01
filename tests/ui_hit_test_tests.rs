@@ -7,11 +7,6 @@ use doris::ui::view::{App as UiApp, UiAction};
 use ratatui::layout::Rect;
 
 /// A config as a first run gets it: every implemented source switched on.
-///
-/// `Config::default()` is the raw struct and deliberately carries no
-/// source list -- that is the registry's to fill in. Tests that click a
-/// source row need a real one, so they ask for what the app would actually
-/// hold.
 fn test_config() -> Config {
     let mut config = Config::default();
     doris::sources::source::first_run_config(&mut config);
@@ -39,10 +34,8 @@ fn make_results(n: usize) -> Vec<TorrentItem> {
 
 // --- search_box_at ---------------------------------------------------------
 
-/// The input box owns the top three rows of the frame and nothing else:
-/// `render_search_bar` draws into exactly that, and `update_areas`
-/// starts the zones below it. Rows the box does not own belong to the
-/// zones, so a click there must not start a search.
+/// The input box owns the top three rows of the frame and nothing else: `render_search_bar`
+/// draws into exactly that, and `update_areas` starts the zones below it.
 #[test]
 fn test_search_box_covers_the_top_three_rows_only() {
     let app = make_app();
@@ -53,9 +46,8 @@ fn test_search_box_covers_the_top_three_rows_only() {
     assert!(!app.search_box_at(40));
 }
 
-/// Something can paint over the box: fullscreen stretches a zone across
-/// the whole frame and the detail log takes it too. While that is on,
-/// those rows belong to the cover, not to the input.
+/// Something can paint over the box: fullscreen stretches a zone across the whole frame and the
+/// detail log takes it too.
 #[test]
 fn test_search_box_is_not_a_target_when_something_covers_it() {
     let mut app = make_app();
@@ -133,7 +125,6 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
     let results_area = app.zones.get_area(ZoneId::Results);
     let before = app.selected;
     // +1 for the border, then the table's own header row -- see
-    // render_results_zone.
     let mut config = test_config();
     app.click_at(results_area.y + 1, results_area.x, &mut config); // table header row, not a data row
     assert_eq!(app.selected, before);
@@ -204,11 +195,8 @@ fn test_all_is_checked_when_every_implemented_source_is() {
     assert!(!doris::ui::view::SourceRow::All.is_checked(&partial));
 }
 
-/// A source that is not implemented offers nothing: its row says so
-/// and Enter leaves the config alone. With every registered source
-/// implemented today this is the invariant the *next* source has to
-/// satisfy -- the guard is what keeps a planned id from being toggled
-/// into existence, and the row is where the user would find out.
+/// A source that is not implemented offers nothing: its row says so and Enter leaves the config
+/// alone.
 #[test]
 fn test_an_unimplemented_source_cannot_be_switched_on() {
     let row = doris::ui::view::SourceRow::One("never-heard-of-it");
@@ -219,7 +207,6 @@ fn test_an_unimplemented_source_cannot_be_switched_on() {
     let before = config.enabled_sources.clone();
 
     // A cursor past the end of the panel is a no-op too: the row list
-    // and the cursor are checked against each other, not trusted.
     app.sources_cursor = doris::ui::view::source_rows().len();
     app.toggle_source(&mut config);
 
@@ -251,7 +238,6 @@ fn test_toggling_a_source_flips_only_it_and_owes_a_search() {
     app.toggle_source(&mut config);
 
     // Compared as sets, not lists: switching a source off and on again
-    // moves it to the end of the vec, and the order is not a promise.
     let mut back = config.enabled_sources.clone();
     back.sort();
     let mut expected = before.clone();
@@ -344,8 +330,6 @@ fn test_clicking_a_panel_row_switches_it() {
     assert!(area.height > 3, "the panel is on screen");
 
     // The `all` row is the first line inside the border. The panel's
-    // checkbox is not a frame action, but it has to report itself so the
-    // orchestrator can persist the change.
     let action = app.click_at(area.y + 1, area.x + 1, &mut config);
     assert_eq!(action, Some(doris::ui::view::UiAction::TrackersChanged));
     assert!(
@@ -376,11 +360,8 @@ fn test_clicking_a_panel_row_while_typing_does_not_switch_it() {
     );
 }
 
-/// What is left on the Results frame after the source tabs moved to
-/// their own panel: the row counter, zero-padded like the log's
-/// scroll position, and the filter while one is set. Which sources are
-/// on is the Trackers panel's answer, and printing it a second time on
-/// this border is a place for the two to disagree.
+/// What is left on the Results frame after the source tabs moved to their own panel: the row
+/// counter, zero-padded like the log's scroll position, and the filter while one is set.
 #[test]
 fn test_the_results_info_slot_counts_without_naming_sources() {
     let mut app = make_app();
@@ -503,8 +484,6 @@ fn test_click_between_two_frame_buttons_does_nothing() {
     let results_area = app.zones.get_area(ZoneId::Results);
     let layout = app.frame_layout(ZoneId::Results, results_area, &config);
     // `filter` and `group` share the right cluster, drawn in table
-    // order with the category button after them. The gap between two
-    // neighbouring words is at least one column wide.
     let filter = layout
         .buttons
         .iter()
@@ -657,7 +636,6 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
     );
 
     // The default config enables every implemented source, and between
-    // them they serve all four groups -- in `GROUP_ORDER`, "all" first.
     assert_eq!(
         doris::ui::modals::settings::group_tabs(&test_config()),
         vec![
@@ -674,8 +652,6 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
 fn test_cycle_group_walks_the_row_and_wraps() {
     let mut app = make_app();
     // Derived from the function the row is drawn from rather than
-    // spelled out: a group added to the registry must not leave this
-    // test walking a list the UI no longer shows.
     let tabs = doris::ui::modals::settings::group_tabs(&test_config());
     assert_eq!(app.active_group, tabs[0], "starts on all");
     assert_eq!(app.active_group, None);
@@ -693,10 +669,9 @@ fn test_cycle_group_walks_the_row_and_wraps() {
     assert_eq!(app.active_group, tabs[tabs.len() - 1]);
 }
 
-/// The category moved from a row inside the panel onto the frame, as
-/// btop's `◀ name ▶` sort header: the current category is named on the
-/// border next to `group`, and the two arrows are mouse targets for
-/// previous / next. The `g`/`G` keys stay the keyboard way in.
+/// The category moved from a row inside the panel onto the frame, as btop's `◀ name ▶` sort
+/// header: the current category is named on the border next to `group`, and the two arrows are
+/// mouse targets for previous / next.
 #[test]
 fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     let mut app = make_app();
@@ -714,8 +689,6 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
             .expect("the Results frame has a category button")
     };
     // The name is padded to the widest category, so the arrows stay in
-    // the same columns whatever is showing: `◀ all ▶` and
-    // `◀ Movies ▶` are the same width.
     let text = button.text();
     assert!(text.starts_with("◀ "), "the left arrow: {text}");
     assert!(text.ends_with(" ▶"), "the right arrow: {text}");
@@ -725,8 +698,6 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     );
 
     // The right arrow steps forward through the category row and asks
-    // for it -- the click says so, because only the orchestrator can
-    // re-query (the `g` key does the same thing inline).
     let right_arrow = rect.x + rect.width - 1;
     assert_eq!(
         app.click_at(rect.y, right_arrow, &mut config),
@@ -815,11 +786,8 @@ fn test_losing_the_category_moves_the_selection_to_all() {
 
 // --- the frame legend's geometry ------------------------------------------
 
-/// `frame_layout` is what both the renderer and `click_at` go through,
-/// so a button that escaped its own zone would be drawn on top of
-/// somebody else's border and click through to it. Checked at several
-/// terminal sizes, including ones small enough that btop would have
-/// dropped the right-hand cluster entirely.
+/// `frame_layout` is what both the renderer and `click_at` go through, so a button that escaped
+/// its own zone would be drawn on top of somebody else's border and click through to it.
 #[test]
 fn test_every_frame_button_stays_on_its_own_border() {
     let config = test_config();
@@ -977,10 +945,8 @@ fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
 
 // --- `D` opens the detail modal (Shift+Enter's fallback) ------------------
 
-/// Most terminals send Shift+Enter as a plain Enter with no modifier, so
-/// `D` is the same action on a key every terminal sends distinctly. It
-/// has to be documented next to Shift+Enter, or the fallback is
-/// undiscoverable.
+/// Most terminals send Shift+Enter as a plain Enter with no modifier, so `D` is the same action
+/// on a key every terminal sends distinctly.
 #[test]
 fn test_the_help_page_documents_d_as_the_detail_fallback() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
@@ -1001,7 +967,6 @@ fn test_a_border_click_arms_the_resize_but_a_legend_click_does_not() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     // Trackers' top border separates it from Torrent, and Trackers has
-    // no legend on it. The border is where the split put it.
     let border = app.zones.get_area(ZoneId::Trackers).y;
     assert_eq!(app.zone_at(border, 40), Some(ZoneId::Trackers));
     assert_eq!(app.click_at(border, 40, &mut config), None);

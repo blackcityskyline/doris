@@ -1,9 +1,4 @@
-//! `PageUp`/`PageDown` in the Results panel.
-//!
-//! They were answered only in the Log panel. In a result list of five
-//! hundred rows -- what a search across ten sources returns -- scrolling
-//! back meant pressing `k` once per row, because the one key that pages
-//! did nothing at all where the list is.
+//! `PageUp`/`PageDown` in the Results panel. They were answered only in the Log panel.
 
 use doris::sources::models::TorrentItem;
 use doris::ui::view::App;
@@ -68,7 +63,6 @@ fn paging_stops_at_the_ends_instead_of_wrapping() {
 fn a_filter_narrows_what_a_page_lands_on() {
     let mut app = app_with(100);
     // Keep every tenth row: the page counts what the user sees, not what
-    // was loaded underneath.
     app.zones.filter_input = "Torrent".into();
     for (i, item) in app.results.iter_mut().enumerate() {
         item.title = if i % 10 == 0 {

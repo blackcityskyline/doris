@@ -7,7 +7,6 @@ fn test_default_mode_uses_os_download_dir_not_empty() {
     assert_eq!(config.download_dir_mode, "default");
     let resolved = resolve_download_dir(&config);
     // Whatever the OS default happens to be (or the "/tmp" fallback if it
-    // can't be determined), it must never be empty.
     assert!(!resolved.is_empty());
 }
 

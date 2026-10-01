@@ -27,8 +27,6 @@ fn test_settings_has_three_categories_general_streaming_download() {
 #[test]
 fn test_digit_3_switches_to_the_third_category() {
     // Regression test: '3' (download) used to do nothing at all -- only
-    // '1' and '2' were handled, hardcoded, from back when there were only
-    // two categories.
     let mut app = make_app_in_settings();
     app.settings_key(key(KeyCode::Char('3')));
     match &app.modal {
@@ -58,7 +56,6 @@ fn test_digit_beyond_category_count_is_ignored() {
     app.settings_key(key(KeyCode::Char('9')));
     match &app.modal {
         // Still on the default category -- '9' doesn't exist, so it must
-        // not panic or jump anywhere.
         doris::ui::view::Modal::Settings(state) => assert_eq!(state.selected_category, 0),
         _ => panic!("expected Settings modal"),
     }
@@ -82,7 +79,6 @@ fn test_down_arrow_moves_selection() {
 #[test]
 fn test_left_sets_backward_direction_right_sets_forward() {
     // Regression test: Left and Right used to be indistinguishable --
-    // both always meant "cycle forward" to whatever action handled them.
     let mut app = make_app_in_settings();
     app.settings_key(key(KeyCode::Right));
     assert_eq!(app.last_cycle_direction, 1);
@@ -118,14 +114,9 @@ fn test_tab_and_backtab_cycle_all_three_categories() {
     assert_eq!(get_cat(&app), 2); // wraps the other way
 }
 
-/// The `n/m` in the Color theme row is supposed to be the *theme's*
-/// position (`settings.rs:267` says so in as many words), but the
-/// renderer printed `item_idx + 1 / cat.items.len()` -- the row's
-/// position in the category. So every setup read "Color theme 1/15":
-/// wrong on both ends, since the themes number dozens and the selected
-/// one was almost never the first. The number belongs to the value, so
-/// `open_settings` is where it is measured: that is the same place the
-/// theme itself is read from disk.
+/// The `n/m` in the Color theme row is supposed to be the *theme's* position (`settings.rs:267`
+/// says so in as many words), but the renderer printed `item_idx + 1 / cat.items.len()` -- the
+/// row's position in the category.
 #[test]
 fn test_the_color_theme_row_counts_the_themes() {
     let app = make_app_in_settings();

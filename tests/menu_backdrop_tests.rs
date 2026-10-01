@@ -1,10 +1,7 @@
-//! The main menu must sit on something solid.
-//!
-//! `render_menu` draws its glyphs straight over the live zones, so the
-//! rows *between* the banner and the items -- which carry no glyphs of
-//! their own and so no highlight -- showed the zones' own content: the
-//! menu looked like a sticker with the table showing through its gaps.
-//! The menu now takes the same box a modal takes.
+//! The main menu must sit on something solid. `render_menu` draws its glyphs straight over the
+//! live zones, so the rows *between* the banner and the items -- which carry no glyphs of their
+//! own and so no highlight -- showed the zones' own content: the menu looked like a sticker
+//! with the table showing through its gaps.
 
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
@@ -20,7 +17,6 @@ const BANNER_ROWS: u16 = 6;
 fn make_app() -> UiApp {
     let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
     // Titles long enough to reach across the box no matter where it
-    // lands: what bleeds through has to be unmistakably zone content.
     app.results = (0..30)
         .map(|i| TorrentItem {
             title: format!("row{i:02} {}", "A".repeat(90)),
@@ -29,10 +25,6 @@ fn make_app() -> UiApp {
         .collect();
     app.update_filter();
     // Results alone, full height: with the default four-zone grid the
-    // table stops halfway down the screen and the menu box lands on the
-    // zones that have nothing to say -- the test would then prove that
-    // empty space does not bleed through. One zone, and every row of the
-    // box has table behind it.
     app.zones.apply_preset("1");
     app.show_menu = true;
     app
@@ -68,9 +60,6 @@ fn test_the_menu_box_covers_the_zone_content() {
         .expect("the box is drawn at this size");
 
     // `A` marks the seeded titles and appears nowhere in the banner, in
-    // the items or in a frame border, so a stray one inside the box is
-    // zone content seen through the menu -- while the same rows outside
-    // the box are exactly where those titles keep being drawn.
     let rows = (rect.y + 1)..(rect.y + rect.height - 1);
     let cols = (rect.x + 1)..(rect.x + rect.width - 1);
     let mut inside = 0;

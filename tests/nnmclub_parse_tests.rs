@@ -1,15 +1,8 @@
-//! Offline tests for the nnmclub HTML parser, built from the pages the
-//! host actually served this network on 25.09.2026 -- including the two
-//! shapes that must never be confused: a query with no matches (200 +
-//! `Не найдено` inside the results table) and a page where the results
-//! table is missing altogether (a challenge, a moved layout, a login
-//! wall). To a user both read as "found nothing"; only one of them is.
-//!
-//! The fixture keeps the site's real spelling: the `topictitle` class,
-//! `title="Seeders"`/`title="Leechers"` markers, raw bytes inside
-//! `<u>`, the Russian `title="Торрент-файл добавлен"` that tells the
-//! two `<u>` values apart, and `&#039;` in a title (windows-1251 pages,
-//! decoded before they get here).
+//! Offline tests for the nnmclub HTML parser, built from the pages the host actually served
+//! this network on 25.09.2026 -- including the two shapes that must never be confused: a query
+//! with no matches (200 + `Не найдено` inside the results table) and a page where the results
+//! table is missing altogether (a challenge, a moved layout, a login wall). To a user both read
+//! as "found nothing"; only one of them is.
 
 use std::sync::Arc;
 
@@ -101,7 +94,6 @@ fn test_every_field_the_live_row_carried_is_on_the_item() {
     assert_eq!(first.title, "№ 13 / Out of oder");
     assert_eq!(first.source, "nnmclub");
     // The site's own rendering of these bytes is "1.09 GB"; ours
-    // re-renders them through the shared formatter, so the two agree.
     assert_eq!(first.size_bytes, 1_175_605_248);
     assert_eq!(first.size, "1.09 GB");
     assert_eq!(first.seeds, "1");
@@ -118,12 +110,9 @@ fn test_every_field_the_live_row_carried_is_on_the_item() {
         "https://nnmclub.to/forum/viewtopic.php?t=32097"
     );
     // The decision behind wave 3: no detail fan-out, so the row carries
-    // no magnet and no hash -- the `.torrent` link carries both, and
-    // `spawn_stream` already knows how to use it.
     assert_eq!(first.magnet, None);
     assert_eq!(first.info_hash, "");
     // B6: the row's own forum cell decides. This row's cell says
-    // `tracker.php?f=905` = "Театр", and theatre sits with cinema.
     assert_eq!(first.group, Some(Group::Movies));
 }
 
@@ -149,8 +138,6 @@ fn test_a_title_keeps_its_entities_out_of_the_way() {
 fn test_the_two_u_values_cannot_swap_and_one_may_be_absent() {
     let rows = rows();
     // Row 3 has a size in `<u>` but no added cell at all: the size is
-    // still read, and the date is admitted as unknown rather than
-    // printed as 1970-01-01 in the Date column.
     let undated = &rows[2];
     assert_eq!(undated.size_bytes, 1_500_000_000);
     assert_eq!(undated.size, "1.40 GB");
@@ -162,11 +149,8 @@ fn test_the_two_u_values_cannot_swap_and_one_may_be_absent() {
 #[test]
 fn test_a_row_that_cannot_become_one_costs_one_row() {
     // No download link, no topic id, no title: each of these is a
-    // header/footer shape the site ships inside the same table.
     let mut broken = String::from(TABLE);
     // Both markers present, so the row reaches the parser proper --
-    // and then gives up there: an id with no digits, a title with no
-    // text. One row is lost; the page is not.
     broken.push_str("<tr><td><a href=\"viewtopic.php?t=\"> </a>");
     broken.push_str("<td><a href=\"download.php?id=9\">DL</a></td></tr>\n");
     let rows = parse_rows(&broken).expect("the table still parses");
@@ -176,8 +160,6 @@ fn test_a_row_that_cannot_become_one_costs_one_row() {
 #[test]
 fn test_no_matches_is_an_empty_page_not_a_failure() {
     // Live: HTTP 200, the results table present, `Не найдено` inside.
-    // Reading this as an error would report a block to a user who has
-    // simply searched for nothing.
     let rows = parse_rows(NO_MATCHES).expect("a miss is not a failure");
     assert!(rows.is_empty());
 }
@@ -185,12 +167,6 @@ fn test_no_matches_is_an_empty_page_not_a_failure() {
 #[test]
 fn test_a_torrent_nobody_seeds_is_a_row_with_zero_seeds_not_a_missing_one() {
     // Found live, 25.09.2026: 35 of the 50 rows on a browse page are
-    // dead, and the site marks them by *removing* the
-    // `title="Seeders"` hint (`title=" Last seen: 29-03-2020"`
-    // instead) and emptying the cell -- while `class="seedmed"`
-    // stays. Parser v1 keyed on the title and lost those 35 rows,
-    // which also made a full page look short: `has_more` said false
-    // and the site's next page was never asked for.
     let items = rows();
     let dead = items
         .iter()
@@ -200,7 +176,6 @@ fn test_a_torrent_nobody_seeds_is_a_row_with_zero_seeds_not_a_missing_one() {
     assert_eq!(dead.seeds, "0");
     assert_eq!(dead.leechers, 0);
     // Everything else on the row still parses, which is the point: a
-    // dead torrent can still be downloaded, so it is still a result.
     assert_eq!(dead.size_bytes, 700_000_000);
     assert_eq!(dead.added, 1_600_000_000);
     assert_eq!(dead.date, "2020-09-13");
@@ -210,7 +185,6 @@ fn test_a_torrent_nobody_seeds_is_a_row_with_zero_seeds_not_a_missing_one() {
 #[test]
 fn test_a_page_without_the_results_table_says_so_instead_of_crying_empty() {
     // Live shape of everything that is *not* the tracker answering:
-    // a challenge, a moved layout, a login wall.
     let blocked = "<!DOCTYPE html><html lang=en><title>Just a moment...</title>\
                    <p>Performing security verification</p>";
     let err = parse_rows(blocked).expect_err("no table means no answer");
@@ -228,8 +202,6 @@ fn test_the_urls_are_the_ones_that_were_fetched() {
         "https://nnmclub.to/forum/tracker.php?f=-1&nm=frieren"
     );
     // Page two was fetched live for both shapes and came back disjoint
-    // from page one (0 overlapping topic ids), which is what licenses
-    // the cursor below.
     assert_eq!(
         search_url("frieren 2026", 50, None),
         "https://nnmclub.to/forum/tracker.php?f=-1&nm=frieren%202026&start=50"
@@ -243,7 +215,6 @@ fn test_the_urls_are_the_ones_that_were_fetched() {
         "https://nnmclub.to/forum/tracker.php?f=-1&o=2&sd=desc&start=50"
     );
     // An empty query is browse -- the URL behind `supports_browse`,
-    // and a category does not change that, only the forums asked.
     assert_eq!(search_url("   ", 0, None), browse_url(0, None));
     assert_eq!(
         search_url("   ", 0, Some(Group::Games)),
@@ -251,10 +222,8 @@ fn test_the_urls_are_the_ones_that_were_fetched() {
     );
 }
 
-/// The whole category decision in one assertion per group: one request,
-/// every id of that group as `f%5B%5D=`, nothing else in the URL. The
-/// live side of it (the tracker answering all 80 Movies ids at once,
-/// with only that group's rows coming back) is the live test's job.
+/// The whole category decision in one assertion per group: one request, every id of that group
+/// as `f%5B%5D=`, nothing else in the URL.
 #[test]
 fn test_a_selected_group_asks_for_exactly_its_own_forums_in_one_request() {
     for (group, ids) in GROUP_FORUMS {
@@ -327,14 +296,12 @@ fn test_the_forum_table_is_disjoint_and_maps_the_live_sections() {
     assert_eq!(group_for_forum(93), Some(Group::Games), "Архив Игр");
     assert_eq!(group_for_forum(669), Some(Group::TV), "Архив Док/TV");
     // Checked live and kept out: MP3, books, music, and the fixture's
-    // forum id, which is not in the tree at all.
     assert_eq!(group_for_forum(734), None, "Классика для мам = музыка");
     assert_eq!(group_for_forum(738), None, "Образование = книги");
     assert_eq!(group_for_forum(92), None, "Архив Музыки");
     assert_eq!(group_for_forum(906), None, "not in the live tree");
 
     // What the source declares is what the table spans -- the two
-    // declarations this commit moved next to each other.
     let declared = NnmclubSearcher::new().groups();
     let from_table: Vec<Group> = GROUP_FORUMS.iter().map(|(g, _)| *g).collect();
     assert_eq!(declared, from_table.as_slice());
@@ -371,8 +338,6 @@ fn test_a_full_page_offers_the_next_one_and_a_short_one_does_not() {
     assert_eq!(page.next_offset, Some(PAGE_SIZE), "start= steps by pages");
 
     // The cursor is spelled out, not derived from the row count: a
-    // dropped row must not walk the next request off the site's grid
-    // (the bug yts already paid for once).
     let page = to_page(full, 100);
     assert_eq!(page.next_offset, Some(150));
 
@@ -391,7 +356,6 @@ async fn test_the_source_declares_what_the_live_probe_showed() {
     // A browser UA alone got 200 from every page -- cloudflare included.
     assert!(!nnm.requires_browser());
     // `f=-1&o=2&sd=desc` answered 50 newest topics, and `start=50`
-    // answered a disjoint second page.
     assert!(nnm.supports_browse());
     // Declared, per wave-3 decision: the four forums the site spans.
     assert_eq!(

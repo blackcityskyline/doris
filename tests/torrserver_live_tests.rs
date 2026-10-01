@@ -25,8 +25,6 @@ async fn live_add_by_link_adds_lists_and_forgets_a_real_magnet() {
 
     let searcher = RutorSearcher::new();
     // rutor ANDs every query word, so a multi-word phrase can legitimately
-    // return nothing -- this test is about the link path, not about search
-    // recall, hence a word the site certainly indexes.
     let items = searcher.search("matrix").await.expect("live rutor search");
     println!("rutor returned {} rows", items.len());
     assert!(!items.is_empty(), "rutor search itself came back empty");
@@ -50,7 +48,6 @@ async fn live_add_by_link_adds_lists_and_forgets_a_real_magnet() {
         hash
     );
     // The hash is what the magnet carries, so the server parsed the link
-    // we sent rather than inventing an entry of its own.
     let from_link = magnet
         .split("xt=urn:btih:")
         .nth(1)
@@ -82,12 +79,10 @@ async fn live_add_by_link_adds_lists_and_forgets_a_real_magnet() {
     println!("cleaned up");
 }
 
-/// The regression the B7 verification exposed: `TorrentInfo` only knew
-/// the capitalized Go names, while a modern TorrServer answers with
-/// json-tagged ones -- and `#[serde(default)]` turned that mismatch into
-/// *empty* fields instead of an error, leaving the Torrent zone without
-/// a hash, name, size or speed. Ignored like the rest, because it needs
-/// a running server; it does not touch it (read-only `list`).
+/// The regression the B7 verification exposed: `TorrentInfo` only knew the capitalized Go
+/// names, while a modern TorrServer answers with json-tagged ones -- and `#[serde(default)]`
+/// turned that mismatch into *empty* fields instead of an error, leaving the Torrent zone
+/// without a hash, name, size or speed.
 #[tokio::test]
 #[ignore = "needs a local TorrServer"]
 async fn live_torrent_list_parses_against_the_running_server() {

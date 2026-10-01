@@ -99,7 +99,6 @@ fn test_build_magnet_encodes_the_name_and_appends_trackers() {
 #[test]
 fn test_build_magnet_escapes_parameter_separators_in_the_name() {
     // Otherwise a title with `&dn=` in it would invent a second
-    // parameter for TorrServer to read.
     let out = build_magnet(HEX_HASH, "Tom & Jerry");
 
     assert!(out.contains("dn=Tom%20%26%20Jerry"), "{}", out);
