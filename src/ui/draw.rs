@@ -114,12 +114,17 @@ impl App {
         // (that is what covers the zones under it), so it takes the
         // themed block with the borders turned off rather than a bare
         // default.
-        let backdrop = self.themed_block_with_borders(
-            self.theme.primary_color(),
-            config,
-            ratatui::widgets::Borders::NONE,
-        );
-        super::menu::render_menu(frame, area, &self.menu, &self.theme, backdrop);
+        // The menu follows "Theme background" like everything else: on
+        // means the theme's own background behind the glyphs, off means
+        // the terminal's shows through. Passing the colour in, rather
+        // than letting the menu read the theme itself, is what keeps
+        // that one option from being ignored here.
+        let bg = if config.theme_background {
+            Some(self.resolve_color(self.theme.main_bg.to_color(), config))
+        } else {
+            None
+        };
+        super::menu::render_menu(frame, area, &self.menu, &self.theme, bg);
     }
 
     fn render_main_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
@@ -169,6 +174,22 @@ impl App {
             (false, false, true) => format!("filter: {}", self.zones.filter_input),
             _ => "Search".to_string(),
         };
+        // The `S` of Search is the key that opens this box, so it takes
+        // the same hotkey accent the zones give `L`/`T`/`R`. Without it
+        // the search bar was the one label on screen with no mark on
+        // its keybind while four others had one.
+        let title_line = if title == "Search" {
+            let word = Style::default().fg(self.theme.primary_color());
+            let hot = Style::default()
+                .fg(self.theme.on_hover_color())
+                .add_modifier(Modifier::BOLD);
+            Line::from(vec![Span::styled("S", hot), Span::styled("earch", word)])
+        } else {
+            Line::from(Span::styled(
+                title.clone(),
+                Style::default().fg(self.theme.primary_color()),
+            ))
+        };
 
         // The box holds whichever string is being edited: the query in
         let editing: &str = if self.zones.filter_mode {
@@ -187,10 +208,7 @@ impl App {
                 },
                 config,
             )
-            .title(Span::styled(
-                title,
-                Style::default().fg(self.theme.primary_color()),
-            ));
+            .title(title_line);
 
         let inner = input_border.inner(bar_area);
         let input = Paragraph::new(editing)

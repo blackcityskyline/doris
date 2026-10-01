@@ -60,7 +60,7 @@ pub fn finish_search(
 /// Dedupe the merged multi-source list and put it into its default order This runs exactly once
 /// per generation -- when every source has answered -- because reordering while sources are
 /// still arriving would move rows out from under the user's selection.
-fn present_results(ui: &mut UiApp) {
+pub fn present_results(ui: &mut UiApp) {
     let before = ui.results.len();
     let anchor = ui.results.get(ui.selected).cloned();
 

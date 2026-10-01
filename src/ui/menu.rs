@@ -110,19 +110,26 @@ pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
     ))
 }
 
+/// `bg` is the theme background when "Theme background" is on and
+/// nothing at all when it is off -- the same rule every other panel
+/// follows, and the reason this takes a colour rather than reading the
+/// theme itself: a menu that paints `main_bg` unconditionally shows a
+/// slab of the theme's colour over whatever is behind it.
 pub fn render_menu(
     frame: &mut Frame,
     area: Rect,
     state: &MenuState,
     theme: &Theme,
-    backdrop: Block<'static>,
+    bg: Option<Color>,
 ) {
-    // The backdrop paints the theme background on the cells the glyphs
-    // occupy -- the banner lines and each item's own line -- rather than
-    // on one big rectangle. A filled rectangle around a menu that is
-    // 36 columns wide and 18 tall reads as a panel the user cannot
-    // click; hugging the glyphs is what the reference does.
-    let _ = (&backdrop, menu_backdrop_rect(area));
+    // The backdrop paints on the cells the glyphs occupy -- the banner
+    // lines and each item's own line -- rather than on one big
+    // rectangle. A filled rectangle around a menu that is 36 columns by
+    // 18 tall reads as a panel the user cannot click.
+    let painted = |s: Style| match bg {
+        Some(c) => s.bg(c),
+        None => s,
+    };
 
     let banner_w = BANNER[0].width() as u16;
     let banner_h = BANNER_ROWS;
@@ -140,10 +147,11 @@ pub fn render_menu(
         frame.render_widget(
             Paragraph::new(Span::styled(
                 *line,
-                Style::default()
-                    .fg(theme.primary_color())
-                    .bg(theme.main_bg.to_color())
-                    .add_modifier(Modifier::BOLD),
+                painted(
+                    Style::default()
+                        .fg(theme.primary_color())
+                        .add_modifier(Modifier::BOLD),
+                ),
             )),
             render_area,
         );
@@ -170,13 +178,17 @@ pub fn render_menu(
             let spans: Vec<Span> = line
                 .chars()
                 .map(|c| {
+                    // The picked item always carries the menu's own
+                    // selection colours -- that is what marks it -- but
+                    // an unpicked one takes the theme background or
+                    // nothing, following the same option.
                     let style = if selected && c != ' ' {
                         Style::default()
                             .fg(theme.menu_selected_fg.to_color())
                             .bg(theme.menu_selected_bg.to_color())
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(theme.menu_fg.to_color())
+                        painted(Style::default().fg(theme.menu_fg.to_color()))
                     };
                     Span::styled(c.to_string(), style)
                 })

@@ -146,7 +146,12 @@ impl App {
             // ratatui's Buffer::set_style *patches* a cell's style (only
             frame.render_widget(Clear, popup);
 
-            let fg_color = self.theme.main_fg.to_color();
+            // The typed value takes the primary accent, not the body
+            // colour: `main_fg` on the theme's background is the
+            // lowest-contrast thing on the screen, and this is the one
+            // thing the user came here to read back before pressing
+            // Enter.
+            let fg_color = self.theme.primary_color();
 
             let block = self
                 .modal_block(self.theme.primary_color(), config)

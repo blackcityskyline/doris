@@ -124,6 +124,25 @@ impl App {
             return;
         };
 
+        // Digits pick a section outright, the way the Options modal's
+        // tabs do. Arrows walk; a digit says "this one", which is what
+        // a user who already knows there are two tables wants.
+        if let KeyCode::Char(c @ '1'..='9') = key.code {
+            let idx = (c as u8 - b'1') as usize;
+            {
+                if idx < sections().len() {
+                    let Modal::Help(state) = &mut self.modal else {
+                        return;
+                    };
+                    if state.section != idx {
+                        state.section = idx;
+                        state.page = 0;
+                    }
+                    return;
+                }
+            }
+        }
+
         // The section switch sits above the guard below: a table that
         let step = match key.code {
             KeyCode::Right => Some(1usize),

@@ -190,3 +190,50 @@ fn test_the_gap_between_banner_and_items_is_not_filled() {
         "the gap row under the banner is cleared, so zone content does not show through"
     );
 }
+
+/// The banner and the items are painted from the theme, not from
+/// constants: a menu that ignores "Theme background" shows a slab of
+/// `main_bg` over the terminal when the option is off.
+#[test]
+fn test_the_menu_follows_the_theme_background_option() {
+    use ratatui::style::Color;
+
+    let mut app = make_app();
+    for theme_background in [false, true] {
+        let cfg = Config {
+            theme_background,
+            ..Config::default()
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| app.render(frame, &cfg)).unwrap();
+        let buf = terminal.backend().buffer();
+
+        let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
+            .expect("the menu is drawn at this size");
+        let banner_y = rect.y + 1;
+        let start_x = (120 - 29) / 2;
+
+        // A filled glyph gets the menu's own background; a space never
+        // does, so the sample has to be a glyph.
+        let glyph_x = (start_x..start_x + 29)
+            .find(|&x| buf[(x, banner_y)].symbol() != " ")
+            .expect("the banner has glyphs");
+        let bg = buf[(glyph_x, banner_y)].bg;
+
+        if theme_background {
+            assert_eq!(
+                bg,
+                app.theme.main_bg.to_color(),
+                "with the option on, the banner sits on the theme background"
+            );
+        } else {
+            assert_eq!(
+                bg,
+                Color::Reset,
+                "with the option off, the banner must not paint a background \
+                 at all -- that was the blue slab"
+            );
+        }
+    }
+}

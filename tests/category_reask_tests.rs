@@ -117,3 +117,32 @@ fn a_reask_no_source_can_answer_drops_the_rows_too() {
     assert!(!app.pending_clear);
     assert!(app.filtered_indices.is_empty());
 }
+
+/// After a search the cursor sits on the *best* row, not the last one.
+///
+/// The rows arrive one source at a time and are only ordered once every
+/// source has answered. The cursor is an index into `results`, and the
+/// ordering pass rewrites that array -- so keeping the index is not the
+/// same as keeping the row, and a run landed the cursor on the last row
+/// of the list, which after a seeds-descending order is a row with no
+/// seeds at all.
+#[test]
+fn test_the_cursor_stays_on_the_row_the_reader_was_on() {
+    let mut app = make_app();
+    // Three rows as they arrive: not in seed order.
+    app.results = vec![row("no seeds", None), row("best", None), row("mid", None)];
+    if let Some(first) = app.results.first_mut() {
+        first.seeds_n = 0;
+    }
+    app.results[1].seeds_n = 100;
+    app.results[2].seeds_n = 10;
+    app.selected = 1; // the reader is on "best"
+    app.update_filter();
+
+    doris::results::present_results(&mut app);
+
+    assert_eq!(
+        app.results[app.selected].title, "best",
+        "the cursor followed its row through the reordering, not the index"
+    );
+}
