@@ -860,12 +860,7 @@ impl App {
                                 self.ui.submit_selection().is_some(),
                             ) {
                                 EnterAction::RestartSearch => {
-                                    self.ui.source_changed = false;
-                                    self.ui.group_changed = false;
-                                    if let Some(ref q) = self.ui.search_query.clone() {
-                                        let query = q.clone();
-                                        self.start_search(query).await;
-                                    }
+                                    self.restart_search().await;
                                 }
                                 EnterAction::Play => self.spawn_stream().await,
                                 EnterAction::SubmitQuery | EnterAction::DoNothing => {}
@@ -1249,6 +1244,183 @@ impl App {
         (self.terminal_size.1 / 2).saturating_sub(3).max(1) as isize
     }
 
+    /// Re-run the query on screen, because the selection above it moved.
+    ///
+    /// Reached from Enter and from a click on the table, which are the
+    /// same question asked twice -- the block used to be written out
+    /// twice, and a fix that reached one of them would have been invisible
+    /// in the other.
+    ///
+    /// Both flags clear here as well as in `start_search`, for the only
+    /// path where no search follows: nothing has ever been searched, so
+    /// there is no query to restart and no row to play either.
+    async fn restart_search(&mut self) {
+        self.ui.source_changed = false;
+        self.ui.group_changed = false;
+        if let Some(query) = self.ui.search_query.clone() {
+            self.start_search(query).await;
+        }
+    }
+
+    /// One keypress inside the Options modal.
+    ///
+    /// Out of `handle_key` because that function is otherwise the whole
+    /// keyboard, and a modal's routing is a question with its own
+    /// answer: which row does this key land on, what does that row do,
+    /// and does anything else own the keyboard instead. The key never
+    /// comes back out to the main view -- the modal owns the keyboard
+    /// while it is up -- so there is nothing to unwind here, which is
+    /// why this returns rather than `Result`.
+    async fn handle_settings_key(&mut self, key: KeyEvent) {
+        if let Some(action) = self.ui.settings_key(key) {
+            // Captured before the loop flips it: turning TorrServer
+            // *on* is the one toggle that owes the user an answer.
+            let torrserver_was_on = self.config.enable_torrserver;
+            let toggled = apply_bool_toggle(&mut self.config, action);
+            if toggled && self.config.enable_torrserver && !torrserver_was_on {
+                // Turning TorrServer *on* is the one toggle that owes
+                // the user an answer. It only writes to the log, so it
+                // is safe before the modal is rebuilt.
+                self.check_torrserver_on_enable().await;
+            }
+            match action {
+                SettingsAction::ToggleBrowserVisibility => {
+                    // `App::browser_visibility` is the single runtime
+                    // owner; the modal reads a session copy on open.
+                    // Previously this toggle only updated the display
+                    // label and had zero effect on the next launch
+                    // .
+                    self.browser_visibility = match self.browser_visibility {
+                        BrowserVisibility::Hidden => BrowserVisibility::Visible,
+                        BrowserVisibility::Visible => BrowserVisibility::Hidden,
+                    };
+                }
+                SettingsAction::ToggleMode => {
+                    self.ui.stream_mode = !self.ui.stream_mode;
+                }
+                SettingsAction::CyclePrioritizeBrowser => {
+                    const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
+                    let current = self
+                        .config
+                        .browser_priority
+                        .first()
+                        .cloned()
+                        .unwrap_or_default();
+                    let next_first = match ORDER.iter().position(|&k| k == current) {
+                        Some(i) => ORDER[cycle_index(i, ORDER.len(), self.ui.last_cycle_direction)],
+                        None => ORDER[0],
+                    };
+                    // Move next_first to the front, keep the rest in
+                    // their existing relative order.
+                    let mut rest: Vec<String> = self
+                        .config
+                        .browser_priority
+                        .iter()
+                        .filter(|k| k.as_str() != next_first)
+                        .cloned()
+                        .collect();
+                    let mut new_priority = vec![next_first.to_string()];
+                    new_priority.append(&mut rest);
+                    self.config.browser_priority = new_priority;
+                }
+                SettingsAction::EditCredentials => {
+                    self.ui.open_login_modal();
+                }
+                SettingsAction::CheckTorrserverStatus => {
+                    let reachable = self.torrserver.is_reachable().await;
+                    let url = self.torrserver.base_url().to_string();
+                    let msg = if reachable {
+                        format!("TorrServer: reachable at {url}")
+                    } else {
+                        format!("TorrServer: not answering at {url}")
+                    };
+                    self.report("torrserver", &msg);
+                }
+                SettingsAction::OpenLog => {
+                    self.ui.modal = Modal::None;
+                    self.ui.detail_view = Some(ZoneId::Log);
+                }
+                SettingsAction::RunHealthCheck => {
+                    let cookie_file = self.resolve_cookie_file();
+                    let results = self.ui.health_check(cookie_file.as_deref()).await;
+                    self.ui.modal = Modal::HealthCheck(results);
+                }
+                SettingsAction::CycleTheme => {
+                    let themes = Theme::load_themes();
+                    if let Some(pos) = themes.iter().position(|t| t.name == self.ui.theme.name) {
+                        let next = cycle_index(pos, themes.len(), self.ui.last_cycle_direction);
+                        self.ui.theme = themes[next].clone();
+                    } else if !themes.is_empty() {
+                        self.ui.theme = themes[0].clone();
+                    }
+                    self.config.theme_name = Some(self.ui.theme.name.clone());
+                }
+                SettingsAction::CyclePreset => {
+                    self.cycle_layout_preset(self.ui.last_cycle_direction);
+                }
+                SettingsAction::SetUpdateMs => {
+                    // No numeric text-entry widget exists in the
+                    // Settings modal yet, so this cycles through a
+                    // fixed set of sensible intervals -- same
+                    // interaction pattern as Color theme/Presets/Graph
+                    // symbol above. A free-form numeric input is a
+                    // reasonable follow-up once the modal supports one.
+                    const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
+                    let next = match STEPS.iter().position(|&v| v == self.config.update_ms) {
+                        Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
+                        None => STEPS[0],
+                    };
+                    self.config.update_ms = next;
+                }
+                SettingsAction::CycleGraphSymbol => {
+                    const SYMBOLS: &[&str] = &["braille", "block", "dot"];
+                    let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol) {
+                        Some(i) => {
+                            SYMBOLS[cycle_index(i, SYMBOLS.len(), self.ui.last_cycle_direction)]
+                        }
+                        None => SYMBOLS[0],
+                    };
+                    self.config.graph_symbol = next.to_string();
+                }
+                SettingsAction::CycleDownloadDirMode => {
+                    const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
+                    let next = match MODES
+                        .iter()
+                        .position(|&m| m == self.config.download_dir_mode)
+                    {
+                        Some(i) => MODES[cycle_index(i, MODES.len(), self.ui.last_cycle_direction)],
+                        None => MODES[0],
+                    };
+                    self.config.download_dir_mode = next.to_string();
+                }
+                SettingsAction::Close => {}
+                // The bool toggles are handled above by the
+                // `BOOL_TOGGLES` table; nothing else to do here.
+                _ => {}
+            }
+
+            // Rebuild the modal once, here, instead of nine times in
+            // the arms above -- all of them were this same call. The
+            // guard matters: three of those arms (`EditCredentials`,
+            // `RunHealthCheck`, `OpenLog`) replace the modal or the
+            // whole view, and rebuilding Options on top of the login
+            // or health window would put it back.
+            if matches!(self.ui.modal, Modal::Settings(_)) {
+                self.ui.open_settings(
+                    &self.config,
+                    self.browser_visibility == BrowserVisibility::Hidden,
+                );
+            }
+
+            // Persist every settings change immediately rather than
+            // only on a clean exit ("Save config on exit" governs a
+            // final flush, not whether changes are remembered at all
+            // -- a crash between now and exit shouldn't lose them,
+            // and it previously did).
+            self.persist_config();
+        }
+    }
+
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // An armed removal is a question waiting for an answer, and every
         // key that is not `d` is a "no". Disarmed here, before any mode
@@ -1349,163 +1521,12 @@ impl App {
         }
 
         if let Modal::Settings(_) = self.ui.modal {
-            if let Some(action) = self.ui.settings_key(key) {
-                // Captured before the loop flips it: turning TorrServer
-                // *on* is the one toggle that owes the user an answer.
-                let torrserver_was_on = self.config.enable_torrserver;
-                let toggled = apply_bool_toggle(&mut self.config, action);
-                if toggled && self.config.enable_torrserver && !torrserver_was_on {
-                    // Turning TorrServer *on* is the one toggle that owes
-                    // the user an answer. It only writes to the log, so it
-                    // is safe before the modal is rebuilt.
-                    self.check_torrserver_on_enable().await;
-                }
-                match action {
-                    SettingsAction::ToggleBrowserVisibility => {
-                        // `App::browser_visibility` is the single runtime
-                        // owner; the modal reads a session copy on open.
-                        // Previously this toggle only updated the display
-                        // label and had zero effect on the next launch
-                        // .
-                        self.browser_visibility = match self.browser_visibility {
-                            BrowserVisibility::Hidden => BrowserVisibility::Visible,
-                            BrowserVisibility::Visible => BrowserVisibility::Hidden,
-                        };
-                    }
-                    SettingsAction::ToggleMode => {
-                        self.ui.stream_mode = !self.ui.stream_mode;
-                    }
-                    SettingsAction::CyclePrioritizeBrowser => {
-                        const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
-                        let current = self
-                            .config
-                            .browser_priority
-                            .first()
-                            .cloned()
-                            .unwrap_or_default();
-                        let next_first = match ORDER.iter().position(|&k| k == current) {
-                            Some(i) => {
-                                ORDER[cycle_index(i, ORDER.len(), self.ui.last_cycle_direction)]
-                            }
-                            None => ORDER[0],
-                        };
-                        // Move next_first to the front, keep the rest in
-                        // their existing relative order.
-                        let mut rest: Vec<String> = self
-                            .config
-                            .browser_priority
-                            .iter()
-                            .filter(|k| k.as_str() != next_first)
-                            .cloned()
-                            .collect();
-                        let mut new_priority = vec![next_first.to_string()];
-                        new_priority.append(&mut rest);
-                        self.config.browser_priority = new_priority;
-                    }
-                    SettingsAction::EditCredentials => {
-                        self.ui.open_login_modal();
-                    }
-                    SettingsAction::CheckTorrserverStatus => {
-                        let reachable = self.torrserver.is_reachable().await;
-                        let url = self.torrserver.base_url().to_string();
-                        let msg = if reachable {
-                            format!("TorrServer: reachable at {url}")
-                        } else {
-                            format!("TorrServer: not answering at {url}")
-                        };
-                        self.report("torrserver", &msg);
-                    }
-                    SettingsAction::OpenLog => {
-                        self.ui.modal = Modal::None;
-                        self.ui.detail_view = Some(ZoneId::Log);
-                    }
-                    SettingsAction::RunHealthCheck => {
-                        let cookie_file = self.resolve_cookie_file();
-                        let results = self.ui.health_check(cookie_file.as_deref()).await;
-                        self.ui.modal = Modal::HealthCheck(results);
-                    }
-                    SettingsAction::CycleTheme => {
-                        let themes = Theme::load_themes();
-                        if let Some(pos) = themes.iter().position(|t| t.name == self.ui.theme.name)
-                        {
-                            let next = cycle_index(pos, themes.len(), self.ui.last_cycle_direction);
-                            self.ui.theme = themes[next].clone();
-                        } else if !themes.is_empty() {
-                            self.ui.theme = themes[0].clone();
-                        }
-                        self.config.theme_name = Some(self.ui.theme.name.clone());
-                    }
-                    SettingsAction::CyclePreset => {
-                        self.cycle_layout_preset(self.ui.last_cycle_direction);
-                    }
-                    SettingsAction::SetUpdateMs => {
-                        // No numeric text-entry widget exists in the
-                        // Settings modal yet, so this cycles through a
-                        // fixed set of sensible intervals -- same
-                        // interaction pattern as Color theme/Presets/Graph
-                        // symbol above. A free-form numeric input is a
-                        // reasonable follow-up once the modal supports one.
-                        const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
-                        let next = match STEPS.iter().position(|&v| v == self.config.update_ms) {
-                            Some(i) => {
-                                STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)]
-                            }
-                            None => STEPS[0],
-                        };
-                        self.config.update_ms = next;
-                    }
-                    SettingsAction::CycleGraphSymbol => {
-                        const SYMBOLS: &[&str] = &["braille", "block", "dot"];
-                        let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol)
-                        {
-                            Some(i) => {
-                                SYMBOLS[cycle_index(i, SYMBOLS.len(), self.ui.last_cycle_direction)]
-                            }
-                            None => SYMBOLS[0],
-                        };
-                        self.config.graph_symbol = next.to_string();
-                    }
-                    SettingsAction::CycleDownloadDirMode => {
-                        const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
-                        let next = match MODES
-                            .iter()
-                            .position(|&m| m == self.config.download_dir_mode)
-                        {
-                            Some(i) => {
-                                MODES[cycle_index(i, MODES.len(), self.ui.last_cycle_direction)]
-                            }
-                            None => MODES[0],
-                        };
-                        self.config.download_dir_mode = next.to_string();
-                    }
-                    SettingsAction::Close => {}
-                    // The bool toggles are handled above by the
-                    // `BOOL_TOGGLES` table; nothing else to do here.
-                    _ => {}
-                }
-
-                // Rebuild the modal once, here, instead of nine times in
-                // the arms above -- all of them were this same call. The
-                // guard matters: three of those arms (`EditCredentials`,
-                // `RunHealthCheck`, `OpenLog`) replace the modal or the
-                // whole view, and rebuilding Options on top of the login
-                // or health window would put it back.
-                if matches!(self.ui.modal, Modal::Settings(_)) {
-                    self.ui.open_settings(
-                        &self.config,
-                        self.browser_visibility == BrowserVisibility::Hidden,
-                    );
-                }
-
-                // Persist every settings change immediately rather than
-                // only on a clean exit ("Save config on exit" governs a
-                // final flush, not whether changes are remembered at all
-                // -- a crash between now and exit shouldn't lose them,
-                // and it previously did).
-                self.persist_config();
-            }
-            return Ok(());
+            self.handle_settings_key(key).await;
         }
+
+        // No `return` here: the check below is `modal != None`, which is
+        // still true for the Options window, so it returns for us. An
+        // earlier version had both and the second one was unreachable.
 
         if self.ui.modal != Modal::None {
             if let Some((resource, username, password)) = self.ui.login_modal_key(key) {
@@ -1752,19 +1773,7 @@ impl App {
                 }
             }
             EnterAction::RestartSearch => {
-                // The source selection or the category was just switched
-                // (`g`/`G`, or a click): re-search with the new selection
-                // instead of playing a torrent. Both flags clear here
-                // as well as in `start_search`, for the only path where
-                // no search follows -- nothing has ever been searched,
-                // so there is no query to restart and no row to play
-                // either.
-                self.ui.source_changed = false;
-                self.ui.group_changed = false;
-                if let Some(ref q) = self.ui.search_query.clone() {
-                    let query = q.clone();
-                    self.start_search(query).await;
-                }
+                self.restart_search().await;
             }
             EnterAction::Play => self.spawn_stream().await,
             EnterAction::DoNothing => {}
@@ -3217,6 +3226,37 @@ mod key_routing_tests {
             .iter()
             .filter(|(action, _)| field_named(action, a) != field_named(action, b))
             .count()
+    }
+
+    /// A modal owns the keyboard: a keypress handled inside Options never
+    /// reaches the main view, so `2` does not move the zone focus behind
+    /// the window and `d` does not start a download while the user is
+    /// looking at a settings list.
+    ///
+    /// This started as a test for the `return` after the Options arm, and
+    /// the mutation check showed that `return` was not what enforces it --
+    /// removing it changed nothing, because the very next line tests
+    /// `modal != None`, which is still true for Options and returns for
+    /// both. So the `return` went and this test now pins the property
+    /// rather than one way of writing it.
+    #[tokio::test]
+    async fn a_key_the_modal_handles_does_not_reach_the_main_view() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.open_settings(&app.config, true);
+        app.ui.zones.focused = ZoneId::Results;
+
+        // A zone digit: in the main view this moves the focus.
+        app.handle_key(press(KeyCode::Char('2'))).await.expect("2");
+
+        assert!(
+            matches!(app.ui.modal, crate::ui::app::Modal::Settings(_)),
+            "Options must still be up"
+        );
+        assert_eq!(
+            app.ui.zones.focused,
+            ZoneId::Results,
+            "the zone behind the modal must not move"
+        );
     }
 
     /// The armed removal is cancelled by *any* other key, and that is a

@@ -7,10 +7,13 @@
 //! would see the temporary one. `#[serial]` only serialises tests that ask
 //! for it, and the other 36 tests in the old file did not -- which showed
 //! up as a flake under a full parallel run. One test binary, one process,
-//! one `HOME` to change.
+//! one `HOME` to change. `#[serial]` still matters *inside* the file:
+//! `HOME` is per-process, not per-test, and two tests setting it at the
+//! same moment is the same race one file over.
 
 use doris::app::source_id_for;
 use doris::sources::models::TorrentItem;
+use serial_test::serial;
 
 fn item_with_source(source: &str) -> TorrentItem {
     TorrentItem {
@@ -44,6 +47,7 @@ fn logged_while<F: FnOnce()>(name: &str, f: F) -> String {
 /// into a request to somebody else's server, and the failure the user
 /// sees is a rutracker error about a row they did not ask about.
 #[test]
+#[serial]
 fn a_substituted_source_id_is_reported_not_silent() {
     let log = logged_while("subst", || {
         // A wrong id and an id from before the field existed both
@@ -67,6 +71,7 @@ fn a_substituted_source_id_is_reported_not_silent() {
 /// A row that *is* in the registry says nothing -- the log is for the
 /// substitution, not a running commentary on every download.
 #[test]
+#[serial]
 fn a_registered_source_id_is_not_reported() {
     let log = logged_while("ok", || {
         source_id_for(&item_with_source("rutor"));
