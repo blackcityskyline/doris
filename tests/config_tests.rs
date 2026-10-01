@@ -5,6 +5,9 @@ use std::path::PathBuf;
 
 #[test]
 fn test_config_default() {
+    // The raw struct: what every "just build me a Config" caller gets.
+    // It does not know the source list -- the registry fills that in, and
+    // `Config` deliberately has no opinion about it.
     let config = Config::default();
     assert_eq!(config.browser_visibility, "hidden");
     assert_eq!(config.torrserver_url, "http://127.0.0.1:8090");
@@ -45,15 +48,11 @@ fn test_config_default() {
     assert!(config.close_browser_on_exit);
     assert!(config.save_cookies);
     assert!(config.save_credentials);
-    // The default is "every implemented source", asserted *against the
-    // registry* so adding a source to KNOWN_SOURCES forces the decision
-    // of whether it ships enabled rather than forgetting it silently.
-    let implemented: Vec<String> = KNOWN_SOURCES
-        .iter()
-        .filter(|s| s.implemented)
-        .map(|s| s.id.to_string())
-        .collect();
-    assert_eq!(config.enabled_sources, implemented);
+    // The source list is not here: it is the registry's to say, and a raw
+    // `Config::default()` has none until the migration runs over it.
+    // `test_a_first_run_enables_every_implemented_source` is that test.
+    assert!(config.enabled_sources.is_empty());
+    assert!(config.known_sources.is_empty());
     assert!(config.download_enabled);
     assert_eq!(config.download_dir_mode, "default");
     assert!(config.download_dir_custom_1.is_empty());
@@ -386,7 +385,7 @@ fn test_known_sources_are_never_re_enabled() {
         ..Default::default()
     };
 
-    config.migrate_sources();
+    doris::sources::source::migrate_config(&mut config);
 
     assert_eq!(
         config.enabled_sources,
@@ -402,7 +401,7 @@ fn test_migration_is_idempotent() {
     let after_once = config.enabled_sources.clone();
     let known_once = config.known_sources.clone();
 
-    config.migrate_sources();
+    doris::sources::source::migrate_config(&mut config);
 
     assert_eq!(
         config.enabled_sources, after_once,
@@ -414,17 +413,27 @@ fn test_migration_is_idempotent() {
     );
 }
 
-/// A fresh config already knows everything, so `Config::default()` must
-/// come through the migration untouched -- otherwise every startup
-/// would be rewriting a user's choices.
+/// A first run's config already knows everything, so the migration must
+/// leave it untouched -- otherwise every startup would be rewriting a
+/// user's choices.
+///
+/// Through `first_run_config`, because that is what a machine with no
+/// config file actually gets. A raw `Config::default()` starts with an
+/// empty source list by design now, and migrating that on its own is the
+/// *empty file* case, which is a different situation with a different
+/// answer.
 #[test]
-fn test_a_fresh_default_config_is_not_migrated() {
+fn test_a_fresh_config_is_not_migrated() {
     let mut config = Config::default();
+    doris::sources::source::first_run_config(&mut config);
     let enabled = config.enabled_sources.clone();
+    let known = config.known_sources.clone();
+    assert!(!enabled.is_empty(), "setup: a first run has sources on");
 
-    config.migrate_sources();
+    doris::sources::source::migrate_config(&mut config);
 
     assert_eq!(config.enabled_sources, enabled);
+    assert_eq!(config.known_sources, known);
     assert_eq!(
         config.known_sources.len(),
         KNOWN_SOURCES.iter().filter(|info| info.implemented).count(),
@@ -444,7 +453,7 @@ fn test_a_planned_source_is_never_recorded_as_seen() {
         ..Default::default()
     };
 
-    config.migrate_sources();
+    doris::sources::source::migrate_config(&mut config);
 
     for info in KNOWN_SOURCES.iter().filter(|info| !info.implemented) {
         assert!(
@@ -457,4 +466,116 @@ fn test_a_planned_source_is_never_recorded_as_seen() {
     // While the planned id is written off, the implemented ones still
     // count -- which is the half that protects a deliberate "off".
     assert_eq!(config.enabled_sources, vec!["rutracker".to_string()]);
+}
+
+/// A first run must come up with every implemented source switched on.
+///
+/// This is the path that regressed once: `load` with no config file
+/// returned a raw `Config::default()`, and after the source list moved
+/// out of `Config` that raw struct had no sources in it at all -- the app
+/// started up with nothing enabled and no error to explain why.
+///
+/// It is deliberately not written against `from_toml("")`, which is a
+/// different question: an empty file is a config that predates the field,
+/// so it seeds `LEGACY_SOURCES` and those three stay *off*. A machine
+/// with no config file has made no decision yet, which is not the same
+/// thing as having decided "off" -- and this bug is exactly that
+/// confusion, so the difference is pinned rather than assumed.
+#[test]
+fn test_a_first_run_enables_every_implemented_source() {
+    // The same two calls `load` makes when there is no file -- not a copy
+    // of them, which would test the copy.
+    let mut config = Config::default();
+    doris::sources::source::first_run_config(&mut config);
+    doris::sources::source::migrate_config(&mut config);
+
+    let implemented: Vec<String> = KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect();
+    assert_eq!(
+        config.enabled_sources, implemented,
+        "a machine that has never seen a config gets every source"
+    );
+    assert_eq!(
+        config.known_sources, implemented,
+        "and is told about exactly those"
+    );
+}
+
+/// The other side of the same pair: an empty *file* is a config from
+/// before the field existed, and the three sources that existed then are
+/// treated as already decided rather than newly arrived.
+#[test]
+fn test_an_empty_config_file_keeps_the_legacy_sources_off() {
+    let config = from_toml("").expect("an empty config is valid");
+
+    let legacy = ["rutracker", "rutor", "nnmclub"];
+    for id in legacy {
+        assert!(
+            !config.enabled_sources.iter().any(|e| e == id),
+            "{id} existed before the field, so it is not 'new' and stays off"
+        );
+    }
+    assert!(
+        config.enabled_sources.iter().any(|e| e == "yts"),
+        "an id that did not exist then is new and arrives enabled"
+    );
+}
+
+/// `config.rs` is a settings file; the list of sources is a fact about
+/// the build. The dependency used to run the other way, and adding a
+/// source meant editing two files with nothing pointing at the omission --
+/// forget `config.rs` and the source is implemented but ships switched
+/// off, forever, with no UI able to turn it on.
+///
+/// This is checked by reading the file: a compile-time rule would need a
+/// second crate, and a comment would not be one.
+#[test]
+fn the_config_layer_does_not_know_the_source_list() {
+    let source = include_str!("../src/config.rs");
+
+    for line in source.lines() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for needle in ["KNOWN_SOURCES", "LEGACY_SOURCES", "implemented_source_ids"] {
+            assert!(
+                !line.contains(needle),
+                "config.rs names the registry again: {line}"
+            );
+        }
+    }
+}
+
+/// The no-file branch of `load` must go through the first-run config.
+///
+/// This one has to read the source rather than call `load`: that branch
+/// fires when there is no file in `$HOME`, and a test that creates and
+/// removes the user's config to exercise it is worse than the bug it is
+/// looking for. The rule it pins caught a real regression during this
+/// change -- with the source list moved out of `Config`, the branch
+/// returned a raw `Config::default()` and a first run came up with every
+/// source switched off.
+#[test]
+fn load_without_a_file_uses_the_first_run_config() {
+    let source = include_str!("../src/config.rs");
+
+    // The *last* `None` arm in `load`: the first one picks the path
+    // (`None` means "look in $HOME"), the last one is what a machine
+    // without a file gets back.
+    let start = source.find("pub fn load(").expect("load is defined");
+    let body = &source[start..];
+    let arm = body.rfind("None => {").expect("the no-file arm");
+    let arm_text = &body[arm..arm + 400];
+
+    assert!(
+        arm_text.contains("first_run()"),
+        "a machine with no config must get the registry's defaults: {arm_text}"
+    );
+    assert!(
+        !arm_text.contains("Config::default()"),
+        "and not the raw struct, which carries no source list: {arm_text}"
+    );
 }

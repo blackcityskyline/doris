@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::sources::source::KNOWN_SOURCES;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -73,7 +72,8 @@ pub struct Config {
     #[serde(default)]
     pub save_config_on_exit: bool,
     /// Every source id this config has been shown to know -- the key
-    /// that lets `migrate_sources` tell "new to this build" apart from
+    /// that lets `sources::source::migrate_config` tell "new to this build"
+    /// apart from
     /// "the user turned it off". Written on every save; empty only in a
     /// config written before B8 wave 1, which is exactly the case the
     /// migration has to read carefully.
@@ -91,10 +91,10 @@ pub struct Config {
     pub save_cookies: bool,
     #[serde(default = "default_true")]
     pub save_credentials: bool,
-    /// Which entries in `search::source::KNOWN_SOURCES` are active. A
+    /// Which registered source ids are active. A
     /// source id not in this list is treated as disabled even if
     /// implemented.
-    #[serde(default = "default_enabled_sources")]
+    #[serde(default)]
     pub enabled_sources: Vec<String>,
 
     // --- Options / "download" category  ----------------
@@ -142,11 +142,15 @@ impl Default for Config {
             terminal_sync: true,
             graph_symbol: default_graph_symbol(),
             save_config_on_exit: false,
-            known_sources: KNOWN_SOURCES.iter().map(|s| s.id.to_string()).collect(),
+            // Filled by `sources::source::migrate_config`, which knows the
+            // registry. `Config` is a settings file; the source list is a
+            // fact about this build, and a fresh file gets it the same way
+            // an old one does.
+            known_sources: Vec::new(),
             close_browser_on_exit: true,
             save_cookies: true,
             save_credentials: true,
-            enabled_sources: default_enabled_sources(),
+            enabled_sources: Vec::new(),
             download_enabled: true,
             download_dir_mode: default_download_dir_mode(),
             download_dir_custom_1: String::new(),
@@ -221,23 +225,6 @@ fn default_presets() -> Vec<String> {
     ]
 }
 
-fn default_enabled_sources() -> Vec<String> {
-    // "Every implemented source ships turned on" -- stated against the
-    // registry rather than as a second handwritten list, so a source
-    // can only be left out of the defaults by not being implemented.
-    KNOWN_SOURCES
-        .iter()
-        .filter(|s| s.implemented)
-        .map(|s| s.id.to_string())
-        .collect()
-}
-
-/// Source ids a config written before B8 wave 1 could possibly mention:
-/// exactly what `KNOWN_SOURCES` held at `9d5ae14`, the last commit
-/// before wave 1 added yts. Used only to seed `known_sources` for a
-/// config that predates the field (see `migrate_sources`).
-const LEGACY_SOURCES: &[&str] = &["rutracker", "rutor", "nnmclub"];
-
 fn default_download_dir_mode() -> String {
     "default".to_string()
 }
@@ -247,89 +234,12 @@ fn default_config_path() -> PathBuf {
     home.join(".config").join("doris").join("config.toml")
 }
 
-impl Config {
-    /// Give a config the source ids it has never heard of.
-    ///
-    /// `enabled_sources` is opt-in, so a config saved before wave 1 --
-    /// which lists only the sources that existed then -- would keep
-    /// yts/tpb/subsplease/eztv switched off forever, with no UI able to
-    /// switch them on until this build's Options rows arrived. That is
-    /// not a hypothetical: it is what a live run of the finished wave
-    /// hit.
-    ///
-    /// The line between "new to this build" and "the user turned it
-    /// off" is [`Config::known_sources`]: an id this config has already
-    /// seen is never re-added. A config predating the field is
-    /// recognised by being empty and seeded with `LEGACY_SOURCES`,
-    /// which is what keeps somebody who disabled `rutor` back then from
-    /// having it silently switched back on, while `tpb` -- an id they
-    /// have never seen -- arrives enabled.
-    ///
-    /// "Seen" means *had a chance to be decided*, and a planned source
-    /// gives no chance: its Options row is a caption, not a toggle, so
-    /// an id the registry listed while it was still unbuilt was never
-    /// something the user could accept or reject. Such ids are read as
-    /// unknown and never written back, which is what makes the flip
-    /// from planned to implemented arrive enabled -- wave 3's nnmclub
-    /// was caught by exactly this hole (it sat in `known_sources` as a
-    /// placeholder, then went live and stayed switched off), and its
-    /// two followers in the same registry are what the rule now covers.
-    pub fn migrate_sources(&mut self) {
-        let seen: Vec<String> = if self.known_sources.is_empty() {
-            LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()
-        } else {
-            self.known_sources.clone()
-        };
-        // Drop the ids the registry lists but has not built: today
-        // those rows cannot be toggled, so nothing was ever decided
-        // about them. What is left -- implemented ids plus ids this
-        // registry does not list at all -- is what counts as known.
-        let known: Vec<String> = seen
-            .iter()
-            .filter(|id| {
-                !KNOWN_SOURCES
-                    .iter()
-                    .any(|info| info.id == **id && !info.implemented)
-            })
-            .cloned()
-            .collect();
-
-        for id in default_enabled_sources() {
-            let known_before = known.iter().any(|k| k == &id);
-            let already_on = self.enabled_sources.iter().any(|e| e == &id);
-            if !known_before && !already_on {
-                self.enabled_sources.push(id);
-            }
-        }
-
-        // Record every id this build knows *as something that could be
-        // decided on* -- implemented ids only, by the same rule as
-        // above, so a placeholder row never counts as the user having
-        // seen it. A source added to the registry later is then unknown
-        // again, which is what makes the *next* migration happen
-        // without anyone extending a baseline; ids the registry no
-        // longer lists are kept, since a config that knew them did not
-        // stop knowing them.
-        let mut all: Vec<String> = KNOWN_SOURCES
-            .iter()
-            .filter(|info| info.implemented)
-            .map(|info| info.id.to_string())
-            .collect();
-        for id in known {
-            if !all.iter().any(|a| a == &id) {
-                all.push(id);
-            }
-        }
-        self.known_sources = all;
-    }
-}
-
 /// Parse config TOML and run the migrations it needs: the single entry
 /// point `load` and the tests share, so what a test asserts is what a
 /// real config file goes through.
 pub fn from_toml(content: &str) -> Result<Config> {
     let mut config: Config = toml::from_str(content)?;
-    config.migrate_sources();
+    crate::sources::source::migrate_config(&mut config);
     Ok(config)
 }
 
@@ -359,7 +269,24 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             }
             Ok(config)
         }
-        None => Ok(Config::default()),
+        // No config file is not the same as an empty one, and the
+        // difference is three sources.
+        //
+        // An empty *file* is a config written before `known_sources`
+        // existed: the migration seeds it with the ids that existed then
+        // and reads them as already decided, so rutracker/rutor/nnmclub
+        // stay off. A machine that has never had a file has decided
+        // nothing, and gets everything this build implements.
+        //
+        // Filling it here rather than in `Config::default()` is the point
+        // of the split: `Config` no longer imports the registry, and the
+        // first-run defaults are a fact about the build rather than about
+        // the settings struct.
+        None => {
+            let mut fresh = crate::sources::source::first_run();
+            crate::sources::source::migrate_config(&mut fresh);
+            Ok(fresh)
+        }
     }
 }
 

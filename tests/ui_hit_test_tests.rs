@@ -6,6 +6,18 @@ use doris::ui::modals::help::HELP_TEXT;
 use doris::ui::zones::ZoneId;
 use ratatui::layout::Rect;
 
+/// A config as a first run gets it: every implemented source switched on.
+///
+/// `Config::default()` is the raw struct and deliberately carries no
+/// source list -- that is the registry's to fill in. Tests that click a
+/// source row need a real one, so they ask for what the app would actually
+/// hold.
+fn test_config() -> Config {
+    let mut config = Config::default();
+    doris::sources::source::first_run_config(&mut config);
+    config
+}
+
 fn make_app() -> UiApp {
     UiApp::new("http://127.0.0.1:8090".to_string(), None)
 }
@@ -106,7 +118,7 @@ fn test_click_at_focuses_the_clicked_zone() {
     assert_eq!(app.zones.focused, ZoneId::Results);
 
     let log_area = app.zones.get_area(ZoneId::Log);
-    let mut config = Config::default();
+    let mut config = test_config();
     app.click_at(log_area.y, log_area.x, &mut config);
     assert_eq!(app.zones.focused, ZoneId::Log);
 }
@@ -122,7 +134,7 @@ fn test_click_at_results_header_row_does_not_select_a_row() {
     let before = app.selected;
     // +1 for the border, then the table's own header row -- see
     // render_results_zone.
-    let mut config = Config::default();
+    let mut config = test_config();
     app.click_at(results_area.y + 1, results_area.x, &mut config); // table header row, not a data row
     assert_eq!(app.selected, before);
 }
@@ -136,7 +148,7 @@ fn test_click_at_results_data_row_selects_that_item() {
 
     let results_area = app.zones.get_area(ZoneId::Results);
     // y+1 = table header, y+2 = first data row (index 0).
-    let mut config = Config::default();
+    let mut config = test_config();
     app.click_at(results_area.y + 2, results_area.x, &mut config);
     assert_eq!(app.selected, 0);
 
@@ -153,7 +165,7 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     let results_area = app.zones.get_area(ZoneId::Results);
-    let mut config = Config::default();
+    let mut config = test_config();
     app.click_at(results_area.y + 2, results_area.x, &mut config); // first visible (filtered) row
     assert_eq!(app.selected, 3);
 }
@@ -179,7 +191,7 @@ fn test_the_panel_lists_all_then_the_registry_in_order() {
 /// which is the default view -- so the panel opens saying "everything".
 #[test]
 fn test_all_is_checked_when_every_implemented_source_is() {
-    let config = Config::default();
+    let config = test_config();
     assert!(
         doris::ui::app::SourceRow::All.is_checked(&config),
         "a fresh config enables every implemented source"
@@ -203,7 +215,7 @@ fn test_an_unimplemented_source_cannot_be_switched_on() {
     assert!(!row.is_implemented(), "an unknown id is not a source");
 
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     let before = config.enabled_sources.clone();
 
     // A cursor past the end of the panel is a no-op too: the row list
@@ -221,7 +233,7 @@ fn test_an_unimplemented_source_cannot_be_switched_on() {
 #[test]
 fn test_toggling_a_source_flips_only_it_and_owes_a_search() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     let before = config.enabled_sources.clone();
 
     app.sources_cursor = 1; // the first registry entry
@@ -252,7 +264,7 @@ fn test_toggling_a_source_flips_only_it_and_owes_a_search() {
 #[test]
 fn test_the_all_row_checks_or_clears_the_whole_roster() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     let roster: Vec<String> = doris::sources::source::KNOWN_SOURCES
         .iter()
         .filter(|info| info.implemented)
@@ -296,7 +308,7 @@ fn test_keeping_the_category_leaves_the_selection_alone() {
     let mut app = make_app();
     app.active_group = Some(Group::Movies);
 
-    app.set_group_tabs(&Config::default());
+    app.set_group_tabs(&test_config());
 
     assert_eq!(app.active_group, Some(Group::Movies));
     assert!(!app.group_changed, "re-deriving is not a switch");
@@ -326,7 +338,7 @@ fn test_the_cursor_wraps_in_both_directions() {
 #[test]
 fn test_clicking_a_panel_row_switches_it() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Trackers);
     assert!(area.height > 3, "the panel is on screen");
@@ -350,7 +362,7 @@ fn test_clicking_a_panel_row_switches_it() {
 #[test]
 fn test_clicking_a_panel_row_while_typing_does_not_switch_it() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.enter_input_mode();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Trackers);
@@ -372,7 +384,7 @@ fn test_clicking_a_panel_row_while_typing_does_not_switch_it() {
 #[test]
 fn test_the_results_info_slot_counts_without_naming_sources() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
 
@@ -406,7 +418,7 @@ fn test_the_results_counter_leads_the_info_slot() {
     app.update_filter();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
-    let config = Config::default();
+    let config = test_config();
 
     assert_eq!(
         app.frame_info(ZoneId::Results, area, &config),
@@ -424,7 +436,7 @@ fn test_the_results_counter_leads_the_info_slot() {
 
 #[test]
 fn test_click_at_returns_none_on_the_zone_title() {
-    let mut config = Config::default();
+    let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
@@ -438,7 +450,7 @@ fn test_click_at_returns_none_on_the_zone_title() {
 /// back as the pause action, not fall through to "clicked the panel".
 #[test]
 fn test_click_at_torrent_pause_button_returns_toggle_pause() {
-    let mut config = Config::default();
+    let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
@@ -463,7 +475,7 @@ fn test_click_at_torrent_pause_button_returns_toggle_pause() {
 
 #[test]
 fn test_click_at_torrent_delete_button_returns_remove() {
-    let mut config = Config::default();
+    let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let torrent_area = app.zones.get_area(ZoneId::Torrent);
@@ -486,7 +498,7 @@ fn test_click_at_torrent_delete_button_returns_remove() {
 #[test]
 fn test_click_between_two_frame_buttons_does_nothing() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let results_area = app.zones.get_area(ZoneId::Results);
     let layout = app.frame_layout(ZoneId::Results, results_area, &config);
@@ -515,7 +527,7 @@ fn test_click_between_two_frame_buttons_does_nothing() {
 /// being handed to the orchestrator.
 #[test]
 fn test_clicking_the_filter_button_enters_filter_mode() {
-    let mut config = Config::default();
+    let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     assert!(!app.zones.filter_mode);
@@ -647,7 +659,7 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
     // The default config enables every implemented source, and between
     // them they serve all four groups -- in `GROUP_ORDER`, "all" first.
     assert_eq!(
-        doris::ui::modals::settings::group_tabs(&Config::default()),
+        doris::ui::modals::settings::group_tabs(&test_config()),
         vec![
             None,
             Some(Group::Movies),
@@ -664,7 +676,7 @@ fn test_cycle_group_walks_the_row_and_wraps() {
     // Derived from the function the row is drawn from rather than
     // spelled out: a group added to the registry must not leave this
     // test walking a list the UI no longer shows.
-    let tabs = doris::ui::modals::settings::group_tabs(&Config::default());
+    let tabs = doris::ui::modals::settings::group_tabs(&test_config());
     assert_eq!(app.active_group, tabs[0], "starts on all");
     assert_eq!(app.active_group, None);
 
@@ -688,7 +700,7 @@ fn test_cycle_group_walks_the_row_and_wraps() {
 #[test]
 fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
 
@@ -762,7 +774,7 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
 #[test]
 fn test_the_group_button_still_cycles_the_category() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
 
@@ -810,7 +822,7 @@ fn test_losing_the_category_moves_the_selection_to_all() {
 /// dropped the right-hand cluster entirely.
 #[test]
 fn test_every_frame_button_stays_on_its_own_border() {
-    let config = Config::default();
+    let config = test_config();
     for (w, h) in [(80u16, 24u16), (40, 12), (20, 8), (10, 4), (6, 3)] {
         let mut app = make_app();
         app.zones.update_areas(Rect::new(0, 0, w, h));
@@ -850,7 +862,7 @@ fn test_every_frame_button_stays_on_its_own_border() {
 /// about which of them the user meant.
 #[test]
 fn test_frame_buttons_do_not_overlap() {
-    let config = Config::default();
+    let config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     for &id in ZoneId::all() {
@@ -933,7 +945,7 @@ fn test_the_filter_matches_size_source_word_and_category() {
 #[test]
 fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
     let mut app = make_app();
-    let config = Config::default();
+    let config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 100, 30));
     let area = app.zones.get_area(ZoneId::Results);
 
@@ -985,7 +997,7 @@ fn test_the_help_page_documents_d_as_the_detail_fallback() {
 #[test]
 fn test_a_border_click_arms_the_resize_but_a_legend_click_does_not() {
     let mut app = make_app();
-    let mut config = Config::default();
+    let mut config = test_config();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
 
     // Trackers' top border separates it from Torrent, and Trackers has

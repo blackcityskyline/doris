@@ -498,8 +498,11 @@ impl App {
             active_group: None,
             // A fresh install's view: every implemented source is on by
             // default. `App::new` immediately re-derives it from the
-            // config actually being loaded.
-            group_tabs: group_tabs(&Config::default()),
+            // config actually being loaded, so this is only what shows
+            // for the frame before that happens -- and it has to be the
+            // real first-run config, not the raw `Config::default()`,
+            // which carries no source list at all.
+            group_tabs: group_tabs(&crate::sources::source::first_run()),
             group_changed: false,
             browsing: false,
             source_changed: false,

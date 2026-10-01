@@ -645,3 +645,136 @@ pub fn cli_sources(
         )),
     }
 }
+
+/// Source ids a config written before B8 wave 1 could possibly mention:
+/// exactly what [`KNOWN_SOURCES`] held at `9d5ae14`, the last commit
+/// before wave 1 added yts. Seeds `known_sources` for a config that
+/// predates the field.
+const LEGACY_SOURCES: &[&str] = &["rutracker", "rutor", "nnmclub"];
+
+/// "Every implemented source ships turned on" -- stated against the
+/// registry rather than as a second handwritten list, so a source can
+/// only be left out of the defaults by not being implemented.
+fn default_enabled_sources() -> Vec<String> {
+    KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect()
+}
+
+/// Give a config the source ids it has never heard of.
+///
+/// It lives here rather than on `Config` because it is a question about
+/// the registry -- what this build implements, and what it used to --
+/// and `config.rs` is a settings file that has no business knowing the
+/// source list. The dependency used to run the other way: adding a source
+/// meant editing `config.rs` as well as this file, and forgetting that
+/// left it out of the defaults with nothing pointing at the omission.
+///
+/// Give a config the source ids it has never heard of.
+///
+/// `enabled_sources` is opt-in, so a config saved before wave 1 --
+/// which lists only the sources that existed then -- would keep
+/// yts/tpb/subsplease/eztv switched off forever, with no UI able to
+/// switch them on until this build's Options rows arrived. That is
+/// not a hypothetical: it is what a live run of the finished wave
+/// hit.
+///
+/// The line between "new to this build" and "the user turned it
+/// off" is `Config::known_sources`: an id this config has already
+/// seen is never re-added. A config predating the field is
+/// recognised by being empty and seeded with `LEGACY_SOURCES`,
+/// which is what keeps somebody who disabled `rutor` back then from
+/// having it silently switched back on, while `tpb` -- an id they
+/// have never seen -- arrives enabled.
+///
+/// "Seen" means *had a chance to be decided*, and a planned source
+/// gives no chance: its Options row is a caption, not a toggle, so
+/// an id the registry listed while it was still unbuilt was never
+/// something the user could accept or reject. Such ids are read as
+/// unknown and never written back, which is what makes the flip
+/// from planned to implemented arrive enabled -- wave 3's nnmclub
+/// was caught by exactly this hole (it sat in `known_sources` as a
+/// placeholder, then went live and stayed switched off), and its
+/// two followers in the same registry are what the rule now covers.
+pub fn migrate_config(config: &mut crate::config::Config) {
+    let seen: Vec<String> = if config.known_sources.is_empty() {
+        LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()
+    } else {
+        config.known_sources.clone()
+    };
+    // Drop the ids the registry lists but has not built: today
+    // those rows cannot be toggled, so nothing was ever decided
+    // about them. What is left -- implemented ids plus ids this
+    // registry does not list at all -- is what counts as known.
+    let known: Vec<String> = seen
+        .iter()
+        .filter(|id| {
+            !KNOWN_SOURCES
+                .iter()
+                .any(|info| info.id == **id && !info.implemented)
+        })
+        .cloned()
+        .collect();
+
+    for id in default_enabled_sources() {
+        let known_before = known.iter().any(|k| k == &id);
+        let already_on = config.enabled_sources.iter().any(|e| e == &id);
+        if !known_before && !already_on {
+            config.enabled_sources.push(id);
+        }
+    }
+
+    // Record every id this build knows *as something that could be
+    // decided on* -- implemented ids only, by the same rule as
+    // above, so a placeholder row never counts as the user having
+    // seen it. A source added to the registry later is then unknown
+    // again, which is what makes the *next* migration happen
+    // without anyone extending a baseline; ids the registry no
+    // longer lists are kept, since a config that knew them did not
+    // stop knowing them.
+    let mut all: Vec<String> = KNOWN_SOURCES
+        .iter()
+        .filter(|info| info.implemented)
+        .map(|info| info.id.to_string())
+        .collect();
+    for id in known {
+        if !all.iter().any(|a| a == &id) {
+            all.push(id);
+        }
+    }
+    config.known_sources = all;
+}
+
+/// Every id this build implements, in registry order.
+///
+/// The first-run defaults. Exposed because "no config file" and "an
+/// empty config file" are different situations that happen to look alike
+/// from inside `Config`: one is a machine that has decided nothing, the
+/// other is a file from before the field existed.
+pub fn first_run_config(config: &mut crate::config::Config) {
+    let ids = implemented_source_ids();
+    config.known_sources = ids.clone();
+    config.enabled_sources = ids;
+}
+
+/// The config a machine with no config file starts with.
+///
+/// Used by `load` and by the UI's own construction, which both need the
+/// same thing: a config that has the source list filled in. `Config::default()`
+/// on its own is not that -- it is the raw struct, which deliberately
+/// carries no opinion about which sources exist.
+pub fn first_run() -> crate::config::Config {
+    let mut config = crate::config::Config::default();
+    first_run_config(&mut config);
+    config
+}
+
+pub fn implemented_source_ids() -> Vec<String> {
+    KNOWN_SOURCES
+        .iter()
+        .filter(|s| s.implemented)
+        .map(|s| s.id.to_string())
+        .collect()
+}
