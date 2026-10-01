@@ -146,7 +146,6 @@ impl App {
             // ratatui's Buffer::set_style *patches* a cell's style (only
             frame.render_widget(Clear, popup);
 
-            let bg_color = self.theme.main_bg.to_color();
             let fg_color = self.theme.main_fg.to_color();
 
             let block = self
@@ -217,8 +216,13 @@ impl App {
                     Style::default().fg(self.theme.secondary_color()),
                 ));
             frame.render_widget(
+                // No background of its own: with "Theme background" off
+                // the popup is see-through, and a field that painted
+                // `main_bg` anyway came out as a filled slab against the
+                // terminal's own colour. The block already applies the
+                // rule; the field only adds the text colour.
                 Paragraph::new(state.username.as_str())
-                    .style(Style::default().bg(bg_color).fg(fg_color))
+                    .style(Style::default().fg(fg_color))
                     .block(user_block),
                 rows[1],
             );
@@ -253,7 +257,7 @@ impl App {
                 ));
             frame.render_widget(
                 Paragraph::new(pass_display.as_str())
-                    .style(Style::default().bg(bg_color).fg(fg_color))
+                    .style(Style::default().fg(fg_color))
                     .block(pass_block),
                 rows[3],
             );

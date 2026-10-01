@@ -154,11 +154,23 @@ impl App {
                     }
                     source.search(&req).await
                 };
+                // The deadline has to cover the login walk as well as the
+                // page fetch, because both are inside `fetch`. A cold
+                // login -- browser launch, Cloudflare, fill, submit --
+                // took 26 s in a live run against a 25 s deadline, so the
+                // login landed, cookies were written, and the deadline
+                // then fired before the search ever started. That read
+                // in the Trackers panel as "rutracker: timeout" with a
+                // green LOGIN SUCCESSFUL in the log.
+                //
+                // The extra is only for sources that need a browser;
+                // the rest still get the plain deadline.
+                let budget = orchestrator::deadline_for(info.requires_browser);
                 tokio::spawn(orchestrator::run_source(
                     info.id,
                     generation,
                     orchestrator::cached_fetch(fetch, Arc::clone(&self.cache), key),
-                    orchestrator::PER_SOURCE_TIMEOUT,
+                    budget,
                     tx.clone(),
                 ))
             };

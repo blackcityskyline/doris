@@ -26,6 +26,27 @@ use crate::event::Event;
 /// torio's `PER_SOURCE_TIMEOUT_MS`: one slow source must not hold the whole fan-out hostage.
 pub const PER_SOURCE_TIMEOUT: Duration = Duration::from_secs(25);
 
+/// What a browser-backed source gets on top of the deadline, for the
+/// login walk. Live: establishing a rutracker session from cold --
+/// launch, Cloudflare challenge, fill the form, submit -- took 26 s, so
+/// a 25 s deadline fired *after* a successful login and before the
+/// search could start. The Trackers panel then showed a timeout with
+/// `LOGIN SUCCESSFUL` a line above it.
+pub const LOGIN_GRACE: Duration = Duration::from_secs(60);
+
+/// The deadline one source's fetch gets.
+///
+/// A source that needs a browser has to establish a session before it
+/// can fetch anything, and that walk is inside the same future, so it
+/// gets the extra on top. Everything else gets the plain deadline.
+pub fn deadline_for(requires_browser: bool) -> Duration {
+    if requires_browser {
+        PER_SOURCE_TIMEOUT + LOGIN_GRACE
+    } else {
+        PER_SOURCE_TIMEOUT
+    }
+}
+
 /// Where one source of the current dispatch stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceStatus {

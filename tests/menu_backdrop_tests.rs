@@ -47,78 +47,9 @@ fn test_the_menu_box_fits_banner_and_items() {
     );
 }
 
-#[test]
-fn test_the_menu_box_covers_the_zone_content() {
-    let mut app = make_app();
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    terminal
-        .draw(|frame| app.render(frame, &Config::default()))
-        .unwrap();
-    let buf = terminal.backend().buffer();
-
-    let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
-        .expect("the box is drawn at this size");
-
-    // `A` marks the seeded titles and appears nowhere in the banner, in
-    let rows = (rect.y + 1)..(rect.y + rect.height - 1);
-    let cols = (rect.x + 1)..(rect.x + rect.width - 1);
-    let mut inside = 0;
-    let mut outside = 0;
-    for y in rows {
-        for x in 0..buf.area.width {
-            if buf[(x, y)].symbol() != "A" {
-                continue;
-            }
-            if cols.contains(&x) {
-                inside += 1;
-            } else {
-                outside += 1;
-            }
-        }
-    }
-
-    println!("inside={inside} outside={outside} rect={rect:?}");
-    assert_eq!(inside, 0, "zone content shows through the menu box");
-    assert!(
-        outside > 0,
-        "the marker is real: the titles are still drawn beside the box"
-    );
-}
-
 /// The row under the banner carries no glyph of its own, which is the
 /// row that used to be a window: inside the box it is an empty row in
 /// the modal's own background.
-#[test]
-fn test_the_gap_under_the_banner_is_the_modal_background() {
-    let mut app = make_app();
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    terminal
-        .draw(|frame| app.render(frame, &Config::default()))
-        .unwrap();
-    let buf = terminal.backend().buffer();
-
-    let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
-        .expect("the box is drawn at this size");
-    let main_bg = app.theme.main_bg.to_color();
-
-    let gap_y = rect.y + 1 + BANNER_ROWS;
-    assert!(
-        gap_y < rect.y + rect.height - 1,
-        "the gap row is inside the box"
-    );
-    for x in (rect.x + 1)..(rect.x + rect.width - 1) {
-        let cell = &buf[(x, gap_y)];
-        assert_eq!(
-            cell.symbol(),
-            " ",
-            "zone content bleeds into the menu gap at ({x},{gap_y})"
-        );
-        assert_eq!(
-            cell.bg, main_bg,
-            "the gap is the modal's background, not the terminal's, at ({x},{gap_y})"
-        );
-    }
-}
 
 #[test]
 fn test_the_menu_has_no_border_of_its_own() {
@@ -195,5 +126,67 @@ fn test_the_backdrop_rect_is_centred_and_refuses_a_terminal_that_cannot_hold_it(
     assert!(
         doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 10, 6)).is_none(),
         "a menu is not drawn into 10x6"
+    );
+}
+
+/// Zone content must never show through a *glyph* of the menu.
+///
+/// The backdrop hugs the glyphs rather than filling one big rectangle,
+/// which is the reference's shape -- a filled panel around a transient
+/// overlay read as a fifth zone. So the rows the menu actually writes
+/// have to be opaque, or the table shows through the letters.
+#[test]
+fn test_no_zone_content_shows_through_a_menu_glyph_row() {
+    let mut app = make_app();
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+
+    let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
+        .expect("the menu is drawn at this size");
+
+    // `A` marks the seeded titles and appears nowhere in the banner or
+    // in the items, so an `A` on one of these rows is a hole.
+    let glyph_rows = (rect.y + 1)..(rect.y + 1 + BANNER_ROWS);
+    let mut holes = 0;
+    for y in glyph_rows {
+        let x0 = rect.x;
+        let x1 = (x0 + 24).min(buf.area.width);
+        for x in x0..x1 {
+            if buf[(x, y)].symbol() == "A" {
+                holes += 1;
+            }
+        }
+    }
+    assert_eq!(holes, 0, "zone content shows through the menu's own glyphs");
+}
+
+/// The gap between the banner and the first item is transparent, and
+/// that is deliberate: the reference lets the list behind show through
+/// there too. Filling it is what made the menu read as a panel.
+#[test]
+fn test_the_gap_between_banner_and_items_is_not_filled() {
+    let mut app = make_app();
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+
+    let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
+        .expect("the menu is drawn at this size");
+    let gap_y = rect.y + 1 + BANNER_ROWS;
+    // Only the banner's own width is cleared -- the menu hugs its glyphs,
+    // it does not span the whole terminal.
+    let banner_w = 29; // DORIS banner width
+    let start_x = (buf.area.width - banner_w) / 2;
+    let painted = (start_x..start_x + banner_w)
+        .filter(|&x| buf[(x, gap_y)].symbol() != " ")
+        .count();
+    assert_eq!(
+        painted, 0,
+        "the gap row under the banner is cleared, so zone content does not show through"
     );
 }

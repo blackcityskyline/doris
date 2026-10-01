@@ -117,11 +117,12 @@ pub fn render_menu(
     theme: &Theme,
     backdrop: Block<'static>,
 ) {
-    // The box goes down first: the glyphs below are painted *over* the
-    if let Some(rect) = menu_backdrop_rect(area) {
-        frame.render_widget(Clear, rect);
-        frame.render_widget(backdrop, rect);
-    }
+    // The backdrop paints the theme background on the cells the glyphs
+    // occupy -- the banner lines and each item's own line -- rather than
+    // on one big rectangle. A filled rectangle around a menu that is
+    // 36 columns wide and 18 tall reads as a panel the user cannot
+    // click; hugging the glyphs is what the reference does.
+    let _ = (&backdrop, menu_backdrop_rect(area));
 
     let banner_w = BANNER[0].width() as u16;
     let banner_h = BANNER_ROWS;
@@ -135,16 +136,26 @@ pub fn render_menu(
 
     for (i, line) in BANNER.iter().enumerate() {
         let render_area = Rect::new(start_x, start_y + i as u16, banner_w, 1);
+        frame.render_widget(Clear, render_area);
         frame.render_widget(
             Paragraph::new(Span::styled(
                 *line,
                 Style::default()
                     .fg(theme.primary_color())
+                    .bg(theme.main_bg.to_color())
                     .add_modifier(Modifier::BOLD),
             )),
             render_area,
         );
     }
+
+    // The gap row between the banner and the first item carries no glyph
+    // of its own. It is cleared (not filled): the reference lets the
+    // list behind show through here, and a filled slab here is what
+    // made the whole menu read as one panel.
+    let gap_y = start_y + banner_h;
+    let gap_w = BANNER[0].width() as u16;
+    frame.render_widget(Clear, Rect::new(start_x, gap_y, gap_w, 1));
 
     let menu_y = start_y + banner_h + spacing;
 
@@ -171,6 +182,7 @@ pub fn render_menu(
                 })
                 .collect();
             let render_area = Rect::new(x, y + j as u16, mw, 1);
+            frame.render_widget(Clear, render_area);
             frame.render_widget(Paragraph::new(Line::from(spans)), render_area);
         }
     }

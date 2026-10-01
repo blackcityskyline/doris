@@ -571,3 +571,28 @@ async fn a_source_supplied_cursor_travels_with_its_rows() {
         other => panic!("expected a SourceDone, got {:?}", other),
     }
 }
+
+/// A source that has to log in gets a longer deadline than one that
+/// does not, because the login walk is inside the same future.
+///
+/// The deadline existed to stop one slow source holding the fan-out.
+/// With a 25 s deadline and a 26 s cold login, a browser-backed source
+/// logged in, wrote its cookies, and *then* timed out before the
+/// search started -- which is exactly what a live run showed: a green
+/// `LOGIN SUCCESSFUL` in the log and a timeout in the Trackers panel.
+#[test]
+fn test_a_browser_backed_source_gets_time_to_log_in() {
+    let plain = doris::sources::orchestrator::deadline_for(false);
+    let browser = doris::sources::orchestrator::deadline_for(true);
+
+    assert_eq!(plain, doris::sources::orchestrator::PER_SOURCE_TIMEOUT);
+    assert!(
+        browser > plain,
+        "the login walk is inside the timed future, so the deadline has \
+         to cover it: {browser:?} vs {plain:?}"
+    );
+    assert!(
+        browser >= doris::sources::orchestrator::LOGIN_GRACE,
+        "and the extra has to be at least the grace period"
+    );
+}
