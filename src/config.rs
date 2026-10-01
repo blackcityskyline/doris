@@ -23,10 +23,6 @@ pub struct Config {
     pub cookie_file: String,
 
     // --- Options / "general" category -----------------
-    // These mirror btop++'s general settings page. Values here are the
-    // single source of truth the Options modal reads and writes -- unlike
-    // the pre-Phase-5 UI, which displayed hardcoded literals with no
-    // backing field at all.
     /// Name of the active theme file (without extension).
     pub theme_name: Option<String>,
     #[serde(default = "default_true")]
@@ -124,9 +120,6 @@ impl Default for Config {
             graph_symbol: default_graph_symbol(),
             save_config_on_exit: false,
             // Filled by `sources::source::migrate_config`, which knows the
-            // registry. `Config` is a settings file; the source list is a
-            // fact about this build, and a fresh file gets it the same way
-            // an old one does.
             known_sources: Vec::new(),
             close_browser_on_exit: true,
             save_cookies: true,
@@ -152,10 +145,6 @@ fn default_browser_visibility() -> String {
 
 fn default_browser_priority() -> Vec<String> {
     // Mirrors browser::detect::DEFAULT_PRIORITY. Kept as plain strings here
-    // so config.rs doesn't need to depend on the browser module just for
-    // this default; browser::detect::parse_priority() re-derives the
-    // BrowserKind order from these strings and falls back to its own
-    // DEFAULT_PRIORITY if the list is ever empty or unparsable.
     ["helium", "brave", "chrome", "chromium"]
         .iter()
         .map(|s| s.to_string())
@@ -190,7 +179,6 @@ fn default_graph_symbol() -> String {
 
 fn default_presets() -> Vec<String> {
     // Rows via `,`, columns via `|`. The first one is the default UI:
-    // Results across the top, Trackers and Log under it, no Torrent.
     vec![
         "1,3|4".to_string(),
         "1,2,3,4".to_string(),
@@ -236,7 +224,6 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             let mut config = from_toml(&content)?;
             if migrate_cookie_file(&mut config, &p) {
                 // Persist the fix, or every run redoes the migration and
-                // the config on disk still says the old relative path.
                 if let Err(e) = save(&config, Some(&p)) {
                     crate::log::log("config", &format!("cookie path migration: {e}"));
                 }
@@ -244,10 +231,6 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             Ok(config)
         }
         // No config file is not an empty one. An empty *file* predates
-        // `known_sources`: the migration seeds it with the ids that
-        // existed then and reads them as decided, so those three stay off.
-        // A machine that never had one has decided nothing, and gets
-        // everything this build implements.
         None => {
             let mut fresh = crate::sources::source::first_run();
             crate::sources::source::migrate_config(&mut fresh);

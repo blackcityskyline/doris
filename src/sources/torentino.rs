@@ -12,7 +12,6 @@ use super::models::TorrentItem;
 use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
-/// Every CSS selector this file needs, compiled once.
 struct Selectors {
     entry: Selector,
     title: Selector,
@@ -59,7 +58,6 @@ impl Default for TorentinoSearcher {
 impl TorentinoSearcher {
     pub fn new() -> Self {
         // The shared browser-like client: the HTML side of this
-        // host 403s anything that does not look like a browser.
         Self {
             client: browser_client(),
         }
@@ -125,7 +123,6 @@ impl TorentinoSearcher {
         .await?;
         let file_status = file.status();
         // The final URL after redirects: the check below reads it, and
-        // `bytes()` consumes the response.
         let final_url = file.url().to_string();
         let bytes = file.bytes().await?;
         if !file_status.is_success() {
@@ -136,9 +133,6 @@ impl TorentinoSearcher {
             );
         }
         // The link 301s to `/_ld/.../<name>.torrent` for a real file, and
-        // to a `.txt` placeholder ("ИГРА ПОКА НЕ ВЫШЛА") for a game that
-        // is not out yet -- uploading that to TorrServer would fail, so
-        // the final URL's extension is the honesty check.
         if !final_url.ends_with(".torrent") {
             bail!(
                 "torentino's file link resolved to {}, not a .torrent \
@@ -214,7 +208,6 @@ pub fn parse_date(text: &str) -> Option<String> {
     Some(format!("{}-{}-{}", &caps[3], &caps[2], &caps[1]))
 }
 
-/// Whether the pagination block offers a next page.
 pub fn has_next_page(html: &str) -> bool {
     let document = Html::parse_document(html);
     let Some(sel) = selectors() else {
@@ -262,8 +255,6 @@ impl Source for TorentinoSearcher {
 
     fn supports_browse(&self) -> bool {
         // No "latest" feed has ever been verified on this host, and the
-        // homepage is a category listing, not a freshest-first feed --
-        // so browse is not claimed.
         false
     }
 

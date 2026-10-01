@@ -9,11 +9,8 @@ use anyhow::Result;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RETRY_AFTER, SERVER};
 use reqwest::{Client, RequestBuilder};
 
-/// torio's `DEFAULT_RETRIES`: attempts *after* the first one.
 pub const DEFAULT_RETRIES: u32 = 5;
-/// torio's `DEFAULT_BASE_MS`: backoff doubles from here per attempt.
 pub const DEFAULT_BASE_MS: u64 = 500;
-/// torio's `DEFAULT_CAP_MS`: the ceiling one backoff step can reach.
 pub const DEFAULT_CAP_MS: u64 = 20_000;
 
 /// torio's `RETRY_STATUS`: only these statuses are worth another attempt.
@@ -24,14 +21,10 @@ pub fn is_retryable(status: u16) -> bool {
     RETRY_STATUS.contains(&status)
 }
 
-/// Knobs of one [`fetch_resilient`] call.
 #[derive(Debug, Clone, Copy)]
 pub struct FetchOptions {
-    /// Attempts after the first one (torio: `retries`).
     pub retries: u32,
-    /// Backoff base in milliseconds (torio: `baseMs`).
     pub base_ms: u64,
-    /// Backoff ceiling in milliseconds (torio: `capMs`).
     pub cap_ms: u64,
 }
 
@@ -71,7 +64,6 @@ pub fn browser_client() -> Client {
         HeaderValue::from_static("ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"),
     );
     // Same desktop Chrome signature rutor has been sending -- a mobile
-    // or library UA on an HTML endpoint is another bot signal.
     let user_agent = concat!(
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) ",
         "Chrome/152.0.0.0 Safari/537.36"
@@ -98,7 +90,6 @@ pub fn parse_retry_after(value: Option<&str>, now_ms: i64) -> Option<u64> {
         return None;
     }
     // An HTTP date (RFC 2822) is relative to *now*, and never negative:
-    // a date already in the past means "retry immediately".
     let parsed = chrono::DateTime::parse_from_rfc2822(raw).ok()?;
     let delay = parsed.timestamp_millis().saturating_sub(now_ms);
     Some(delay.try_into().unwrap_or(0))
@@ -139,7 +130,6 @@ where
             Ok(response) => response,
             Err(err) => {
                 // Transport-level failure (refused, reset, timeout):
-                // worth another try until the budget runs out.
                 if attempt >= opts.retries {
                     anyhow::bail!("GET {} failed after {} retries: {}", url, opts.retries, err);
                 }

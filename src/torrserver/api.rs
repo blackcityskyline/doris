@@ -101,18 +101,15 @@ async fn ensure_ok(resp: reqwest::Response, what: &str) -> Result<()> {
 }
 
 impl TorrServer {
-    /// All torrents TorrServer currently knows about (`{"action": "list"}`).
     pub async fn list_torrents(&self) -> Result<Vec<TorrentInfo>> {
         let resp = self
             .torrents_action(serde_json::json!({ "action": "list" }))
             .await?;
         // TorrServer returns `null` (not `[]`) when there are no torrents;
-        // treat that the same as an empty list rather than an error.
         let list: Option<Vec<TorrentInfo>> = resp.json().await.unwrap_or(None);
         Ok(list.unwrap_or_default())
     }
 
-    /// A single torrent's status (`{"action": "get", "hash":...}`).
     pub async fn get_torrent(&self, hash: &str) -> Result<Option<TorrentInfo>> {
         let resp = self
             .torrents_action(serde_json::json!({ "action": "get", "hash": hash }))
@@ -130,7 +127,6 @@ impl TorrServer {
         ensure_ok(resp, "pause the torrent").await
     }
 
-    /// Resume a paused (dropped) torrent.
     pub async fn resume(&self, hash: &str) -> Result<()> {
         let body = serde_json::json!({ "action": "get", "hash": hash });
         let resp = self.torrents_action(body).await?;
@@ -156,8 +152,6 @@ impl TorrServer {
         let response = self.torrents_action(body).await?;
         if !response.status().is_success() {
             // TorrServer reports why in the body ("link is empty",
-            // "error parse link:..."), so surface it instead of a bare
-            // status code.
             let text = response.text().await.unwrap_or_default();
             anyhow::bail!("TorrServer rejected the link: {}", text);
         }
@@ -237,7 +231,6 @@ impl TorrServer {
             .stderr(std::process::Stdio::piped());
 
         // Start the player in its own process group so it survives doris
-        // exiting (no SIGHUP propagation from the terminal).
         #[cfg(unix)]
         cmd.process_group(0);
 

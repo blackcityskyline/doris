@@ -16,14 +16,8 @@ impl App {
 
     pub(super) async fn start_search(&mut self, query: String) {
         // The row drop (and the flags Enter reads) belong to
-        // `begin_search`, which decides it from whether this is a new
-        // query or a re-ask of the one on screen.
         self.ui.begin_search(&query);
         // Rows now arrive one source at a time, so there is no
-        // single moment where the old list gets replaced by the new one:
-        // the table empties on the first answer to arrive, and each
-        // source appends into it. The per-source records belong to the
-        // old query and go with it.
         self.ui.source_status.clear();
         self.source_has_more.clear();
         self.source_offsets.clear();
@@ -38,7 +32,6 @@ impl App {
             sources_summary(&self.config)
         ));
         // New generation: anything still in flight for a previous query is
-        // now stale and gets dropped when it lands.
         self.search_generation += 1;
         let generation = self.search_generation;
         self.dispatch_search(query, generation).await;
@@ -51,8 +44,6 @@ impl App {
     /// each task under the per-source deadline.
     pub(super) async fn dispatch_search(&mut self, query: String, generation: u64) {
         // An empty query is browse mode: only sources that can
-        // answer one are asked, and the merged list is ordered
-        // freshest-first rather than by seeds.
         let browsing = query.trim().is_empty();
         self.ui.browsing = browsing;
         let selected = orchestrator::selected_sources(
@@ -62,9 +53,6 @@ impl App {
         );
         if selected.is_empty() {
             // Two ways to get here, and they have different fixes: no
-            // source is checked at all, or nothing the panel reaches
-            // serves the selected category -- the orchestrator words the
-            // second one by what would actually change it.
             let reason = match self.ui.active_group {
                 Some(group) => {
                     orchestrator::nothing_to_ask_reason(&self.config.enabled_sources, group)
@@ -77,8 +65,6 @@ impl App {
             self.ui.add_log(&reason);
             self.ui.state = AppState::Idle;
             // No source was even asked, so no answer will arrive to
-            // spend a deferred row drop: spend it here or the table
-            // keeps rows for a question that was refused outright.
             self.ui.take_pending_clear();
             return;
         }
@@ -87,9 +73,6 @@ impl App {
             orchestrator::dispatch_plan(&selected, &self.source_offsets, &self.source_has_more);
         if plan.is_empty() {
             // Every selected source already reported its last page, so no
-            // SourceDone is coming: close the generation here instead of
-            // leaving the UI Searching -- and spend the deferred row
-            // drop, which the answer that will never arrive would have.
             self.ui.take_pending_clear();
             finish_search(
                 &mut self.ui,
@@ -105,13 +88,6 @@ impl App {
 
         for (info, offset) in plan {
             // Cache lookup before anything else, browser launch included
-            // a fresh hit needs no task at all -- it just has to
-            // arrive like the normal answer would, so the offsets,
-            // paging verdict and log line all update through the same
-            // path. The category is part of the key: the same words
-            // at the same offset under a different category are
-            // different pages, so an "all" hit must never answer a
-            // "Movies" request.
             let key = CacheKey::new(
                 info.id,
                 &query,
@@ -127,8 +103,6 @@ impl App {
                 Ok(s) => s,
                 Err(e) => {
                     // This source can't run at all, and with no task
-                    // spawned nothing else will ever speak for it: it
-                    // still owes the user a line.
                     self.ui
                         .add_log(&source_outcome_line(info.id, &Err(e.to_string())));
                     self.ui
@@ -143,21 +117,10 @@ impl App {
                 .insert(info.id.to_string(), SourceStatus::Pending);
             let mut req = SearchRequest::new(query.clone(), offset);
             // The selection rides along: a source that can filter
-            // server-side will, one that cannot returns what it has --
-            // and the view keeps only the rows claiming this category,
-            // so an unhonoured category reads as fewer rows rather than
-            // as a category nobody actually applied.
             req.category = self.ui.active_group;
             // Login walk first, then the search, in one task. The two
-            // halves used to be two `tokio::spawn` calls around a
-            // `cached_fetch`, differing only in what went inside the
-            // `async move` -- so the arguments that have to agree (the
-            // timeout, the channel, the cache) were written twice and
-            // nothing made them agree.
             let task = {
                 // If "Save cookies" is off, don't pass a cookie file
-                // path through at all -- see do_login for the same
-                // gating.
                 let cookie_file = self.resolve_cookie_file();
                 let username = self.args.username.clone();
                 let password = self.args.password.clone();
@@ -203,21 +166,12 @@ impl App {
         }
 
         // Always coordinate, even with an empty task list: with nothing
-        // spawned there is nothing to wait for, and sending
-        // SearchComplete through the same channel is what keeps it
-        // *behind* any SourceDone events already queued from cache hits
-        // (finishing here instead would close the generation before its
-        // own rows arrived and read paging verdicts nobody had recorded
-        // yet).
         tokio::spawn(orchestrator::coordinate(generation, tasks, tx));
     }
 
     pub(super) async fn load_more(&mut self, query: String) {
         self.ui.state = AppState::Searching;
         // Same generation as the results already on screen: the next page
-        // appends to them instead of being treated as a superseded search.
-        // Which sources get asked, and from which cursor, is decided per
-        // source inside `dispatch_search`.
         let generation = self.search_generation;
         self.dispatch_search(query, generation).await;
     }

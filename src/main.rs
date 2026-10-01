@@ -24,9 +24,6 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     }
 
     // Which sources to ask: `--source <id>` names exactly one,
-    // otherwise every enabled implemented source -- the same list the
-    // `all` tab is built from, so CLI and TUI cannot disagree about what
-    // "all sources" means.
     let selected =
         doris::sources::source::cli_sources(args.source.as_deref(), &config.enabled_sources)?;
     if selected.is_empty() {
@@ -34,9 +31,6 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     }
 
     // A browser only when some selected source needs one: rutor answers
-    // without one, and forcing a browser (or failing to find one) for a
-    // source that cannot use it turns a working search into an
-    // environment error.
     let needs_browser = selected.iter().any(|info| info.requires_browser);
     let browser = if needs_browser {
         let browser_choice = args.browser.as_deref().or(config.browser.as_deref());
@@ -58,8 +52,6 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         );
 
         // One browser shared by every source, the same sharing the TUI
-        // does; it starts on the first source's home page, and the hosts
-        // it must not resolve come from that same source's registry entry.
         let launched = doris::browser::cdp::Browser::launch(
             &path,
             visibility,
@@ -74,10 +66,6 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     };
 
     // CLI flags override, otherwise the credentials the app's own login
-    // saved -- the same fallback `dispatch_search` has, so `--cli
-    // --source rutracker` logs in the way the TUI does instead of
-    // arriving without a session and reading a login page as "no
-    // results".
     let credentials = match (args.username.as_deref(), args.password.as_deref()) {
         (Some(u), Some(p)) => Some((u.to_string(), p.to_string())),
         _ => doris::credentials::load_credentials(),
@@ -98,7 +86,6 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         println!("\n=== {} ===", info.label);
 
         // Same registry path as the TUI: the instance from
-        // `build_source`, every operation through `dyn Source`.
         let source = doris::sources::source::build_source(
             info.id,
             doris::sources::source::SourceEnv {
@@ -138,8 +125,6 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     }
 
     // Same reason as in `App::run`: the session DELETE has to happen while
-    // the runtime is still alive, or chromedriver gets SIGKILLed first and
-    // the browser it started outlives this process.
     if let Some(launched) = browser {
         launched.lock().await.shutdown().await;
     }

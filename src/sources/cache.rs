@@ -38,7 +38,6 @@ struct Entry {
     page: SearchPage,
 }
 
-/// The cache itself.
 #[derive(Default)]
 pub struct SearchCache {
     entries: Mutex<HashMap<CacheKey, Entry>>,
@@ -53,7 +52,6 @@ impl SearchCache {
         }
     }
 
-    /// Cache with a custom expiry, for tests that need an entry to age.
     pub fn with_ttl(ttl: Duration) -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
@@ -73,7 +71,6 @@ impl SearchCache {
         map.get(key).map(|entry| entry.page.clone())
     }
 
-    /// Store a successfully fetched page.
     pub fn put(&self, key: CacheKey, page: SearchPage) {
         if let Ok(mut map) = self.entries.lock() {
             map.retain(|_, entry| entry.at.elapsed() < self.ttl);

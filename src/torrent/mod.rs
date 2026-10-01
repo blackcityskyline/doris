@@ -5,7 +5,6 @@ use crate::event::Event;
 use crate::torrserver::api::TorrServer;
 use tokio::sync::mpsc::UnboundedSender;
 
-/// Minimum interval between TorrServer polls.
 const MIN_POLL_INTERVAL_MS: u64 = 100;
 
 pub struct Manager;

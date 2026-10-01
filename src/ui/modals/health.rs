@@ -67,9 +67,6 @@ impl App {
         }
 
         // "Available" means available *for the browser named above*:
-        // the patched cache is one file per browser major now, and a
-        // system driver only counts when its own version says so
-        // (`cdp::driver_ready_for`).
         let has_chromedriver = browser_binary
             .as_ref()
             .map(|binary| crate::browser::cdp::driver_ready_for(binary))
@@ -85,17 +82,6 @@ impl App {
 
         let ts_url = self.torrserver_url.clone();
         // Was: tokio::runtime::Handle::current().block_on(...), which
-        // panics with "Cannot start a runtime from within a runtime" --
-        // health_check() always runs as part of the already-running
-        // tokio runtime (it's called from the main event loop), so
-        // block_on-ing that same runtime's handle is illegal. Making
-        // this function itself async and.await-ing the request, like
-        // every other network call in the app, is the fix.
-        //
-        // The probe itself is `TorrServer::is_reachable` -- the same call
-        // `play` makes, with the same timeout. A second copy of it here
-        // was a copy that could answer differently from the code it is
-        // reporting on.
         let ts_reachable = TorrServer::new(&ts_url).is_reachable().await;
         if ts_reachable {
             results.push(format!("{} TorrServer: reachable ({})", "\u{2714}", ts_url));
@@ -157,10 +143,6 @@ impl App {
             frame.render_widget(block, popup);
 
             // The same severity mapping the detail log uses: a pass in
-            // the secondary accent, a failure in the error accent, a
-            // warning and a section header in the primary -- the marks
-            // (✔/✘/⚠) say it in glyphs too, so colour is a second
-            // channel and never the theme-blind one.
             let display_lines: Vec<Line> = lines
                 .iter()
                 .map(|l| {
@@ -196,8 +178,6 @@ impl App {
                 .collect();
 
             // Same as the detail modal: `Clear` plus `modal_block`'s
-            // `main_bg` is the popup's background, so the panel never
-            // paints a colour the theme did not choose.
             let list = Paragraph::new(display_lines);
             frame.render_widget(list, inner);
         }

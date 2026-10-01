@@ -82,7 +82,6 @@ pub fn group_for_forum(forum: i32) -> Option<Group> {
         .map(|(group, _)| *group)
 }
 
-/// The forum selector for one request.
 fn forum_params(category: Option<Group>) -> String {
     super::source::forum_params(&GROUP_FORUMS, category, ALL_FORUMS)
 }
@@ -131,11 +130,8 @@ fn with_offset(url: String, offset: usize) -> String {
     }
 }
 
-/// The regexes the parser needs, built once.
 struct Patterns {
-    /// The results table, and only that one.
     table: Regex,
-    /// One row inside it.
     row: Regex,
     /// `<u>12345678</u>`: the site wraps both a size in raw bytes and
     /// a unix timestamp in `<u>`.
@@ -271,19 +267,11 @@ fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
     let download_id = download_id(row)?;
     let (size_bytes, added) = size_and_added(row, patterns);
     // The site's *classes*, not its `title=` hints -- the difference
-    // was found live and cost real rows: a torrent nobody seeds swaps
-    // `title="Seeders"` for `title=" Last seen: 29-03-2020"` and
-    // leaves the cell body empty, while keeping `class="seedmed"`.
-    // Keying on the title lost 35 of 50 browse rows, which in turn
-    // read a full page as a short one and switched pagination off;
-    // the empty body is the `0` those rows deserve anyway.
     let seeds = first_number(&cell_of(row, "class=\"seedmed\"")?);
     let leechers = first_number(&cell_of(row, "class=\"leechmed\"")?);
 
     Some(TorrentItem {
         // No magnet in the row (live: zero on the search page) and no
-        // hash either -- the `.torrent` link carries both, and the
-        // download/stream path is built for exactly that.
         magnet: None,
         info_hash: String::new(),
         title,
@@ -298,8 +286,6 @@ fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
         page_url: format!("{}viewtopic.php?t={}", FORUM, topic_id),
         source: "nnmclub".to_string(),
         // The row's own forum, so a tab switch can filter rows the
-        // tracker already returned; `None` for sections outside
-        // the four groups, which is what keeps "all" honest.
         group: forum_of(row).and_then(group_for_forum),
         query: String::new(),
     })
@@ -313,16 +299,12 @@ fn cell_of(row: &str, marker: &str) -> Option<String> {
     Some(row[start..end].to_string())
 }
 
-/// The results table -> rows.
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let patterns = match patterns() {
         Some(p) => p,
         None => bail!("nnmclub: the parser's patterns failed to build"),
     };
     // The live page always answers with this table -- 50 rows, 9 rows,
-    // or just `Не найдено`. Its absence therefore means we are not
-    // reading the tracker at all, and saying "no results" would be the
-    // one lie the user cannot investigate.
     let Some(table) = patterns.table.captures(body) else {
         bail!("nnmclub: the page has no results table (blocked, moved, or asking for a login)");
     };
@@ -335,7 +317,6 @@ pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
         let Some(row) = caps.get(1) else { continue };
         let row = row.as_str();
         // Header/footer rows and the `Не найдено` row have neither
-        // link, so they fall out here without needing a case each.
         if !row.contains("viewtopic.php?t=") || !row.contains("download.php?id=") {
             continue;
         }
@@ -391,7 +372,6 @@ impl Source for NnmclubSearcher {
 
     fn groups(&self) -> &'static [Group] {
         // The four groups `GROUP_FORUMS` spans -- declared once, and
-        // asserted against the forum table by a test.
         GROUPS
     }
 
@@ -401,13 +381,11 @@ impl Source for NnmclubSearcher {
 
     fn requires_browser(&self) -> bool {
         // Live: a plain HTTP client with a browser UA got 200 from
-        // every page, cloudflare included -- no challenge to solve.
         false
     }
 
     fn supports_browse(&self) -> bool {
         // Live-verified: `f=-1&o=2&sd=desc` returns 50 newest topics,
-        // and `start=50` returns a disjoint second page.
         true
     }
 
@@ -425,8 +403,6 @@ impl Source for NnmclubSearcher {
         let bytes = response.bytes().await?;
 
         // windows-1251 in the header and in the `<meta>`, live; the
-        // replacement keeps an unexpected byte from becoming U+FFFD in
-        // the middle of a title instead of dropping the whole page.
         let (body, _, _) = encoding_rs::WINDOWS_1251.decode(&bytes);
 
         Ok(to_page(parse_rows(&body)?, offset))
@@ -434,9 +410,6 @@ impl Source for NnmclubSearcher {
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         // The row's own `download.php?id=` link (live: 302 ->
-        // `application/x-bittorrent`). The status check matters for the
-        // same reason rutor's has one: a challenge page must never be
-        // handed to TorrServer as a.torrent file.
         let response =
             fetch_resilient(url, || self.client.get(url), &FetchOptions::default()).await?;
         let status = response.status();

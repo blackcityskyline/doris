@@ -94,7 +94,6 @@ pub struct Zone {
     /// Its share of its row's width: `1.0` is an equal split, which is
     /// exactly what the layout did before there was a share at all.
     pub flex: f32,
-    /// Its share of the height among rows.
     pub row_flex: f32,
 }
 
@@ -165,7 +164,6 @@ impl ZoneLayout {
         }
     }
 
-    /// What a zone digit means.
     pub fn focus_or_toggle(&mut self, id: ZoneId) {
         if self.fullscreen == Some(id) {
             self.fullscreen = None;
@@ -211,7 +209,6 @@ impl ZoneLayout {
         }
     }
 
-    /// Set a zone's visibility directly, rather than flipping it.
     pub fn set_visible(&mut self, id: ZoneId, visible: bool) {
         if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
             zone.visible = visible;
@@ -224,8 +221,6 @@ impl ZoneLayout {
     pub fn apply_preset(&mut self, spec: &str) {
         self.grid = Self::parse_spec(spec);
         // A preset is a *new* arrangement, and the weights are a
-        // property of the old one: a Results row made tall for the
-        // four-row tiling would otherwise swallow the two-row one.
         for zone in &mut self.zones {
             zone.reset_flex();
         }
@@ -396,7 +391,6 @@ impl ZoneLayout {
         kind.is_some()
     }
 
-    /// Follow the pointer while a drag is armed.
     pub fn resize_drag(&mut self, row: u16, col: u16) {
         match self.resize {
             Some(ResizeKind::Row { above, below }) => self.drag_row(above, below, row),
@@ -458,8 +452,6 @@ impl ZoneLayout {
         let target = pointer_row.clamp(start + RESIZE_MIN_HEIGHT, end - RESIZE_MIN_HEIGHT);
 
         // Every row states its own height as its weight; the pair split
-        // at the pointer keeps their shared total, so the weights still
-        // add up to the space and the untouched rows come out unchanged.
         for (k, cells) in rows.iter().enumerate() {
             let h = if k == i {
                 target - start
@@ -628,12 +620,10 @@ impl FrameButton {
         }
     }
 
-    /// Byte offset of the hotkey inside [`FrameButton::text`].
     pub fn hotkey_index(&self) -> usize {
         self.text().find(self.key).unwrap_or(0)
     }
 
-    /// Drawn width in columns.
     pub fn width(&self) -> u16 {
         self.text().chars().count() as u16
     }
@@ -650,18 +640,9 @@ impl FrameButton {
 /// Frame buttons per zone.
 const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // Lowercase `f`: the filter is the Results panel's primary function,
-    // so it gets the letter unshifted while fullscreen -- which used to
-    // hold `f` -- moved to `F` (btop capitalises a word when the hotkey
-    // is uppercase; here the shift is what tells the two apart). It sits
-    // with `group` on the right because both are state toggles, leaving
-    // the left of the border to the title and the row counter.
     (FrameSlot::TopRight, 'f', "filter"),
     (FrameSlot::TopRight, 'g', "group"),
     // The bottom action row (`play ⏎` / `download d` / `info v`) is
-    // gone: those three are keyboard-and-help-page actions now, and a
-    // frame legend that repeats them is a second place to document the
-    // same keys. The frame keeps the two that switch *state* (filter,
-    // group); the rest are in `?`.
 ];
 
 const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
@@ -669,7 +650,6 @@ const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::BottomLeft, 'd', "delete"),
 ];
 
-/// The buttons drawn on `id`'s frame; empty for zones with no actions.
 pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
     let table: &[(FrameSlot, char, &str)] = match id {
         ZoneId::Results => RESULTS_BUTTONS,
@@ -744,7 +724,6 @@ pub fn button_spans(
 
     if button.is_category() {
         // `◀ name ▶`: the arrows are the targets, the name is not. The
-        // spaces around the name are part of the label, so they stay.
         let name = text
             .trim_start_matches('◀')
             .trim_end_matches('▶')
@@ -767,10 +746,6 @@ pub fn button_spans(
     let key_len = button.key.len_utf8();
 
     // A hovered button is underlined as well as tinted: the colour is
-    // what the theme decided, and a theme whose `on_hover` happens to
-    // sit close to `primary` would leave the pointer's position unreadable
-    // -- which is the same "one channel is not enough" problem the focus
-    // marker solves for zones. Underline is a shape, not a colour.
     let mut style = if hovered {
         hover_word(theme)
     } else {
@@ -781,8 +756,6 @@ pub fn button_spans(
     }
 
     // The hotkey glyph joins the underline. It already carries `on_hover`
-    // + bold, so leaving it out would draw a word underlined except for
-    // the one letter that says what to press.
     let key_style = if hovered { style } else { hotkey_style };
 
     vec![

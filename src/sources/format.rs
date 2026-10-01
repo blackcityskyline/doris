@@ -16,13 +16,11 @@ fn size_regex() -> Option<&'static Regex> {
 fn multiplier(unit: &str) -> Option<f64> {
     match unit {
         // Russian units: binary, matching how trackers use them (torio
-        // does the same in its RU_UNITS map).
         "КБ" => Some(1024.0),
         "МБ" => Some(1024.0_f64.powi(2)),
         "ГБ" => Some(1024.0_f64.powi(3)),
         "ТБ" => Some(1024.0_f64.powi(4)),
         // Latin: `KB`/`MB`/`GB`/`TB` are decimal (SI), `KiB`/`MiB`/...
-        // binary, `B` is bytes.
         "B" => Some(1.0),
         "KIB" => Some(1024.0),
         "MIB" => Some(1024.0_f64.powi(2)),
@@ -69,8 +67,6 @@ pub fn parse_size(s: &str) -> u64 {
         };
         let unit = caps[2].to_uppercase();
         // An unmapped-but-matched unit falls back to the bare number,
-        // exactly as torio does; in practice the pattern only matches
-        // units the table above knows.
         let per_unit = multiplier(&unit).unwrap_or(1.0);
         return (num * per_unit).round() as u64;
     }

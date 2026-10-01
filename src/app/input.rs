@@ -22,16 +22,9 @@ impl App {
         match mouse.kind {
             MouseEventKind::Moved => {
                 // Redrawn only when the hovered cell actually changed:
-                // the terminal reports every movement, and a redraw per
-                // movement would spend the CPU on frames that differ from
-                // the last one.
                 self.ui.set_hover(mouse.row, mouse.column);
             }
             // One notch of the wheel, up or down. Both directions were
-            // separate arms writing the same match over the zones, and
-            // they had already drifted: the up arm said what focusing
-            // Torrent and Trackers means, the down arm said it again in
-            // fewer words.
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 let down = matches!(mouse.kind, MouseEventKind::ScrollDown);
                 if self.ui.detail_view == Some(ZoneId::Log) {
@@ -53,10 +46,6 @@ impl App {
                                 }
                             }
                             // Torrent is a single status readout and
-                            // Trackers scrolls its cursor rather than a
-                            // list -- focusing them on hover is still
-                            // correct, there's just no list to move
-                            // within.
                             ZoneId::Torrent | ZoneId::Trackers => {}
                         }
                     }
@@ -64,17 +53,11 @@ impl App {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 // Same rule as the keyboard: a click that is not on the
-                // remove button answers the armed question with "no".
-                // Mouse clicks do not go through `handle_key`, so the
-                // disarm that happens there has to happen here too.
                 self.ui.disarm_remove();
                 if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
                 } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
                     // The input box is the only thing left to hit on
-                    // those rows: the header hints ("s: search | S:
-                    // settings |...") are gone, and clicking the
-                    // field does what `s`/`i` do.
                     self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
                     match self.ui.click_at(mouse.row, mouse.column, &mut self.config) {
@@ -90,9 +73,6 @@ impl App {
                         Some(UiAction::Info) => self.show_selected_info(),
                         Some(UiAction::Play) => {
                             // The `play` frame button is Enter on the
-                            // Results panel: same decision tree as the
-                            // key, minus `input_mode` (a click can't have
-                            // been typed into the search box).
                             match enter_action(
                                 false,
                                 !self.ui.search_input.is_empty(),
@@ -112,10 +92,6 @@ impl App {
                 }
             }
             // The divider follow and the release: `resize_start` armed
-            // it on the way down (a click on a border inside `click_at`),
-            // so a drag that was never armed moves nothing -- and the
-            // release always disarms, even after a click that never
-            // moved.
             MouseEventKind::Drag(MouseButton::Left) => {
                 if self.ui.modal == Modal::None {
                     self.ui.zones.resize_drag(mouse.row, mouse.column);
@@ -140,7 +116,6 @@ impl App {
             }
             ZoneId::Log => self.ui.scroll_logs(1),
             // The Trackers panel is a list like the others, so the same
-            // keys move its cursor -- the one piece of state it has.
             ZoneId::Trackers => self.ui.navigate_trackers(1),
             _ => {}
         }
@@ -181,9 +156,6 @@ impl App {
             crate::tui::begin_sync(terminal);
         }
         // The draw's result borrows the terminal (it hands back the frame
-        // it completed), so it is unwrapped to an owned `Result` before
-        // the closing sequence is written -- otherwise the borrow would
-        // still be live and the terminal could not be touched again.
         let result = terminal
             .draw(|frame| {
                 self.terminal_size = (frame.area().width, frame.area().height);
@@ -202,9 +174,6 @@ impl App {
     /// less the frame and the row the cursor has to stay visible in.
     pub(super) fn result_page(&self) -> isize {
         // Two rows for the frame, one so the cursor row is still on
-        // screen. `saturating_sub` rather than a clamp: on a terminal
-        // too short to page, a page of zero would make the key do
-        // nothing at all, which is what it did before.
         (self.terminal_size.1 / 2).saturating_sub(3).max(1) as isize
     }
 
@@ -217,25 +186,18 @@ impl App {
         }
     }
 
-    /// One keypress inside the Options modal.
     pub(super) async fn handle_settings_key(&mut self, key: KeyEvent) {
         if let Some(action) = self.ui.settings_key(key) {
             // Captured before the loop flips it: turning TorrServer
-            // *on* is the one toggle that owes the user an answer.
             let torrserver_was_on = self.config.enable_torrserver;
             let toggled = apply_bool_toggle(&mut self.config, action);
             if toggled && self.config.enable_torrserver && !torrserver_was_on {
                 // Turning TorrServer *on* is the one toggle that owes
-                // the user an answer. It only writes to the log, so it
-                // is safe before the modal is rebuilt.
                 self.check_torrserver_on_enable().await;
             }
             match action {
                 SettingsAction::ToggleBrowserVisibility => {
                     // `App::browser_visibility` is the single runtime
-                    // owner; the modal reads a session copy on open.
-                    // Previously this toggle only updated the display
-                    // label and had zero effect on the next launch
                     self.browser_visibility = match self.browser_visibility {
                         BrowserVisibility::Hidden => BrowserVisibility::Visible,
                         BrowserVisibility::Visible => BrowserVisibility::Hidden,
@@ -254,7 +216,6 @@ impl App {
                         .unwrap_or_default();
                     let next_first = cycle_str(&current, ORDER, self.ui.last_cycle_direction);
                     // Move next_first to the front, keep the rest in
-                    // their existing relative order.
                     let mut rest: Vec<String> = self
                         .config
                         .browser_priority
@@ -303,11 +264,6 @@ impl App {
                 }
                 SettingsAction::SetUpdateMs => {
                     // No numeric text-entry widget exists in the
-                    // Settings modal yet, so this cycles through a
-                    // fixed set of sensible intervals -- same
-                    // interaction pattern as Color theme/Presets/Graph
-                    // symbol above. A free-form numeric input is a
-                    // reasonable follow-up once the modal supports one.
                     const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
                     self.config.update_ms = match STEPS
                         .iter()
@@ -333,16 +289,10 @@ impl App {
                 }
                 SettingsAction::Close => {}
                 // The bool toggles are handled above by the
-                // `BOOL_TOGGLES` table; nothing else to do here.
                 _ => {}
             }
 
             // Rebuild the modal once, here, instead of nine times in
-            // the arms above -- all of them were this same call. The
-            // guard matters: three of those arms (`EditCredentials`,
-            // `RunHealthCheck`, `OpenLog`) replace the modal or the
-            // whole view, and rebuilding Options on top of the login
-            // or health window would put it back.
             if matches!(self.ui.modal, Modal::Settings(_)) {
                 self.ui.open_settings(
                     &self.config,
@@ -351,10 +301,6 @@ impl App {
             }
 
             // Persist every settings change immediately rather than
-            // only on a clean exit ("Save config on exit" governs a
-            // final flush, not whether changes are remembered at all
-            // -- a crash between now and exit shouldn't lose them,
-            // and it previously did).
             self.persist_config();
         }
     }
@@ -383,13 +329,8 @@ impl App {
         }
 
         // A detail view owns the keyboard until it is dismissed: no
-        // zone digits, no search box, no menu -- only the keys it
-        // answers. Esc closes it, its own key closes it, and the other
-        // two detail keys switch straight to that view instead.
         if let Some(view) = self.ui.detail_view {
             // The zone's own key closes it, any other detail key jumps
-            // straight to that view -- a takeover you have to walk back
-            // out of one at a time is a trap, not a mode.
             let target = match key.code {
                 KeyCode::Char(c) => ZoneId::all()
                     .iter()
@@ -402,10 +343,6 @@ impl App {
                 _ if target == Some(view) => self.ui.detail_view = None,
                 _ if target.is_some() => self.ui.detail_view = target,
                 // Only the Log view scrolls; the other two takeovers have
-                // no list to move within. Six arms used to say that,
-                // three of them writing the same clamped arithmetic, and
-                // the page step a bare `20` next to a `LOG_PAGE_STEP`
-                // that already exists.
                 _ if view == ZoneId::Log => {
                     if let Some(step) = self.log_scroll_step(key.code) {
                         self.ui.scroll_detail_log(step);
@@ -425,20 +362,16 @@ impl App {
 
         if let Modal::Help(_) = self.ui.modal {
             // The help page owns the keyboard while it is up, exactly
-            // like btop's `helpMenu` -- every key lands here.
             self.ui.help_key(key);
             return Ok(Some(()));
         }
 
         if let Modal::TorrentDetail(_) = self.ui.modal {
             // The detail modal owns the keyboard too: j/k move the file
-            // cursor, Enter plays, `d` downloads, Esc/q close. The two
-            // actions that belong to the orchestrator come back.
             if let Some(action) = self.ui.detail_key(key, self.config.vim_keys) {
                 match action {
                     DetailAction::Play => {
                         // Playing leaves the modal: the user is going
-                        // to watch the torrent, not read about it.
                         self.ui.modal = Modal::None;
                         self.spawn_stream().await;
                     }
@@ -453,8 +386,6 @@ impl App {
         }
 
         // No `return` here: the check below is `modal != None`, which is
-        // still true for the Options window, so it returns for us. An
-        // earlier version had both and the second one was unreachable.
 
         if self.ui.modal != Modal::None {
             if let Some((resource, username, password)) = self.ui.login_modal_key(key) {
@@ -488,12 +419,6 @@ impl App {
         }
 
         // The search box has no zone of its own, so "the Trackers panel is
-        // focused" and "a query is being typed" are not mutually
-        // exclusive. Every arm below therefore needs `!input_mode` to stay
-        // out of the user's way -- and that is exactly the guard that kept
-        // being left off (`j`/`k` on the panel, `j`/`k` and Up/Down
-        // everywhere). Typing owns the key here instead, so one check
-        // replaces a guard every future arm would have to remember.
         if self.ui.input_mode {
             self.handle_input_key(key).await?;
             return Ok(Some(()));
@@ -501,7 +426,6 @@ impl App {
         Ok(None)
     }
 
-    /// The plain view: the one match that answers every remaining key.
     async fn handle_plain_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('m') => {
@@ -518,17 +442,12 @@ impl App {
                 }
             }
             // `1`-`4`, read through the same table the frame and the
-            // hit-test read: four arms here was four places to forget a
-            // zone, and `from_key` already exists.
             KeyCode::Char(c @ '1'..='4') => {
                 if let Some(id) = ZoneId::from_key(c) {
                     self.ui.zones.focus_or_toggle(id);
                 }
             }
             // Shift+P: cycle the layout presets, the same list the
-            // Options row cycles -- one list, not two. Lowercase `p` is
-            // pause/resume on the Torrent panel, so the capital is the
-            // free one -- the same reasoning as `F` for filter.
             KeyCode::Char('P') => {
                 self.cycle_layout_preset(1);
             }
@@ -547,9 +466,6 @@ impl App {
                 self.show_selected_info();
             }
             // The category row's keys, next to `g`/`G` and gated the same
-            // way: `g` steps forward, `G` (shift) back. Both move the row
-            // *and* re-ask the sources for it -- a category is a request,
-            // not only a view (see `reask_for_category`).
             KeyCode::Char('g') if self.ui.zones.focused == ZoneId::Results => {
                 self.ui.cycle_group(true);
                 self.reask_for_category().await;
@@ -559,13 +475,6 @@ impl App {
                 self.reask_for_category().await;
             }
             // The Trackers panel's own keys: `j`/`k` move the cursor
-            // (wrapping, like every other list in the app), Enter switches
-            // the row under it. Both are gated on the panel being focused
-            // for the same reason `g`/`G` are gated on Results -- a key
-            // that moved a cursor somewhere the user is not looking would
-            // be a surprise. Typing is already off the table by the time
-            // this match runs (see the `input_mode` hand-over above), so
-            // none of the three needs its own half of that guard.
             KeyCode::Char('j')
                 if self.config.vim_keys && self.ui.zones.focused == ZoneId::Trackers =>
             {
@@ -581,17 +490,6 @@ impl App {
                 self.persist_config();
             }
             // Shift+Enter: the selected row's details. Separate
-            // from the plain Enter below on purpose -- that one plays
-            // or re-searches, and a modifier is the only thing that can
-            // tell the two apart.
-            //
-            // `D` is the fallback: most terminals send Shift+Enter as a
-            // plain Enter with no modifier (crossterm only reports the
-            // shift when the terminal opts into the kitty keyboard
-            // protocol, which 0.28 has no API to request), so on those
-            // Shift+Enter falls through to play and the modal never
-            // opens. `D` is the same action on a key every terminal
-            // sends distinctly.
             KeyCode::Char('D') => {
                 self.open_detail_modal().await;
             }
@@ -623,17 +521,11 @@ impl App {
                 self.ui.zones.focus_prev();
             }
             // Three keys for one box: `s` and `i` as they always were,
-            // plus `S` -- Settings moved to the menu, and the letter
-            // this app's users already had under their pinky keeps
-            // working as "start typing".
             KeyCode::Char('s') | KeyCode::Char('i') | KeyCode::Char('S') => {
                 self.ui.enter_input_mode();
             }
             KeyCode::Char('b') => {
                 // Browse: an empty query asks the browse-capable
-                // sources for their freshest rows. Browse is cross-source
-                // by nature, so it takes the "all" category with it -- a
-                // mixed list of rows claiming no group must stay visible.
                 self.ui.source_changed = true;
                 self.ui.set_group(None);
                 self.start_search(String::new()).await;
@@ -642,7 +534,6 @@ impl App {
                 self.ui.toggle_detail_view(ZoneId::Log);
             }
             // The other two detail views: `T` the torrent's full
-            // readout, `R` the results table with its preview line.
             KeyCode::Char('T') => {
                 self.ui.toggle_detail_view(ZoneId::Torrent);
             }
@@ -650,13 +541,10 @@ impl App {
                 self.ui.toggle_detail_view(ZoneId::Results);
             }
             // The help page (btop binds `F1`/`?`/`h`); `h` stays free
-            // for future vim navigation, so the three triggers are `?`,
-            // `/` and F1.
             KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1) => {
                 self.ui.open_help_modal();
             }
             // detail log mode and input mode both returned above, so the
-            // only Esc left to answer for is the main view's.
             KeyCode::Esc => {
                 self.ui.show_menu = !self.ui.show_menu;
             }
@@ -667,14 +555,8 @@ impl App {
     }
     pub(super) async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // An armed removal is a question waiting for an answer, and every
-        // key that is not `d` is a "no". Disarmed before any mode reads
-        // the key, so no path that handles one can miss the cancellation.
         self.ui.disarm_remove();
         // Quit first, always. Every mode below answers and returns
-        // before the plain-view match is reached -- the menu, a modal, a
-        // detail view, the search box -- so a Ctrl+C arm at the bottom
-        // of a match is a Ctrl+C that works in exactly one of them.
-        // Ctrl+Q quits the same way (btop's quit is `q`).
         if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('c'))
             && key.modifiers.contains(KeyModifiers::CONTROL)
         {
@@ -766,8 +648,6 @@ impl App {
                     }
                     MenuItem::Help => {
                         // The same page `?` opens -- one help modal, two
-                        // ways to reach it -- and the menu goes away with
-                        // it, like Options does for the Settings modal.
                         self.ui.show_menu = false;
                         self.ui.open_help_modal();
                     }

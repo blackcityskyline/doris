@@ -6,7 +6,6 @@ use super::settings::{
 };
 use crate::config::Config;
 
-/// The whole table, in the order the tab row shows it.
 pub(super) fn settings_categories(
     config: &Config,
     browser_hidden: bool,

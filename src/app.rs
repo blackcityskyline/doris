@@ -315,7 +315,6 @@ pub fn apply_detail_loaded(
             state.pending = false;
             state.error = error.map(|e| e.to_string());
             // The cursor was clamped to the old list; a shorter answer
-            // must not leave it past the end.
             if state.cursor >= state.files.len() {
                 state.cursor = state.files.len().saturating_sub(1);
             }
@@ -380,7 +379,6 @@ impl App {
         let bridge_port = config.bridge_port;
         if bridge_port > 0 {
             // The server task owns its own handle (listener + router with a
-            // cloned sender), so nothing needs to keep this struct alive.
             let mut bridge = BridgeServer::new(search_tx.clone(), bridge_port);
             if let Err(e) = bridge.start().await {
                 crate::log::log("bridge", &format!("bridge server failed to start: {}", e));
@@ -398,8 +396,6 @@ impl App {
         let mut ui = UiApp::new(torrserver_url.clone(), config.theme_name.as_deref())
             .with_group_tabs(&config);
         // The zones know nothing about Config, so the saved tiling is
-        // applied here rather than in `ZoneLayout::new`: the default
-        // first preset (`1,3|4`) is what a fresh config.toml means.
         if !config.disable_presets {
             if let Some(spec) = config.presets.get(config.preset_index) {
                 let spec = spec.clone();
@@ -429,8 +425,6 @@ impl App {
 
     pub async fn run(&mut self) -> Result<()> {
         // The keyboard protocol is what makes Shift+Enter arrive as
-        // Shift+Enter; `false_tty` asks for a terminal that may not
-        // know the sequence, so it stays off there.
         let mut terminal = tui::init(!self.config.false_tty, !self.config.disable_mouse)?;
         self.terminal_size = terminal
             .size()
@@ -478,9 +472,6 @@ impl App {
                                 error.as_deref(),
                             );
                             // A superseded dispatch may not touch the
-                            // newer search's status or its paging verdict
-                            // which is why the bookkeeping sits
-                            // behind the merge's result.
                             if applied {
                                 let status = SourceStatus::from_event(
                                     count,
@@ -490,10 +481,6 @@ impl App {
                                 self.ui.source_status.insert(source.clone(), status);
                                 self.source_has_more.insert(source.clone(), has_more);
                                 // Failures deliver no rows and no cursor,
-                                // so a failed page leaves the cursor where
-                                // it was and the source gets asked again
-                                // from there; a source that counts pages
-                                // of its own hands over its own cursor.
                                 let offset = self.source_offsets.entry(source).or_insert(0);
                                 *offset = orchestrator::advance_offset(*offset, count, next_offset);
                             }
@@ -534,11 +521,6 @@ impl App {
                         }
                         Event::TorrentListUpdate(list) => {
                             // Prefer the torrent we're actively
-                            // managing/streaming; fall back to whatever
-                            // TorrServer reports first so the panel shows
-                            // something useful even before a stream has
-                            // been started from this session (e.g. a
-                            // torrent added in a previous run).
                             let chosen = match &self.ui.active_torrent_hash {
                                 Some(hash) => list.iter().find(|t| &t.hash == hash).or_else(|| list.first()),
                                 None => list.first(),
@@ -557,9 +539,6 @@ impl App {
                                     status: t.status_string.clone(),
                                 };
                                 // Cap history length -- a very wide terminal
-                                // in braille mode needs at most 2 samples
-                                // per column, so this comfortably covers
-                                // any realistic panel width.
                                 const MAX_HISTORY: usize = 600;
                                 self.ui.progress_history.push_back(self.ui.torrent_status.progress);
                                 while self.ui.progress_history.len() > MAX_HISTORY {
@@ -600,7 +579,6 @@ impl App {
         tui::restore(&mut terminal)?;
 
         // "Stop the download when doris exits" -- see `stop_the_download`
-        // for why it is a pause and not a removal.
         if let Some(message) = stop_the_download(
             &self.config,
             self.ui.active_torrent_hash.as_deref(),
@@ -612,9 +590,6 @@ impl App {
         }
 
         // End the WebDriver session while the runtime is still alive: the
-        // session DELETE is what makes chromedriver take the browser down
-        // with it, and Drop alone cannot await it (SIGKILLing chromedriver
-        // first leaves the browser orphaned on a loaded page).
         if let Some(browser) = self.browser.take() {
             let mut browser = browser.lock().await;
             browser.shutdown().await;
@@ -675,9 +650,3 @@ impl App {
 }
 
 // --- key routing: who owns Enter while the search box is being typed ------
-//
-// The search input has no zone of its own, so `input_mode` and "the
-// Trackers panel is focused" are not mutually exclusive -- a query typed
-// after clicking the panel used to have its Enter (and its `j`/`k`)
-// swallowed by the panel. These run against a real `App` because the bug
-// lives in the *order* of the match arms, which no pure helper sees.

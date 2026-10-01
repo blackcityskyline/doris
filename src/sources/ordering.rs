@@ -8,7 +8,6 @@ use super::models::TorrentItem;
 pub fn dedupe_by_hash(items: &[TorrentItem]) -> Vec<TorrentItem> {
     let mut out: Vec<TorrentItem> = Vec::with_capacity(items.len());
     // Keyed by the input's hash strings; the value is the position in
-    // `out`, so a better copy replaces in place and keeps that position.
     let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
 
     for item in items {

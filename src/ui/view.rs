@@ -14,7 +14,6 @@ use ratatui::widgets::*;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
-/// Where the search is.
 #[derive(PartialEq)]
 pub enum AppState {
     Idle,
@@ -58,12 +57,9 @@ pub enum DetailAction {
     Download,
 }
 
-/// The detail modal's state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TorrentDetailState {
-    /// The row the modal was opened from.
     pub item: TorrentItem,
-    /// The files inside the torrent, once `Source::details` answered.
     pub files: Vec<FileEntry>,
     /// `true` while that answer is in flight: the modal says so rather
     /// than leaving a blank list that reads as "no files".
@@ -106,7 +102,6 @@ pub struct App {
     pub logs: VecDeque<String>,
     pub log_scroll: usize,
     pub detail_logs: Vec<String>,
-    /// Which zone has taken over the whole frame (`L`/`T`/`R`).
     pub detail_view: Option<ZoneId>,
     pub detail_log_scroll: usize,
     pub state: AppState,
@@ -134,7 +129,6 @@ pub struct App {
     pub remove_armed: bool,
     /// Where the pointer is, when the terminal reports motion (`tui.rs` turns mode 1003 on).
     pub hover: Option<(u16, u16)>,
-    /// Client-side pause tracking.
     pub torrent_paused: bool,
     /// Which row of the Trackers panel the cursor sits on: 0 is the `all` master switch, 1..
     pub sources_cursor: usize,
@@ -201,7 +195,6 @@ pub enum SourceRow {
 }
 
 impl SourceRow {
-    /// What the row says on screen.
     pub fn id(&self) -> &'static str {
         match self {
             SourceRow::All => "all",
@@ -251,7 +244,6 @@ pub fn source_rows() -> Vec<SourceRow> {
     rows
 }
 
-/// The row at `index`, if the panel has one.
 pub fn source_row_at(index: usize) -> Option<SourceRow> {
     source_rows().into_iter().nth(index)
 }
@@ -949,7 +941,6 @@ impl App {
         true
     }
 
-    /// Note where the pointer is.
     pub fn set_hover(&mut self, row: u16, col: u16) -> bool {
         match self.hover {
             Some((r, c)) if r == row && c == col => false,
@@ -1064,7 +1055,6 @@ impl App {
         self.filtered_indices = visible;
     }
 
-    /// Move the cursor by the user's own hand (keys, click).
     fn move_selection_to(&mut self, idx: usize) {
         self.filter_anchor = None;
         self.selected = idx;

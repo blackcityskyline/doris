@@ -35,10 +35,6 @@ fn take_last_padded(history: &[f64], count: usize) -> Vec<f64> {
 /// filled from the bottom like a bar chart.
 fn render_braille(history: &[f64], width: usize) -> String {
     // Unicode braille pattern dot-to-bit mapping:
-    //   dot1 dot4      bit0 bit3
-    //   dot2 dot5  ->  bit1 bit4
-    //   dot3 dot6      bit2 bit5
-    //   dot7 dot8      bit6 bit7
     const LEFT_BITS: [u8; 4] = [0x01, 0x02, 0x04, 0x40];
     const RIGHT_BITS: [u8; 4] = [0x08, 0x10, 0x20, 0x80];
 

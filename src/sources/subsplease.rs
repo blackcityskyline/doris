@@ -81,14 +81,12 @@ fn size_from_magnet(magnet: &str) -> u64 {
     0
 }
 
-/// The API document -> rows.
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let document: serde_json::Value = serde_json::from_str(body)
         .map_err(|e| anyhow!("SubsPlease response did not parse: {}", e))?;
 
     let map = match document {
         // A miss answers `[]` (live-checked) -- that is "no results",
-        // not an error.
         serde_json::Value::Array(_) => return Ok(Vec::new()),
         serde_json::Value::Object(map) => map,
         other => anyhow::bail!("SubsPlease sent an unexpected document: {}", other),
@@ -97,7 +95,6 @@ pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let mut rows = Vec::new();
     for value in map.values() {
         // A malformed entry costs one row, not the whole page: the API
-        // grows fields, and an unknown extra must never break parsing.
         let Ok(entry) = serde_json::from_value::<SpEntry>(value.clone()) else {
             continue;
         };
@@ -142,16 +139,12 @@ fn to_row(entry: &SpEntry) -> Option<TorrentItem> {
 
     Some(TorrentItem {
         // The original magnet, trackers and `xl` intact (B7 keeps
-        // whatever the source shipped); the hash inside it is already
-        // normalized to lowercase hex by `parse_magnet`.
         magnet: Some(parsed.magnet.clone()),
         info_hash: parsed.info_hash.clone(),
         title,
         size_bytes,
         size: format_bytes(size_bytes),
         // No seed/peer data in this API: "" is the display string for
-        // "unknown" the HTML sources already use, and zero would claim
-        // a dead torrent.
         seeds: String::new(),
         seeds_n: 0,
         leechers: 0,
@@ -200,7 +193,6 @@ impl Source for SubsPleaseSearcher {
 
     fn groups(&self) -> &'static [Group] {
         // SubsPlease is anime-only, so the group is not a filter here
-        // but a statement about what the source *is*.
         &[Group::Anime]
     }
 
@@ -223,7 +215,6 @@ impl Source for SubsPleaseSearcher {
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
         let url = api_url(&req.query);
         // One attempt, torio's `retries: 1`: there is no mirror list
-        // here, and re-asking is cheap.
         let options = FetchOptions {
             retries: 1,
             ..FetchOptions::default()
@@ -239,8 +230,6 @@ impl Source for SubsPleaseSearcher {
         Ok(SearchPage {
             items: parse_rows(&body)?,
             // The API has no cursor: `f=search` returns every match,
-            // `f=latest` returns its fixed latest set. "Load more" must
-            // not promise what a second identical request would repeat.
             has_more: false,
             next_offset: None,
         })
@@ -248,7 +237,6 @@ impl Source for SubsPleaseSearcher {
 
     async fn download_torrent(&self, _url: &str) -> Result<Vec<u8>> {
         // Magnets only (see the module doc): the download key writes a
-        // `.magnet` file before this is reached.
         anyhow::bail!(
             "SubsPlease rows carry a magnet, not a .torrent file -- stream it, \
              or save the link as a .magnet file"

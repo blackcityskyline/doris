@@ -9,17 +9,6 @@ use std::time::{Duration, Instant};
 const XVFB_PID_FILE: &str = ".xvfb-pid";
 
 // --- the waits, named -------------------------------------------------
-//
-// Three of the four shutdown paths below do the same thing -- SIGTERM,
-// wait, then SIGKILL -- and they had drifted apart into 400ms, 600ms,
-// 600ms with nothing written down saying why one process deserved less
-// patience than another. One knob now; splitting them again is a
-// deliberate edit to this file rather than a number typed in four spots.
-//
-// The values are calibration, not derivation: a browser that ignores
-// SIGTERM needs a moment, a wedged one needs the kill. Raise this and
-// shutdown gets slower on the machines that *do* respond; lower it and a
-// slow machine gets SIGKILL'd mid-flush.
 
 /// Grace between SIGTERM and SIGKILL for anything we are tearing down.
 const SIGTERM_GRACE: Duration = Duration::from_millis(600);
@@ -39,13 +28,6 @@ const STALE_LOCK_POLL: Duration = Duration::from_millis(200);
 const SIGKILL_SETTLE: Duration = Duration::from_secs(2);
 
 // --- the startup waits -----------------------------------------------
-//
-// All three are a fixed sleep standing in for "no one has told us this is
-// ready yet", which is the honest description: there is no signal from
-// Xvfb's socket, from a spawned driver, or from a page load that we
-// currently watch for. They are the least defensible numbers in the
-// file and the most worth revisiting -- a readiness probe would delete
-// all three.
 
 /// Xvfb creates its display socket asynchronously; connecting before it
 /// exists fails, and there is no API that says "ready".
@@ -126,11 +108,6 @@ impl Browser {
         block_hosts: &[&str],
     ) -> Result<Self> {
         // A run killed outright (closed terminal, `kill -9`) never reaches
-        // `Drop`: its temp profile, its Xvfb and any browser process that
-        // outlived chromedriver stay behind, the browser keeping a page
-        // loaded and burning CPU forever. Sweep previous runs first -- it
-        // scans /proc and only blocks when there is actually something to
-        // kill, so it belongs off the runtime worker.
         let sweep = tokio::task::spawn_blocking(cleanup_stale_profiles);
         if let Err(e) = sweep.await {
             crate::log::log("browser", &format!("stale run sweep failed: {}", e));
@@ -152,8 +129,6 @@ impl Browser {
 
             if let Some(ref native) = native_profile {
                 // Which profile cookies are worth is a question about the
-                // site, so the site answers it: no URL, no host, no
-                // reading anyone's profile for nothing.
                 match cookie_host_for(cookie_injection_url) {
                     None => crate::log::log(
                         "browser",
@@ -187,8 +162,6 @@ impl Browser {
         } else {
             if let Some(dir) = native_profile.clone() {
                 // Waits up to ~12s for a browser already holding the profile
-                // to shut down -- a blocking loop full of `pgrep`/`kill` and
-                // sleeps, so run it off the runtime worker thread.
                 let old = tokio::task::spawn_blocking(move || graceful_shutdown_if_running(&dir));
                 if let Err(e) = old.await {
                     crate::log::log("browser", &format!("old browser shutdown failed: {}", e));
@@ -210,8 +183,6 @@ impl Browser {
             xvfb_child = start_xvfb(display_num);
             record_xvfb_pid(xvfb_child.as_ref(), temp_profile.as_ref());
             // Give Xvfb time to create its socket before anything renders
-            // into it. This used to be a `std::thread::sleep` inside
-            // `start_xvfb`, which parked a runtime worker for a second.
             tokio::time::sleep(XVFB_SOCKET_WAIT).await;
             let mut c = std::process::Command::new(&chromedriver_path);
             c.env("DISPLAY", format!(":{}", display_num));
@@ -231,12 +202,6 @@ impl Browser {
         tokio::time::sleep(DRIVER_BIND_WAIT).await;
 
         // NB: `--disable-background-timer-throttling` and
-        // `--disable-backgrounding-occluded-windows` are deliberately *not*
-        // listed here: we tried removing them to let Chrome throttle idle
-        // pages, but chromedriver injects both itself (they're compiled into
-        // its default switch list) and Chrome has no counter-switch, so idle
-        // throttling can never be relied upon. Unloading the page instead
-        // (`Browser::park`) is the only fix that actually works.
         let chrome_args = build_chrome_args(mode, use_xvfb, temp_profile.as_deref(), block_hosts);
 
         let mut capabilities = serde_json::Map::new();
@@ -285,8 +250,6 @@ impl Browser {
             );
             browser.add_cookies(&injected_cookies).await?;
             // Cookies live in the profile, not in the tab: don't leave the
-            // source's home page (ads and all) loaded before Doris has even
-            // been asked to do anything.
             browser.park().await?;
         }
 
@@ -316,7 +279,6 @@ impl Browser {
                 }
             } else {
                 // The browser is meant to outlive Doris: tell fantoccini not
-                // to send the session DELETE when the handle goes away.
                 if let Err(e) = client.persist().await {
                     crate::log::log("browser", &format!("persist failed: {}", e));
                 }
@@ -337,9 +299,6 @@ impl Browser {
             }
             if let Some(ref profile) = self.temp_profile {
                 // Last line of defence for the paths where the session
-                // DELETE never happened (a crash, or `Drop` running without
-                // `shutdown`): whatever still holds our temp profile is a
-                // leftover from this very launch and must not stay behind.
                 sweep_profile(profile);
             }
         }
@@ -429,15 +388,10 @@ impl Browser {
 impl Drop for Browser {
     fn drop(&mut self) {
         // The session DELETE is async, and by the time Drop runs the runtime
-        // may already be gone -- so this is the belt-and-braces path: end
-        // chromedriver first (SIGTERM, short grace, then SIGKILL) and sweep
-        // anything that outlived it. Call `shutdown()` on the normal exit
-        // path for a clean, fully awaited close.
         self.reap();
     }
 }
 
-/// Send `SIGTERM` (or `SIGKILL` when `hard`) to `pid` via `kill(1)`.
 fn send_signal(pid: u32, hard: bool) {
     let mut cmd = std::process::Command::new("kill");
     if hard {
@@ -451,9 +405,6 @@ fn send_signal(pid: u32, hard: bool) {
 fn terminate_child(child: &mut std::process::Child) {
     send_signal(child.id(), false);
     // `Ok(None)` is the only "still running" answer, so it is also the
-    // only one worth waiting on: an exited child *and* a child we can no
-    // longer ask about both end the wait, the second one straight into
-    // the kill below.
     let gone = wait_until(SIGTERM_GRACE, REAP_POLL, || {
         !matches!(child.try_wait(), Ok(None))
     });
@@ -614,7 +565,6 @@ fn start_xvfb(display_num: u32) -> Option<std::process::Child> {
         .spawn()
         .ok()?;
     // The caller waits for Xvfb to come up (see `Browser::launch`): a sleep
-    // here would block a runtime worker thread.
     crate::log::log("browser", &format!("started Xvfb on :{}", display_num));
     Some(child)
 }
@@ -951,8 +901,6 @@ async fn find_or_download_chromedriver(browser_major: u32) -> Result<PathBuf> {
     }
 
     // Keyed by major for the same reason the patched cache is: a driver
-    // downloaded for one browser cannot serve another, and the download
-    // below is the expensive part of finding that out late.
     let root = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("doris")
@@ -1085,7 +1033,6 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
     )
 }
 
-/// The cookie query, with the host as a bound parameter.
 fn cookie_query() -> &'static str {
     "SELECT host_key, name, value, path, is_secure, is_httponly, encrypted_value \
      FROM cookies WHERE host_key LIKE ?"
@@ -1138,7 +1085,6 @@ fn extract_cookies_from_native_profile(
         let (host, name, value, path, secure, http_only, _encrypted_value) = row?;
 
         // Only plain-text cookies are usable: an encrypted_value blob
-        // can't be decrypted outside Chrome's profile keyring.
         let final_value = if !value.is_empty() { value } else { continue };
 
         let domain = if host.starts_with('.') {
@@ -1161,7 +1107,6 @@ fn extract_cookies_from_native_profile(
     Ok(cookies)
 }
 
-/// The `--flag` list handed to Chrome via `goog:chromeOptions`.
 fn build_chrome_args(
     mode: BrowserVisibility,
     use_xvfb: bool,
@@ -1176,9 +1121,6 @@ fn build_chrome_args(
         "--no-default-browser-check".into(),
         "--lang=ru-RU".into(),
         // Chrome's own background services (component updater, domain
-        // reliability reporting, metrics, component-extension background
-        // pages) keep working while Doris sits idle, for no benefit to
-        // us -- all off.
         "--disable-component-update".into(),
         "--disable-component-extensions-with-background-pages".into(),
         "--disable-domain-reliability".into(),
@@ -1187,16 +1129,6 @@ fn build_chrome_args(
     ];
 
     // Hosts the caller wants kept away from the browser. Resolving them
-    // to nowhere is cheaper than the alternative: an ad CDN serving
-    // looping `<video>`/GIF banners keeps the compositor producing frames
-    // at full speed for as long as a page stays open, which measured as
-    // the largest single idle-CPU cost of a session (VizCompositor pegged
-    // near 66% of a core).
-    //
-    // This list used to be one hardcoded host in the base args, which put
-    // one tracker's ad server in a module that drives browsers for every
-    // source. The caller knows what its own pages load; this layer only
-    // knows how to say "do not resolve that".
     if !block_hosts.is_empty() {
         args.push(format!(
             "--host-resolver-rules={}",
@@ -1230,7 +1162,6 @@ mod tests {
     #[test]
     fn wait_until_reports_a_condition_that_holds() {
         // Holds immediately: no sleeping, and it must not wait out the
-        // grace before noticing.
         let start = Instant::now();
         assert!(wait_until(Duration::from_secs(30), REAP_POLL, || true));
         assert!(
@@ -1244,8 +1175,6 @@ mod tests {
         let start = Instant::now();
         let polls = std::cell::Cell::new(0u32);
         // Never holds. The `false` is the caller's cue to SIGKILL, so it
-        // has to arrive when the grace is up -- neither earlier (we would
-        // kill a process that was about to exit) nor never.
         let gave_up = wait_until(
             Duration::from_millis(150),
             Duration::from_millis(50),
@@ -1260,8 +1189,6 @@ mod tests {
             "must not escalate before the grace expires"
         );
         // And it has to be waiting *between* polls, not spinning. A
-        // dropped `sleep` here turns every teardown into a busy loop for
-        // the length of the grace, which no assertion above would catch.
         assert!(
             polls.get() < 20,
             "polled {} times over 150ms: the poll interval is not being honoured",
@@ -1299,8 +1226,6 @@ mod tests {
     }
 
     // The 40-line chrome-args wall inside
-    // `launch` is data, not control flow -- pin its contract so the
-    // extraction can't silently drop a flag.
     fn arg(args: &[String], prefix: &str) -> bool {
         args.iter().any(|a| a.starts_with(prefix))
     }
@@ -1332,8 +1257,6 @@ mod tests {
         }
 
         // Comments are allowed to explain what used to be here, and so is
-        // the test module -- which has to spell the name out in order to
-        // check for it. The production half is what must be free of it.
         const TRACKER: &str = "rutracker";
         let source = include_str!("../browser/cdp.rs");
         let production = source.split("#[cfg(test)]").next().unwrap_or(source);

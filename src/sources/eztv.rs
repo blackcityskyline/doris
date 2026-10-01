@@ -15,7 +15,6 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 /// The endpoint that answers (see the module doc for why not `eztv.re`).
 pub const API: &str = "https://eztvx.to/api/get-torrents";
 
-/// Rows per API page, and therefore the step the cursor advances by.
 pub const PAGE_SIZE: usize = 100;
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +45,6 @@ pub fn torrents_url(offset: usize) -> String {
     format!("{}?limit={}&page={}", API, PAGE_SIZE, page)
 }
 
-/// One API page -> one [`SearchPage`].
 pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
     let response: EztvResponse =
         serde_json::from_str(body).map_err(|e| anyhow!("EZTV response did not parse: {}", e))?;
@@ -62,10 +60,8 @@ pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
     let loaded = (page_number * PAGE_SIZE) as u64;
     let has_more = match response.torrents_count {
         // The index says how far it goes, so the verdict is arithmetic
-        // rather than a guess about this page.
         Some(total) => loaded < total,
         // No count in the answer: a full page may well have a next one
-        // (paging here is real), an empty one certainly does not.
         None => items.len() >= PAGE_SIZE,
     };
 
@@ -73,9 +69,6 @@ pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
         items,
         has_more,
         // The *page* boundary, not `offset + rows`: dropping a row with
-        // a missing hash must not slide the next request into the
-        // middle of a page, which is how rows get skipped or asked for
-        // twice.
         next_offset: Some(page_number * PAGE_SIZE),
     })
 }
@@ -89,8 +82,6 @@ fn to_row(row: &EztvTorrent) -> Option<TorrentItem> {
         return None;
     }
     // The API sends lowercase hex already; `normalize_info_hash` also
-    // accepts a base32 spelling, and what it produces is what every
-    // hash-keyed feature (dedup, streaming, the.magnet file) reads.
     let info_hash = normalize_info_hash(raw);
     if info_hash.len() != 40 || !info_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
@@ -104,7 +95,6 @@ fn to_row(row: &EztvTorrent) -> Option<TorrentItem> {
         .unwrap_or(&info_hash)
         .to_string();
     // `magnet_url` is shipped, but a row without it is still usable --
-    // the hash is all `build_magnet` needs (torio's fallback too).
     let magnet = match row.magnet_url.as_deref().map(str::trim) {
         Some(url) if !url.is_empty() => url.to_string(),
         _ => build_magnet(&info_hash, &title),
@@ -149,8 +139,6 @@ impl EztvSearcher {
 
     pub fn new() -> Self {
         // The shared browser-like client: the HTML side of this
-        // host 403s anything that does not look like a browser, and the
-        // API sits behind the same edge.
         Self {
             client: browser_client(),
         }
@@ -190,8 +178,6 @@ impl Source for EztvSearcher {
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
         // The wave-1 decision: say why, don't show an empty table.
-        // "No results" and "this API has no search" are different
-        // facts, and only one of them is true here.
         if !req.query.trim().is_empty() {
             anyhow::bail!(
                 "EZTV has no search: its API ignores the `search` parameter \
@@ -216,7 +202,6 @@ impl Source for EztvSearcher {
 
     async fn download_torrent(&self, _url: &str) -> Result<Vec<u8>> {
         // Magnet-only, as every wave-1 JSON source: the download key
-        // writes `<title>.magnet` before this is reached.
         anyhow::bail!(
             "EZTV rows carry a magnet, not a .torrent file -- stream it, \
              or save the link as a .magnet file"

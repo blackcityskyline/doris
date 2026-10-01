@@ -61,7 +61,6 @@ impl RutorSearcher {
 
     pub fn new() -> Self {
         // The shared browser-like client: User-Agent plus the
-        // Accept/Accept-Language pair rutor used to set per request.
         Self {
             client: browser_client(),
         }
@@ -81,8 +80,6 @@ impl RutorSearcher {
     ) -> Result<SearchPage> {
         if query.trim().is_empty() {
             // Browse: the homepage's latest releases -- one mixed
-            // list, no pager, no category. Rows claim no group, which
-            // is why the `b` key returns the view to "all" first.
             let (status, html) = self.fetch_url(BROWSE_URL).await?;
             if !status.is_success() {
                 anyhow::bail!("rutor returned HTTP {} for its homepage", status);
@@ -96,11 +93,6 @@ impl RutorSearcher {
         }
         if !offset.is_multiple_of(Self::PAGE_SIZE) {
             // The app advances `offset` by however many rows came back,
-            // so an offset that isn't on a page boundary means the
-            // previous fetch was a partial (= final) page. Returning
-            // nothing here both avoids re-reading that page and makes
-            // `Source::search` report `has_more: false`, which flips
-            // `all_loaded`.
             crate::log::log(
                 "rutor",
                 &format!(
@@ -143,8 +135,6 @@ impl RutorSearcher {
         let (status, html) = self.fetch_page(page, category, query).await?;
         if !status.is_success() {
             // Parsing an error/challenge page always finds zero results;
-            // say so explicitly instead of silently returning an empty
-            // Vec indistinguishable from "no matches for this query".
             anyhow::bail!("rutor returned HTTP {} for {}", status, query);
         }
 
@@ -156,7 +146,6 @@ impl RutorSearcher {
         let (kept, dropped) = split_query(query);
         if dropped.is_empty() || kept.is_empty() {
             // Nothing was dropped, or everything was: no better query to
-            // try, so the literal one's empty answer is the real answer.
             return Ok(strict);
         }
 
@@ -183,9 +172,6 @@ impl RutorSearcher {
             return Ok(items);
         }
         // Rows that really mention the dropped words are the user's
-        // actual intent ("the matrix" -> "Матрица / The Matrix"), so
-        // promote them; if none do, keeping the relaxed rows is still
-        // strictly better than showing nothing.
         let exact: Vec<TorrentItem> = items
             .iter()
             .filter(|it| dropped.iter().all(|w| title_has_word(&it.title, w)))
@@ -242,18 +228,6 @@ impl RutorSearcher {
     /// diagnostic log line.
     async fn fetch_url(&self, url: &str) -> Result<(reqwest::StatusCode, String)> {
         // Accept/Accept-Language come from the shared client; the
-        // only per-request header left is Referer, which names this
-        // source's own site. The fetch retries transient failures
-        // (rutor occasionally answers 503 under load) and refuses to
-        // retry a ddos-guard challenge, which would otherwise burn the
-        // whole request budget on a page that never becomes an answer.
-        //
-        // Logged unconditionally to crate::log
-        // (~/.local/share/doris/doris.log) since the Source trait's
-        // search_page has no log-callback parameter to surface this in
-        // the UI's own Detailed Log panel the way Rutracker's AUTH steps
-        // do -- if this ever returns zero results again, that file is
-        // the first thing to check.
         let response = fetch_resilient(
             url,
             || self.client.get(url).header("Referer", Self::BASE),
@@ -278,10 +252,6 @@ impl RutorSearcher {
 
         if matched == 0 && html.len() < EMPTY_PAGE_THRESHOLD {
             // A real rutor search results page is large (many rows); a
-            // tiny response on a 2xx status is a strong sign of a
-            // challenge/interstitial page rather than genuinely zero
-            // matches. Log a snippet so the actual page content (rather
-            // than just its length) is on hand next time this happens.
             let snippet: String = html.chars().take(500).collect();
             crate::log::log(
                 "rutor",
@@ -294,16 +264,11 @@ impl RutorSearcher {
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         // Same resilient path as search: a.torrent fetch that hits a
-        // transient 503 should retry rather than hand TorrServer a
-        // failure page.
         let response =
             fetch_resilient(url, || self.client.get(url), &FetchOptions::default()).await?;
         let status = response.status();
         if !status.is_success() {
             // This used to be unchecked, so a mirror answering
-            // `302 -> /login` (or a plain 404) had its HTML body
-            // uploaded as a.torrent -- the exact failure that made us
-            // move to rutor.info in the first place.
             anyhow::bail!("rutor download {} answered HTTP {}", url, status);
         }
         let bytes = response.bytes().await?;
@@ -311,7 +276,6 @@ impl RutorSearcher {
     }
 }
 
-/// One fan-out's worth of pages -> the page the app sees.
 pub fn to_page(
     per_id: Vec<Vec<TorrentItem>>,
     category: Option<Group>,
@@ -372,8 +336,6 @@ pub fn split_query(query: &str) -> (Vec<String>, Vec<String>) {
             .trim_matches(|c: char| !c.is_alphanumeric())
             .to_string();
         // rutor's own help text says the minimum query length is 2, and
-        // every observed <=2-char token ("it", "am", "z", "qq",...) was
-        // unmatchable -- no point sending them back.
         let too_short = core.chars().count() <= 2;
         let is_stopword = STOPWORDS.contains(&core.to_lowercase().as_str());
         if core.is_empty() || too_short || is_stopword {
@@ -417,39 +379,21 @@ pub fn title_has_word(title: &str, word: &str) -> bool {
 pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     let document = Html::parse_document(html);
     // Matching on the href *prefix* rather than any CSS class: class names
-    // are far more likely to change across a template refresh than the
-    // URL scheme every row's title link has to use to point at a real
-    // torrent page.
     let title_sel = match Selector::parse(r#"a[href^="/torrent/"]"#) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
     // Inline magnet links (rutor.info puts `magnet:?xt=urn:btih:...`
-    // right in the row; rutor.org only had an `/magnet/{id}` endpoint,
-    // so rows there simply have no magnet and leave the field empty).
     let magnet_sel = match Selector::parse(r#"a[href^="magnet:"]"#) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
 
     // Live markup puts the counts right after the icons as
-    // `alt="S">&nbsp;6` / `alt="L"><span class="red">&nbsp;2</span>`:
-    // an explicit `&nbsp;` alternative is required between the `>` and
-    // the digits (a plain `\s*` matched nothing -- that's why seeds used
-    // to come back empty), and the peers variant may skip one wrapper
-    // `<span>` before the number. Seeds deliberately don't skip tags so
-    // they can never bleed into the leech count that follows.
-    // Units come in both Latin (`2.27 GB`) and Cyrillic (`2,27 ГБ`)
-    // spellings depending on the row -- the Cyrillic variant used to parse
-    // to an empty size. `(?i)` covers lower-case spellings too
-    // (`гб`, `mb`), which the old pattern also missed.
     let size_re = Regex::new(r"(?i)(\d+(?:[.,]\d+)?)(?:\s|&nbsp;)*(TB|GB|MB|KB|ТБ|ГБ|МБ|КБ)").ok();
     let seeds_re = Regex::new(r#"alt="S"[^>]*>(?:\s|&nbsp;)*(\d+)"#).ok();
     let peers_re = Regex::new(r#"alt="L"[^>]*>(?:<[^>]*>|\s|&nbsp;)*(\d+)"#).ok();
     // "07 Сен 25" / "31 Окт 20" style short Russian date, always the very
-    // first text in the row. rutor.info separates the parts with the
-    // literal `&nbsp;` entity where rutor.org used plain spaces, so both
-    // spellings match and the capture is normalized to spaces below.
     let date_re = Regex::new(r"(\d{2}(?:\s|&nbsp;)+[А-Яа-я]{3}(?:\s|&nbsp;)+\d{2})").ok();
 
     let mut items = Vec::new();
@@ -457,10 +401,6 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
 
     for title_el in document.select(&title_sel) {
         // Only rows of the search-results table count. The page also
-        // links to `/torrent/{id}` from `table#news_table` (the tracker's
-        // news posts -- ids like 472), and on rutor.info those hrefs are
-        // relative, so the title-link selector catches them too; a news
-        // row has no size/seeds/date and must not become a result.
         let Some(row) = enclosing_row(title_el) else {
             continue;
         };
@@ -482,8 +422,6 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
             continue;
         }
         // Rutor's per-row markup repeats the title link's id nowhere else
-        // dangerous, but be defensive against any future duplicate anchor
-        // pointing at the same torrent within one row.
         if !seen_ids.insert(id.clone()) {
             continue;
         }
@@ -530,14 +468,10 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
             ..Default::default()
         };
         // Numeric twins derived from the display strings above, then
-        // the two fields rutor hands over directly: the added timestamp
-        // (from the date cell) and the info hash inside the row's magnet.
         item.fill_from_display();
         item.added = parse_added(&item.date);
         item.info_hash = info_hash_from_magnet(item.magnet.as_deref().unwrap_or(""));
         // `group` stays `None`: the search URL carries category 0 ("all
-        // categories"), so nothing here can attribute a row to a group --
-        // that's B6, which passes a real category down to this parser.
         items.push(item);
     }
     items

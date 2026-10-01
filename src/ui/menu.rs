@@ -118,8 +118,6 @@ pub fn render_menu(
     backdrop: Block<'static>,
 ) {
     // The box goes down first: the glyphs below are painted *over* the
-    // zones, and the rows between them carry no glyph to highlight, so
-    // without an opaque backdrop those gaps are windows onto the table.
     if let Some(rect) = menu_backdrop_rect(area) {
         frame.render_widget(Clear, rect);
         frame.render_widget(backdrop, rect);
@@ -131,9 +129,6 @@ pub fn render_menu(
     let spacing = SPACING;
 
     // No keybind footer: btop's main menu (`btop_menu.cpp:1219`,
-    // `mainMenu`) draws a banner and three items and nothing else --
-    // where the keys live is the help page's job, which is
-    // moved ours to.
     let total_h = banner_h + spacing + menu_count * 4;
     let start_y = area.y + area.height.saturating_sub(total_h) / 2;
     let start_x = area.x + area.width.saturating_sub(banner_w) / 2;
@@ -161,10 +156,6 @@ pub fn render_menu(
 
         for (j, line) in block.iter().enumerate() {
             // Highlight the glyphs of the picked item, not the row they
-            // sit in: a background behind the spaces would be a solid
-            // stripe across the menu. So the style is per character --
-            // a space keeps the plain menu style, everything else gets
-            // the selection colours when this item is the picked one.
             let spans: Vec<Span> = line
                 .chars()
                 .map(|c| {

@@ -34,8 +34,6 @@ pub fn apply_source_done(
     };
     ui.add_log(&source_outcome_line(source, &outcome));
     // The first answer of a re-ask is what retires the old rows: they
-    // were kept on screen while the new ones travelled, and mixing the
-    // two generations would put rows of two questions in one table.
     ui.take_pending_clear();
     ui.results.extend(items);
     ui.update_filter();
@@ -68,7 +66,6 @@ fn present_results(ui: &mut UiApp) {
 
     ui.results = default_order(&dedupe_by_hash(&ui.results), ui.browsing);
     // Reordering moves rows under every saved index, the filter anchor
-    // included: a row it names may not be the row it named.
     ui.filter_anchor = None;
 
     let removed = before - ui.results.len();

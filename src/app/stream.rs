@@ -75,8 +75,6 @@ impl App {
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
 
         // A row with neither link nor file (1337x, B8 wave 3) reads its
-        // magnet off its own page -- the one request this download
-        // already costs anyway, and never one per search.
         let mut item = item;
         if item.magnet.is_none() && item.download_url.is_empty() {
             let resolved = match self.get_source(source_id_for(&item)).await {
@@ -96,9 +94,6 @@ impl App {
         }
 
         // A row with no `.torrent` to fetch (YTS and friends, B8 wave 1)
-        // pays its magnet as the file itself: nothing to download, so
-        // the Source is never asked -- which also means no browser can
-        // be launched for what is a local write.
         if let Some((name, payload)) = magnet_only_download(&item) {
             let dir = self.resolve_download_dir();
             let path = std::path::Path::new(&dir).join(&name);
@@ -115,9 +110,6 @@ impl App {
         }
 
         // `get_source` launches the browser only for sources whose
-        // registry entry says they need one -- a rutor download must
-        // never start Chrome, and `requires_browser` is what says
-        // so.
         let bytes_result: Result<Vec<u8>> = match self.get_source(source_id_for(&item)).await {
             Ok(source) => Self::download_bytes_for(&item, source.as_ref()).await,
             Err(e) => Err(e),
@@ -149,9 +141,6 @@ impl App {
         self.ui.state = AppState::Streaming;
 
         // Only browser-backed rows require a session that's already up;
-        // a rutor row plays straight over plain HTTP and is built on the
-        // spot. Streaming never launches a browser itself: if the
-        // session a search should have created isn't there, say so.
         let source = match self.source_for_row(source_id_for(&item)).await {
             Ok(s) => s,
             Err(e) => {
@@ -171,9 +160,6 @@ impl App {
 
             if !torrserver_enabled {
                 // The user switched TorrServer off in Options: say so
-                // rather than reaching for a server they have decided
-                // not to use (the app-side gate that replaces a guessed-at
-                // `systemctl` flow).
                 log("TorrServer is disabled in Options -> streaming -> Enable TorrServer.");
                 let _ = event_tx.send(Event::StreamError(
                     "TorrServer is disabled in Options".into(),
@@ -191,16 +177,6 @@ impl App {
             }
 
             // How the torrent reaches TorrServer: a row carrying a
-            // magnet goes over as a *link* -- no.torrent round trip, and
-            // the fetch starts from the DHT plus the link's trackers
-            // instead of waiting on one host to hand over a file. Per
-            // decision, any problem with the link (missing, malformed,
-            // rejected) falls back to the old path rather than failing
-            // the stream: those rows almost always play one way or the
-            // other.
-            // A row with neither link nor file (1337x, B8 wave 3) reads
-            // its magnet off its own page, here, on the way to playing
-            // it -- one request for the one row being played.
             if let Err(e) = fill_missing_magnet(&mut item, source.as_ref()).await {
                 log(&format!("Reading the magnet link failed: {}", e));
             }
@@ -221,7 +197,6 @@ impl App {
                     }
                     Err(e) if item.download_url.is_empty() => {
                         // Nothing to fall back to: this row's only path
-                        // was the link, and this source has no file.
                         let msg = format!(
                             "Magnet add failed ({}), and this row has no .torrent \
                              to fall back to",

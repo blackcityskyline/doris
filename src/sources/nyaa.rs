@@ -53,7 +53,6 @@ fn tag(item: &str, name: &str) -> Option<String> {
     let open_at = item.find(&open)?;
     let after = open_at + open.len();
     // The tag name has to *end* here: `<link>` matches, `<linkfoo>`
-    // does not, and `<nyaa:size>` matches only when asked for whole.
     match item.as_bytes().get(after) {
         Some(&b'>') | Some(&b' ') | Some(&b'\n') | Some(&b'\t') => {}
         _ => return None,
@@ -115,8 +114,6 @@ fn to_row(item: &str) -> Option<TorrentItem> {
 
     Some(TorrentItem {
         // nyaa ships no magnet (0 of 75 live), so this one is built
-        // from the verified hash; the download key still has a real
-        // `.torrent` to fetch below.
         magnet: Some(build_magnet(&info_hash, &title)),
         info_hash,
         title,
@@ -135,11 +132,8 @@ fn to_row(item: &str) -> Option<TorrentItem> {
     })
 }
 
-/// The feed -> rows.
 pub fn parse_items(body: &str) -> Result<Vec<TorrentItem>> {
     // A `ddos-guard` challenge or an error page is not "no results":
-    // saying so out loud is the difference between "the tracker is
-    // empty" and "we did not reach the tracker".
     if !body.contains("<rss") && !body.contains("<item>") {
         anyhow::bail!("nyaa returned a document that is not an RSS feed");
     }
@@ -147,13 +141,10 @@ pub fn parse_items(body: &str) -> Result<Vec<TorrentItem>> {
     Ok(rows)
 }
 
-/// The rows -> the page the UI sees.
 pub fn to_page(items: Vec<TorrentItem>) -> SearchPage {
     SearchPage {
         items,
         // One feed page, and no cursor we have seen move. Claiming
-        // `true` would invite "load more" into a page whose URL we have
-        // never seen answered (the module doc's follow-up).
         has_more: false,
         next_offset: None,
     }
@@ -197,7 +188,6 @@ impl Source for NyaaSearcher {
 
     fn groups(&self) -> &'static [Group] {
         // Anime is what the tracker *is*; the all-category query above
-        // is why individual rows still carry their own group (or none).
         &[Group::Anime]
     }
 
@@ -211,8 +201,6 @@ impl Source for NyaaSearcher {
 
     fn supports_browse(&self) -> bool {
         // Not claimed: the empty-query feed was never answered live
-        // (B8 wave 2 decision -- see the module doc). Wiring it up is
-        // browse work, once the host answers again.
         false
     }
 
@@ -239,9 +227,6 @@ impl Source for NyaaSearcher {
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         // Rows carry the `.torrent` link the feed ships (75 of 75
-        // live). The status check matters for the same reason rutor's
-        // has one: a block page must never reach TorrServer as a
-        //.torrent file.
         let response = fetch_resilient(url, || self.client.get(url), &fetch_options()).await?;
         let status = response.status();
         if !status.is_success() {

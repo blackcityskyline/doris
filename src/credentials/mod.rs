@@ -24,13 +24,11 @@ pub struct Credential {
     pub password: String,
 }
 
-/// Where the app keeps its credential store.
 pub fn credentials_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".config").join("doris").join("credentials.enc")
 }
 
-/// The store's file name inside whatever directory it is kept in.
 pub const STORE_FILE: &str = "credentials.enc";
 
 /// Write a file only its owner can read or write, and repair the mode of one that already
@@ -216,9 +214,6 @@ pub fn delete_credential_at(path: &Path, resource_id: &str) -> Result<()> {
 }
 
 // --- Backward-compatible single-resource API -------------------------------
-// Existing call sites (login modal, health check) predate the multi-source
-// Login panel and only ever deal with Rutracker. These
-// wrappers keep them working unchanged.
 
 pub fn save_credentials(username: &str, password: &str) -> Result<()> {
     save_credential(DEFAULT_RESOURCE, username, password)

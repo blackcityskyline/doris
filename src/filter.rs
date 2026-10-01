@@ -32,7 +32,6 @@ impl Op {
             }
         }
         // No operator written: an exact value, which is what
-        // `seeds:0` or `size:=1gb` have to mean.
         (Op::Eq, value)
     }
 

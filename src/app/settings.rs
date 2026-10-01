@@ -27,7 +27,6 @@ impl App {
         resolve_cookie_file(&self.config, self.args.cookie_file.as_deref())
     }
 
-    /// Write the config back now rather than at exit.
     pub(super) fn persist_config(&mut self) {
         if let Err(e) = crate::config::save(&self.config, self.args.config.as_deref()) {
             self.ui.add_log(&format!("Failed to save config: {e}"));
@@ -57,7 +56,6 @@ impl App {
                     Ok(out) => {
                         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
                         // An empty stderr would read as "no reason given";
-                        // the exit status still says how it failed.
                         Err(if err.is_empty() {
                             out.status.to_string()
                         } else {

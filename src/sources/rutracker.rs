@@ -117,7 +117,6 @@ impl RutrackerSearcher {
     /// session navigates to before cookie injection.
     pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";
     // (built from SITE_ROOT like every other URL here; the associated
-    // const cannot interpolate, so this one spells the host out)
 
     /// Rows per `tracker.php?start=` page -- the unit the trait's
     /// `SearchRequest::offset` counts in, and what `Source::search` uses
@@ -131,7 +130,6 @@ impl RutrackerSearcher {
         }
     }
 
-    /// Park the tab on `about:blank` between operations.
     async fn park(&self) {
         let browser = self.browser.lock().await;
         if let Err(e) = browser.park().await {
@@ -181,11 +179,6 @@ impl RutrackerSearcher {
         Self::wait_cloudflare(&browser).await;
 
         // Step 2: Inject the session a previous run saved. This has to
-        // come *after* the navigation: WebDriver `add cookie` rejects
-        // every domain while the tab is still on chrome://new-tab-page/
-        // ("invalid cookie domain"), which is what used to make a saved
-        // session unusable -- every run silently fell back to the
-        // password form instead of reusing the cookies it had just read.
         if let Some(cf) = cookie_file {
             if cf.exists() {
                 match cookies::load_from_file(cf) {
@@ -465,14 +458,6 @@ impl RutrackerSearcher {
         if still_on_login {
             log("AUTH LOGIN: form.submit() didn't navigate, trying direct POST...");
             // Build FormData FROM the real <form> element rather than from
-            // scratch: a hand-built FormData with only login_username/
-            // login_password/login silently drops any other field the
-            // real form has -- most notably a hidden CSRF/anti-bot token,
-            // which a server-side form-token check would reject with no
-            // visible error, indistinguishable from "wrong credentials".
-            // Grabbing every field the form actually has and only
-            // overriding the two we need to fill in is robust to that
-            // regardless of what the token field happens to be named.
             let post_script = format!(
                 r#"(() => {{
                     const form = document.querySelector("input[name='login_username']")?.closest('form');
@@ -699,10 +684,6 @@ impl RutrackerSearcher {
         for item in &mut items {
             item.source = "rutracker".to_string();
             // The row carries no forum of its own to read a group off
-            // (rutracker's result rows link their topic and nothing else
-            // identifying), so the group is the one the query was filtered
-            // by -- the site's own `f[]` parameter said these rows are
-            // inside it.
             item.group = category;
             item.fill_from_display();
         }
@@ -722,8 +703,6 @@ impl RutrackerSearcher {
         let browser = self.browser.lock().await;
 
         // The fetch below runs in the page's own origin: once the tab has
-        // been parked on `about:blank` a cross-origin request is refused, so
-        // return to the source first when that's where we happen to be.
         let on_source = browser
             .eval_js("location.host")
             .await
@@ -739,7 +718,6 @@ impl RutrackerSearcher {
         }
 
         // Download through the browser so Cloudflare cookies and JS
-        // challenges are handled automatically — plain reqwest gets 403.
         let fetch_script = format!(
             r#"
             async function downloadTorrent() {{

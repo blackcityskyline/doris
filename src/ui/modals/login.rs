@@ -144,19 +144,6 @@ impl App {
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);
             // ratatui's Buffer::set_style *patches* a cell's style (only
-            // overwriting fields the new Style explicitly sets), it
-            // doesn't replace the cell outright -- a plain background
-            // fill here left every character already drawn by the main
-            // view underneath fully intact (same glyph, same foreground
-            // colour), which is exactly the "menu still shows the main
-            // window's text/panel borders through it" bug report, and
-            // also explains the unrelated-looking "areas turn an
-            // unexpected grey" report: patched-in black backgrounds
-            // behind *unpatched* foreground colours/glyphs don't read as
-            // a clean fill. `Clear` actually resets each cell (glyph and
-            // style) before the modal's own opaque block draws on top, so
-            // the popup is genuinely self-contained; nothing outside its
-            // bounds is touched at all.
             frame.render_widget(Clear, popup);
 
             let bg_color = self.theme.main_bg.to_color();
@@ -185,7 +172,6 @@ impl App {
                 .split(inner);
 
             // The resource tabs: one per id the credentials store knows,
-            // the selected one highlighted. Left/Right switch them.
             let tabs: Vec<Span> = crate::credentials::LOGIN_RESOURCES
                 .iter()
                 .map(|&resource| {
@@ -208,8 +194,6 @@ impl App {
             frame.render_widget(Paragraph::new(Line::from(tabs)), rows[0]);
 
             // A field's border is its focus indicator: the primary
-            // accent while the cursor is in it, the divider line
-            // otherwise -- the same rule the zone frames follow.
             let user_style = if state.focus == LoginField::Username {
                 Style::default()
                     .fg(self.theme.primary_color())
@@ -240,7 +224,6 @@ impl App {
             );
 
             // The saved indicator: what the store already holds for the
-            // selected resource, so the user knows before typing.
             let saved = match crate::credentials::load_credential_at(
                 &self.credentials_path,
                 state.resource,

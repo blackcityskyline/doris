@@ -79,7 +79,6 @@ pub const FILTER_HELP: &[(&str, &str)] = &[
     ("no group", "An untagged row is listed in all only."),
 ];
 
-/// The tables the help page walks through, in order: `(title, rows)`.
 pub fn sections() -> &'static [(&'static str, &'static [(&'static str, &'static str)])] {
     &[("keys", HELP_TEXT), ("filter & grouping", FILTER_HELP)]
 }
@@ -93,23 +92,19 @@ fn cjust(text: &str, width: usize) -> String {
 /// Which page of the help table is showing.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HelpState {
-    /// 0-based page index.
     pub page: usize,
     /// Pages the table has at the current size, refreshed each render.
     pub pages: usize,
-    /// Rows that fit on one page, refreshed each render.
     pub visible: usize,
     /// Which table is showing: an index into [`sections`], 0 = keys.
     pub section: usize,
 }
 
 impl App {
-    /// Re-open the help page at the top.
     pub fn open_help_modal(&mut self) {
         self.modal = Modal::Help(HelpState::default());
     }
 
-    /// One keypress while the help page is open.
     pub fn help_key(&mut self, key: KeyEvent) {
         if matches!(
             key.code,
@@ -125,15 +120,11 @@ impl App {
         }
 
         // Anything not a page key is consumed regardless: btop's
-        // `helpMenu` answers unrecognised keys with `NoChange`, which is
-        // how a modal keeps the keys behind it from firing.
         let Modal::Help(state) = &mut self.modal else {
             return;
         };
 
         // The section switch sits above the guard below: a table that
-        // fits on one screen still has another table to go to, and
-        // paging is the only other thing these keys would have done.
         let step = match key.code {
             KeyCode::Right => Some(1usize),
             KeyCode::Left => Some(sections().len().saturating_sub(1)),
@@ -142,7 +133,6 @@ impl App {
         if let Some(step) = step {
             state.section = (state.section + step) % sections().len();
             // The new table is measured from its own top: a page number
-            // borrowed from the last one can point past its end.
             state.page = 0;
             return;
         }
@@ -170,9 +160,6 @@ impl App {
     /// the page indicator.
     pub fn render_help_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         // btop's help box is a fixed 78 columns wide -- nearly the
-        // whole terminal on an 80-column screen -- because a two-column
-        // table has no room to spare. Same intent here: wide enough
-        // that no description is cut off at 80 columns.
         let popup = centered_rect(90, 85, area);
         frame.render_widget(Clear, popup);
 
@@ -196,7 +183,6 @@ impl App {
             state.visible = visible;
             state.pages = pages;
             // The terminal shrank under an open modal: pull the page
-            // back into range rather than drawing past the end.
             state.page = state.page.min(pages.saturating_sub(1));
         }
 
@@ -206,9 +192,6 @@ impl App {
                 _ => 0,
             };
             // The arrows are the glyphs that act, so they take the
-            // hotkey accent + bold while `page n/m` stays structure --
-            // btop's split (`btop_menu.cpp:1780`) and the one the
-            // Settings modal already draws its own paging row with.
             let arrow = Style::default()
                 .fg(self.theme.on_hover_color())
                 .add_modifier(Modifier::BOLD);
@@ -222,8 +205,6 @@ impl App {
         frame.render_widget(block, popup);
 
         // Structure in `primary`, the keybind column in `on_hover`:
-        // the key column is the actionable half of every row, the same
-        // rule the frame legend uses for a hotkey inside a word.
         let header_style = Style::default()
             .fg(self.theme.primary_color())
             .add_modifier(Modifier::BOLD);

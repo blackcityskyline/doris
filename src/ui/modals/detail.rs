@@ -96,7 +96,6 @@ impl App {
         ];
 
         // The file list: what the source could read off the row's page,
-        // or an honest line saying it could not.
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled("Files:", label)));
         if state.pending {
@@ -116,8 +115,6 @@ impl App {
             )));
         } else {
             // The list can be longer than the box, so the window follows
-            // the cursor -- the same rule the results table's selection
-            // uses, and the reason the cursor exists at all.
             let visible = inner.height as usize;
             let offset = state.cursor.saturating_sub(visible.saturating_sub(1));
             for (i, file) in state.files.iter().enumerate().skip(offset).take(visible) {
@@ -138,12 +135,6 @@ impl App {
         )));
 
         // No background of its own: `Clear` has blanked the popup and
-        // `modal_block` paints the theme's `main_bg` when "Theme
-        // background" is on, so btop's rule -- a box writes plain spaces
-        // and lets the terminal through (`btop_draw.cpp:createBox`) --
-        // holds here too. The hardcoded `DarkGray` this replaced was the
-        // one colour in the popup no theme could move, and on a light
-        // theme it put dark body text on grey.
         let paragraph = Paragraph::new(lines);
         frame.render_widget(paragraph, inner);
     }

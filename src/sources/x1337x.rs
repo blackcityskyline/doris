@@ -53,7 +53,6 @@ pub fn search_url(host: &str, query: &str, offset: usize, category: Option<Group
         return browse_url(host, category);
     }
     // torio's spelling: `+` between the words (verified live to behave
-    // the same as `%20`, but the reference implementation uses this).
     let encoded = urlencoding::encode(query).replace("%20", "+");
     match category {
         Some(group) => format!(
@@ -133,7 +132,6 @@ fn title_anchor(row: &str) -> Option<(String, String)> {
     let marker = "href=\"/torrent/";
     let at = row.find(marker)?;
     // Back to where the *value* starts, so the path keeps its
-    // `/torrent/` -- the marker is only there to find the right link.
     let start = at + "href=\"".len();
     let quote = row[start..].find('"')? + start;
     let path = row[start..quote].to_string();
@@ -153,7 +151,6 @@ fn cell_of(row: &str, marker: &str) -> Option<String> {
     Some(row[start..end].to_string())
 }
 
-/// The cell's text rather than its markup (dates and sizes are plain).
 fn cell_text(row: &str, marker: &str) -> Option<String> {
     cell_of(row, marker).map(|cell| strip_html(&cell))
 }
@@ -231,16 +228,11 @@ fn to_row(row: &str, host: &str) -> Option<TorrentItem> {
     let leechers = first_number(&cell_of(row, "class=\"coll-3 leeches\"")?);
     let added = parse_upload_date(&cell_text(row, "class=\"coll-date\"")?);
     // The site's own display string ("10.6 GB"), decoded into the
-    // numeric twin the table sorts on: re-rendering it through
-    // `format_bytes` would only cost a decimal place and change what
-    // the user compared against the site.
     let size = cell_text(row, "class=\"coll-4 size")?;
     let size_bytes = parse_size(&size);
 
     Some(TorrentItem {
         // No link of any kind in the row (live): the magnet is on the
-        // row's own page and there is no `.torrent` to fetch, so the
-        // play path resolves it -- see `resolve_magnet`.
         magnet: None,
         info_hash: String::new(),
         title,
@@ -259,16 +251,12 @@ fn to_row(row: &str, host: &str) -> Option<TorrentItem> {
     })
 }
 
-/// The results page -> rows.
 pub fn parse_rows(body: &str, host: &str) -> Result<Vec<TorrentItem>> {
     let patterns = match patterns() {
         Some(p) => p,
         None => bail!("1337x: the parser's patterns failed to build"),
     };
     // Every results page answers with this marker before its rows --
-    // 20 rows, 9 rows, or none at all (live for a miss). Its absence
-    // means we are not reading 1337x, and saying "no results" would be
-    // the one lie the user cannot investigate.
     let Some(at) = body.find(TABLE) else {
         bail!("1337x: the page has no results table (blocked, moved, or asking for a login)");
     };
@@ -278,7 +266,6 @@ pub fn parse_rows(body: &str, host: &str) -> Result<Vec<TorrentItem>> {
         let Some(row) = caps.get(1) else { continue };
         let row = row.as_str();
         // The header row (`<th>`), section headings, and the page
-        // chrome all fall out here without needing a case each.
         if !row.contains("href=\"/torrent/") {
             continue;
         }
@@ -304,7 +291,6 @@ pub fn filter_rows(items: &[TorrentItem], query: &str) -> Vec<TorrentItem> {
         .filter(|token| !STOP.contains(&token.as_str()))
         .collect();
     // All tokens are stop words ("the of"): there is nothing to insist
-    // on, so the page stands as answered rather than as empty.
     if need.is_empty() {
         return items.to_vec();
     }
@@ -479,15 +465,11 @@ impl Source for X1337xSearcher {
 
     fn requires_browser(&self) -> bool {
         // Live: three mirrors behind a Cloudflare JS challenge, one
-        // answering 200 to the same plain client on every path -- so
-        // the challenge is those mirrors' business, and the browser
-        // layer (whose job is a *session*, not a solver) stays out.
         false
     }
 
     fn supports_browse(&self) -> bool {
         // Live: `/home/` answers with the same row markup as search,
-        // 78 rows, one page.
         true
     }
 
@@ -504,10 +486,6 @@ impl Source for X1337xSearcher {
         let category = req.category;
 
         // Every host gets the same attempt, and a host that answers
-        // with something unparseable moves the search on to the next
-        // one -- the definition of "this mirror is not serving 1337x"
-        // that lets a challenge page be an error instead of an empty
-        // result for every mirror at once.
         let rows = first_ok(HOSTS, move |host| {
             let client = client.clone();
             let query = query.clone();
@@ -524,11 +502,8 @@ impl Source for X1337xSearcher {
         })
         .await?;
         // What the category path fetched, the rows claim; the
-        // plain search's rows keep their None.
         let rows = stamp_category(rows, category);
         // Rows the list left without a day get it from their own pages
-        // here, before anything is shown (module doc); rows it dated
-        // already cost nothing.
         let rows = self.with_detail_dates(rows).await;
 
         if browse {
@@ -540,10 +515,6 @@ impl Source for X1337xSearcher {
 
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         // The site serves no `.torrent` anywhere (live: a detail page
-        // carries a magnet and no download link). Rows reach
-        // `resolve_magnet` instead, and a caller that got here anyway
-        // deserves the reason rather than a fetch of something that is
-        // not a torrent.
         bail!(
             "1337x has no .torrent to fetch ({}): its rows play over a magnet",
             url

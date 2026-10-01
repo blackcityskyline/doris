@@ -14,7 +14,6 @@ pub enum Event {
         source: String,
         generation: u64,
         items: Vec<crate::sources::models::TorrentItem>,
-        /// Whether *that* source has another page.
         has_more: bool,
         /// Where that source's next page starts, in its own cursor unit; `None` for row-paged
         /// sources and for every failure, both of which leave the cursor where it is.

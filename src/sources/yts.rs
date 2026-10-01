@@ -16,7 +16,6 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 /// Mirror hosts, first live-verified answer first (see the module doc).
 pub const HOSTS: [&str; 4] = ["yts.gg", "movies-api.accel.li", "yts.am", "yts.mx"];
 
-/// The API's `limit`: movies per page.
 pub const PAGE_SIZE: usize = 50;
 
 /// One YTS movie.
@@ -72,14 +71,12 @@ pub fn list_movies_url(base: &str, query: &str, offset: usize) -> String {
     url
 }
 
-/// One API page -> one [`SearchPage`].
 pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
     let parsed: YtsResponse =
         serde_json::from_str(body).map_err(|e| anyhow!("YTS response did not parse: {}", e))?;
     if let Some(status) = parsed.status.as_deref() {
         if status != "ok" {
             // Surfacing it (instead of rendering an empty page) is what
-            // lets `first_ok` move on to the next mirror.
             anyhow::bail!(
                 "YTS: {}",
                 parsed.status_message.unwrap_or_else(|| status.to_string())
@@ -105,14 +102,11 @@ pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
         let date = format_date(added);
         for torrent in movie.torrents.iter().flatten() {
             // A torrent without a hash is unusable: no magnet can be
-            // built and no hash can be deduped (torio skips these too).
             let Some(hash) = torrent.hash.as_deref().filter(|h| !h.is_empty()) else {
                 continue;
             };
             let info_hash = hash.to_lowercase();
             // "720p web" / "1080p bluray", exactly torio's join of the
-            // two tags -- the same movie in two qualities is two rows
-            // and must say which is which.
             let tag: Vec<&str> = [torrent.quality.as_deref(), torrent.kind.as_deref()]
                 .into_iter()
                 .flatten()
@@ -144,15 +138,12 @@ pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
     }
 
     // `movie_count` is the *total* for the query, so the verdict is
-    // "are there movies left beyond this page?" -- in movies, not rows.
     let loaded = (offset + 1) as i64 * PAGE_SIZE as i64;
     let has_more = loaded < movie_count;
     Ok(SearchPage {
         items,
         has_more,
         // The API's own unit, which is the whole point: rows this page
-        // yielded depend on how many qualities each movie has, so
-        // `offset + rows` would skip or repeat movies (B8 part B).
         next_offset: Some(offset + 1),
     })
 }
@@ -173,7 +164,6 @@ impl YtsSearcher {
     pub fn new() -> Self {
         Self {
             // The shared browser-like client: these hosts sit
-            // behind Cloudflare like rutor's do.
             client: browser_client(),
         }
     }
@@ -219,8 +209,6 @@ impl Source for YtsSearcher {
             let query = query.clone();
             async move {
                 // torio retries each host once before moving on; so do
-                // we, because with three more mirrors behind it a slow
-                // retry is worse than the next host.
                 let options = FetchOptions {
                     retries: 1,
                     ..FetchOptions::default()
@@ -228,8 +216,6 @@ impl Source for YtsSearcher {
                 let url = list_movies_url(&host, &query, offset);
                 let response = fetch_resilient(&url, || client.get(&url), &options).await?;
                 // `fetch_resilient` hands back non-retryable statuses as-is
-                // (a 404 is not worth retrying) -- so "did this host work"
-                // is decided here, and a "no" moves to the next one.
                 anyhow::ensure!(
                     response.status().is_success(),
                     "YTS at {} returned {}",
@@ -245,9 +231,6 @@ impl Source for YtsSearcher {
 
     async fn download_torrent(&self, _url: &str) -> Result<Vec<u8>> {
         // YTS publishes magnets, not files: the download key writes a
-        // `.magnet` file for these rows, and streaming goes through
-        // `add_by_link`. What can land here is that path's
-        // fallback, so say what happened instead of returning junk.
         anyhow::bail!(
             "YTS rows carry a magnet, not a .torrent file -- stream it, \
              or save the link as a .magnet file"

@@ -21,7 +21,6 @@ use crate::ui::view::{centered_rect, App, Modal};
 const SETTINGS_DIVIDER_COL: usize = 30;
 
 impl SettingsState {
-    /// Keep the visible page on the cursor.
     pub fn follow_page(&mut self) {
         let page = self.selected / self.visible_items.max(1);
         if page != self.page {
@@ -258,7 +257,6 @@ fn center_str(s: &str, width: usize) -> String {
 }
 
 impl App {
-    /// Build the Settings modal from real, current state.
     pub fn open_settings(&mut self, config: &Config, browser_hidden: bool) {
         self.settings_browser_hidden = browser_hidden;
         let mode_str = if self.stream_mode {
@@ -268,12 +266,6 @@ impl App {
         };
         let theme_name = self.theme.name.clone();
         // Value shown between the cycle arrows must be the theme's own
-        // name (matching the reference: "<- noctalia ->"), not a bare
-        // index/total -- that's genuinely useful information but belongs
-        // in the *label* position indicator every settings item already
-        // gets when selected ("Color theme 7/45"), not here. The row's
-        // own "1/15" is the row's position in the category and answered
-        // neither question, which is why the label carries this instead.
         let theme_str = theme_name.clone();
         let themes = crate::ui::theme::Theme::load_themes();
         let theme_pos = themes
@@ -294,8 +286,6 @@ impl App {
         );
 
         // Retain the previously-selected position within the previously-
-        // selected category (if any) so re-rendering after a toggle
-        // doesn't silently reset scroll position back to the top item.
         let (prev_category, prev_selected, prev_page, prev_visible_items) =
             if let Modal::Settings(ref prev) = self.modal {
                 (
@@ -341,8 +331,6 @@ impl App {
                     state.follow_page();
                 }
                 // The three keys that act *on* the item under the cursor
-                // all answer the same thing; only the direction the
-                // cycled value will move in differs.
                 crossterm::event::KeyCode::Left
                 | crossterm::event::KeyCode::Right
                 | crossterm::event::KeyCode::Enter => {
@@ -372,9 +360,6 @@ impl App {
                     state.page = 0;
                 }
                 // Any digit 1-9 jumps to that category by position, not
-                // just '1'/'2' -- this used to hardcode only the first two
-                // categories, silently doing nothing for '3' once a third
-                // ("download") category was added.
                 crossterm::event::KeyCode::Char(c @ '1'..='9') => {
                     let idx = (c as u8 - b'1') as usize;
                     if idx < state.categories.len() {
@@ -404,14 +389,10 @@ impl App {
             let hi_color = self.theme.secondary_color();
             let title_color = self.theme.primary_color();
             // The glyphs that *are* keys (the paging arrows) take the
-            // hover accent, the same rule the frame legend uses.
             let key_color = self.theme.on_hover_color();
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
             // The cursor row of this list is a selected row like any
-            // other: same `selected_bg`/`selected_fg` Results, Trackers
-            // and the detail modal's file list use, and the same btop
-            // gives the option under the cursor (`btop_menu.cpp:1687`).
             let selection = self.theme.selection_style();
 
             if let Modal::Settings(ref mut state) = self.modal {
@@ -424,10 +405,6 @@ impl App {
                 let content_h = inner.height.saturating_sub(4) as usize;
 
                 // Slot width wide enough for every tab's label (works
-                // regardless of how many categories exist or how long their
-                // names are, instead of a hardcoded width that silently
-                // corrupts once a name is long enough to fill it exactly --
-                // see the bug this replaces, below).
                 let slot_width = state
                     .categories
                     .iter()
@@ -438,11 +415,6 @@ impl App {
 
                 let mut tab_line = String::new();
                 // (start, length, is_selected, mark offsets): the
-                // marks are the characters that *are* the key -- the
-                // digit that switches to an unselected tab, the
-                // brackets around the selected one -- and take the
-                // hover accent while the tab's name stays structure,
-                // the split btop draws (`btop_menu.cpp:1631`).
                 let mut tab_styles: Vec<(usize, usize, bool, Vec<usize>)> = Vec::new();
                 let mut pos = 0;
                 for (i, cat) in state.categories.iter().enumerate() {
@@ -467,15 +439,6 @@ impl App {
                 }
 
                 // Bug fixed here: `pos` used to start at 2 while `ci` (the
-                // actual index into `tab_line`'s characters) starts at 0, a
-                // systematic 2-character offset between where each tab's
-                // styling said it started and where its text actually was.
-                // That caused this loop to both over-consume the previous
-                // tab's trailing characters into the wrong style AND silently
-                // drop the characters it skipped past to "catch up" -- which
-                // is exactly the "[general] 2treaming3download" corruption
-                // (missing the 's', tabs running together) from the bug
-                // report. `pos` and `ci` now share the same coordinate space.
                 let mut spans = Vec::new();
                 let chars: Vec<char> = tab_line.chars().collect();
                 let mut ci = 0;
@@ -527,7 +490,6 @@ impl App {
 
                 let visible_items = content_h / 2;
                 // settings_key() reads this exact number back, so
-                // pagination can never desync from what's actually on screen.
                 state.visible_items = visible_items.max(1);
                 let cat = &state.categories[state.selected_category];
                 let page = state.page;
@@ -547,13 +509,6 @@ impl App {
 
                         let label = if is_sel {
                             // this used to hardcode "3" regardless of
-                            // the actual selected position.
-                            //
-                            // The theme row is the one row whose `n/m` is
-                            // not about rows: there it counts themes, so
-                            // that "which theme" has an answer (it used
-                            // to print "1/15" forever -- the row's place
-                            // in the category).
                             let suffix = match item.action {
                                 SettingsAction::CycleTheme => match state.theme_pos {
                                     Some((n, total)) => format!("{n}/{total}"),
@@ -577,8 +532,6 @@ impl App {
                         );
 
                         // btop lets the selection colours run onto the
-                        // value line as well (no new colour is emitted
-                        // for it), so the whole cursor row reads as one.
                         let val_style = if is_sel {
                             selection
                         } else {

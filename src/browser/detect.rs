@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-/// Every browser Doris knows how to drive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BrowserKind {
     Chrome,
@@ -48,7 +47,6 @@ const BROWSER_ROWS: &[(BrowserKind, BrowserRow)] = &[
     ),
 ];
 
-/// The table row for `self` (key, aliases, binaries, label).
 fn row(kind: BrowserKind) -> BrowserRow {
     BROWSER_ROWS
         .iter()
@@ -71,12 +69,10 @@ impl BrowserKind {
             .map(|(kind, ..)| *kind)
     }
 
-    /// Binaries to probe with `which`, in preference order.
     pub fn binaries(&self) -> &'static [&'static str] {
         row(*self).2
     }
 
-    /// Human-facing name (menus, health check).
     pub fn label(&self) -> &'static str {
         row(*self).3
     }

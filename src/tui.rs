@@ -79,11 +79,6 @@ pub fn end_sync(terminal: &mut Terminal) {
 fn enter<W: Write>(w: &mut W, enhance_keys: bool, mouse: bool) -> io::Result<()> {
     execute!(w, EnterAlternateScreen)?;
     // crossterm's `EnableMouseCapture` turns on 1000/1002/1003/1015/1006
-    // together, and 1003 is the one that reports the pointer with no
-    // button held -- which is what makes a hover possible at all. It used
-    // to be enabled unconditionally while "Disable mouse" only stopped the
-    // app reading the events, so a user who had switched the mouse off was
-    // still paying for a stream of them. Asking is cheaper than ignoring.
     if mouse {
         execute!(w, EnableMouseCapture)?;
     }

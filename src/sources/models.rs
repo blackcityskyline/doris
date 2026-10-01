@@ -49,9 +49,6 @@ pub struct TorrentItem {
     pub source: String,
 
     // --- B1 fields (numeric/hash twins of the display strings above) ---
-    // All `#[serde(default)]`: Rutracker's JS-eval-produced JSON only sets
-    // the display fields, and any source that cannot provide one of these
-    // leaves it at the zero value rather than failing to deserialize.
     /// Content group this row belongs to, or `None` when the result cannot be attributed to one
     /// (searched with "all categories", or a source that doesn't filter server-side).
     #[serde(default)]
@@ -77,7 +74,6 @@ pub struct TorrentItem {
     pub added: i64,
 }
 
-/// One file inside a torrent, as the detail modal lists it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
     pub name: String,
@@ -85,7 +81,6 @@ pub struct FileEntry {
 }
 
 impl TorrentItem {
-    /// Derive the numeric twins from the display strings a source produced.
     pub fn fill_from_display(&mut self) {
         self.size_bytes = parse_size(&self.size);
         self.seeds_n = self.seeds.trim().parse::<u32>().unwrap_or(0);

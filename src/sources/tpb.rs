@@ -25,7 +25,6 @@ const ZERO_HASH: &str = "0000000000000000000000000000000000000000";
 pub const TOP_MOVIES_URL: &str = "https://apibay.org/precompiled/data_top100_207.json";
 pub const TOP_TV_URL: &str = "https://apibay.org/precompiled/data_top100_208.json";
 
-/// One apibay row.
 #[derive(Debug, Deserialize)]
 struct ApibayItem {
     id: Option<FlexNum>,
@@ -80,7 +79,6 @@ fn group_for_category(category: i64) -> Option<Group> {
         .map(|(group, _)| *group)
 }
 
-/// apibay JSON -> rows, with the placeholder row dropped.
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let items: Vec<ApibayItem> =
         serde_json::from_str(body).map_err(|e| anyhow!("apibay response did not parse: {}", e))?;
@@ -124,10 +122,8 @@ fn to_row(item: &ApibayItem) -> Option<TorrentItem> {
         date: format_date(added),
         info_hash,
         // apibay serves magnets only; there is no file to fetch, so the
-        // download key writes `<title>.magnet` instead of refusing.
         download_url: String::new(),
         // Live-verified: this form answers 200 (a bare `/torrent/<id>`
-        // 302s to it).
         page_url: format!("https://thepiratebay.org/description.php?id={}", id),
         source: "tpb".to_string(),
         group: group_for_category(category),
@@ -150,7 +146,6 @@ impl TpbSearcher {
 
     pub fn new() -> Self {
         // The shared browser-like client: apibay answers a
-        // library UA with 403 (checked live) -- this is not paranoia.
         Self {
             client: browser_client(),
         }
@@ -159,7 +154,6 @@ impl TpbSearcher {
     /// One apibay document -> its rows' source data, or a real error.
     async fn fetch_items(&self, url: &str) -> Result<Vec<ApibayItem>> {
         // One attempt per fetch, torio's `retries: 1`: there is no
-        // second host to fall back to, and apibay is fast to re-ask.
         let options = FetchOptions {
             retries: 1,
             ..FetchOptions::default()
@@ -190,7 +184,6 @@ impl Source for TpbSearcher {
 
     fn groups(&self) -> &'static [Group] {
         // The wave-1 decision: one apibay source covering both of
-        // torio's (tpb-movies + tpb-tv), without category filtering.
         &[Group::Movies, Group::TV]
     }
 
@@ -214,11 +207,6 @@ impl Source for TpbSearcher {
         let query = req.query.trim().to_string();
         let items = if query.is_empty() {
             // Browse: the two top-100 lists, trimmed to the category
-            // the way a search is -- each list *is* one group (207
-            // films, 208 series), so the selection picks a list
-            // instead of filtering it. A group tpb does not declare
-            // fetches nothing; the orchestrator never asks for one
-            // anyway, so no visitor finds an empty box here.
             let mut urls: Vec<&'static str> = Vec::new();
             match req.category {
                 None => {
@@ -242,9 +230,6 @@ impl Source for TpbSearcher {
         Ok(SearchPage {
             items,
             // No cursor exists on either path (see the module doc): a
-            // query tops out at 100 rows, the top-100 lists are fixed.
-            // `next_offset: None` keeps the row-based default, which is
-            // never consulted while `has_more` says "stop".
             has_more: false,
             next_offset: None,
         })
@@ -252,9 +237,6 @@ impl Source for TpbSearcher {
 
     async fn download_torrent(&self, _url: &str) -> Result<Vec<u8>> {
         // Same refusal as YTS, for the same reason: apibay serves
-        // magnets. The download key short-circuits to a `.magnet` file
-        // before this is reached; what lands here is a fallback path
-        // that deserves a plain explanation rather than junk bytes.
         anyhow::bail!(
             "TPB rows carry a magnet, not a .torrent file -- stream it, \
              or save the link as a .magnet file"

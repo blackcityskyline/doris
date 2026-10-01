@@ -60,8 +60,6 @@ impl App {
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
         // Off, the block carries no `bg` so the `Clear` drawn before it
-        // hides the content underneath and the terminal's own background
-        // shows through.
         if config.theme_background {
             block = block.style(
                 Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)),
@@ -122,8 +120,6 @@ impl App {
         self.zones.update_areas(area);
 
         // A zone with no detail view (`Trackers`) simply has nothing to
-        // take over with, so it falls through to the tiled render rather
-        // than panicking on a state no key can produce.
         let detail = self.detail_view.filter(|id| id.detail_key().is_some());
         if let Some(view) = detail {
             match view {
@@ -160,18 +156,8 @@ impl App {
         let bar_area = Rect::new(area.x, area.y, area.width, SEARCH_BAR_HEIGHT);
 
         // A label, not a keybind cheat-sheet: where the keys live is
-        // the help page (`?`) and the frame legends now, and what this
-        // box needs to say is what it is holding. The only thing that
-        // changes is an active filter; while the box has the keyboard it
-        // takes the accent a focused zone frame takes, and otherwise the
-        // divider colour -- the same "colour says state, text says
-        // content" split btop's boxes use.
         let filter_on = self.zones.filter_mode || !self.zones.filter_input.is_empty();
         // While `f` is open the text lives in the box, so the border
-        // names the mode only -- repeating it there was the third copy
-        // (border, body, frame legend). A filter in effect but not
-        // being edited still announces itself: the box then holds the
-        // query, and nothing else says a filter is on.
         let title = match (self.input_mode, self.zones.filter_mode, filter_on) {
             (false, true, _) => "filter".to_string(),
             (false, false, true) => format!("filter: {}", self.zones.filter_input),
@@ -179,9 +165,6 @@ impl App {
         };
 
         // The box holds whichever string is being edited: the query in
-        // search mode, the filter while `f` is open. Before, the filter
-        // only ever reached the border title, so the box kept showing
-        // the stale query while the text grew somewhere else.
         let editing: &str = if self.zones.filter_mode {
             self.zones.filter_input.as_str()
         } else {
@@ -192,8 +175,6 @@ impl App {
             .themed_block(
                 if self.input_mode || self.zones.filter_mode {
                     // The box under the cursor takes the same accent a
-                    // focused zone frame takes; the title says which of
-                    // the two boxes it is.
                     self.theme.primary_color()
                 } else {
                     self.theme.div_line.to_color()
@@ -213,8 +194,6 @@ impl App {
         frame.render_widget(input, bar_area);
 
         // A text field without a caret is a text field you type into
-        // blind. The terminal hides it again on the next frame that
-        // does not ask for one, so an idle box stays clean.
         if (self.input_mode || self.zones.filter_mode)
             && self.modal == Modal::None
             && !self.show_menu
@@ -230,20 +209,14 @@ impl App {
         frame.render_widget(block, area);
 
         // One row inside the border: the table. The category row that
-        // used to sit above it moved onto the frame --
-        // the current category is read off the `◀ name ▶` button next to
-        // `group`, so a row here would have been a second copy of it.
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0)]) // results table
             .split(inner);
 
         // --- results table ---------------------------------------------------
-        // Widths are the panel's, not the detail view's: this one shares
-        // the frame with the zone buttons.
         let Some(table) = self.results_table(6, 8, 8, 20) else {
             // The block is already on screen, so this only fills its
-            // inner area.
             self.render_results_placeholder(frame, inner);
             self.render_frame(frame, id, area, config);
             return;
@@ -251,7 +224,6 @@ impl App {
         frame.render_stateful_widget(table, chunks[0], &mut self.results_cursor());
 
         // The keybind legend moved onto the frame, so the panel
-        // body ends at the table and every remaining line is data.
         self.render_frame(frame, id, area, config);
     }
 
@@ -263,8 +235,6 @@ impl App {
         frame.render_widget(block, area);
 
         // The status reads as a column only if every id is padded to
-        // the widest one, so an answer lands under the answer above it
-        // instead of trailing each name at its own length.
         let roster = source_rows();
         let id_width = roster
             .iter()
@@ -304,8 +274,6 @@ impl App {
                     }
                 }
                 // A planned source is listed -- so the next one is
-                // visible where it will land -- but says so instead of
-                // pretending it can be switched on.
                 if !row.is_implemented() {
                     spans.push(Span::styled(" (planned)", style));
                 }
@@ -314,11 +282,6 @@ impl App {
             .collect();
 
         // The panel can be hidden (`1`-`4` again) and the terminal can
-        // be too short for the roster, so the window follows the cursor -- the
-        // rule the detail modal's file list already uses. Without it the
-        // rows past the end were simply not drawn while `j`/`k` kept
-        // walking every one of them, and the cursor could stand on a row
-        // nobody could see.
         let visible = inner.height as usize;
         let offset = self
             .sources_cursor
@@ -351,13 +314,6 @@ impl App {
             super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
 
         // TorrServer has not named the torrent yet: from Enter to the
-        // hash arriving there is real work in flight (session, magnet,
-        // add, upload) and no value to print, and an empty
-        // `Hash: Status:` read as "nothing is happening".
-        // Labels take the secondary accent, values the body colour: the
-        // panel is data, so only the words that name a value are
-        // accented. A finished transfer gets the primary accent rather
-        // than the hardcoded green the theme never knew about.
         let label = Style::default().fg(self.theme.secondary_color());
         let value = Style::default().fg(self.theme.main_fg.to_color());
 
@@ -408,9 +364,6 @@ impl App {
         ];
 
         // The armed removal takes the last line rather than replacing one:
-        // the facts stay readable, and the question is the only thing in
-        // the panel drawn in the error accent, which is what that accent
-        // is for.
         if let Some(prompt) = self.remove_prompt() {
             lines.push(Line::from(Span::styled(
                 prompt,
@@ -425,7 +378,6 @@ impl App {
         frame.render_widget(paragraph, area);
 
         // "p: pause/resume d: remove" is gone from the body: those two
-        // are frame buttons now, top-right and bottom-left.
         self.render_frame(frame, id, area, config);
     }
 
@@ -445,7 +397,6 @@ impl App {
 
         frame.render_widget(log_panel, area);
         // The "(n/m)" scroll position moved from the title onto the
-        // frame, next to the `detail` button.
         self.render_frame(frame, id, area, config);
     }
 
@@ -487,7 +438,6 @@ impl App {
         let s = &self.torrent_status;
         let progress_pct = (s.progress * 100.0) as u32;
         // `Progress: NN% ` leads, so the sparkline gets what is left
-        // rather than eating the number off the end of a too-wide line.
         let prefix = format!("Progress: {}% ", progress_pct).len() as u16;
         let bar_width = area.width.saturating_sub(prefix + 2) as usize;
 
@@ -502,7 +452,6 @@ impl App {
         };
 
         // Same split as the panel: labels in the secondary accent, the
-        // values they name in the body colour.
         let label = Style::default().fg(self.theme.secondary_color());
         let value = Style::default().fg(self.theme.main_fg.to_color());
 
@@ -565,17 +514,6 @@ impl App {
     /// The results table's rows: every filtered row that still has an index to land on.
     fn results_table(&self, seeds: u16, size: u16, date: u16, title_min: u16) -> Option<Table<'_>> {
         // Muted, but not `inactive_fg`: the tab bar gets away with that
-        // one because a tab is also spelled out in the title. Here the
-        // badge is the only thing saying who returned the row, and on
-        // the `all` tab that is the point of the column -- so it takes
-        // the informational mid-bright `graph_text` instead (≈6.7:1 on
-        // `main_bg`, versus ≈2.3:1 for `inactive_fg`), which the cursor
-        // row then writes in the theme's `selected_fg`.
-        //
-        // Accents, not a repaint: a row keeps the body colour and only two
-        // columns carry a token -- the seed count in the secondary accent
-        // (seed health), the date in the informational mid-bright next to
-        // the source badge. Size and title stay plain.
         let badge_style = Style::default().fg(self.theme.graph_text.to_color());
         let seed_style = Style::default().fg(self.theme.secondary_color());
         let date_style = Style::default().fg(self.theme.graph_text.to_color());
@@ -596,8 +534,6 @@ impl App {
             .collect();
 
         // Nothing to tabulate: the caller says why rather than this
-        // drawing the header over an empty body, which read as a broken
-        // table.
         if rows.is_empty() {
             return None;
         }
@@ -667,7 +603,6 @@ impl App {
             .split(inner);
 
         // The whole terminal is this table, so its fixed columns can be
-        // wider than the panel's.
         let Some(table) = self.results_table(8, 10, 12, 30) else {
             self.render_results_placeholder(frame, chunks[0]);
             return;
@@ -733,7 +668,6 @@ impl App {
             self.render_health_modal(frame, area, config);
         } else if matches!(self.modal, Modal::Help(_)) {
             // `&mut self`: the page publishes its own page count for
-            // `help_key` while it draws.
             self.render_help_modal(frame, area, config);
         } else if matches!(self.modal, Modal::TorrentDetail(_)) {
             self.render_detail_modal(frame, area, config);
@@ -783,8 +717,6 @@ impl App {
         }
         for (button, rect) in &layout.buttons {
             // Hovered: whole-cell containment against the same rectangle
-            // `click_at` hits, so what is drawn and what is clickable are
-            // the same rectangle rather than two computations of it.
             let hovered = self.hovers(*rect);
             let spans = super::layout::button_spans(
                 &self.theme,

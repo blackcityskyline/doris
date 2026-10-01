@@ -59,7 +59,6 @@ pub fn normalize_info_hash(raw: &str) -> String {
 pub fn parse_magnet(input: &str) -> Option<ParsedMagnet> {
     let s = input.trim();
     // `get(..8)` rather than a slice: a byte index past a multibyte
-    // character would panic, and this takes arbitrary user text.
     let has_scheme = s
         .get(..8)
         .map(|p| p.eq_ignore_ascii_case("magnet:?"))
@@ -69,7 +68,6 @@ pub fn parse_magnet(input: &str) -> Option<ParsedMagnet> {
     }
 
     // torio's MAGNET_RE, without a regex engine: find the xt parameter,
-    // then take the hash-shaped run after it.
     let prefix = "xt=urn:btih:";
     let at = s.to_ascii_lowercase().find(prefix)? + prefix.len();
     let run: String = s[at..]
@@ -87,7 +85,6 @@ pub fn parse_magnet(input: &str) -> Option<ParsedMagnet> {
     let info_hash = normalize_info_hash(&info_hash);
 
     // `dn` when present, the hash itself when it is not (torio does the
-    // same: an absent *or empty* display name falls back to the hash).
     let name = query_param(s, "dn").unwrap_or_else(|| info_hash.clone());
     Some(ParsedMagnet {
         info_hash,
@@ -191,7 +188,6 @@ fn percent_decode(value: &str) -> String {
                         i += 3;
                     }
                     // Not an escape after all -- keep the `%` literally
-                    // rather than eating a character.
                     _ => {
                         out.push(b'%');
                         i += 1;

@@ -107,7 +107,6 @@ async fn zone_digit_keys_focus_first_and_hide_second() {
     );
 
     // Focused already: the second press is the one that hides it,
-    // and focus has to leave the zone nobody can see any more.
     app.handle_key(press(KeyCode::Char('4')))
         .await
         .expect("4 again");
@@ -368,7 +367,6 @@ async fn g_cycles_the_category_and_types_when_the_box_is_open() {
     let mut app = app_focused_on_sources(None).await;
     app.ui.zones.focused = ZoneId::Results;
     // The category row is derived from what is checked, and this app
-    // starts with nothing checked.
     app.config.enabled_sources = vec!["rutracker".into(), "tpb".into(), "yts".into()];
     app.ui.set_group_tabs(&app.config);
     let all = app.ui.active_group;
@@ -483,8 +481,6 @@ async fn shift_enter_opens_the_detail_modal() {
         title: "Dune 2024".into(),
         source: "rutor".into(),
         // Loopback, refused instantly: the modal opens before the
-        // file list arrives, and the fetch behind it must not leave
-        // the test machine.
         page_url: "http://127.0.0.1:1/".into(),
         ..Default::default()
     }];
@@ -697,7 +693,6 @@ async fn page_keys_page_the_results_and_still_page_the_log() {
     );
 
     // And the Log panel keeps its own paging, which is where these
-    // keys worked before.
     for i in 0..100 {
         app.ui.add_log(&format!("line {i}"));
     }
@@ -718,8 +713,6 @@ async fn a_row_that_opens_another_window_keeps_it() {
     app.ui.open_settings(&app.config, true);
 
     // Categories are chosen by digit or Tab -- `Left`/`Right` act on
-    // the row, not the tab -- so the row is found by index and reached
-    // with the digit.
     let (category, row) = {
         let state = match &app.ui.modal {
             crate::ui::view::Modal::Settings(s) => s,
@@ -755,7 +748,6 @@ async fn a_row_that_opens_another_window_keeps_it() {
 #[tokio::test]
 async fn every_bool_row_flips_its_own_field() {
     // Find the row for each toggle the same way the modal does, then
-    // press it on a real `App` and read the field back.
     for (action, _) in BOOL_TOGGLES {
         let before = field_named(action, &Config::default());
         let mut config = Config::default();
@@ -918,8 +910,6 @@ async fn the_full_log_scrolls_the_way_the_key_names() {
     assert_eq!(app.ui.detail_log_scroll, 50);
 
     // And the same with vim letters, which only exist when the setting
-    // is on -- the helper gates them there rather than in the match, and
-    // that gate is the other half of what this test is pinning.
     app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
     assert_eq!(app.ui.detail_log_scroll, 51, "j is Down when vim is on");
     app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
@@ -945,8 +935,6 @@ async fn the_wheel_scrolls_the_full_log_by_its_own_step() {
     app.ui.detail_log_scroll = 50;
 
     // crossterm reports a wheel notch as a ScrollUp/ScrollDown event with
-    // no coordinate movement, which is what with
-    // only the kind replaced describes.
     let wheel = |down: bool| MouseEvent {
         kind: if down {
             MouseEventKind::ScrollDown
@@ -1000,9 +988,6 @@ async fn a_cycle_row_in_options_moves_the_value_it_names() {
     app.ui.open_settings(&app.config, false);
 
     // The cursor opens on row 0, so walking down `n` times lands on row
-    // `n` -- unless it is already further down, which a re-entered
-    // modal would be. Starting each walk from the top keeps the count
-    // honest.
     async fn select_row(app: &mut App, at: usize) {
         while row_at(app) > 0 {
             app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
@@ -1035,8 +1020,6 @@ async fn a_cycle_row_in_options_moves_the_value_it_names() {
     );
 
     // A value not in the list at all lands on the first entry rather
-    // than on itself -- the alternative is a row that cannot be fixed
-    // from the UI at all.
     app.config.graph_symbol = "nonsense".into();
     app.handle_key(press(KeyCode::Right)).await.expect("Right");
     assert_eq!(

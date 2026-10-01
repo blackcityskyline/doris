@@ -22,7 +22,6 @@ use super::tpb::TpbSearcher;
 use super::x1337x::X1337xSearcher;
 use super::yts::YtsSearcher;
 
-/// Content categories a source can attribute its results to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Group {
     #[default]
@@ -75,12 +74,9 @@ impl Group {
 /// of where a variant happened to be typed above.
 pub const GROUP_ORDER: [Group; 4] = [Group::Movies, Group::TV, Group::Games, Group::Anime];
 
-/// One run of a query against a source.
 #[derive(Debug, Clone)]
 pub struct SearchRequest {
-    /// The words to look for.
     pub query: String,
-    /// Page cursor.
     pub offset: usize,
     /// `None` = all categories.
     pub category: Option<Group>,
@@ -97,7 +93,6 @@ impl SearchRequest {
     }
 }
 
-/// One page of results plus an honest "was that the last page?".
 #[derive(Debug, Clone, Default)]
 pub struct SearchPage {
     pub items: Vec<TorrentItem>,
@@ -123,7 +118,6 @@ pub struct AuthContext {
 /// the TUI's detailed log view.
 pub type LogFn = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// One pluggable content source.
 #[async_trait]
 pub trait Source: Send + Sync {
     /// Stable lowercase identifier, e.g.
@@ -254,7 +248,6 @@ impl Source for RutrackerSearcher {
         let items =
             RutrackerSearcher::search_page(self, &req.query, req.offset, req.category).await?;
         // The forum pages `tracker.php?start=` by 50, so a short page is
-        // the last one and a full one may have more behind it.
         let has_more = items.len() >= RutrackerSearcher::PAGE_SIZE;
         Ok(SearchPage {
             items,
@@ -294,7 +287,6 @@ impl Source for RutorSearcher {
 
     fn supports_browse(&self) -> bool {
         // The homepage index answers an empty query with the latest
-        // releases -- see `rutor::BROWSE_URL`.
         true
     }
 
@@ -304,9 +296,6 @@ impl Source for RutorSearcher {
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
         // Fixed 100-row pages (see `RutorSearcher::PAGE_SIZE`), fanned
-        // out over the selected category's rubric ids when
-        // `category` says so -- `rutor::to_page` reads `has_more` off
-        // each id's own page and steps the cursor by one page.
         RutorSearcher::search_page(self, &req.query, req.offset, req.category).await
     }
 
@@ -347,9 +336,6 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: RUTRACKER_GROUPS,
         // Its search form's `f[]` multi-select is a real category slot
-        // (verified live 26.09.2026: two different forum ids answer
-        // disjoint topic sets), so a selected category reaches it and the
-        // rows claim it back -- see `rutracker::GROUP_FORUMS`.
         category_filter: true,
         supports_browse: false,
         requires_browser: true,
@@ -407,7 +393,6 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         groups: NYAA_GROUPS,
         category_filter: true,
         // The empty-query feed was never answered live (B8 wave 2
-        // decision), so browse is not claimed until it is.
         supports_browse: false,
         requires_browser: false,
         block_hosts: &[],
@@ -436,19 +421,6 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: NnmclubSearcher::HOME_URL,
     },
     // 1337x's row has been in the registry since before it existed
-    // (an id the registry knows about is an id the migration, the
-    // Options rows and the tab bar all agree on) and wave 3 filled it
-    // in: `implemented`, four groups, and `requires_browser: false`.
-    //
-    // That flag is a claim about the *host*, and this one was wrong
-    // for a while because only half the mirrors had been probed. The
-    // probes of 25.09.2026, same browser UA, came back split: three
-    // of torio's four hosts answer 403 with a Cloudflare JS challenge
-    // to a plain client, while `1337xx.to` 301s to
-    // `www.1337xx.to` and answers 200 on every path checked. The
-    // challenge is those mirrors' business, not a session this source
-    // is missing -- `x1337x`'s module doc keeps the evidence, and its
-    // `HOSTS` const keeps the answering mirror first.
     SourceInfo {
         id: "1337x",
         label: "1337x",
@@ -456,18 +428,12 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         groups: X1337X_GROUPS,
         category_filter: true,
         // `/home/` answers an empty query with the same row markup as
-        // search (live: 78 rows, one page).
         supports_browse: true,
         requires_browser: false,
         block_hosts: &[],
         home_url: X1337xSearcher::HOME_URL,
     },
     // The last planned id, listed before it exists for the same reason
-    // the others were: `groups` stays empty -- a group is a claim
-    // about rows nobody has parsed yet -- and its `requires_browser`
-    // is the honest `false` the probe of 25.09.2026 showed (200 with
-    // its front page), which is also what the fallback returns for an
-    // unknown id on the *other* side of the question.
     SourceInfo {
         id: "torentino",
         label: "Torentino",
@@ -475,9 +441,6 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         groups: TRENTINO_GROUPS,
         category_filter: true,
         // Search is a POST, and the.torrent link lives on the item page
-        // (live 26.09.2026), so `download_torrent` fetches it there --
-        // no bencode crate needed for playback. Browse is not claimed:
-        // no freshest-first feed has ever been verified on this host.
         supports_browse: false,
         requires_browser: false,
         block_hosts: &[],
@@ -485,7 +448,6 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
     },
 ];
 
-/// What a source needs from the app in order to be *built*.
 pub struct SourceEnv {
     /// An already-launched browser session.
     pub browser: Option<Arc<Mutex<Browser>>>,
@@ -545,7 +507,6 @@ pub fn cli_sources(
             Ok(vec![info])
         }
         // No `all` tab any more: the panel's checkboxes are the
-        // selection, so "everything" is simply every checked source.
         None => Ok(crate::sources::orchestrator::selected_sources(
             enabled, None, false,
         )),
@@ -575,9 +536,6 @@ pub fn migrate_config(config: &mut crate::config::Config) {
         config.known_sources.clone()
     };
     // Drop the ids the registry lists but has not built: today
-    // those rows cannot be toggled, so nothing was ever decided
-    // about them. What is left -- implemented ids plus ids this
-    // registry does not list at all -- is what counts as known.
     let known: Vec<String> = seen
         .iter()
         .filter(|id| {
@@ -597,13 +555,6 @@ pub fn migrate_config(config: &mut crate::config::Config) {
     }
 
     // Record every id this build knows *as something that could be
-    // decided on* -- implemented ids only, by the same rule as
-    // above, so a placeholder row never counts as the user having
-    // seen it. A source added to the registry later is then unknown
-    // again, which is what makes the *next* migration happen
-    // without anyone extending a baseline; ids the registry no
-    // longer lists are kept, since a config that knew them did not
-    // stop knowing them.
     let mut all: Vec<String> = KNOWN_SOURCES
         .iter()
         .filter(|info| info.implemented)
