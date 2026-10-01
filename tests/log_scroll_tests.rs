@@ -18,8 +18,8 @@ fn fill(app: &mut UiApp, n: usize) {
 fn test_new_line_keeps_a_reader_where_they_were() {
     let mut app = make_app();
     fill(&mut app, 30);
-    app.scroll_logs_up();
-    app.scroll_logs_up();
+    app.scroll_logs(-1);
+    app.scroll_logs(-1);
     assert_eq!(app.log_scroll, 28, "the reader moved off the bottom");
 
     app.add_log("later");
@@ -63,7 +63,7 @@ fn test_reader_position_survives_the_ring_buffer_turning_over() {
 fn test_page_scrolls_are_not_overwritten_either() {
     let mut app = make_app();
     fill(&mut app, 100);
-    app.scroll_logs_page_up();
+    app.scroll_logs(-(doris::ui::app::LOG_PAGE_STEP as isize));
     let parked = app.log_scroll;
 
     app.add_log("later");

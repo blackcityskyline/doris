@@ -87,60 +87,37 @@ fn test_log_scroll_initial() {
 }
 
 #[test]
-fn test_log_scroll_up() {
+fn test_log_scroll_moves_a_line_at_a_time() {
     let mut app = make_test_app();
     for i in 0..20 {
         app.add_log(&format!("msg {}", i));
     }
-    app.scroll_logs_up();
+    app.scroll_logs(-1);
     assert_eq!(app.log_scroll, 19);
-    app.scroll_logs_up();
+    app.scroll_logs(-1);
     assert_eq!(app.log_scroll, 18);
+    app.scroll_logs(1);
+    assert_eq!(app.log_scroll, 19);
 }
 
+/// Down is positive, the same sign `PageDown` uses, and the clamp holds
+/// at both ends -- the panel is shorter than the buffer in both
+/// directions. The three-line step is what the wheel sends (see
+/// `MOUSE_SCROLL_STEP`).
 #[test]
-fn test_log_scroll_down() {
-    let mut app = make_test_app();
-    for i in 0..20 {
-        app.add_log(&format!("msg {}", i));
-    }
-    app.log_scroll = 10;
-    app.scroll_logs_down();
-    assert_eq!(app.log_scroll, 11);
-    app.scroll_logs_down();
-    assert_eq!(app.log_scroll, 12);
-}
-
-#[test]
-fn test_log_scroll_cannot_go_below_zero() {
-    let mut app = make_test_app();
-    app.add_log("msg");
-    app.log_scroll = 0;
-    app.scroll_logs_up();
-    assert_eq!(app.log_scroll, 0);
-}
-
-#[test]
-fn test_log_scroll_cannot_go_past_end() {
-    let mut app = make_test_app();
-    for i in 0..5 {
-        app.add_log(&format!("msg {}", i));
-    }
-    app.log_scroll = 5;
-    app.scroll_logs_down();
-    assert_eq!(app.log_scroll, 5);
-}
-
-#[test]
-fn test_mouse_scroll_logs() {
+fn test_log_scroll_clamps_and_takes_a_multi_line_step() {
     let mut app = make_test_app();
     for i in 0..30 {
         app.add_log(&format!("msg {}", i));
     }
-    app.mouse_scroll_logs(5);
+    app.scroll_logs(-5);
     assert_eq!(app.log_scroll, 25);
-    app.mouse_scroll_logs(-3);
+    app.scroll_logs(3);
     assert_eq!(app.log_scroll, 28);
+    app.scroll_logs(-99);
+    assert_eq!(app.log_scroll, 0);
+    app.scroll_logs(99);
+    assert_eq!(app.log_scroll, 30);
 }
 
 #[test]

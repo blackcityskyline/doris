@@ -257,7 +257,7 @@ const LOG_CAPACITY: usize = 500;
 
 /// How many lines PgUp/PgDn move the log scroll. One screen's worth on
 /// a typical terminal, so a page turn feels like a page turn.
-const LOG_PAGE_STEP: usize = 10;
+pub const LOG_PAGE_STEP: usize = 10;
 
 /// The `Src` cell for one result: the source id, or `-` when it is
 /// missing.
@@ -544,32 +544,22 @@ impl App {
         };
     }
 
-    pub fn scroll_logs_up(&mut self) {
-        self.log_scroll = self.log_scroll.saturating_sub(1);
+    /// Move the Log panel's scroll position by `delta` lines, clamped to
+    /// the lines there are.
+    ///
+    /// Four named methods became this one: `up`, `down`, `page_up` and
+    /// `page_down` each answered the same question with a different
+    /// literal, and a fifth -- `mouse_scroll_logs` -- looped the first two
+    /// to produce a step size the wheel actually uses.
+    pub fn scroll_logs(&mut self, delta: isize) {
+        let end = self.logs.len() as isize;
+        self.log_scroll = (self.log_scroll as isize + delta).clamp(0, end) as usize;
     }
 
-    pub fn scroll_logs_down(&mut self) {
-        self.log_scroll = (self.log_scroll + 1).min(self.logs.len());
-    }
-
-    pub fn scroll_logs_page_up(&mut self) {
-        self.log_scroll = self.log_scroll.saturating_sub(LOG_PAGE_STEP);
-    }
-
-    pub fn scroll_logs_page_down(&mut self) {
-        self.log_scroll = (self.log_scroll + LOG_PAGE_STEP).min(self.logs.len());
-    }
-
-    pub fn mouse_scroll_logs(&mut self, delta: i16) {
-        if delta > 0 {
-            for _ in 0..delta {
-                self.scroll_logs_up();
-            }
-        } else {
-            for _ in 0..(-delta) {
-                self.scroll_logs_down();
-            }
-        }
+    /// The full Log view's scroll, same clamping, its own position.
+    pub fn scroll_detail_log(&mut self, delta: i64) {
+        let end = self.detail_logs.len() as i64;
+        self.detail_log_scroll = (self.detail_log_scroll as i64 + delta).clamp(0, end) as usize;
     }
 
     /// Which zone (if any) contains screen position `(row, col)`, honoring

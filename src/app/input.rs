@@ -7,6 +7,11 @@
 
 use super::*;
 
+/// Lines one notch of the mouse wheel moves. A wheel event carries no
+/// count, so this is a choice, and it matches what the wheel does in
+/// every other list on a desktop.
+pub(super) const MOUSE_SCROLL_STEP: i64 = 3;
+
 impl App {
     pub(super) async fn handle_mouse(&mut self, mouse: MouseEvent) {
         if self.config.disable_mouse {
@@ -24,39 +29,36 @@ impl App {
                 // the last one.
                 self.ui.set_hover(mouse.row, mouse.column);
             }
-            MouseEventKind::ScrollUp => {
+            // One notch of the wheel, up or down. Both directions were
+            // separate arms writing the same match over the zones, and
+            // they had already drifted: the up arm said what focusing
+            // Torrent and Trackers means, the down arm said it again in
+            // fewer words.
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let down = matches!(mouse.kind, MouseEventKind::ScrollDown);
                 if self.ui.detail_view == Some(ZoneId::Log) {
-                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(3);
+                    self.ui.scroll_detail_log(if down {
+                        MOUSE_SCROLL_STEP
+                    } else {
+                        -MOUSE_SCROLL_STEP
+                    });
                 } else if self.ui.modal == Modal::None {
                     if let Some(id) = self.ui.zone_at(mouse.row, mouse.column) {
                         self.ui.zones.focused = id;
                         match id {
-                            ZoneId::Log => self.ui.scroll_logs_up(),
-                            ZoneId::Results => self.handle_nav_up(),
+                            ZoneId::Log => self.ui.scroll_logs(if down { 1 } else { -1 }),
+                            ZoneId::Results => {
+                                if down {
+                                    self.handle_nav_down().await
+                                } else {
+                                    self.handle_nav_up()
+                                }
+                            }
                             // Torrent is a single status readout and
                             // Trackers scrolls its cursor rather than a
                             // list -- focusing them on hover is still
                             // correct, there's just no list to move
                             // within.
-                            ZoneId::Torrent | ZoneId::Trackers => {}
-                        }
-                    }
-                }
-            }
-            MouseEventKind::ScrollDown => {
-                if self.ui.detail_view == Some(ZoneId::Log) {
-                    self.ui.detail_log_scroll =
-                        (self.ui.detail_log_scroll + 3).min(self.ui.detail_logs.len());
-                } else if self.ui.modal == Modal::None {
-                    if let Some(id) = self.ui.zone_at(mouse.row, mouse.column) {
-                        self.ui.zones.focused = id;
-                        match id {
-                            ZoneId::Log => self.ui.scroll_logs_down(),
-                            ZoneId::Results => self.handle_nav_down().await,
-                            // Torrent is a single status readout and
-                            // Trackers scrolls its cursor rather than a
-                            // list -- focusing them on hover is still
-                            // correct.
                             ZoneId::Torrent | ZoneId::Trackers => {}
                         }
                     }
@@ -140,7 +142,7 @@ impl App {
                     }
                 }
             }
-            ZoneId::Log => self.ui.scroll_logs_down(),
+            ZoneId::Log => self.ui.scroll_logs(1),
             // The Trackers panel is a list like the others, so the same
             // keys move its cursor -- the one piece of state it has.
             ZoneId::Trackers => self.ui.navigate_trackers(1),
@@ -155,7 +157,7 @@ impl App {
             ZoneId::Results => {
                 self.ui.navigate_up();
             }
-            ZoneId::Log => self.ui.scroll_logs_up(),
+            ZoneId::Log => self.ui.scroll_logs(-1),
             ZoneId::Trackers => self.ui.navigate_trackers(-1),
             _ => {}
         }
@@ -385,6 +387,25 @@ impl App {
         }
     }
 
+    /// How far a Log-view key should move the scroll: 1 for a line,
+    /// `LOG_PAGE_STEP` for a page, down positive, `None` for a key that
+    /// is not a scroll at all.
+    ///
+    /// The vim letters are gated on the setting here rather than in the
+    /// match, so `j` scrolls exactly when `Down` does.
+    fn log_scroll_step(&self, code: KeyCode) -> Option<i64> {
+        let step = match code {
+            KeyCode::Down => 1,
+            KeyCode::Up => -1,
+            KeyCode::PageDown => crate::ui::app::LOG_PAGE_STEP as i64,
+            KeyCode::PageUp => -(crate::ui::app::LOG_PAGE_STEP as i64),
+            KeyCode::Char('j') if self.config.vim_keys => 1,
+            KeyCode::Char('k') if self.config.vim_keys => -1,
+            _ => return None,
+        };
+        Some(step)
+    }
+
     pub(super) async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // An armed removal is a question waiting for an answer, and every
         // key that is not `d` is a "no". Disarmed here, before any mode
@@ -426,26 +447,15 @@ impl App {
                 KeyCode::Esc => self.ui.detail_view = None,
                 _ if target == Some(view) => self.ui.detail_view = None,
                 _ if target.is_some() => self.ui.detail_view = target,
-                KeyCode::Char('j') if self.config.vim_keys && view == ZoneId::Log => {
-                    self.ui.detail_log_scroll =
-                        (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
-                }
-                KeyCode::Down if view == ZoneId::Log => {
-                    self.ui.detail_log_scroll =
-                        (self.ui.detail_log_scroll + 1).min(self.ui.detail_logs.len());
-                }
-                KeyCode::Char('k') if self.config.vim_keys && view == ZoneId::Log => {
-                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
-                }
-                KeyCode::Up if view == ZoneId::Log => {
-                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(1);
-                }
-                KeyCode::PageUp if view == ZoneId::Log => {
-                    self.ui.detail_log_scroll = self.ui.detail_log_scroll.saturating_sub(20);
-                }
-                KeyCode::PageDown if view == ZoneId::Log => {
-                    self.ui.detail_log_scroll =
-                        (self.ui.detail_log_scroll + 20).min(self.ui.detail_logs.len());
+                // Only the Log view scrolls; the other two takeovers have
+                // no list to move within. Six arms used to say that,
+                // three of them writing the same clamped arithmetic, and
+                // the page step a bare `20` next to a `LOG_PAGE_STEP`
+                // that already exists.
+                _ if view == ZoneId::Log => {
+                    if let Some(step) = self.log_scroll_step(key.code) {
+                        self.ui.scroll_detail_log(step);
+                    }
                 }
                 _ => {}
             }
@@ -654,7 +664,8 @@ impl App {
             KeyCode::PageUp => {
                 match self.ui.zones.focused {
                     ZoneId::Log => {
-                        self.ui.scroll_logs_page_up();
+                        self.ui
+                            .scroll_logs(-(crate::ui::app::LOG_PAGE_STEP as isize));
                     }
                     ZoneId::Results => {
                         self.ui.navigate_page(-self.result_page());
@@ -666,7 +677,7 @@ impl App {
             }
             KeyCode::PageDown => match self.ui.zones.focused {
                 ZoneId::Log => {
-                    self.ui.scroll_logs_page_down();
+                    self.ui.scroll_logs(crate::ui::app::LOG_PAGE_STEP as isize);
                 }
                 ZoneId::Results => {
                     self.ui.navigate_page(self.result_page());

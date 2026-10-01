@@ -6,9 +6,11 @@
 //! each of these was written after finding that the obvious test in
 //! `tests/` passed with the routing broken.
 
+use super::input::MOUSE_SCROLL_STEP;
 use super::*;
 use crate::ui::app::source_rows;
 use clap::Parser;
+
 use std::path::PathBuf;
 
 /// An `App` with the Trackers panel focused, no bridge listener, and
@@ -736,7 +738,7 @@ async fn page_keys_page_the_results_and_still_page_the_log() {
         app.ui.add_log(&format!("line {i}"));
     }
     app.ui.zones.focused = ZoneId::Log;
-    app.ui.scroll_logs_page_down();
+    app.ui.scroll_logs(crate::ui::app::LOG_PAGE_STEP as isize);
     let scrolled = app.ui.log_scroll;
     assert!(scrolled > 0, "the log has more than one page of log");
     app.handle_key(press(KeyCode::PageUp))
@@ -945,4 +947,103 @@ async fn d_arms_then_removes_and_a_cancelled_d_asks_again() {
         "after a cancel the next d asks again, it does not remove"
     );
     assert!(app.ui.active_torrent_hash.is_some());
+}
+
+/// The full Log view scrolls by line and by page, in the direction the
+/// key names.
+///
+/// This is a pair of assertions about arithmetic that used to be spelled
+/// out in six match arms, three of them writing the same clamped `min`.
+/// Collapsing them into one helper is only safe if the direction
+/// survives it, and swapping two signs fails no build and trips no lint
+/// -- it just scrolls the wrong way.
+#[tokio::test]
+async fn the_full_log_scrolls_the_way_the_key_names() {
+    let mut app = app_focused_on_sources(None).await;
+    for i in 0..100 {
+        app.ui.add_detail(&format!("line {i}"));
+    }
+    app.ui.detail_view = Some(ZoneId::Log);
+    app.ui.detail_log_scroll = 50;
+
+    app.handle_key(press(KeyCode::Down)).await.expect("Down");
+    assert_eq!(app.ui.detail_log_scroll, 51, "Down moves toward the newest");
+
+    app.handle_key(press(KeyCode::Up)).await.expect("Up");
+    assert_eq!(app.ui.detail_log_scroll, 50, "Up moves back");
+
+    app.handle_key(press(KeyCode::PageDown))
+        .await
+        .expect("PageDown");
+    assert_eq!(
+        app.ui.detail_log_scroll,
+        50 + crate::ui::app::LOG_PAGE_STEP,
+        "a page is LOG_PAGE_STEP, not the bare literal 20 the old arms used"
+    );
+
+    app.handle_key(press(KeyCode::PageUp))
+        .await
+        .expect("PageUp");
+    assert_eq!(app.ui.detail_log_scroll, 50);
+
+    // And the same with vim letters, which only exist when the setting
+    // is on -- the helper gates them there rather than in the match, and
+    // that gate is the other half of what this test is pinning.
+    app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
+    assert_eq!(app.ui.detail_log_scroll, 51, "j is Down when vim is on");
+    app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
+    assert_eq!(app.ui.detail_log_scroll, 50);
+
+    app.config.vim_keys = false;
+    app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
+    assert_eq!(
+        app.ui.detail_log_scroll, 50,
+        "and is nothing at all when vim keys are off"
+    );
+}
+
+/// The wheel over the full Log view moves it by its own step, not by the
+/// one-line step the arrow keys use.
+#[tokio::test]
+async fn the_wheel_scrolls_the_full_log_by_its_own_step() {
+    let mut app = app_focused_on_sources(None).await;
+    for i in 0..100 {
+        app.ui.add_detail(&format!("line {i}"));
+    }
+    app.ui.detail_view = Some(ZoneId::Log);
+    app.ui.detail_log_scroll = 50;
+
+    // crossterm reports a wheel notch as a ScrollUp/ScrollDown event with
+    // no coordinate movement, which is what  with
+    // only the kind replaced describes.
+    let wheel = |down: bool| MouseEvent {
+        kind: if down {
+            MouseEventKind::ScrollDown
+        } else {
+            MouseEventKind::ScrollUp
+        },
+        column: 0,
+        row: 0,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+
+    app.handle_mouse(wheel(false)).await;
+    assert_eq!(
+        app.ui.detail_log_scroll,
+        50 - MOUSE_SCROLL_STEP as usize,
+        "one notch up moves toward the oldest"
+    );
+
+    app.handle_mouse(wheel(true)).await;
+    assert_eq!(
+        app.ui.detail_log_scroll, 50,
+        "and the notch after it comes back"
+    );
+
+    app.handle_mouse(wheel(true)).await;
+    assert_eq!(
+        app.ui.detail_log_scroll,
+        50 + MOUSE_SCROLL_STEP as usize,
+        "down moves the other way"
+    );
 }
