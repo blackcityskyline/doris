@@ -14,7 +14,16 @@ use ratatui::style::Color;
 /// those elements before the tokens existed.
 #[test]
 fn test_missing_tokens_fall_back_to_the_classic_fields() {
-    let theme = Theme::dark();
+    // The tokens are unset here on purpose rather than by relying on
+    // `Theme::dark()`: the built-in theme names its own accents, and a
+    // test that read them off it would pin whatever it happened to name.
+    let theme = Theme {
+        primary: None,
+        secondary: None,
+        error: None,
+        on_hover: None,
+        ..Theme::dark()
+    };
     assert_eq!(theme.primary_color(), theme.title.to_color());
     assert_eq!(theme.secondary_color(), theme.hi_fg.to_color());
     assert_eq!(theme.on_hover_color(), theme.hi_fg.to_color());

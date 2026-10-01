@@ -221,7 +221,12 @@ impl App {
             if n == section {
                 tabs.push(Span::styled(format!("[{name}] "), active));
             } else {
-                tabs.push(Span::styled(format!(" {name} "), inactive));
+                // The tab names the digit that opens it, exactly as the
+                // Options tabs do: `2:network`, with the digit in the
+                // keybind accent. A tab label that hides its own key
+                // makes the digit binding below a secret.
+                tabs.push(Span::styled(format!(" {}:", n + 1), arrow));
+                tabs.push(Span::styled(format!("{name} "), inactive));
             }
         }
         tabs.push(Span::styled(" ▶ ", arrow));

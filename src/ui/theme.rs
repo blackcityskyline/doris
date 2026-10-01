@@ -114,7 +114,13 @@ impl Theme {
             menu_fg: ColorDef::new(144, 164, 174),
             menu_selected_bg: ColorDef::new(20, 50, 80),
             menu_selected_fg: ColorDef::new(128, 222, 234),
-            primary: None,
+            // The built-in theme names its accents instead of leaving
+            // them out. `None` falls back to `title`, and `title` is
+            // near-white here, so every `primary` -- frame borders, the
+            // section headers, the ASCII banner -- came out white: a
+            // theme with no colour of its own. `hi_fg` is the accent
+            // this theme already had.
+            primary: Some(ColorDef::new(79, 195, 247)),
             secondary: None,
             error: None,
             on_hover: None,

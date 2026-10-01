@@ -449,3 +449,43 @@ fn test_both_help_sections_are_named_on_screen() {
         "Right must move the mark to the second table"
     );
 }
+
+/// Every section's tab names the digit that opens it, the way the
+/// Options tabs do (`2:network`).
+///
+/// A digit binding that no label mentions is a secret: the arrows walk
+/// between the tables and the page looks like one long list, so nothing
+/// on screen said that a second table existed or that a digit would get
+/// there.
+#[test]
+fn test_every_help_tab_names_its_own_digit() {
+    let mut app = make_app();
+    app.open_help_modal();
+    // The tabs ride the popup's bottom border, which is not the last
+    // row of the terminal -- the popup is inset.
+    let rows = render(&mut app, 120, 40);
+    let tabs = rows
+        .iter()
+        .find(|r| r.contains('\u{25c0}'))
+        .unwrap_or_else(|| panic!("no tab row was drawn; the frame reads {rows:?}"));
+
+    for (n, (name, _)) in doris::ui::modals::help::sections().iter().enumerate() {
+        if n == 0 {
+            // The section being shown is bracketed, as in Options.
+            assert!(tabs.contains(&format!("[{name}]")), "{tabs}");
+        } else {
+            assert!(
+                tabs.contains(&format!("{}:{}", n + 1, name)),
+                "the tab for `{name}` must be labelled `{}:{name}`; the tab row is {tabs:?}",
+                n + 1
+            );
+        }
+    }
+    // And the digit actually switches, which is the other half of it.
+    app.help_key(key(KeyCode::Char('2')));
+    let rows = render(&mut app, 120, 40);
+    assert!(
+        rows.iter().any(|r| r.contains("size:>1gb")),
+        "pressing 2 must show the filter table"
+    );
+}

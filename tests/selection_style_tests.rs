@@ -113,8 +113,18 @@ fn test_sources_cursor_uses_the_theme_selection_colours() {
     assert_eq!(buf[(x, y)].fg, selected_fg(), "and written in selected_fg");
 }
 
+/// The menu marks the picked item by its glyph colour, not by painting
+/// it.
+///
+/// `menu_selected_bg` is the theme accent on several themes, so filling
+/// the glyphs with it drew a bright block around the word under the
+/// cursor -- the menu read as three coloured slabs rather than three
+/// lines of art. The picked item now takes the accent as its
+/// foreground, bold, and nothing behind it is painted at all.
 #[test]
-fn test_menu_selection_uses_its_own_theme_colours() {
+fn test_menu_selection_is_the_accent_colour_and_no_fill() {
+    use ratatui::style::Color;
+
     let mut app = make_app();
     app.show_menu = true;
     app.menu.selected = 1;
@@ -123,44 +133,23 @@ fn test_menu_selection_uses_its_own_theme_colours() {
     // The items are drawn as ASCII art, not as words: `Help` is the
     let (x, y) = find(&buf, "┌─╴").expect("the menu item is on screen");
     assert_eq!(
-        buf[(x, y)].bg,
-        theme().menu_selected_bg.to_color(),
-        "the picked item carries menu_selected_bg"
-    );
-    assert_eq!(
         buf[(x, y)].fg,
-        theme().menu_selected_fg.to_color(),
-        "and menu_selected_fg"
+        theme().primary_color(),
+        "the picked item is written in the accent"
     );
-}
-
-/// btop's menu paints the picked item, not its row: only the glyphs of the ascii-art carry
-/// `menu_selected_bg`.
-#[test]
-fn test_menu_highlight_covers_the_glyphs_not_the_spaces() {
-    let mut app = make_app();
-    app.show_menu = true;
-    app.menu.selected = 1; // Help: the art with spaces inside it
-
-    let buf = buffer(&mut app, 120, 40);
-    let (x, y) = find(&buf, "┌─╴").expect("the menu item is on screen");
     assert_eq!(
         buf[(x, y)].bg,
-        theme().menu_selected_bg.to_color(),
-        "a glyph carries the highlight"
-    );
-    assert_eq!(
-        buf[(x, y)].fg,
-        theme().menu_selected_fg.to_color(),
-        "and the selected fg"
+        Color::Reset,
+        "and nothing is painted behind it"
     );
 
-    // The cell two to the left is a space inside the same line of art.
+    // The cell two to the left is a space inside the same line of art,
+    // and the row below is an unpicked item.
     assert_eq!(buf[(x - 2, y)].symbol(), " ", "a space, not a glyph");
-    assert_ne!(
-        buf[(x - 2, y)].bg,
-        theme().menu_selected_bg.to_color(),
-        "the space around it must stay unpainted"
+    assert_eq!(
+        buf[(x - 2, y)].fg,
+        theme().menu_fg.to_color(),
+        "the unpicked colour"
     );
 }
 

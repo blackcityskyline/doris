@@ -191,49 +191,92 @@ fn test_the_gap_between_banner_and_items_is_not_filled() {
     );
 }
 
-/// The banner and the items are painted from the theme, not from
-/// constants: a menu that ignores "Theme background" shows a slab of
-/// `main_bg` over the terminal when the option is off.
+/// The cells the menu writes, found by rendering the same app twice --
+/// once with the menu up, once with it down -- and diffing. That names
+/// them exactly, instead of guessing which cells inside the menu's box
+/// belong to it: with "Theme background" on, the zones *behind* paint
+/// their own background over everything the menu did not touch, and a
+/// test that swept the whole box was really measuring them.
+fn menu_cells(mut app: UiApp, cfg: &Config) -> Vec<(i16, i16, ratatui::buffer::Cell)> {
+    let mut render = |menu: bool| {
+        app.show_menu = menu;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| app.render(frame, cfg)).unwrap();
+        terminal.backend().buffer().clone()
+    };
+    let with = render(true);
+    let without = render(false);
+    let mut out = Vec::new();
+    for y in 0..with.area.height {
+        for x in 0..with.area.width {
+            let (a, b) = (with[(x, y)].clone(), without[(x, y)].clone());
+            if a.symbol() != b.symbol() || a.fg != b.fg || a.bg != b.bg {
+                out.push((x as i16, y as i16, a));
+            }
+        }
+    }
+    out
+}
+
+/// The menu paints no background, whichever way "Theme background" is set.
+///
+/// The menu is an overlay, so anything it paints behind its glyphs sits
+/// *on top of* the live zones. Both ways of doing that were wrong: the
+/// per-glyph `main_bg` slab showed under the banner and around the
+/// items, and the picked item's own `menu_selected_bg` -- which is the
+/// theme accent on several themes -- drew a bright block around the word
+/// under the cursor. Selection is carried by the glyph colour instead.
 #[test]
-fn test_the_menu_follows_the_theme_background_option() {
+fn test_the_menu_paints_no_background() {
     use ratatui::style::Color;
 
-    let mut app = make_app();
     for theme_background in [false, true] {
         let cfg = Config {
             theme_background,
             ..Config::default()
         };
-
-        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        terminal.draw(|frame| app.render(frame, &cfg)).unwrap();
-        let buf = terminal.backend().buffer();
-
-        let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
-            .expect("the menu is drawn at this size");
-        let banner_y = rect.y + 1;
-        let start_x = (120 - 29) / 2;
-
-        // A filled glyph gets the menu's own background; a space never
-        // does, so the sample has to be a glyph.
-        let glyph_x = (start_x..start_x + 29)
-            .find(|&x| buf[(x, banner_y)].symbol() != " ")
-            .expect("the banner has glyphs");
-        let bg = buf[(glyph_x, banner_y)].bg;
-
-        if theme_background {
-            assert_eq!(
-                bg,
-                app.theme.main_bg.to_color(),
-                "with the option on, the banner sits on the theme background"
-            );
-        } else {
-            assert_eq!(
-                bg,
-                Color::Reset,
-                "with the option off, the banner must not paint a background \
-                 at all -- that was the blue slab"
-            );
-        }
+        let painted: Vec<_> = menu_cells(make_app(), &cfg)
+            .into_iter()
+            .filter(|(_, _, c)| c.bg != Color::Reset)
+            .collect();
+        assert!(
+            painted.is_empty(),
+            "theme_background={theme_background}: the menu painted a background \
+             behind itself at {painted:?}"
+        );
     }
+}
+
+/// The ASCII banner is drawn in one colour: the theme's accent.
+///
+/// With `primary` left unset the accent falls back to `title`, which is
+/// near-white in the built-in theme -- so the one piece of ASCII art on
+/// screen came out the same colour as the default foreground, on a theme
+/// that already had an accent of its own.
+#[test]
+fn test_the_banner_is_drawn_in_the_accent() {
+    let app = make_app();
+    let accent = app.theme.primary_color();
+    let title = app.theme.title.to_color();
+    assert_ne!(
+        accent, title,
+        "the built-in theme still has no accent of its own"
+    );
+
+    let cfg = Config::default();
+    let cells = menu_cells(app, &cfg);
+    let top = cells
+        .iter()
+        .map(|(_, y, _)| *y)
+        .min()
+        .expect("the menu drew something");
+    let fgs: Vec<_> = cells
+        .iter()
+        .filter(|(_, y, _)| *y < top + doris::ui::menu::BANNER_ROWS as i16)
+        .map(|(_, _, c)| c.fg)
+        .collect();
+    assert!(
+        !fgs.is_empty() && fgs.iter().all(|fg| *fg == accent),
+        "the banner must be one colour, the accent {accent:?}; saw {fgs:?}"
+    );
 }

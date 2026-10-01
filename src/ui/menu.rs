@@ -15,7 +15,7 @@ const BANNER: &[&str] = &[
 /// Row counts of the layout below, named once: the backdrop has to
 /// measure the same thing the drawing does, or the two disagree about
 /// where the menu ends.
-const BANNER_ROWS: u16 = 6;
+pub const BANNER_ROWS: u16 = 6;
 const SPACING: u16 = 1;
 
 /// Height of one menu item in rows: 3 glyph rows + 1 blank row of
@@ -110,27 +110,14 @@ pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
     ))
 }
 
-/// `bg` is the theme background when "Theme background" is on and
-/// nothing at all when it is off -- the same rule every other panel
-/// follows, and the reason this takes a colour rather than reading the
-/// theme itself: a menu that paints `main_bg` unconditionally shows a
-/// slab of the theme's colour over whatever is behind it.
-pub fn render_menu(
-    frame: &mut Frame,
-    area: Rect,
-    state: &MenuState,
-    theme: &Theme,
-    bg: Option<Color>,
-) {
-    // The backdrop paints on the cells the glyphs occupy -- the banner
-    // lines and each item's own line -- rather than on one big
-    // rectangle. A filled rectangle around a menu that is 36 columns by
-    // 18 tall reads as a panel the user cannot click.
-    let painted = |s: Style| match bg {
-        Some(c) => s.bg(c),
-        None => s,
-    };
-
+/// Nothing here paints a background, on any setting: the menu is an
+/// overlay, and a slab of the theme's colour behind the glyphs -- or
+/// behind the picked item, whose `menu_selected_bg` is the theme accent
+/// on several themes -- reads as a panel drawn over the app rather than
+/// text floating above it. "Theme background" has no say in it, which is
+/// why this takes no colour argument at all. The picked item is marked by
+/// its glyph colour instead: the accent, bold.
+pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &Theme) {
     let banner_w = BANNER[0].width() as u16;
     let banner_h = BANNER_ROWS;
     let menu_count = MENU_ITEMS.len() as u16;
@@ -147,11 +134,9 @@ pub fn render_menu(
         frame.render_widget(
             Paragraph::new(Span::styled(
                 *line,
-                painted(
-                    Style::default()
-                        .fg(theme.primary_color())
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Style::default()
+                    .fg(theme.primary_color())
+                    .add_modifier(Modifier::BOLD),
             )),
             render_area,
         );
@@ -178,17 +163,15 @@ pub fn render_menu(
             let spans: Vec<Span> = line
                 .chars()
                 .map(|c| {
-                    // The picked item always carries the menu's own
-                    // selection colours -- that is what marks it -- but
-                    // an unpicked one takes the theme background or
-                    // nothing, following the same option.
+                    // The glyphs of the picked item take the accent;
+                    // the spaces between them take nothing, or the
+                    // word would read as one slab with holes in it.
                     let style = if selected && c != ' ' {
                         Style::default()
-                            .fg(theme.menu_selected_fg.to_color())
-                            .bg(theme.menu_selected_bg.to_color())
+                            .fg(theme.primary_color())
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        painted(Style::default().fg(theme.menu_fg.to_color()))
+                        Style::default().fg(theme.menu_fg.to_color())
                     };
                     Span::styled(c.to_string(), style)
                 })

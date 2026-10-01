@@ -114,17 +114,7 @@ impl App {
         // (that is what covers the zones under it), so it takes the
         // themed block with the borders turned off rather than a bare
         // default.
-        // The menu follows "Theme background" like everything else: on
-        // means the theme's own background behind the glyphs, off means
-        // the terminal's shows through. Passing the colour in, rather
-        // than letting the menu read the theme itself, is what keeps
-        // that one option from being ignored here.
-        let bg = if config.theme_background {
-            Some(self.resolve_color(self.theme.main_bg.to_color(), config))
-        } else {
-            None
-        };
-        super::menu::render_menu(frame, area, &self.menu, &self.theme, bg);
+        super::menu::render_menu(frame, area, &self.menu, &self.theme);
     }
 
     fn render_main_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
