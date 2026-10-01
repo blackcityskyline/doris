@@ -636,6 +636,30 @@ async fn menu_help_opens_the_same_modal_as_question_mark() {
     assert!(!app.ui.show_menu, "and leave the menu behind");
 }
 
+/// The menu's Options item opens the Settings modal -- one options
+/// window, two ways to reach it, the same shape as the Help item above.
+///
+/// It used to only set `show_menu = false`. From the user's side Enter
+/// on "Options" closed the menu and did nothing else, which reads as a
+/// dead key rather than as a missing modal, and no test noticed because
+/// nothing asserted what the item opened.
+#[tokio::test]
+async fn menu_options_opens_the_settings_modal() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.show_menu = true;
+    app.ui.menu.select();
+    app.ui.menu.selected = 0; // Options
+
+    app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+    assert!(
+        matches!(app.ui.modal, Modal::Settings(_)),
+        "the Options item must open the settings modal, got {:?}",
+        app.ui.modal
+    );
+    assert!(!app.ui.show_menu, "and leave the menu behind");
+}
+
 /// name the key the Trackers panel is on, which moved to `3` when the
 /// placeholder zone went away -- a stale key points at a zone that
 /// does not exist.

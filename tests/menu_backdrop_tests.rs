@@ -121,7 +121,7 @@ fn test_the_gap_under_the_banner_is_the_modal_background() {
 }
 
 #[test]
-fn test_the_menu_box_carries_a_border_like_a_modal() {
+fn test_the_menu_has_no_border_of_its_own() {
     let mut app = make_app();
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     terminal
@@ -130,16 +130,30 @@ fn test_the_menu_box_carries_a_border_like_a_modal() {
     let buf = terminal.backend().buffer();
 
     let rect = doris::ui::menu::menu_backdrop_rect(Rect::new(0, 0, 120, 40))
-        .expect("the box is drawn at this size");
+        .expect("the backdrop is drawn at this size");
 
-    // A title in the top border, the way every other popup names itself.
-    let title_row: String = (rect.x..rect.x + rect.width)
-        .map(|x| buf[(x, rect.y)].symbol().chars().next().unwrap_or(' '))
-        .collect();
-    assert!(
-        title_row.contains("menu"),
-        "the top border is titled, got {title_row:?}"
-    );
+    // The menu is an overlay, not a zone: no frame glyphs, no title.
+    // A bordered box read as a fifth panel the user could not click.
+    for (label, y) in [("top", rect.y), ("bottom", rect.y + rect.height - 1)] {
+        let row: String = (rect.x..rect.x + rect.width)
+            .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+            .collect();
+        for corner in ['╭', '╰', '─', '│'] {
+            assert!(
+                !row.contains(corner),
+                "the {label} edge of the menu must not be framed, got {row:?}"
+            );
+        }
+    }
+    for x in [rect.x, rect.x + rect.width - 1] {
+        let col: String = (rect.y..rect.y + rect.height)
+            .map(|y| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+            .collect();
+        assert!(
+            !col.contains('│'),
+            "the side of the menu must not be framed, got {col:?}"
+        );
+    }
 }
 
 /// The pure geometry, no rendering: the box wraps the banner and the

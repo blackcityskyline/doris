@@ -107,12 +107,18 @@ impl App {
                 ZoneId::Trackers => self.render_trackers_zone(frame, zone_area, *zone_id, config),
             }
         }
-        let backdrop = self
-            .modal_block(self.theme.primary_color(), config)
-            .title(Span::styled(
-                " menu ",
-                Style::default().fg(self.theme.primary_color()),
-            ));
+        // No border and no title: this is a transient overlay, not a
+        // zone. `modal_block` draws the zone frame, and a bordered box
+        // around the banner read as a fifth panel the user could not
+        // click. The menu still needs the theme background painted
+        // (that is what covers the zones under it), so it takes the
+        // themed block with the borders turned off rather than a bare
+        // default.
+        let backdrop = self.themed_block_with_borders(
+            self.theme.primary_color(),
+            config,
+            ratatui::widgets::Borders::NONE,
+        );
         super::menu::render_menu(frame, area, &self.menu, &self.theme, backdrop);
     }
 

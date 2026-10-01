@@ -644,7 +644,15 @@ impl App {
                 let item = self.ui.menu.select();
                 match item {
                     MenuItem::Options => {
+                        // The menu item is Options; it opens the very
+                        // same Settings modal the item name says. It
+                        // used to only close the menu, which read as a
+                        // dead key.
                         self.ui.show_menu = false;
+                        self.ui.open_settings(
+                            &self.config,
+                            self.browser_visibility == BrowserVisibility::Hidden,
+                        );
                     }
                     MenuItem::Help => {
                         // The same page `?` opens -- one help modal, two

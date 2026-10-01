@@ -186,22 +186,40 @@ impl App {
             state.page = state.page.min(pages.saturating_sub(1));
         }
 
+        // Both tables are named on the border, with the one being shown
+        // marked. Without this the only sign that a second table exists
+        // is the title text changing when you press Right, which is no
+        // sign at all -- the page looked like one long list.
+        let active = Style::default()
+            .fg(self.theme.primary_color())
+            .add_modifier(Modifier::BOLD);
+        let inactive = Style::default().fg(self.theme.inactive_fg.to_color());
+        let arrow = Style::default()
+            .fg(self.theme.on_hover_color())
+            .add_modifier(Modifier::BOLD);
+        let mut tabs: Vec<Span> = vec![Span::styled(" ◀ ", arrow)];
+        for (n, (name, _)) in sections().iter().enumerate() {
+            if n == section {
+                tabs.push(Span::styled(format!("[{name}] "), active));
+            } else {
+                tabs.push(Span::styled(format!(" {name} "), inactive));
+            }
+        }
+        tabs.push(Span::styled(" ▶ ", arrow));
+
         if pages > 1 {
             let page = match &self.modal {
                 Modal::Help(state) => state.page,
                 _ => 0,
             };
-            // The arrows are the glyphs that act, so they take the
-            let arrow = Style::default()
-                .fg(self.theme.on_hover_color())
-                .add_modifier(Modifier::BOLD);
-            let title = Style::default().fg(self.theme.primary_color());
-            block = block.title_bottom(Line::from(vec![
-                Span::styled(" ↑ ", arrow),
-                Span::styled(format!("page {}/{} ", page + 1, pages), title),
-                Span::styled("↓", arrow),
-            ]));
+            tabs.push(Span::styled(" ↑ ", arrow));
+            tabs.push(Span::styled(
+                format!("page {}/{} ", page + 1, pages),
+                active,
+            ));
+            tabs.push(Span::styled("↓", arrow));
         }
+        block = block.title_bottom(Line::from(tabs));
         frame.render_widget(block, popup);
 
         // Structure in `primary`, the keybind column in `on_hover`:

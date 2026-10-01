@@ -407,3 +407,45 @@ fn test_the_section_switch_is_itself_documented() {
         "`←`/`→` switch sections and must say so: {both:?}"
     );
 }
+
+/// Both tables are named on screen, with the current one marked.
+///
+/// The switch worked; what was missing was any sign that there was
+/// anything to switch to. The title text changed and nothing else did,
+/// so the page read as one long list and the filter syntax looked
+/// absent rather than one arrow away.
+#[test]
+fn test_both_help_sections_are_named_on_screen() {
+    let mut app = make_app();
+    app.open_help_modal();
+    let rows = render(&mut app, 100, 30);
+    let all = rows.join("\n");
+
+    for (name, _) in doris::ui::modals::help::sections() {
+        assert!(
+            all.contains(name),
+            "the `{name}` table must be named on the page: {all}"
+        );
+    }
+    assert!(
+        all.contains('◀') && all.contains('▶'),
+        "and there must be arrows showing that it can be switched: {all}"
+    );
+
+    // The one being shown is the one in brackets, so pressing Right
+    // visibly moves the mark rather than only the title.
+    app.help_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+    let after = render(&mut app, 100, 30).join("\n");
+    let switched = doris::ui::modals::help::sections()
+        .iter()
+        .map(|(n, _)| *n)
+        .collect::<Vec<_>>();
+    let marked = switched
+        .iter()
+        .find(|n| after.contains(&format!("[{n}]")))
+        .expect("one section is marked");
+    assert_eq!(
+        *marked, switched[1],
+        "Right must move the mark to the second table"
+    );
+}
