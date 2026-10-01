@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::sources::ordering::{dedupe_by_hash, default_order};
 use crate::ui::view::{App as UiApp, AppState};
 
-/// The single log line describing how one source's dispatch ended (B0.3):
+/// The single log line describing how one source's dispatch ended:
 /// `rutor: 42 results` / `rutracker: HTTP 503`.
 ///
 /// Every source always reports one line, because `last_err` is only
@@ -59,10 +59,10 @@ pub fn apply_source_done(
 /// Every source of `generation` reported in (or failed to): nothing more
 /// is coming for it, so the UI goes idle. Whether "Load more" still has
 /// anything to offer is read from the per-source `has_more` verdicts
-/// (B2/B3) instead of the old `count < 50` guess.
+/// instead of the old `count < 50` guess.
 ///
 /// Returns `false` when the completion belongs to a superseded dispatch
-/// -- it must not flip a newer search back to idle (B0.2's rule,
+/// -- it must not flip a newer search back to idle ( rule,
 /// applied to the new final event).
 pub fn finish_search(
     ui: &mut UiApp,
@@ -81,7 +81,7 @@ pub fn finish_search(
 }
 
 /// Dedupe the merged multi-source list and put it into its default order
-/// (B4). This runs exactly once per generation -- when every source has
+/// This runs exactly once per generation -- when every source has
 /// answered -- because reordering while sources are still arriving would
 /// move rows out from under the user's selection.
 ///

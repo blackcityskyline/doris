@@ -70,7 +70,7 @@ pub struct TorrentItem {
     /// Content group this row belongs to, or `None` when the result
     /// cannot be attributed to one (searched with "all categories", or a
     /// source that doesn't filter server-side). Rows with `None` show up
-    /// only in the "all" view -- see B6, which is what starts filling it.
+    /// only in the "all" view --, which is what starts filling it.
     #[serde(default)]
     pub group: Option<Group>,
     /// Lower-case hex info hash, `""` when the source can't provide it
@@ -97,7 +97,7 @@ pub struct TorrentItem {
     pub added: i64,
 }
 
-/// One file inside a torrent, as the detail modal lists it (П.7).
+/// One file inside a torrent, as the detail modal lists it.
 ///
 /// Deliberately two fields: a source that can list files has a name and
 /// a size for each, and one that cannot say more still lets the modal

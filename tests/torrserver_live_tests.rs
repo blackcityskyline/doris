@@ -1,4 +1,4 @@
-//! Live end-to-end check for B7's add-by-link -- ignored by default so
+//! Live end-to-end check for add-by-link -- ignored by default so
 //! `cargo test` stays offline-safe. Run manually with:
 //! `cargo test --test torrserver_live_tests -- --ignored --nocapture`
 //!

@@ -1,4 +1,4 @@
-//! The Pirate Bay through apibay.org's JSON .
+//! The Pirate Bay through apibay.org's JSON.
 //!
 //! apibay is the front door torio uses too, and it has one quirk worth
 //! the module doc: **the same field arrives as a string and as a number
@@ -98,7 +98,7 @@ fn group_cats(group: Group) -> &'static [i64] {
 /// `cat=` list -- comma-separated, which the API takes (live
 /// 26.09.2026: `cat=201,202,207,209` returned only those four rows),
 /// built from `GROUP_CATS` so the trim and the row attribution can
-/// never drift apart. `None` keeps B8's unfiltered URL: with no
+/// never drift apart. `None` keeps unfiltered URL: with no
 /// category selected the whole corpus is the honest answer.
 pub fn search_url(query: &str, category: Option<Group>) -> String {
     let mut url = format!("{}/q.php?q={}", API, urlencoding::encode(query.trim()));
@@ -195,7 +195,7 @@ impl TpbSearcher {
     pub const HOME_URL: &str = "https://thepiratebay.org";
 
     pub fn new() -> Self {
-        // The shared browser-like client (B5): apibay answers a
+        // The shared browser-like client: apibay answers a
         // library UA with 403 (checked live) -- this is not paranoia.
         Self {
             client: browser_client(),

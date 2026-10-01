@@ -28,7 +28,7 @@ pub struct Config {
     #[serde(default = "default_cookie_file")]
     pub cookie_file: String,
 
-    // --- Options / "general" category  -----------------
+    // --- Options / "general" category -----------------
     // These mirror btop++'s general settings page. Values here are the
     // single source of truth the Options modal reads and writes -- unlike
     // the pre-Phase-5 UI, which displayed hardcoded literals with no
@@ -80,7 +80,7 @@ pub struct Config {
     #[serde(default)]
     pub known_sources: Vec<String>,
 
-    // --- Options / "streaming" category  ---------------
+    // --- Options / "streaming" category ---------------
     /// Kill the automated browser when Doris exits. Note: this is already
     /// the default outcome of `Browser`'s `Drop` impl regardless of this
     /// flag; setting this to `false` intentionally leaks the browser
@@ -97,7 +97,7 @@ pub struct Config {
     #[serde(default)]
     pub enabled_sources: Vec<String>,
 
-    // --- Options / "download" category  ----------------
+    // --- Options / "download" category ----------------
     #[serde(default = "default_true")]
     pub download_enabled: bool,
     /// "default" (OS Downloads folder) or "custom1"/"custom2"/"custom3"

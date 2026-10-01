@@ -93,7 +93,7 @@ pub fn cycle_index(pos: usize, len: usize, direction: i8) -> usize {
 /// rutracker searcher. Rutor is plain unauthenticated HTTP; everything else
 /// -- including rows produced before the `source` field existed -- routes
 /// through the browser, which is what the old hardcoded path did. Extracted
-/// as a free function so tests can pin the routing choice (B0.1).
+/// as a free function so tests can pin the routing choice.
 ///
 /// Since B2 the answer comes from the registry (`SourceInfo::
 /// requires_browser`) instead of a literal `"rutor"` comparison, so a
@@ -231,7 +231,7 @@ pub fn safe_filename(title: &str) -> String {
 }
 
 /// What the download key owes a row that has no `.torrent` to fetch
-/// (B8 wave 1: YTS publishes magnets, not files): `(file name, contents)`
+/// YTS publishes magnets, not files `(file name, contents)`
 /// for a `<title>.magnet` file, or `None` when the row *does* have a
 /// download URL and must go through its Source exactly as before.
 ///
@@ -308,7 +308,7 @@ pub async fn fill_missing_magnet(
     Ok(())
 }
 
-/// What pressing Enter in the results view means (B0.4).
+/// What pressing Enter in the results view means.
 ///
 /// The old chain of `if let Some(..)` calls let an empty search query fall
 /// through: `submit_search()` turned `input_mode` off and returned `None`,
@@ -376,7 +376,7 @@ pub fn torrserver_enable_message(url: &str, start: Option<Result<String, String>
     }
 }
 
-/// Merge a detail modal's file list into the modal (П.7).
+/// Merge a detail modal's file list into the modal.
 ///
 /// A free function over `&mut UiApp` for the same reason as
 /// [`apply_source_done`]: the "is this answer still wanted?" decision is
@@ -421,17 +421,17 @@ pub struct App {
     /// the browser behind it was always reused via `get_browser()` and
     /// still is.
     sources: HashMap<&'static str, Arc<dyn Source>>,
-    /// Each source's last "has another page" verdict (B2/B3): consulted
+    /// Each source's last "has another page" verdict: consulted
     /// by "Load more" and turned into `ui.all_loaded` by
     /// [`finish_search`].
     source_has_more: HashMap<String, bool>,
-    /// How many rows each source has delivered for the current query (B3):
+    /// How many rows each source has delivered for the current query:
     /// the cursor "Load more" resumes it at. One per source, because
     /// rutor pages by 100 and rutracker by 50 -- a shared counter walks
     /// off rutor's page grid and it answers with nothing.
     source_offsets: HashMap<String, usize>,
     /// Recently fetched pages, consulted before any source is spawned
-    /// (B5): a fresh hit answers immediately, browser and all.
+    /// a fresh hit answers immediately, browser and all.
     cache: Arc<SearchCache>,
     browser_visibility: BrowserVisibility,
     /// Kept alive (never read): dropping the last sender would close the
@@ -442,7 +442,7 @@ pub struct App {
     /// Bumped by every `start_search`; each dispatch carries the value it
     /// was started with, and results from an older generation are dropped.
     /// Without this, a slow answer from the previous query landed after the
-    /// new one started and overwrote its results (B0.2) -- torio's
+    /// new one started and overwrote its results -- torio's
     /// equivalent is the AbortController + `alive` flag on a search.
     search_generation: u64,
     terminal_size: (u16, u16),
@@ -572,7 +572,7 @@ impl App {
                             );
                             // A superseded dispatch may not touch the
                             // newer search's status or its paging verdict
-                            // (B0.2), which is why the bookkeeping sits
+                            // which is why the bookkeeping sits
                             // behind the merge's result.
                             if applied {
                                 let status = SourceStatus::from_event(

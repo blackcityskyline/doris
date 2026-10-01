@@ -136,7 +136,7 @@ pub fn render_menu(
 
     // No keybind footer: btop's main menu (`btop_menu.cpp:1219`,
     // `mainMenu`) draws a banner and three items and nothing else --
-    // where the keys live is the help page's job, which is what П.3
+    // where the keys live is the help page's job, which is
     // moved ours to.
     let total_h = banner_h + spacing + menu_count * 4;
     let start_y = area.y + area.height.saturating_sub(total_h) / 2;

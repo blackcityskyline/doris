@@ -34,7 +34,7 @@ pub const RSS: &str = "https://nyaa.si/?page=rss";
 
 /// `c=0_0` = every category (wave-2 decision, matching torio). The
 /// alternative, `c=1_0` for anime-only, would also drop nyaa's own
-/// soundtrack and audiobook uploads of anime -- something B6's
+/// soundtrack and audiobook uploads of anime -- something
 /// filtering should decide per search, not something the source should
 /// bake in.
 const ALL_CATEGORIES: &str = "0_0";
@@ -257,7 +257,7 @@ impl Source for NyaaSearcher {
     fn supports_browse(&self) -> bool {
         // Not claimed: the empty-query feed was never answered live
         // (B8 wave 2 decision -- see the module doc). Wiring it up is
-        // B9's browse work, once the host answers again.
+        // browse work, once the host answers again.
         false
     }
 
@@ -286,7 +286,7 @@ impl Source for NyaaSearcher {
         // Rows carry the `.torrent` link the feed ships (75 of 75
         // live). The status check matters for the same reason rutor's
         // has one: a block page must never reach TorrServer as a
-        // .torrent file.
+        //.torrent file.
         let response = fetch_resilient(url, || self.client.get(url), &fetch_options()).await?;
         let status = response.status();
         if !status.is_success() {

@@ -112,7 +112,7 @@ fn to_row(row: &EztvTorrent) -> Option<TorrentItem> {
     }
     // The API sends lowercase hex already; `normalize_info_hash` also
     // accepts a base32 spelling, and what it produces is what every
-    // hash-keyed feature (dedup, streaming, the .magnet file) reads.
+    // hash-keyed feature (dedup, streaming, the.magnet file) reads.
     let info_hash = normalize_info_hash(raw);
     if info_hash.len() != 40 || !info_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
@@ -170,7 +170,7 @@ impl EztvSearcher {
     pub const HOME_URL: &str = "https://eztvx.to";
 
     pub fn new() -> Self {
-        // The shared browser-like client (B5): the HTML side of this
+        // The shared browser-like client: the HTML side of this
         // host 403s anything that does not look like a browser, and the
         // API sits behind the same edge.
         Self {

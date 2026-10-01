@@ -1,5 +1,5 @@
 //! Size/date parsing and formatting shared by every source
-//! .
+//!.
 //!
 //! [`parse_size`] is a port of torio's `util/format.ts` `parseSize`,
 //! keeping its unit table and its one non-obvious rule: Russian units
@@ -123,7 +123,7 @@ pub fn unescape_entities(input: &str) -> String {
 
 /// Tags out, entities decoded, whitespace collapsed to single spaces --
 /// torio's `stripHtml` + `unescapeEntities` in that order, which is what
-/// turns `<b>Фрирен&#039;s</b>&nbsp;<span ...>` back into a title.
+/// turns `<b>Фрирен&#039;s</b>&nbsp;<span...>` back into a title.
 ///
 /// `tags` is passed rather than compiled here because each source keeps
 /// its own compiled regexes in a `OnceLock` and compiling a fourth for

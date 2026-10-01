@@ -78,7 +78,7 @@ fn test_a_row_is_read_for_title_link_date_size_and_group() {
         Some(Group::Games),
         "a games tracker claims Games"
     );
-    // No magnet and no hash on this site: playback is the .torrent path.
+    // No magnet and no hash on this site: playback is the.torrent path.
     assert!(item.magnet.is_none());
     assert!(item.info_hash.is_empty());
 }

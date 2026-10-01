@@ -98,7 +98,7 @@ impl App {
         // health_check() always runs as part of the already-running
         // tokio runtime (it's called from the main event loop), so
         // block_on-ing that same runtime's handle is illegal. Making
-        // this function itself async and .await-ing the request, like
+        // this function itself async and.await-ing the request, like
         // every other network call in the app, is the fix.
         //
         // The probe itself is `TorrServer::is_reachable` -- the same call

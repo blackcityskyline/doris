@@ -51,7 +51,7 @@ impl App {
     /// actually owns it, instead of always going through rutracker's
     /// browser session -- which for a rutor row either failed ("No
     /// browser session") or fetched `rutor.org/download/...`
-    /// cross-origin from a rutracker page (B0.1). Since B2 the client is
+    /// cross-origin from a rutracker page. Since B2 the client is
     /// just `&dyn Source`: which one to hand in is decided by
     /// [`source_id_for`] + [`source_needs_browser`] at the call site.
     /// Shared by `spawn_stream` and `download_selected_to_disk`.
@@ -62,7 +62,7 @@ impl App {
         source.download_torrent(&item.download_url).await
     }
 
-    /// Download the selected result's .torrent file to disk (Options ->
+    /// Download the selected result's.torrent file to disk (Options ->
     /// download's resolved directory), dispatching to whichever Source
     /// actually produced it -- `TorrentItem.source` matters here because
     /// the "all" Results tab can mix rows from more than one source at
@@ -123,8 +123,8 @@ impl App {
 
         // `get_source` launches the browser only for sources whose
         // registry entry says they need one -- a rutor download must
-        // never start Chrome (B0.1), and `requires_browser` is what says
-        // so (B2).
+        // never start Chrome, and `requires_browser` is what says
+        // so.
         let bytes_result: Result<Vec<u8>> = match self.get_source(source_id_for(&item)).await {
             Ok(source) => Self::download_bytes_for(&item, source.as_ref()).await,
             Err(e) => Err(e),
@@ -157,7 +157,7 @@ impl App {
 
         // Only browser-backed rows require a session that's already up;
         // a rutor row plays straight over plain HTTP and is built on the
-        // spot (B0.1). Streaming never launches a browser itself: if the
+        // spot. Streaming never launches a browser itself: if the
         // session a search should have created isn't there, say so.
         let source = match self.source_for_row(source_id_for(&item)).await {
             Ok(s) => s,
@@ -197,8 +197,8 @@ impl App {
                 return;
             }
 
-            // How the torrent reaches TorrServer (B7): a row carrying a
-            // magnet goes over as a *link* -- no .torrent round trip, and
+            // How the torrent reaches TorrServer: a row carrying a
+            // magnet goes over as a *link* -- no.torrent round trip, and
             // the fetch starts from the DHT plus the link's trackers
             // instead of waiting on one host to hand over a file. Per
             // decision, any problem with the link (missing, malformed,
@@ -320,7 +320,7 @@ impl App {
         ));
     }
 
-    /// Open the detail modal for the selected row (П.7, Shift+Enter) and
+    /// Open the detail modal for the selected row Shift+Enter and
     /// ask its source for the file list.
     ///
     /// The row's own facts go on screen at once -- the modal is never an

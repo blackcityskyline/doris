@@ -98,7 +98,7 @@ async fn live_a_single_word_query_comes_back_precise_and_full() {
     }
 }
 
-/// B6's slot as the user meets it: a category selected in the row is
+/// slot as the user meets it: a category selected in the row is
 /// what the URL says out loud, and every row it brings back stands
 /// under that category. Live on 26.09.2026 the site's own `/sub/`
 /// links agreed with the path 20 of 20 rows for each label probed;

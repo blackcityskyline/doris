@@ -1,7 +1,7 @@
 //! The Torrent panel while a stream is being set up: pressing Enter
 //! starts browser, magnet fetch, TorrServer add and upload, and until
 //! TorrServer answered with a hash the panel used to print
-//! `Hash:   Status:` with both values empty -- the most consequential
+//! `Hash: Status:` with both values empty -- the most consequential
 //! key in the app gave no visible state.
 
 use doris::config::Config;

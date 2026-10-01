@@ -92,7 +92,7 @@ impl Group {
 }
 
 /// The order the category row offers the groups in, left to right after
-/// the "all" tab: the same order B6's tab row was decided in, kept here
+/// the "all" tab: the same order tab row was decided in, kept here
 /// so the visible order is one recorded decision instead of an accident
 /// of where a variant happened to be typed above.
 pub const GROUP_ORDER: [Group; 4] = [Group::Movies, Group::TV, Group::Games, Group::Anime];
@@ -247,7 +247,7 @@ const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Gro
 const RUTRACKER_AD_CDN: &str = "rutrk.org";
 
 /// Torentino is a games tracker, top to bottom, so it declares the
-/// one group its rows can claim (B8 wave 3; playback is B7's
+/// one group its rows can claim (B8 wave 3; playback is
 /// `.torrent -> upload_torrent` fallback, no bencode crate).
 const TRENTINO_GROUPS: &[Group] = &[Group::Games];
 
@@ -262,32 +262,32 @@ const RUTOR_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::
 /// per-row category guessing (B8 wave 1; category *filtering* is B6).
 const YTS_GROUPS: &[Group] = &[Group::Movies];
 
-/// One apibay source covers torio's tpb-movies + tpb-tv pair (B8 wave 1
-/// decision): it declares the two groups it can attribute rows to, and
-/// filtering *within* a search is B6's job.
+/// One apibay source covers torio's tpb-movies + tpb-tv pair: it
+/// declares the two groups it can attribute rows to, and filtering
+/// *within* a search is not its job.
 const TPB_GROUPS: &[Group] = &[Group::Movies, Group::TV];
 
-/// SubsPlease is anime-only by nature (B8 wave 1).
+/// SubsPlease is anime-only by nature.
 const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
 
-/// Nyaa is anime's tracker by nature (B8 wave 2), which is what
+/// Nyaa is anime's tracker by nature, which is what
 /// `groups()` says about the *source*; an all-category query means each
 /// row still carries its own group (`nyaa::group_from_category`), and
 /// rows nyaa calls Audio/Literature claim none at all.
 const NYAA_GROUPS: &[Group] = &[Group::Anime];
 
 /// NNM-Club spans four forums -- the three torio splits (movies, TV,
-/// games) plus the anime ones (B8 wave 3). Since B6 each row claims the
+/// games) plus the anime ones. Since B6 each row claims the
 /// group of its own forum (`nnmclub::group_for_forum`), and the same
 /// four groups are what `nnmclub::GROUP_FORUMS` asks the tracker for;
 /// a test keeps the two declarations equal.
 const NNMCLUB_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
-/// EZTV is TV-only, and its rows say `Group::TV` to match (B8 wave 1).
+/// EZTV is TV-only, and its rows say `Group::TV` to match.
 const EZTV_GROUPS: &[Group] = &[Group::TV];
 
 /// 1337x's site sections that map onto a `Group`, declared when wave 3
-/// landed it as implemented (B8 wave 3). Music, Documentaries,
+/// landed it as implemented. Music, Documentaries,
 /// Applications, Other and XXX map onto none and are queried without a
 /// group; rows claim none of them either -- see `x1337x`'s module doc.
 const X1337X_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
@@ -373,7 +373,7 @@ impl Source for RutorSearcher {
 
     fn supports_browse(&self) -> bool {
         // The homepage index answers an empty query with the latest
-        // releases (B9) -- see `rutor::BROWSE_URL`.
+        // releases -- see `rutor::BROWSE_URL`.
         true
     }
 
@@ -383,7 +383,7 @@ impl Source for RutorSearcher {
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage> {
         // Fixed 100-row pages (see `RutorSearcher::PAGE_SIZE`), fanned
-        // out over the selected category's rubric ids when B6's
+        // out over the selected category's rubric ids when
         // `category` says so -- `rutor::to_page` reads `has_more` off
         // each id's own page and steps the cursor by one page.
         RutorSearcher::search_page(self, &req.query, req.offset, req.category).await
@@ -424,7 +424,7 @@ pub struct SourceInfo {
     /// in the entry below -- `source_registry_tests` checks that.
     pub category_filter: bool,
     /// Whether the source can answer an *empty query* -- browse mode
-    /// (B9): the freshest rows it has, with no search terms. `false`
+    /// the freshest rows it has, with no search terms. `false`
     /// means an empty query would come back as a broken page rather
     /// than as a list, so `selected_sources` leaves it out of a browse.
     pub supports_browse: bool,
@@ -586,7 +586,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         implemented: true,
         groups: TRENTINO_GROUPS,
         category_filter: true,
-        // Search is a POST, and the .torrent link lives on the item page
+        // Search is a POST, and the.torrent link lives on the item page
         // (live 26.09.2026), so `download_torrent` fetches it there --
         // no bencode crate needed for playback. Browse is not claimed:
         // no freshest-first feed has ever been verified on this host.
@@ -649,7 +649,7 @@ pub fn requires_browser(id: &str) -> bool {
     get_source(id).map(|s| s.requires_browser).unwrap_or(true)
 }
 
-/// The sources a CLI run asks (B9): `--source <id>` names exactly one --
+/// The sources a CLI run asks: `--source <id>` names exactly one --
 /// refusing an unknown or still-planned id rather than silently falling
 /// back to a default -- and otherwise every enabled implemented source,
 /// which is the same list `orchestrator::selected_sources` builds for
@@ -667,7 +667,7 @@ pub fn cli_sources(
             }
             Ok(vec![info])
         }
-        // No `all` tab any more (П.4): the panel's checkboxes are the
+        // No `all` tab any more: the panel's checkboxes are the
         // selection, so "everything" is simply every checked source.
         None => Ok(crate::sources::orchestrator::selected_sources(
             enabled, None, false,

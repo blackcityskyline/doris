@@ -235,7 +235,7 @@ fn rand_fraction() -> f64 {
     micros as f64 / 1_000_000.0
 }
 
-/// Try `bases` in order and hand back the first success (B5's failover
+/// Try `bases` in order and hand back the first success ( failover
 /// helper, deliberately deferred until a source actually had mirrors to
 /// fail over to -- yts is the first, B8 wave 1).
 ///

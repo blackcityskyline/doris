@@ -253,7 +253,7 @@ fn test_a_raw_ampersand_in_a_title_survives_decoding() {
         rows[2].title, "Dune.Part.Two.2024.REPACK.2160p.UPSCALE.WEB.HEVC.10Bit.AAC.2.0-R&H.mkv",
         "live titles carry raw `&`, and no entity table touches it"
     );
-    // ...while the icon anchor in front of the link is still not part
+    //...while the icon anchor in front of the link is still not part
     // of the title.
     assert!(!rows[2].title.contains("flaticon"));
 }
@@ -302,7 +302,7 @@ fn test_a_freshest_row_keeps_its_row_and_waits_for_its_day() {
 #[test]
 fn test_the_upload_day_comes_from_the_rows_own_page() {
     // Live detail page of the row above: the day the list would not
-    // spell out, in the same `Mon. DDth  'YY` the list uses for older
+    // spell out, in the same `Mon. DDth 'YY` the list uses for older
     // rows.
     let detail = r#"<ul class="list"><li><strong>Downloads</strong><span>630</span></li>
 <li><strong>Last checked</strong><span>Sep. 23rd '26</span></li>
@@ -506,7 +506,7 @@ fn test_the_cursor_is_the_sites_page_number() {
     );
 }
 
-/// B6's slot, in the spelling the site answers to (live 26.09.2026):
+/// slot, in the spelling the site answers to (live 26.09.2026):
 /// the group's own label names the category path, the *same* label
 /// names browse's `/popular-<label>/`, and both keep the page cursor
 /// the plain search uses. The labels are `Group::label` -- the words

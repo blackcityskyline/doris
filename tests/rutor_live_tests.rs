@@ -53,7 +53,7 @@ async fn live_search_falls_back_for_unindexable_words() {
 }
 
 /// Stopword case: strict search is 0, the relaxed one must find rows and
-/// the ones actually titled "... The Matrix ..." must be promoted.
+/// the ones actually titled "... The Matrix..." must be promoted.
 #[tokio::test]
 #[ignore = "requires network access to rutor.info"]
 async fn live_search_prefers_rows_mentioning_dropped_words() {
@@ -66,7 +66,7 @@ async fn live_search_prefers_rows_mentioning_dropped_words() {
     assert!(!items.is_empty(), "fallback for 'the matrix' still empty");
 }
 
-/// Download must return real .torrent bytes rather than an HTML page:
+/// Download must return real.torrent bytes rather than an HTML page:
 /// on 25.09.2026 rutor.org's `/download/{id}` started answering
 /// `302 -> /login` to logged-out clients, which is what forced the
 /// source over to rutor.info -- this test is what pins that.

@@ -631,7 +631,7 @@ fn test_state_streaming() {
         .unwrap();
 }
 
-/// B6's instant half: picking a category re-derives the view from the
+/// instant half: picking a category re-derives the view from the
 /// rows already on screen, and rows no source could attribute
 /// (`group = None`) belong to the "all" view alone.
 #[test]
@@ -716,7 +716,7 @@ fn test_render_draws_the_table_header_under_the_frame() {
     );
 }
 
-// --- the frame legend actually reaches the border (П.5) --------------------
+// --- the frame legend actually reaches the border --------------------
 
 /// Render `app` with `id`'s detail view open and hand back the buffer.
 fn render_detail(app: &mut UiApp, id: ZoneId, w: u16, h: u16) -> ratatui::buffer::Buffer {
@@ -764,7 +764,7 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     let top = row_text(&terminal, results.y);
     assert!(top.contains("filter"), "Results top border: {}", top);
     assert!(top.contains("group"), "Results top border: {}", top);
-    // The source tabs left the frame for their own panel (П.4), and
+    // The source tabs left the frame for their own panel, and
     // play/download/info left for the help page -- what the border says
     // now is the category button and the counts.
     assert!(top.contains('◀'), "Results top border: {}", top);
@@ -827,7 +827,7 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
     assert!(!body.contains("p: pause/resume"), "old hint line is back");
 }
 
-// --- the `Src` column (П.6) ------------------------------------------------
+// --- the `Src` column ------------------------------------------------
 
 /// Every drawn row as text, for assertions about what reached the screen
 /// rather than about state.

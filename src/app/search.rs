@@ -28,7 +28,7 @@ impl App {
         // `begin_search`, which decides it from whether this is a new
         // query or a re-ask of the one on screen.
         self.ui.begin_search(&query);
-        // Rows now arrive one source at a time (B3), so there is no
+        // Rows now arrive one source at a time, so there is no
         // single moment where the old list gets replaced by the new one:
         // the table empties on the first answer to arrive, and each
         // source appends into it. The per-source records belong to the
@@ -47,7 +47,7 @@ impl App {
             sources_summary(&self.config)
         ));
         // New generation: anything still in flight for a previous query is
-        // now stale and gets dropped when it lands (B0.2).
+        // now stale and gets dropped when it lands.
         self.search_generation += 1;
         let generation = self.search_generation;
         self.dispatch_search(query, generation).await;
@@ -63,13 +63,13 @@ impl App {
     /// instead of after the slowest one, and `Event::SearchComplete`
     /// closes the generation -- both stamped with it, so an answer
     /// arriving after a newer search started is dropped instead of
-    /// merged into it (B0.2).
+    /// merged into it.
     ///
     /// Rutor needs no browser/login at all; a source that does (rutracker)
     /// walks login *inside* its task, so the deadline covers that walk
     /// too rather than timing only the page fetch.
     pub(super) async fn dispatch_search(&mut self, query: String, generation: u64) {
-        // An empty query is browse mode (B9): only sources that can
+        // An empty query is browse mode: only sources that can
         // answer one are asked, and the merged list is ordered
         // freshest-first rather than by seeds.
         let browsing = query.trim().is_empty();
@@ -124,10 +124,10 @@ impl App {
 
         for (info, offset) in plan {
             // Cache lookup before anything else, browser launch included
-            // (B5): a fresh hit needs no task at all -- it just has to
+            // a fresh hit needs no task at all -- it just has to
             // arrive like the normal answer would, so the offsets,
             // paging verdict and log line all update through the same
-            // path. The category is part of the key (B6): the same words
+            // path. The category is part of the key: the same words
             // at the same offset under a different category are
             // different pages, so an "all" hit must never answer a
             // "Movies" request.
@@ -147,7 +147,7 @@ impl App {
                 Err(e) => {
                     // This source can't run at all, and with no task
                     // spawned nothing else will ever speak for it: it
-                    // still owes the user a line (B0.3).
+                    // still owes the user a line.
                     self.ui
                         .add_log(&source_outcome_line(info.id, &Err(e.to_string())));
                     self.ui
@@ -161,7 +161,7 @@ impl App {
                 .source_status
                 .insert(info.id.to_string(), SourceStatus::Pending);
             let mut req = SearchRequest::new(query.clone(), offset);
-            // The selection rides along (B6): a source that can filter
+            // The selection rides along: a source that can filter
             // server-side will, one that cannot returns what it has --
             // and the view keeps only the rows claiming this category,
             // so an unhonoured category reads as fewer rows rather than

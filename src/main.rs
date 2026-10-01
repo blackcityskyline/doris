@@ -23,7 +23,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         anyhow::bail!("Search query required in CLI mode.");
     }
 
-    // Which sources to ask (B9): `--source <id>` names exactly one,
+    // Which sources to ask: `--source <id>` names exactly one,
     // otherwise every enabled implemented source -- the same list the
     // `all` tab is built from, so CLI and TUI cannot disagree about what
     // "all sources" means.
@@ -97,7 +97,7 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
     for info in &selected {
         println!("\n=== {} ===", info.label);
 
-        // Same registry path as the TUI (B2): the instance from
+        // Same registry path as the TUI: the instance from
         // `build_source`, every operation through `dyn Source`.
         let source = doris::sources::source::build_source(
             info.id,

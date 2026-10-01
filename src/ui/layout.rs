@@ -33,7 +33,7 @@ pub enum ResizeKind {
 pub enum ZoneId {
     Results = 1,
     Torrent = 2,
-    /// The trackers checklist (П.4): which sources the search asks.
+    /// The trackers checklist: which sources the search asks.
     /// It took the number the "Extra" placeholder used to hold, so the
     /// zone a user actually touches sits at `3` instead of hiding
     /// behind a fifth key of a panel that drew nothing.
@@ -846,7 +846,7 @@ pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
 /// it: space + superscript + space + label + space.
 /// How many columns `zone_title` draws, which is what positions the
 /// frame legend beside it. The marker is two cells in both states (`▸ `
-/// or `  `) so the legend does not shift when focus moves.
+/// or ` `) so the legend does not shift when focus moves.
 pub fn zone_title_width(id: ZoneId) -> u16 {
     (5 + id.label().chars().count()) as u16
 }
@@ -855,7 +855,7 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
 /// the hotkey -- the glyph that acts is coloured the way a hover marks
 /// the actionable part. `active` bolds the whole word, which is how
 /// btop marks a toggle that is currently on (`Fx::b` around `pause`
-/// when `pause_proc_list`, around `tree` when `proc_tree`, ...).
+/// when `pause_proc_list`, around `tree` when `proc_tree`,...).
 ///
 /// The category button is the exception: it has no single hotkey, but
 /// two arrow cells that are mouse targets, so both arrows take the

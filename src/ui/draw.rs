@@ -266,7 +266,7 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    /// The Trackers panel (П.4): the `all` master switch on top, then one
+    /// The Trackers panel: the `all` master switch on top, then one
     /// row per registered source, `[x]`/`[ ]` showing whether the search
     /// asks it. The row under the cursor is reversed, the same way the
     /// selected result row is -- the cursor is the panel's only state, and
@@ -367,7 +367,7 @@ impl App {
         // TorrServer has not named the torrent yet: from Enter to the
         // hash arriving there is real work in flight (session, magnet,
         // add, upload) and no value to print, and an empty
-        // `Hash:   Status:` read as "nothing is happening".
+        // `Hash: Status:` read as "nothing is happening".
         // Labels take the secondary accent, values the body colour: the
         // panel is data, so only the words that name a value are
         // accented. A finished transfer gets the primary accent rather
@@ -438,7 +438,7 @@ impl App {
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
 
-        // "p: pause/resume  d: remove" is gone from the body: those two
+        // "p: pause/resume d: remove" is gone from the body: those two
         // are frame buttons now, top-right and bottom-left.
         self.render_frame(frame, id, area, config);
     }
@@ -785,7 +785,7 @@ fn results_header(theme: &Theme) -> Row<'static> {
 impl App {
     /// Whether a button's word is drawn bold: btop marks a toggle that
     /// is currently on this way (`Fx::b` around `pause` while
-    /// `pause_proc_list`, around `tree` while `proc_tree`, ...).
+    /// `pause_proc_list`, around `tree` while `proc_tree`,...).
     fn frame_button_active(&self, id: ZoneId, button: &FrameButton) -> bool {
         match (id, button.key) {
             (ZoneId::Results, 'f') => self.zones.filter_mode || !self.zones.filter_input.is_empty(),

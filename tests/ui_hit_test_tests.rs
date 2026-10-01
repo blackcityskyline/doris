@@ -104,7 +104,7 @@ fn test_zone_at_only_hits_fullscreened_zone() {
 
     // Every point in the full terminal area should resolve to Log...
     assert_eq!(app.zone_at(10, 10), Some(ZoneId::Log));
-    // ...since every other zone's area is zeroed out while fullscreened.
+    //...since every other zone's area is zeroed out while fullscreened.
     let torrent_area_before = app.zones.get_area(ZoneId::Torrent);
     assert_eq!(torrent_area_before, Rect::default());
 }
@@ -170,7 +170,7 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
     assert_eq!(app.selected, 3);
 }
 
-// --- the Trackers panel (П.4) ----------------------------------------------
+// --- the Trackers panel ----------------------------------------------
 
 /// The panel's rows are the registry plus the `all` switch, in the order
 /// they are drawn -- so a new source lands in the list on its own, and
@@ -547,7 +547,7 @@ fn test_clicking_the_filter_button_enters_filter_mode() {
 
 // --- the panel is derived from the registry, not written down ----------------
 
-/// Decided with the user after wave 1's live run: a source the user
+/// Decided with the user after live run: a source the user
 /// switched off must not be asked -- the panel is the only place that
 /// decides, so its rows come from the registry and nothing else.
 #[test]
@@ -620,7 +620,7 @@ fn test_switching_every_source_off_leaves_the_panel_empty() {
     );
 }
 
-// --- category tab row (B6's second Results row) ---------------------------
+// --- category tab row ( second Results row) ---------------------------
 
 /// Availability rather than a fixed four: with only single-group
 /// sources enabled the row shrinks to what they can answer, which is
@@ -714,7 +714,7 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
             .expect("the Results frame has a category button")
     };
     // The name is padded to the widest category, so the arrows stay in
-    // the same columns whatever is showing: `◀ all   ▶` and
+    // the same columns whatever is showing: `◀ all ▶` and
     // `◀ Movies ▶` are the same width.
     let text = button.text();
     assert!(text.starts_with("◀ "), "the left arrow: {text}");
@@ -739,7 +739,7 @@ fn test_the_category_button_names_the_category_and_its_arrows_switch() {
     );
     assert!(app.group_changed);
 
-    // ...and the left arrow steps back.
+    //...and the left arrow steps back.
     let rect = {
         let layout = app.frame_layout(ZoneId::Results, area, &config);
         layout

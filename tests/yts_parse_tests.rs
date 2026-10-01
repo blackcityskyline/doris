@@ -1,4 +1,4 @@
-//! Fixture tests for the YTS source .
+//! Fixture tests for the YTS source.
 //!
 //! The JSON is reconstructed from the live API's shape (checked against
 //! `yts.gg`/`movies-api.accel.li` on 25.09.2026), not saved off the
@@ -113,7 +113,7 @@ fn test_hashless_torrents_are_skipped_not_rendered() {
         "the unhashed 1080p torrent must not become a row: {:?}",
         page.items.iter().map(|i| &i.title).collect::<Vec<_>>()
     );
-    // ...and neither must a movie with no torrents at all.
+    //...and neither must a movie with no torrents at all.
     assert!(
         page.items.iter().all(|i| !i.title.contains("No Torrents")),
         "an empty torrent list yields no rows"

@@ -1,4 +1,4 @@
-//! Fixture tests for the apibay-backed TPB source .
+//! Fixture tests for the apibay-backed TPB source.
 //!
 //! Both live endpoint shapes are pinned side by side on purpose: `q.php`
 //! sends every numeric-ish field as a *string*, the precompiled top-100
@@ -212,7 +212,7 @@ fn group_of(category: i64) -> Option<Group> {
         .group
 }
 
-/// The wave-1 decision in one test, widened by B6's live classification:
+/// The wave-1 decision in one test, widened by live classification:
 /// TPB attributes rows to the two groups it declares (Movies, TV) and
 /// leaves everything else -- concerts, animation, the 206 mix, games,
 /// music, apps, books, XXX -- unattributed rather than claiming a group
@@ -263,7 +263,7 @@ fn test_the_search_url_carries_the_selected_category() {
     );
 }
 
-/// B6's acceptance in one direction: every id the server is trimmed by
+/// acceptance in one direction: every id the server is trimmed by
 /// parses back into exactly the group it was asked for. Without this,
 /// a stale `cat=` list would fetch rows the view drops as unattributed
 /// and report an empty category while the corpus had hits.

@@ -1,4 +1,4 @@
-//! Fixture tests for the SubsPlease source .
+//! Fixture tests for the SubsPlease source.
 //!
 //! The fixture is the live document's shape (checked against
 //! `subsplease.org/api/` on 25.09.2026), truncated where the payload

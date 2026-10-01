@@ -84,7 +84,7 @@ impl Default for TorentinoSearcher {
 
 impl TorentinoSearcher {
     pub fn new() -> Self {
-        // The shared browser-like client (B5): the HTML side of this
+        // The shared browser-like client: the HTML side of this
         // host 403s anything that does not look like a browser.
         Self {
             client: browser_client(),
@@ -92,7 +92,7 @@ impl TorentinoSearcher {
     }
 
     /// One page of results for `query`. An empty query is refused with
-    /// the reason (B9's browse needs a feed this site has never shown):
+    /// the reason ( browse needs a feed this site has never shown):
     /// "no results" and "this search needs terms" are different facts.
     pub async fn search_page(&self, query: &str, _offset: usize) -> Result<SearchPage> {
         if query.trim().is_empty() {
@@ -300,7 +300,7 @@ impl Source for TorentinoSearcher {
     fn supports_browse(&self) -> bool {
         // No "latest" feed has ever been verified on this host, and the
         // homepage is a category listing, not a freshest-first feed --
-        // so browse is not claimed (B9).
+        // so browse is not claimed.
         false
     }
 

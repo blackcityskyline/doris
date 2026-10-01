@@ -8,7 +8,7 @@ use serde::Deserialize;
 pub const DEFAULT_URL: &str = "http://127.0.0.1:8090";
 
 /// One torrent's live status, as reported by TorrServer's `/torrents`
-/// endpoint (`{"action": "list"}` or `{"action": "get", "hash": ...}`).
+/// endpoint (`{"action": "list"}` or `{"action": "get", "hash":...}`).
 ///
 /// **Two shapes exist in the wild, and both are accepted here.**
 ///
@@ -25,7 +25,7 @@ pub const DEFAULT_URL: &str = "http://127.0.0.1:8090";
 /// rather than an error, so against a modern server every field parsed
 /// empty and the Torrent zone showed no hash, name, size, speed or
 /// progress -- which is exactly what it did until this was fixed
-/// (found while live-verifying B7's add-by-link).
+/// (found while live-verifying the add-by-link path).
 ///
 /// `title` is deliberately *not* aliased to upstream's `name`: that key
 /// only appears once metadata is loaded, and two input keys mapping to
@@ -120,7 +120,7 @@ async fn ensure_ok(resp: reqwest::Response, what: &str) -> Result<()> {
     if status.is_success() {
         return Ok(());
     }
-    // TorrServer puts its reason in the body ("link is empty", ...).
+    // TorrServer puts its reason in the body ("link is empty",...).
     let body = resp.text().await.unwrap_or_default();
     let body = body.trim();
     let reason = if body.is_empty() {
@@ -143,7 +143,7 @@ impl TorrServer {
         Ok(list.unwrap_or_default())
     }
 
-    /// A single torrent's status (`{"action": "get", "hash": ...}`).
+    /// A single torrent's status (`{"action": "get", "hash":...}`).
     pub async fn get_torrent(&self, hash: &str) -> Result<Option<TorrentInfo>> {
         let resp = self
             .torrents_action(serde_json::json!({ "action": "get", "hash": hash }))
@@ -178,14 +178,14 @@ impl TorrServer {
         ensure_ok(resp, "resume the torrent").await
     }
 
-    /// Remove a torrent entirely (`{"action": "rem", "hash": ...}`).
+    /// Remove a torrent entirely (`{"action": "rem", "hash":...}`).
     pub async fn remove(&self, hash: &str) -> Result<()> {
         let body = serde_json::json!({ "action": "rem", "hash": hash });
         let resp = self.torrents_action(body).await?;
         ensure_ok(resp, "remove the torrent").await
     }
 
-    /// Hand TorrServer a magnet link instead of a `.torrent` file (B7):
+    /// Hand TorrServer a magnet link instead of a `.torrent` file:
     /// no download round trip, and the fetch starts from the DHT plus
     /// whatever trackers the link carries. Returns the torrent's hash,
     /// the same way [`upload_torrent`](Self::upload_torrent) does, so the
@@ -212,7 +212,7 @@ impl TorrServer {
         let response = self.torrents_action(body).await?;
         if !response.status().is_success() {
             // TorrServer reports why in the body ("link is empty",
-            // "error parse link: ..."), so surface it instead of a bare
+            // "error parse link:..."), so surface it instead of a bare
             // status code.
             let text = response.text().await.unwrap_or_default();
             anyhow::bail!("TorrServer rejected the link: {}", text);

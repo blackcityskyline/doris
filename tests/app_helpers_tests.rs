@@ -99,7 +99,7 @@ fn test_a_failing_source_logs_its_line_without_adding_rows() {
     );
 }
 
-// --- finish_search (B3: the generation is over when every source answered) --
+// --- finish_search the generation is over when every source answered --
 
 #[test]
 fn test_completion_marks_all_loaded_when_no_source_has_more() {
@@ -143,7 +143,7 @@ fn test_stale_completion_does_not_flip_a_newer_search_idle() {
     );
 }
 
-// --- source_needs_browser (fixes B0.1: streaming ignored item.source) -------
+// --- source_needs_browser ( streaming ignored item.source) -------
 
 #[test]
 fn test_rutor_rows_do_not_need_the_browser() {
@@ -161,7 +161,7 @@ fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
     // and any future browser-backed source should default to the same
     // client the old hardcoded path always used. An id the registry
     // knows is not "unknown" -- its own flag answers for it, which is
-    // why 1337x left this test in wave 3 (B8).
+    // why 1337x left this test in wave 3.
     assert!(source_needs_browser(""));
     assert!(source_needs_browser("never-heard-of-it"));
     assert!(
@@ -170,7 +170,7 @@ fn test_legacy_and_unknown_sources_fall_back_to_the_browser() {
     );
 }
 
-// --- source_id_for (B2: rows route through the registry) -------------------
+// --- source_id_for rows route through the registry -------------------
 
 #[test]
 fn test_rows_route_to_their_own_registered_source() {
@@ -303,7 +303,7 @@ fn test_cookie_file_default_config_value_is_usable() {
     assert_eq!(resolved.file_name().unwrap(), "cookies.txt");
 }
 
-// --- source_outcome_line (fixes B0.3: per-source errors were dropped) -------
+// --- source_outcome_line ( per-source errors were dropped) -------
 
 #[test]
 fn test_outcome_line_reports_a_successful_source() {
@@ -331,7 +331,7 @@ fn test_outcome_line_distinguishes_sources_on_the_same_error() {
     );
 }
 
-// --- enter_action (fixes B0.4: Enter on an empty query could stream) --------
+// --- enter_action ( Enter on an empty query could stream) --------
 
 #[test]
 fn test_enter_on_empty_query_in_input_mode_does_nothing() {
@@ -496,7 +496,7 @@ fn test_finish_search_clamps_the_selection_when_dedup_removed_that_row() {
     );
 }
 
-// --- download key: magnet-only rows (B8 wave 1) -----------------------------
+// --- download key: magnet-only rows -----------------------------
 
 /// A YTS row: no `.torrent` anywhere, the magnet *is* the payload.
 #[test]
@@ -518,7 +518,7 @@ fn test_a_magnet_only_row_pays_its_magnet_as_a_file() {
 }
 
 /// rutor rows carry *both* a download URL and a magnet: the magnet is
-/// the streaming path (B7), not an excuse to stop fetching the file the
+/// the streaming path, not an excuse to stop fetching the file the
 /// user asked to save.
 #[test]
 fn test_a_row_with_a_download_url_keeps_going_through_its_source() {
@@ -564,7 +564,7 @@ fn test_safe_filename_escapes_path_characters_and_trims() {
     );
 }
 
-// --- fill_missing_magnet (B8 wave 3: 1337x rows carry no link) ----------------
+// --- fill_missing_magnet 1337x rows carry no link ----------------
 
 /// A source whose rows arrive with neither a magnet nor a `.torrent`
 /// link, so the row's own page is the only place one lives (1337x).

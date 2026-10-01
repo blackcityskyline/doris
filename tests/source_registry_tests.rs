@@ -120,7 +120,7 @@ fn test_declared_groups_are_the_four_known_ones() {
     }
 }
 
-/// B6's acceptance line: a source does not get a category it cannot
+/// acceptance line: a source does not get a category it cannot
 /// serve without a documented reason. `SourceInfo::category_filter` is
 /// the capability; this list is the reason column -- an implemented
 /// source sits here exactly while it declares groups it cannot filter
@@ -215,11 +215,11 @@ fn test_group_order_offers_every_group_once_and_labels_them_distinctly() {
 #[test]
 fn test_only_browser_backed_sources_ask_for_a_browser() {
     // `requires_browser` is what makes the orchestrator skip
-    // `Browser::launch` entirely for plain-HTTP sources (and what B0.1's
+    // `Browser::launch` entirely for plain-HTTP sources (and 's
     // `source_needs_browser` ends up backed by). Rutracker is the only
     // source that constructs a browser today -- 1337x used to be listed
     // beside it on the strength of three mirrors answering 403, and wave
-    // 3 took it off (B8): the fourth mirror answers every path, so the
+    // 3 took it off: the fourth mirror answers every path, so the
     // challenge is those mirrors' business, not a session it lacks.
     let browser_backed: Vec<&str> = KNOWN_SOURCES
         .iter()
@@ -392,7 +392,7 @@ fn test_build_source_rejects_unknown_ids() {
 // --- Options rows derive from the same registry -----------------------------
 
 /// The sources checklist left Options when it moved to its own panel
-/// (П.4): these tests used to pin the rows' derivation. What is left to
+/// these tests used to pin the rows' derivation. What is left to
 /// pin is that the streaming category still builds, and that the
 /// registry remains the single list everything else reads.
 #[test]
@@ -490,7 +490,7 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
         source::cli_sources(Some("never-heard-of-it"), &enabled).is_err(),
         "an unknown id is refused"
     );
-    // Torentino is implemented now (B8 wave 3), so naming it works --
+    // Torentino is implemented now, so naming it works --
     // and names exactly it.
     let torentino =
         source::cli_sources(Some("torentino"), &enabled).expect("torentino is implemented");

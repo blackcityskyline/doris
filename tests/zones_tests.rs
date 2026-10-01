@@ -344,7 +344,7 @@ fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
     assert_eq!(spans[3].style.fg, Some(theme.on_hover_color()));
     assert!(spans[3].style.add_modifier.contains(Modifier::BOLD));
 
-    // ...and the rest of the label is still plain primary.
+    //...and the rest of the label is still plain primary.
     assert_eq!(spans[4].content.to_string(), "esults");
     let label = spans[4].style;
     assert_eq!(label.fg, Some(theme.primary_color()));
@@ -465,7 +465,7 @@ fn test_the_filter_button_sits_on_the_right_next_to_group() {
 
 /// The category name is centred in a slot as wide as the widest
 /// category, so the arrows hold the same columns no matter which one
-/// shows: `◀..TV..▶` beside `◀Movies▶`, not `◀TV    ▶`.
+/// shows: `◀..TV..▶` beside `◀Movies▶`, not `◀TV ▶`.
 #[test]
 fn test_the_category_name_is_centred_in_its_slot() {
     let mut app = doris::ui::view::App::new("http://127.0.0.1:8090".into(), None);

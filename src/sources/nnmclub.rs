@@ -146,7 +146,7 @@ pub const FORUM: &str = "https://nnmclub.to/forum/";
 
 /// The page the query URL was verified against: results ordered by the
 /// tracker, tokens matched server-side (all of a row's words present).
-/// A selected group narrows the forums the query runs over (B6).
+/// A selected group narrows the forums the query runs over.
 pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String {
     let query = query.trim();
     if query.is_empty() {
@@ -345,7 +345,7 @@ fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
     let (size_bytes, added) = size_and_added(row, patterns);
     // The site's *classes*, not its `title=` hints -- the difference
     // was found live and cost real rows: a torrent nobody seeds swaps
-    // `title="Seeders"` for `title=" Last seen:   29-03-2020"` and
+    // `title="Seeders"` for `title=" Last seen: 29-03-2020"` and
     // leaves the cell body empty, while keeping `class="seedmed"`.
     // Keying on the title lost 35 of 50 browse rows, which in turn
     // read a full page as a short one and switched pagination off;
@@ -371,7 +371,7 @@ fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
         page_url: format!("{}viewtopic.php?t={}", FORUM, topic_id),
         source: "nnmclub".to_string(),
         // The row's own forum, so a tab switch can filter rows the
-        // tracker already returned (B6); `None` for sections outside
+        // tracker already returned; `None` for sections outside
         // the four groups, which is what keeps "all" honest.
         group: forum_of(row).and_then(group_for_forum),
         query: String::new(),
@@ -510,7 +510,7 @@ impl Source for NnmclubSearcher {
         // The row's own `download.php?id=` link (live: 302 ->
         // `application/x-bittorrent`). The status check matters for the
         // same reason rutor's has one: a challenge page must never be
-        // handed to TorrServer as a .torrent file.
+        // handed to TorrServer as a.torrent file.
         let response =
             fetch_resilient(url, || self.client.get(url), &FetchOptions::default()).await?;
         let status = response.status();

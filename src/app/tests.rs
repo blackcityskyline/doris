@@ -1014,7 +1014,7 @@ async fn the_wheel_scrolls_the_full_log_by_its_own_step() {
     app.ui.detail_log_scroll = 50;
 
     // crossterm reports a wheel notch as a ScrollUp/ScrollDown event with
-    // no coordinate movement, which is what  with
+    // no coordinate movement, which is what with
     // only the kind replaced describes.
     let wheel = |down: bool| MouseEvent {
         kind: if down {

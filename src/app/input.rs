@@ -75,7 +75,7 @@ impl App {
                 } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
                     // The input box is the only thing left to hit on
                     // those rows: the header hints ("s: search | S:
-                    // settings | ...") went with П.3, and clicking the
+                    // settings |...") went with П.3, and clicking the
                     // field does what `s`/`i` do.
                     self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
@@ -272,7 +272,6 @@ impl App {
                     // owner; the modal reads a session copy on open.
                     // Previously this toggle only updated the display
                     // label and had zero effect on the next launch
-                    // .
                     self.browser_visibility = match self.browser_visibility {
                         BrowserVisibility::Hidden => BrowserVisibility::Visible,
                         BrowserVisibility::Visible => BrowserVisibility::Hidden,
@@ -575,7 +574,7 @@ impl App {
                     self.ui.zones.focus_or_toggle(id);
                 }
             }
-            // Shift+P: cycle the layout presets (П.8), the same list the
+            // Shift+P: cycle the layout presets, the same list the
             // Options row cycles -- one list, not two. Lowercase `p` is
             // pause/resume on the Torrent panel, so the capital is the
             // free one -- the same reasoning as `F` for filter.
@@ -630,7 +629,7 @@ impl App {
                 self.ui.toggle_source(&mut self.config);
                 self.persist_config();
             }
-            // Shift+Enter: the selected row's details (П.7). Separate
+            // Shift+Enter: the selected row's details. Separate
             // from the plain Enter below on purpose -- that one plays
             // or re-searches, and a modifier is the only thing that can
             // tell the two apart.
@@ -680,7 +679,7 @@ impl App {
                 self.ui.enter_input_mode();
             }
             KeyCode::Char('b') => {
-                // Browse (B9): an empty query asks the browse-capable
+                // Browse: an empty query asks the browse-capable
                 // sources for their freshest rows. Browse is cross-source
                 // by nature, so it takes the "all" category with it -- a
                 // mixed list of rows claiming no group must stay visible.

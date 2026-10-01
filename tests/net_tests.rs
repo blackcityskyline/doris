@@ -237,7 +237,7 @@ fn test_only_torios_retryable_statuses_are_retried() {
     }
 }
 
-// --- first_ok (B5's failover helper, first consumer yts) ---------------------
+// --- first_ok ( failover helper, first consumer yts) ---------------------
 
 /// What a multi-host source asks one host: GET it, and treat a non-2xx
 /// as a failure so the next host gets its turn. Takes owned arguments on

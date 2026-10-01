@@ -49,7 +49,7 @@ use crate::sources::source::{Group, SearchPage};
 ///
 /// Every id was read off the live site on 26.09.2026 by fetching a row
 /// from each rubric and taking the name its own page prints ("Категория
-/// ..."), rather than guessed from the URL:
+///..."), rather than guessed from the URL:
 ///
 /// - Movies: 1 Зарубежные фильмы, 5 Наши фильмы, 7 Мультипликация,
 ///   12 Научно-популярные фильмы -- the four buckets holding films
@@ -91,7 +91,7 @@ impl Default for RutorSearcher {
     }
 }
 
-/// The browse URL (B9): the homepage index. Live 26.09.2026 it
+/// The browse URL: the homepage index. Live 26.09.2026 it
 /// answers 149 rows of the latest releases with the same row markup
 /// as the search results, and it has no pager -- so browse is one
 /// page and `has_more` is false. The category is not honoured: the
@@ -107,22 +107,22 @@ const EMPTY_PAGE_THRESHOLD: usize = 2000;
 impl RutorSearcher {
     pub const HOME_URL: &'static str = "https://rutor.info/";
     /// Search/download host. rutor.info, not rutor.org: since
-    /// 25.09.2026 the .org mirror answers `302 -> /login` for
+    /// 25.09.2026 the.org mirror answers `302 -> /login` for
     /// `/download/{id}`, so an unauthenticated download returns an HTML
-    /// login page instead of a .torrent (see the module docs).
+    /// login page instead of a.torrent (see the module docs).
     const BASE: &'static str = "https://rutor.info";
     /// Rutor's search pages hold a fixed 100 rows, verified live while
     /// fixing the zero-results bug: `matrix` reports 219 hits and comes
     /// back 100/100/22/0 rows on pages 1/2/3/4 (page 0 is a synonym of
     /// page 1). Used to translate this app's "offset" pagination
-    /// convention (0, 100, 200, ...) into rutor's 1-based page numbers
+    /// convention (0, 100, 200,...) into rutor's 1-based page numbers
     /// for "load more".
     /// Rows per results page -- the unit `SearchRequest::offset` counts
-    /// in, and what `Source::search` uses to decide `has_more` (B2).
+    /// in, and what `Source::search` uses to decide `has_more`.
     pub const PAGE_SIZE: usize = 100;
 
     pub fn new() -> Self {
-        // The shared browser-like client (B5): User-Agent plus the
+        // The shared browser-like client: User-Agent plus the
         // Accept/Accept-Language pair rutor used to set per request.
         Self {
             client: browser_client(),
@@ -138,7 +138,7 @@ impl RutorSearcher {
     /// whole query return zero hits. Two classes of words are effectively
     /// unmatchable (both confirmed live while fixing this):
     ///
-    /// - English/Russian stopwords ("the", "of", "a", "it", "am", ...):
+    /// - English/Russian stopwords ("the", "of", "a", "it", "am",...):
     ///   they are stripped from the index but not from the query, so even
     ///   `live the matrix` returns 0 while `live matrix` returns the very
     ///   torrent that contains "The" in its title.
@@ -164,7 +164,7 @@ impl RutorSearcher {
         category: Option<Group>,
     ) -> Result<SearchPage> {
         if query.trim().is_empty() {
-            // Browse (B9): the homepage's latest releases -- one mixed
+            // Browse: the homepage's latest releases -- one mixed
             // list, no pager, no category. Rows claim no group, which
             // is why the `b` key returns the view to "all" first.
             let (status, html) = self.fetch_url(BROWSE_URL).await?;
@@ -184,7 +184,7 @@ impl RutorSearcher {
             // previous fetch was a partial (= final) page. Returning
             // nothing here both avoids re-reading that page and makes
             // `Source::search` report `has_more: false`, which flips
-            // `all_loaded` (B2).
+            // `all_loaded`.
             crate::log::log(
                 "rutor",
                 &format!(
@@ -326,11 +326,11 @@ impl RutorSearcher {
     }
 
     /// One GET of any URL on this source's site, with the shared client
-    /// and the unconditional diagnostic log line. Browse reuses it (B9):
+    /// and the unconditional diagnostic log line. Browse reuses it:
     /// the homepage is not a search URL, but it is fetched and parsed
     /// exactly like one.
     async fn fetch_url(&self, url: &str) -> Result<(reqwest::StatusCode, String)> {
-        // Accept/Accept-Language come from the shared client (B5); the
+        // Accept/Accept-Language come from the shared client; the
         // only per-request header left is Referer, which names this
         // source's own site. The fetch retries transient failures
         // (rutor occasionally answers 503 under load) and refuses to
@@ -382,7 +382,7 @@ impl RutorSearcher {
     }
 
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
-        // Same resilient path as search: a .torrent fetch that hits a
+        // Same resilient path as search: a.torrent fetch that hits a
         // transient 503 should retry rather than hand TorrServer a
         // failure page.
         let response =
@@ -391,7 +391,7 @@ impl RutorSearcher {
         if !status.is_success() {
             // This used to be unchecked, so a mirror answering
             // `302 -> /login` (or a plain 404) had its HTML body
-            // uploaded as a .torrent -- the exact failure that made us
+            // uploaded as a.torrent -- the exact failure that made us
             // move to rutor.info in the first place.
             anyhow::bail!("rutor download {} answered HTTP {}", url, status);
         }
@@ -415,7 +415,7 @@ impl RutorSearcher {
 /// - **The cursor steps by exactly one page** (`offset + PAGE_SIZE`):
 ///   every id was read at the same page number, so counting the merged
 ///   rows instead would jump ahead and skip each rubric's rows.
-/// - **Rows claim the category that fetched them** (B6). With no
+/// - **Rows claim the category that fetched them**. With no
 ///   category they claim nothing -- the honest reading of an
 ///   unfiltered row this parser cannot attribute.
 pub fn to_page(
@@ -486,7 +486,7 @@ pub fn split_query(query: &str) -> (Vec<String>, Vec<String>) {
             .trim_matches(|c: char| !c.is_alphanumeric())
             .to_string();
         // rutor's own help text says the minimum query length is 2, and
-        // every observed <=2-char token ("it", "am", "z", "qq", ...) was
+        // every observed <=2-char token ("it", "am", "z", "qq",...) was
         // unmatchable -- no point sending them back.
         let too_short = core.chars().count() <= 2;
         let is_stopword = STOPWORDS.contains(&core.to_lowercase().as_str());
@@ -556,7 +556,7 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     // they can never bleed into the leech count that follows.
     // Units come in both Latin (`2.27 GB`) and Cyrillic (`2,27 ГБ`)
     // spellings depending on the row -- the Cyrillic variant used to parse
-    // to an empty size (B0.6). `(?i)` covers lower-case spellings too
+    // to an empty size. `(?i)` covers lower-case spellings too
     // (`гб`, `mb`), which the old pattern also missed.
     let size_re = Regex::new(r"(?i)(\d+(?:[.,]\d+)?)(?:\s|&nbsp;)*(TB|GB|MB|KB|ТБ|ГБ|МБ|КБ)").ok();
     let seeds_re = Regex::new(r#"alt="S"[^>]*>(?:\s|&nbsp;)*(\d+)"#).ok();
@@ -644,7 +644,7 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
             magnet: magnet_href(&row, &magnet_sel),
             ..Default::default()
         };
-        // Numeric twins derived from the display strings above (B1), then
+        // Numeric twins derived from the display strings above, then
         // the two fields rutor hands over directly: the added timestamp
         // (from the date cell) and the info hash inside the row's magnet.
         item.fill_from_display();
@@ -707,8 +707,8 @@ fn magnet_href(row: &scraper::ElementRef, sel: &Selector) -> Option<String> {
 
 /// `xt=urn:btih:{40 hex}` inside a magnet URI -> the lower-case hash, or
 /// `""`. Only the 40-hex form is accepted: base32 hashes need
-/// normalizing, which is B7's `normalize_info_hash` job -- guessing in
-/// two places is how a wrong hash silently defeats dedup (B4).
+/// normalizing, which is `normalize_info_hash` job -- guessing in
+/// two places is how a wrong hash silently defeats dedup.
 fn info_hash_from_magnet(magnet: &str) -> String {
     info_hash_re()
         .and_then(|re| re.captures(magnet))

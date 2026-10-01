@@ -25,7 +25,6 @@ const LOGIN_URL: &str = "https://rutracker.org/forum/login.php";
 /// Resolve a rutracker download URL against the forum root. Lives here,
 /// not in the source-agnostic `models.rs`, because the host is baked in:
 /// only rutracker produces these `/forum/...` and bare `dl.php?t=` forms
-/// (B0.5).
 pub fn resolve_url(url: &str) -> String {
     if url.starts_with("http") {
         url.to_string()
@@ -40,7 +39,7 @@ pub struct RutrackerSearcher {
     browser: Arc<Mutex<Browser>>,
     /// Interior mutability because `Source::ensure_logged_in` takes
     /// `&self`: an `Arc<dyn Source>` registry cannot hand out `&mut`
-    /// (B2). Relaxed ordering is fine -- the flag is a memo of "login
+    /// Relaxed ordering is fine -- the flag is a memo of "login
     /// succeeded", and the browser mutex already serializes the work it
     /// guards.
     logged_in: AtomicBool,
@@ -117,7 +116,7 @@ fn forum_params(category: Option<Group>) -> String {
 }
 
 /// The query URL: results ordered by the tracker (`o=10&s=2`), a
-/// selected group narrowing the forums the query runs over (B6).
+/// selected group narrowing the forums the query runs over.
 /// `start=` only on the second page and later.
 pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String {
     let encoded_query = urlencoding::encode(query);
@@ -139,7 +138,7 @@ pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String
 impl RutrackerSearcher {
     /// Rutracker's forum index — used as the generic "domain home page" a
     /// hidden-mode browser session navigates to before cookie injection.
-    /// Once the `Source` trait lands  this becomes
+    /// Once the `Source` trait lands this becomes
     /// `Source::home_url()` and callers stop reaching into this searcher
     /// just to get a URL constant.
     pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";
@@ -661,7 +660,7 @@ impl RutrackerSearcher {
         self.search_page(query, 0, None).await
     }
 
-    /// One page of results under `category` (B6): `Some(group)` asks for
+    /// One page of results under `category`: `Some(group)` asks for
     /// that group's forums only, `None` leaves the query unfiltered.
     pub async fn search_page(
         &self,
@@ -736,7 +735,7 @@ impl RutrackerSearcher {
             // (rutracker's result rows link their topic and nothing else
             // identifying), so the group is the one the query was filtered
             // by -- the site's own `f[]` parameter said these rows are
-            // inside it (B6).
+            // inside it.
             item.group = category;
             item.fill_from_display();
         }

@@ -1,4 +1,4 @@
-//! Fixture tests for the EZTV source .
+//! Fixture tests for the EZTV source.
 //!
 //! The fixture is the live response's shape (checked against
 //! `eztvx.to/api/get-torrents` on 25.09.2026): `size_bytes` arrives as

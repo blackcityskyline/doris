@@ -249,7 +249,7 @@ fn test_title_has_word_empty_word_never_matches() {
 
 // Rows served to Russian-language clients spell the unit in Cyrillic,
 // which the original `(TB|GB|MB|KB)` pattern missed entirely: `size`
-// came back empty for `2,27 ГБ` (B0.6).
+// came back empty for `2,27 ГБ`.
 const CYRILLIC_SIZE_ROW: &str = r#"
 <table>
 <tr class="gai">
@@ -392,8 +392,8 @@ fn test_row_without_magnet_leaves_hash_and_magnet_empty() {
 #[test]
 fn test_base32_info_hash_is_left_for_the_magnet_pipeline() {
     // A 32-char base32 btih is a real hash, but converting it to hex is
-    // B7's `normalize_info_hash` job -- filling it in half-way here would
-    // make dedup (B4) compare a base32 hash against a hex one.
+    // `normalize_info_hash` job -- filling it in half-way here would
+    // make dedup compare a base32 hash against a hex one.
     let html = r#"
     <table><tr class="gai">
       <td>06 Сен 26</td>
@@ -422,7 +422,7 @@ fn row(id: &str) -> TorrentItem {
     }
 }
 
-/// B6's acceptance in one direction: the category is rutor's own third
+/// acceptance in one direction: the category is rutor's own third
 /// path segment, `0` is its spelling for "all categories", and every
 /// id a group fans out over is one the URL asks for -- one GET per id,
 /// because a comma list is not a list (live 26.09.2026: `cat=1,5`
@@ -457,7 +457,7 @@ fn test_the_category_slot_is_the_urls_third_segment() {
 /// rutor: the ids picked from the live inventory (each rubric's name
 /// read off a torrent's own page), no id in two groups at once -- a
 /// fan-out would otherwise show one torrent twice -- and none of the
-/// rubrics rutor keeps for itself (music, software, books, sport, ...)
+/// rubrics rutor keeps for itself (music, software, books, sport,...)
 /// claiming a group it was never asked for.
 #[test]
 fn test_group_ids_cover_the_declared_groups_and_nobody_elses_rubrics() {

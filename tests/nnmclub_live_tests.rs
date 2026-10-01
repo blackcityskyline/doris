@@ -250,7 +250,7 @@ async fn live_the_torrent_a_row_ships_is_a_bencoded_file() {
     );
 }
 
-/// B6's live claim: a selected category narrows what the *server*
+///  live claim: a selected category narrows what the *server*
 /// answers, and every row that comes back claims that category from
 /// its own forum cell. Movies is the biggest list (80 `f%5B%5D=` ids,
 /// ~1 KB of URL), so it is the one that proves one request is enough;

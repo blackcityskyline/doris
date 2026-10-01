@@ -1,4 +1,4 @@
-//! Registry-driven concurrent fan-out for one search .
+//! Registry-driven concurrent fan-out for one search.
 //!
 //! `app.rs` decides *which* sources run (Results tab + Options) and owns
 //! their instances; everything about *how* they run lives here so it can
@@ -39,7 +39,7 @@ pub const PER_SOURCE_TIMEOUT: Duration = Duration::from_secs(25);
 
 /// Where one source of the current dispatch stands. Kept on `App` so a
 /// future status row can render it; until then the log line is the
-/// interim surface (B3).
+/// interim surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceStatus {
     Pending,
@@ -131,14 +131,14 @@ impl SourceOutcome {
 ///
 /// The send happens inside the source's own task, so events arrive in
 /// *completion* order: a source stuck behind a Cloudflare walk cannot
-/// delay a source that already answered (B3's whole point), and
+/// delay a source that already answered ( whole point), and
 /// `Event::SearchComplete` still comes last because [`coordinate`] only
 /// emits it after every task has finished -- and every task sends its
 /// `SourceDone` before finishing.
 ///
 /// Never returns `Err`: a timeout, an error and a success are all
 /// outcomes, because a source that fails has to say so rather than stay
-/// silent (B0.3) and leave the UI waiting forever.
+/// silent and leave the UI waiting forever.
 pub async fn run_source(
     source_id: &'static str,
     generation: u64,
@@ -167,7 +167,7 @@ pub async fn run_source(
 ///
 /// A task that panicked is reported as a failed `SourceDone` rather than
 /// dropped: it must neither swallow the healthy sources' results nor
-/// leave the UI stuck in `Searching` (B0.3).
+/// leave the UI stuck in `Searching`.
 pub async fn coordinate(
     generation: u64,
     tasks: Vec<(&'static str, JoinHandle<()>)>,
@@ -207,12 +207,12 @@ pub async fn coordinate(
 /// slot has never been verified live, so a category search skips the
 /// slow browser round-trip instead of discarding its rows).
 ///
-/// `browse` is the empty-query case (B9): a source that cannot answer a
+/// `browse` is the empty-query case: a source that cannot answer a
 /// query with no terms is not asked, because its "browse" would be a
 /// search for the empty string and read as a broken page rather than as
 /// the freshest rows the user asked for.
 ///
-/// There is no "one source at a time" mode any more (П.4): the panel's
+/// There is no "one source at a time" mode any more: the panel's
 /// checkboxes *are* the selection, so asking a single source means
 /// checking only it.
 pub fn selected_sources(
@@ -305,7 +305,7 @@ pub fn dispatch_plan(
 }
 
 /// Wrap one source's page fetch so a *successful* page is stored under
-/// `key` before it is reported (B5).
+/// `key` before it is reported.
 ///
 /// Failures pass through untouched: caching an error would pin "no
 /// results" for the whole TTL, turning one bad request into five minutes
@@ -320,7 +320,7 @@ pub async fn cached_fetch(
     Ok(page)
 }
 
-/// The cache-first half of a dispatch (B5): a fresh hit becomes the very
+/// The cache-first half of a dispatch: a fresh hit becomes the very
 /// same [`Event::SourceDone`] a live fetch would have produced, so the
 /// UI, the per-source offsets and the paging verdict all update through
 /// the normal path -- the only thing skipped is the network, and with it

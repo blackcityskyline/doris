@@ -280,7 +280,7 @@ async fn test_is_reachable_and_list_torrents_share_a_client_correctly() {
     handle.abort();
 }
 
-// --- add_by_link (B7) --------------------------------------------------------
+// --- add_by_link --------------------------------------------------------
 
 /// Unlike the mock above, this one *records* what it was asked -- the
 /// whole point of `add_by_link`'s tests is the shape of the request body,
@@ -327,7 +327,7 @@ async fn spawn_recording_server(
                 .map(|p| p + 4)
                 .unwrap_or(buf.len());
             let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
-            // ... then exactly Content-Length bytes of body.
+            // then exactly Content-Length bytes of body.
             let content_length: usize = head
                 .lines()
                 .find_map(|line| {

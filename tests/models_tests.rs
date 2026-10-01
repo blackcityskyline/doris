@@ -61,7 +61,7 @@ fn test_torrent_item_source_field_defaults_to_empty_and_deserializes_when_presen
     assert_eq!(with_source.source, "rutor");
 }
 
-// --- parse_size (B1: Rust port of torio's util/format.ts parseSize) --------
+// --- parse_size Rust port of torio's util/format.ts parseSize --------
 
 #[test]
 fn test_parse_size_latin_binary_units() {
@@ -109,7 +109,7 @@ fn test_parse_size_stops_at_the_second_dot_like_js_parse_float() {
     assert_eq!(parse_size("2.27.5 GB"), 2_270_000_000);
 }
 
-// --- TorrentItem v2 fields (B1) --------------------------------------------
+// --- TorrentItem v2 fields --------------------------------------------
 
 #[test]
 fn test_b1_fields_default_when_absent_from_json() {
@@ -175,7 +175,7 @@ fn test_fill_from_display_leaves_unparseable_values_at_zero() {
     );
 }
 
-// --- format_bytes / format_date (B8 wave 1: JSON sources report numbers) ----
+// --- format_bytes / format_date JSON sources report numbers ----
 
 #[test]
 fn test_format_bytes_matches_torios_format_bytes() {

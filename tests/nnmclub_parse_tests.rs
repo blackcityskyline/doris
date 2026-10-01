@@ -186,7 +186,7 @@ fn test_no_matches_is_an_empty_page_not_a_failure() {
 fn test_a_torrent_nobody_seeds_is_a_row_with_zero_seeds_not_a_missing_one() {
     // Found live, 25.09.2026: 35 of the 50 rows on a browse page are
     // dead, and the site marks them by *removing* the
-    // `title="Seeders"` hint (`title=" Last seen:   29-03-2020"`
+    // `title="Seeders"` hint (`title=" Last seen: 29-03-2020"`
     // instead) and emptying the cell -- while `class="seedmed"`
     // stays. Parser v1 keyed on the title and lost those 35 rows,
     // which also made a full page look short: `has_more` said false

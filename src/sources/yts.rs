@@ -2,7 +2,7 @@
 //!
 //! Why it is the first wave-1 source to land: it is pure JSON over
 //! plain HTTP -- no browser, no login, no HTML -- and it is the source
-//! that needs [`first_ok`] (B5's deferred failover helper), because a
+//! that needs [`first_ok`] ( deferred failover helper), because a
 //! list of mirror hosts is the only way to stay up when one of them
 //! moves, dies or starts rate-limiting.
 //!
@@ -58,7 +58,7 @@ struct YtsMovie {
 #[derive(Debug, Deserialize)]
 struct YtsTorrent {
     /// Live responses carry this UPPERCASE; we lowercase it ourselves
-    /// because `TorrentItem::info_hash` promises hex lowercase (B1).
+    /// because `TorrentItem::info_hash` promises hex lowercase.
     hash: Option<String>,
     quality: Option<String>,
     #[serde(rename = "type")]
@@ -201,7 +201,7 @@ impl YtsSearcher {
 
     pub fn new() -> Self {
         Self {
-            // The shared browser-like client (B5): these hosts sit
+            // The shared browser-like client: these hosts sit
             // behind Cloudflare like rutor's do.
             client: browser_client(),
         }
@@ -275,7 +275,7 @@ impl Source for YtsSearcher {
     async fn download_torrent(&self, _url: &str) -> Result<Vec<u8>> {
         // YTS publishes magnets, not files: the download key writes a
         // `.magnet` file for these rows, and streaming goes through
-        // `add_by_link` (B7). What can land here is that path's
+        // `add_by_link`. What can land here is that path's
         // fallback, so say what happened instead of returning junk.
         anyhow::bail!(
             "YTS rows carry a magnet, not a .torrent file -- stream it, \

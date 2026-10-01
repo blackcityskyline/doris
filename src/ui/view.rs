@@ -56,7 +56,7 @@ pub enum Modal {
     Settings(SettingsState),
     HealthCheck(Vec<String>),
     Help(HelpState),
-    /// The selected row's details (П.7): the row itself, the file list
+    /// The selected row's details: the row itself, the file list
     /// its source is still fetching (or has fetched), and the cursor
     /// into that list.
     ///
@@ -75,7 +75,7 @@ pub enum DetailAction {
     Download,
 }
 
-/// The detail modal's state (П.7).
+/// The detail modal's state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TorrentDetailState {
     /// The row the modal was opened from. Its facts are on screen before
@@ -183,13 +183,13 @@ pub struct App {
     pub torrent_paused: bool,
     /// Which row of the Trackers panel the cursor sits on: 0 is the `all`
     /// master switch, 1.. the registry entries. The panel is the only
-    /// place sources are switched (П.4), so this is the only cursor the
+    /// place sources are switched, so this is the only cursor the
     /// enabled set has.
     pub sources_cursor: usize,
     /// Which category the Results table is showing -- the tab row under
     /// the frame; `None` is the "all" tab. Search dispatch in app.rs
     /// reads this to fill `SearchRequest.category` and to skip the
-    /// sources that do not serve it (B6).
+    /// sources that do not serve it.
     pub active_group: Option<Group>,
     /// The category row itself: "all", then every group at least one
     /// enabled, implemented source serves, in `GROUP_ORDER`. Held rather
@@ -205,7 +205,7 @@ pub struct App {
     /// the rows already on screen -- so nothing here implies a request
     /// was already made.
     pub group_changed: bool,
-    /// Browse mode (B9): the current search is an empty query asking
+    /// Browse mode: the current search is an empty query asking
     /// browse-capable sources for their freshest rows. Set by the `b`
     /// key, which also returns the category to "all" -- a browse list is
     /// mixed by nature, so rows claiming no group must stay visible.
@@ -223,7 +223,7 @@ pub struct App {
     /// (previously both always cycled forward).
     pub last_cycle_direction: i8,
     /// Rolling progress history feeding the Torrent panel's sparkline
-    /// . Oldest first; capped in app.rs's
+    /// Oldest first; capped in app.rs's
     /// TorrentListUpdate handler so a long session doesn't grow this
     /// unboundedly.
     pub progress_history: std::collections::VecDeque<f64>,
@@ -279,7 +279,7 @@ pub fn source_badge(item: &TorrentItem) -> String {
 }
 
 /// One row of the Trackers panel: the `all` switch, then the registry in
-/// order (П.4). A row past the end is `None`, so the cursor and the
+/// order. A row past the end is `None`, so the cursor and the
 /// hit-test share one list to walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceRow {
@@ -356,7 +356,7 @@ pub fn source_row_at(index: usize) -> Option<SourceRow> {
 ///
 /// Short because that slot shares the top border with the zone title,
 /// the frame buttons and the row counts -- and anything that does not fit
-/// is dropped rather than clipped (П.5), so a long list must not be the
+/// is dropped rather than clipped, so a long list must not be the
 /// only way to say what is on.
 pub fn sources_summary(config: &Config) -> String {
     let ids: Vec<&'static str> = KNOWN_SOURCES
@@ -979,7 +979,7 @@ impl App {
                 // only the draw side moved.
                 let table_row = row.saturating_sub(area.y).saturating_sub(1);
                 if table_row < 1 {
-                    // Header row ("Seeds  Size ..."): not a data row.
+                    // Header row ("Seeds Size..."): not a data row.
                     return None;
                 }
                 let data_row = (table_row - 1) as usize;
@@ -1224,7 +1224,7 @@ impl App {
     /// Which rows the Results panel shows: the selected category first,
     /// then the `F` text filter on top of it.
     ///
-    /// The category half is B6's *instant* side: switching the row
+    /// The category half is  *instant* side: switching the row
     /// re-derives this from the rows already on screen, so a selected
     /// category never sits above a table still showing every group.
     /// Rows a source could not attribute (`item.group = None`) belong to
@@ -1290,7 +1290,7 @@ impl App {
     /// alone decides.
     ///
     /// Clicking it starts editing -- the job the clickable header hints
-    /// (`"s: search | ..."`) used to do before П.3 deleted them; the box
+    /// (`"s: search |..."`) used to do before П.3 deleted them; the box
     /// itself is the natural target now that nothing else on that line
     /// is interactive. It is not a target while something paints over
     /// it: fullscreen stretches a zone across the whole frame and the
@@ -1339,7 +1339,7 @@ impl App {
         }
     }
 
-    /// The detail modal's keys (П.7): j/k move the cursor through the
+    /// The detail modal's keys: j/k move the cursor through the
     /// file list, Enter plays the row, `d` downloads it, Esc/q close.
     ///
     /// Returns the actions that belong to the orchestrator; everything

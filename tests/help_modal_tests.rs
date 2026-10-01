@@ -199,7 +199,7 @@ fn test_help_pages_forward_and_wraps() {
 }
 
 /// Nothing to page through means nothing for the arrow keys to do --
-/// btop guards the same way (`else if (pages > 1 and ...)`).
+/// btop guards the same way (`else if (pages > 1 and...)`).
 #[test]
 fn test_help_does_not_page_when_it_all_fits() {
     let mut app = make_app();

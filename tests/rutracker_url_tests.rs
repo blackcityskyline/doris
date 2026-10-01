@@ -3,7 +3,7 @@ use doris::sources::source::Group;
 
 // Moved here from `models_tests.rs` together with `resolve_url` itself:
 // the function hardcodes rutracker's host, so it belongs to the
-// rutracker source, not to the source-agnostic models module (B0.5).
+// rutracker source, not to the source-agnostic models module.
 
 #[test]
 fn test_resolve_url_absolute() {
@@ -55,7 +55,7 @@ fn test_search_url_without_category_has_no_forum_param() {
     );
 }
 
-/// B6's acceptance in one direction: a selected category becomes exactly
+/// acceptance in one direction: a selected category becomes exactly
 /// one `f%5B%5D=<id>` per forum of that group's table -- no more (another
 /// group's forums would answer rows the view must drop) and no fewer
 /// (an unanswered forum is a hole in the category).

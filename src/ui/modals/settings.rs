@@ -112,7 +112,7 @@ pub(super) fn bool_str(b: bool) -> String {
 /// The category row's tabs: "all", then -- in `GROUP_ORDER` -- every
 /// group that at least one enabled, implemented source serves.
 ///
-/// Availability rather than a fixed four (the layout B6's question was
+/// Availability rather than a fixed four (the layout question was
 /// asked in): a category no enabled source could answer would be a tab
 /// that can only show an empty table with no explanation, which is the
 /// trap the Trackers panel's rows avoid for unchecked sources.
@@ -546,7 +546,7 @@ impl App {
                 }
 
                 let visible_items = content_h / 2;
-                // Fixes B2: settings_key() reads this exact number back, so
+                // settings_key() reads this exact number back, so
                 // pagination can never desync from what's actually on screen.
                 state.visible_items = visible_items.max(1);
                 let cat = &state.categories[state.selected_category];
@@ -566,7 +566,7 @@ impl App {
                         let is_sel = item_idx == state.selected;
 
                         let label = if is_sel {
-                            // Fixes B1: this used to hardcode "3" regardless of
+                            // this used to hardcode "3" regardless of
                             // the actual selected position.
                             //
                             // The theme row is the one row whose `n/m` is

@@ -1,15 +1,15 @@
 //! The Results filter's syntax -- a grep-shaped mini-language rather
 //! than one opaque substring.
 //!
-//! | token           | matches                                        |
+//! | token | matches |
 //! |-----------------|------------------------------------------------|
-//! | `word`          | substring of title+size+source+group           |
-//! | `-word`         | NOT that                                        |
-//! | `src:id`        | the tracker id (`tracker:` is the alias)        |
-//! | `group:name`    | the category (`cat:` is the alias)              |
-//! | `title:word`    | the title alone                                 |
-//! | `size:>1gb`     | `size_bytes`, units b/kb/mb/gb/tb               |
-//! | `seeds:>50`     | `seeds_n`                                       |
+//! | `word` | substring of title+size+source+group |
+//! | `-word` | NOT that |
+//! | `src:id` | the tracker id (`tracker:` is the alias) |
+//! | `group:name` | the category (`cat:` is the alias) |
+//! | `title:word` | the title alone |
+//! | `size:>1gb` | `size_bytes`, units b/kb/mb/gb/tb |
+//! | `seeds:>50` | `seeds_n` |
 //!
 //! Tokens are ANDed, so narrowing is the default. A token that names a
 //! field this table does not have -- or names one whose value will not

@@ -54,7 +54,7 @@ impl App {
 
     /// Build (once) and reuse the live `Source` for `id` -- the one
     /// path from `app.rs` onto a concrete source type, via the registry
-    /// and `source::build_source` (B2). Browser-backed sources get their
+    /// and `source::build_source`. Browser-backed sources get their
     /// session launched here with the registry's `home_url`.
     pub(super) async fn get_source(&mut self, id: &str) -> Result<Arc<dyn Source>> {
         if let Some(existing) = self.sources.get(id) {
@@ -74,7 +74,7 @@ impl App {
 
     /// The instance a result row is played through: plain-HTTP sources
     /// are built on the spot, browser-backed ones must already be in the
-    /// cache -- streaming never launches a browser itself (B0.1), it
+    /// cache -- streaming never launches a browser itself, it
     /// reports "No browser session - search first" instead.
     pub(super) async fn source_for_row(&mut self, id: &'static str) -> Result<Arc<dyn Source>> {
         if source_needs_browser(id) {

@@ -261,7 +261,7 @@ fn month_number(token: &str) -> u32 {
     }
 }
 
-/// `Oct. 01st  '22` -> unix seconds. This is torio's "Date uploaded"
+/// `Oct. 01st '22` -> unix seconds. This is torio's "Date uploaded"
 /// from the detail page, found in the row's own `coll-date` cell
 /// instead -- so a row's date costs no request. Unparseable is `0`,
 /// "unknown", which is what `format_date` refuses to print as
@@ -473,7 +473,7 @@ async fn get(client: &reqwest::Client, url: &str) -> Result<String> {
 }
 
 /// The upload day from a detail page:
-/// `<strong>Date uploaded</strong><span>Sep. 23rd  '26</span>`, live.
+/// `<strong>Date uploaded</strong><span>Sep. 23rd '26</span>`, live.
 /// `None` when the field is not there or does not parse: a page we
 /// could not read must leave the row's date empty, never fill it in.
 pub fn date_from_detail(body: &str) -> Option<i64> {
@@ -633,7 +633,7 @@ impl Source for X1337xSearcher {
             }
         })
         .await?;
-        // What the category path fetched, the rows claim (B6); the
+        // What the category path fetched, the rows claim; the
         // plain search's rows keep their None.
         let rows = stamp_category(rows, category);
         // Rows the list left without a day get it from their own pages

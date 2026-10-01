@@ -1,6 +1,6 @@
-//! btop-style history sparklines .
+//! btop-style history sparklines.
 //!
-//! Replaces the old static `[####    ] 0%` progress bar in the Torrent
+//! Replaces the old static `[#### ] 0%` progress bar in the Torrent
 //! panel with a compact graph of *recent* progress, matching btop's CPU/
 //! mem graph look instead of a plain fill bar. Three character sets are
 //! supported, matching Options -> general -> Graph symbol (`braille` /

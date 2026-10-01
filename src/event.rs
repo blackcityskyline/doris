@@ -9,15 +9,15 @@ pub enum Event {
     Mouse(MouseEvent),
     Resize(u16, u16),
     /// One source of `generation` answered: its rows render immediately
-    /// instead of after the slowest source (B3). Tagged with the
+    /// instead of after the slowest source. Tagged with the
     /// `search_generation` of the dispatch that produced it, so a late
     /// answer from a query that has since been replaced is dropped
-    /// instead of overwriting the fresh one (B0.2).
+    /// instead of overwriting the fresh one.
     SourceDone {
         source: String,
         generation: u64,
         items: Vec<crate::sources::models::TorrentItem>,
-        /// Whether *that* source has another page (B2). `App` remembers
+        /// Whether *that* source has another page. `App` remembers
         /// it per source so "Load more" only asks the ones that do.
         has_more: bool,
         /// Where that source's next page starts, in its own cursor unit;
@@ -52,7 +52,7 @@ pub enum Event {
     /// Torrent panel (e.g. right after it was uploaded to TorrServer for
     /// streaming).
     TorrentActive(String),
-    /// The answer to a detail modal's `Source::details` request (П.7):
+    /// The answer to a detail modal's `Source::details` request:
     /// the file list for the page it was asked about, or the error.
     /// Tagged with that page so an answer for a row the user has already
     /// left is dropped instead of landing in the next row's modal.
