@@ -135,12 +135,16 @@ impl Browser {
     /// before injecting cookies extracted from the browser's native (real)
     /// profile — it must be a page on the same domain those cookies belong
     /// to. Callers pass the active search source's home page; this module
-    /// stays source-agnostic on purpose: the caller names what to block.
+    /// stays source-agnostic on purpose, which is why the host to read
+    /// cookies for is derived from this URL rather than written here, and
+    /// why `block_hosts` comes from the caller: an ad host to keep the
+    /// compositor idle is a fact about one site, not about browsers.
     pub async fn launch(
         binary: &Path,
         mode: BrowserVisibility,
         cookie_injection_url: &str,
         close_on_drop: bool,
+        block_hosts: &[&str],
     ) -> Result<Self> {
         // A run killed outright (closed terminal, `kill -9`) never reaches
         // `Drop`: its temp profile, its Xvfb and any browser process that
@@ -168,20 +172,36 @@ impl Browser {
             );
 
             if let Some(ref native) = native_profile {
-                match extract_cookies_from_native_profile(native) {
-                    Ok(cookies) => {
-                        crate::log::log(
-                            "browser",
-                            &format!("extracted {} cookies from native profile", cookies.len()),
-                        );
-                        injected_cookies = cookies;
-                    }
-                    Err(e) => {
-                        crate::log::log(
-                            "browser",
-                            &format!("could not extract native cookies: {}", e),
-                        );
-                    }
+                // Which profile cookies are worth is a question about the
+                // site, so the site answers it: no URL, no host, no
+                // reading anyone's profile for nothing.
+                match cookie_host_for(cookie_injection_url) {
+                    None => crate::log::log(
+                        "browser",
+                        &format!(
+                            "no host in '{}'; not reading cookies from the native profile",
+                            cookie_injection_url
+                        ),
+                    ),
+                    Some(host) => match extract_cookies_from_native_profile(native, &host) {
+                        Ok(cookies) => {
+                            crate::log::log(
+                                "browser",
+                                &format!(
+                                    "extracted {} {} cookies from native profile",
+                                    cookies.len(),
+                                    host
+                                ),
+                            );
+                            injected_cookies = cookies;
+                        }
+                        Err(e) => {
+                            crate::log::log(
+                                "browser",
+                                &format!("could not extract native cookies: {}", e),
+                            );
+                        }
+                    },
                 }
             }
             Some(tmp)
@@ -238,7 +258,7 @@ impl Browser {
         // its default switch list) and Chrome has no counter-switch, so idle
         // throttling can never be relied upon. Unloading the page instead
         // (`Browser::park`) is the only fix that actually works.
-        let chrome_args = build_chrome_args(mode, use_xvfb, temp_profile.as_deref());
+        let chrome_args = build_chrome_args(mode, use_xvfb, temp_profile.as_deref(), block_hosts);
 
         let mut capabilities = serde_json::Map::new();
         let chrome_opts = serde_json::json!({
@@ -1139,7 +1159,27 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
     )
 }
 
-fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_json::Value>> {
+/// The cookie query, with the host as a bound parameter.
+///
+/// It used to have the host written into the string, which made this a
+/// function that could only ever answer for one site. The host now comes
+/// from the caller and is data, so the same query serves any source.
+fn cookie_query() -> &'static str {
+    "SELECT host_key, name, value, path, is_secure, is_httponly, encrypted_value \
+     FROM cookies WHERE host_key LIKE ?"
+}
+
+/// The host whose cookies are worth reading out of a profile, or `None`
+/// when the caller named no site.
+fn cookie_host_for(url: &str) -> Option<String> {
+    let host = url::Url::parse(url).ok()?.host_str()?.to_string();
+    (!host.is_empty()).then_some(host)
+}
+
+fn extract_cookies_from_native_profile(
+    profile_dir: &Path,
+    host: &str,
+) -> Result<Vec<serde_json::Value>> {
     let cookie_paths = [
         profile_dir.join("Default/Cookies"),
         profile_dir.join("Default/Network/Cookies"),
@@ -1157,11 +1197,10 @@ fn extract_cookies_from_native_profile(profile_dir: &Path) -> Result<Vec<serde_j
     std::fs::copy(cookie_db, &tmp_copy)?;
 
     let conn = rusqlite::Connection::open(&tmp_copy)?;
-    let mut stmt = conn.prepare(
-        "SELECT host_key, name, value, path, is_secure, is_httponly, encrypted_value FROM cookies WHERE host_key LIKE '%rutracker%'"
-    )?;
+    let mut stmt = conn.prepare(cookie_query())?;
+    let pattern = format!("%{host}%");
 
-    let rows = stmt.query_map([], |row| {
+    let rows = stmt.query_map([pattern], |row| {
         let host: String = row.get(0)?;
         let name: String = row.get(1)?;
         let value: String = row.get(2)?;
@@ -1210,6 +1249,7 @@ fn build_chrome_args(
     mode: BrowserVisibility,
     use_xvfb: bool,
     temp_profile: Option<&Path>,
+    block_hosts: &[&str],
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "--no-sandbox".into(),
@@ -1227,14 +1267,29 @@ fn build_chrome_args(
         "--disable-domain-reliability".into(),
         "--metrics-recording-only".into(),
         "--no-pings".into(),
-        // rutrk.org is rutracker's ad CDN: the looping <video>/GIF
-        // banners that keep the compositor producing frames at full
-        // speed for as long as a page stays open -- by far the biggest
-        // idle-CPU source measured (VizCompositor pegged at ~66% of a
-        // core). No parsing depends on ad creatives, so block the host;
-        // drop this line if a page ever legitimately needs it.
-        "--host-resolver-rules=MAP rutrk.org ~NOTFOUND".into(),
     ];
+
+    // Hosts the caller wants kept away from the browser. Resolving them
+    // to nowhere is cheaper than the alternative: an ad CDN serving
+    // looping `<video>`/GIF banners keeps the compositor producing frames
+    // at full speed for as long as a page stays open, which measured as
+    // the largest single idle-CPU cost of a session (VizCompositor pegged
+    // near 66% of a core).
+    //
+    // This list used to be one hardcoded host in the base args, which put
+    // one tracker's ad server in a module that drives browsers for every
+    // source. The caller knows what its own pages load; this layer only
+    // knows how to say "do not resolve that".
+    if !block_hosts.is_empty() {
+        args.push(format!(
+            "--host-resolver-rules={}",
+            block_hosts
+                .iter()
+                .map(|h| format!("MAP {h} ~NOTFOUND"))
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
 
     if mode == BrowserVisibility::Hidden && !use_xvfb {
         args.push("--headless=new".into());
@@ -1347,11 +1402,10 @@ mod tests {
 
     #[test]
     fn base_args_always_present() {
-        let a = build_chrome_args(BrowserVisibility::Visible, false, None);
+        let a = build_chrome_args(BrowserVisibility::Visible, false, None, &[]);
         assert!(arg(&a, "--no-sandbox"));
         assert!(arg(&a, "--disable-dev-shm-usage"));
         assert!(arg(&a, "--disable-blink-features=AutomationControlled"));
-        assert!(arg(&a, "--host-resolver-rules=MAP rutrk.org"));
         assert!(arg(&a, "--window-size=1920,1080"));
         // Visible mode must never go headless.
         assert!(!arg(&a, "--headless"));
@@ -1359,16 +1413,105 @@ mod tests {
         assert!(!arg(&a, "--user-data-dir"));
     }
 
+    /// The browser layer does not know which site it is being pointed at.
+    ///
+    /// It used to: `--host-resolver-rules=MAP rutrk.org ~NOTFOUND` sat in
+    /// the base args and `host_key LIKE '%rutracker%'` sat in the cookie
+    /// query, both naming one tracker inside a module whose job is to
+    /// drive any browser for anyone. A second source that needed an ad
+    /// host blocked would have meant editing the shared layer, and the
+    /// cookie query would have read every tracker's cookies into whichever
+    /// tracker happened to launch the browser first.
+    ///
+    /// The rule this pins: no tracker host is written here, and a source
+    /// with nothing to block gets nothing blocked.
+    #[test]
+    fn no_tracker_is_named_inside_the_browser_layer() {
+        for mode in [BrowserVisibility::Visible, BrowserVisibility::Hidden] {
+            let a = build_chrome_args(mode, false, None, &[]);
+            for arg_str in &a {
+                assert!(
+                    !arg_str.contains("rutracker") && !arg_str.contains("rutrk.org"),
+                    "the base args name a tracker: {arg_str}"
+                );
+            }
+        }
+
+        // Comments are allowed to explain what used to be here, and so is
+        // the test module -- which has to spell the name out in order to
+        // check for it. The production half is what must be free of it.
+        const TRACKER: &str = "rutracker";
+        let source = include_str!("../browser/cdp.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        for line in production.lines() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            assert!(
+                !line.contains(TRACKER),
+                "the browser layer still names a tracker in code: {line}"
+            );
+        }
+    }
+
+    /// What a source asks to have blocked is what gets blocked, and only
+    /// that.
+    #[test]
+    fn the_block_list_is_the_callers() {
+        let a = build_chrome_args(BrowserVisibility::Visible, false, None, &["rutrk.org"]);
+        assert!(
+            a.iter()
+                .any(|x| x == "--host-resolver-rules=MAP rutrk.org ~NOTFOUND"),
+            "{a:?}"
+        );
+
+        let two = build_chrome_args(
+            BrowserVisibility::Visible,
+            false,
+            None,
+            &["ads.example", "cdn.example"],
+        );
+        assert!(
+            two.iter().any(|x| x.contains("MAP ads.example ~NOTFOUND")),
+            "{two:?}"
+        );
+        assert!(
+            two.iter().any(|x| x.contains("MAP cdn.example ~NOTFOUND")),
+            "{two:?}"
+        );
+
+        let none = build_chrome_args(BrowserVisibility::Visible, false, None, &[]);
+        assert!(
+            !arg(&none, "--host-resolver-rules"),
+            "nothing asked for, nothing blocked: {none:?}"
+        );
+    }
+
+    /// The cookie query is built from the host the caller names. It is a
+    /// prepared statement rather than a format string, so a host is data
+    /// and never a fragment of SQL -- which matters now that the value
+    /// comes from outside this module.
+    #[test]
+    fn the_cookie_query_binds_its_host() {
+        let sql = cookie_query();
+        assert!(sql.contains("WHERE host_key LIKE"), "{sql}");
+        assert!(!sql.contains("rutracker"), "{sql}");
+        assert!(
+            sql.contains('?'),
+            "the host must be a bound parameter, not pasted in: {sql}"
+        );
+    }
+
     #[test]
     fn hidden_without_xvfb_goes_headless() {
-        let a = build_chrome_args(BrowserVisibility::Hidden, false, None);
+        let a = build_chrome_args(BrowserVisibility::Hidden, false, None, &[]);
         assert!(arg(&a, "--headless=new"));
         assert!(!arg(&a, "--ozone-platform"));
     }
 
     #[test]
     fn hidden_with_xvfb_is_not_headless_and_uses_x11() {
-        let a = build_chrome_args(BrowserVisibility::Hidden, true, None);
+        let a = build_chrome_args(BrowserVisibility::Hidden, true, None, &[]);
         assert!(!arg(&a, "--headless"));
         assert!(arg(&a, "--ozone-platform=x11"));
     }
@@ -1376,7 +1519,7 @@ mod tests {
     #[test]
     fn temp_profile_lands_in_user_data_dir() {
         let dir = std::path::Path::new("/tmp/doris-hidden-1");
-        let a = build_chrome_args(BrowserVisibility::Hidden, true, Some(dir));
+        let a = build_chrome_args(BrowserVisibility::Hidden, true, Some(dir), &[]);
         assert!(a.iter().any(|x| x == "--user-data-dir=/tmp/doris-hidden-1"));
     }
 }

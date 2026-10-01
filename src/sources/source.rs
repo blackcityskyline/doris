@@ -210,6 +210,13 @@ pub trait Source: Send + Sync {
 /// filter, and `rutracker::GROUP_FORUMS` maps them onto forum ids.
 const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Group::Anime];
 
+/// Rutracker's ad CDN. It serves the looping `<video>`/GIF banners that
+/// keep the compositor busy for as long as a page stays open -- measured
+/// as the largest idle-CPU cost of a session, VizCompositor near 66% of a
+/// core. No parsing depends on ad creatives, so the browser is told not to
+/// resolve it; drop this entry if a page ever legitimately needs it.
+const RUTRACKER_AD_CDN: &str = "rutrk.org";
+
 /// Torentino is a games tracker, top to bottom, so it declares the
 /// one group its rows can claim (B8 wave 3; playback is B7's
 /// `.torrent -> upload_torrent` fallback, no bencode crate).
@@ -401,6 +408,15 @@ pub struct SourceInfo {
     /// instance itself exists (the instance is what *needs* the browser,
     /// so it can't supply its own home page).
     pub home_url: &'static str,
+    /// Hosts the browser should not resolve for this source's pages.
+    ///
+    /// A fact about the site, so it lives with the site: an ad CDN serving
+    /// looping video keeps the compositor producing frames at full speed
+    /// for as long as a page stays open, which was measured as the largest
+    /// idle-CPU cost of a session. It used to be one hardcoded host in
+    /// `browser::cdp`, which put one tracker's ad server in the module
+    /// that drives a browser for every source.
+    pub block_hosts: &'static [&'static str],
 }
 
 /// The full list of sources the app knows about, implemented or not. This
@@ -420,6 +436,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: false,
         requires_browser: true,
+        block_hosts: &[RUTRACKER_AD_CDN],
         home_url: RutrackerSearcher::HOME_URL,
     },
     SourceInfo {
@@ -430,6 +447,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: RutorSearcher::HOME_URL,
     },
     SourceInfo {
@@ -440,6 +458,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: YtsSearcher::HOME_URL,
     },
     SourceInfo {
@@ -450,6 +469,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: TpbSearcher::HOME_URL,
     },
     SourceInfo {
@@ -460,6 +480,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: SubsPleaseSearcher::HOME_URL,
     },
     SourceInfo {
@@ -472,6 +493,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         // decision), so browse is not claimed until it is.
         supports_browse: false,
         requires_browser: false,
+        block_hosts: &[],
         home_url: NyaaSearcher::HOME_URL,
     },
     SourceInfo {
@@ -482,6 +504,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: EztvSearcher::HOME_URL,
     },
     SourceInfo {
@@ -492,6 +515,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         category_filter: true,
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: NnmclubSearcher::HOME_URL,
     },
     // 1337x's row has been in the registry since before it existed
@@ -518,6 +542,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         // search (live: 78 rows, one page).
         supports_browse: true,
         requires_browser: false,
+        block_hosts: &[],
         home_url: X1337xSearcher::HOME_URL,
     },
     // The last planned id, listed before it exists for the same reason
@@ -538,6 +563,7 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         // no freshest-first feed has ever been verified on this host.
         supports_browse: false,
         requires_browser: false,
+        block_hosts: &[],
         home_url: super::torentino::HOME_URL,
     },
 ];

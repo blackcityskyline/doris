@@ -58,10 +58,16 @@ async fn run_cli(args: doris::cli::Args, config: doris::config::Config) -> Resul
         );
 
         // One browser shared by every source, the same sharing the TUI
-        // does; it starts on the first source's home page.
-        let launched =
-            doris::browser::cdp::Browser::launch(&path, visibility, selected[0].home_url, true)
-                .await?;
+        // does; it starts on the first source's home page, and the hosts
+        // it must not resolve come from that same source's registry entry.
+        let launched = doris::browser::cdp::Browser::launch(
+            &path,
+            visibility,
+            selected[0].home_url,
+            true,
+            selected[0].block_hosts,
+        )
+        .await?;
         Some(std::sync::Arc::new(tokio::sync::Mutex::new(launched)))
     } else {
         None

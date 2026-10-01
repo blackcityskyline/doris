@@ -50,9 +50,16 @@ async fn live_category_param_selects_disjoint_sections() {
     let priority = detect::parse_priority(&config.browser_priority);
     let (_, path) =
         detect::detect_browser_with_priority(None, &priority).expect("a browser to probe with");
-    let mut browser = Browser::launch(&path, BrowserVisibility::Hidden, HOME, true)
-        .await
-        .expect("browser session");
+    let mut browser = Browser::launch(
+        &path,
+        BrowserVisibility::Hidden,
+        HOME,
+        true,
+        // Same declaration the app reads: rutrk.org is ruttracker's ad CDN.
+        &["rutrk.org"],
+    )
+    .await
+    .expect("browser session");
 
     // The question itself needs a session: a guest is bounced straight to
     // login.php. The app's own login (Settings -> streaming -> Edit
@@ -227,9 +234,16 @@ async fn live_a_group_search_asks_for_its_forums_in_one_request() {
     let priority = detect::parse_priority(&config.browser_priority);
     let (_, path) =
         detect::detect_browser_with_priority(None, &priority).expect("a browser to probe with");
-    let mut browser = Browser::launch(&path, BrowserVisibility::Hidden, HOME, true)
-        .await
-        .expect("browser session");
+    let mut browser = Browser::launch(
+        &path,
+        BrowserVisibility::Hidden,
+        HOME,
+        true,
+        // Same declaration the app reads: rutrk.org is ruttracker's ad CDN.
+        &["rutrk.org"],
+    )
+    .await
+    .expect("browser session");
 
     fetch(&browser, HOME).await;
     inject_saved_cookies(&browser, Some(Path::new(&config.cookie_file))).await;

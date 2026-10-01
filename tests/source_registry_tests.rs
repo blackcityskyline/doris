@@ -497,3 +497,50 @@ fn test_the_cli_asks_what_the_all_tab_asks() {
     assert_eq!(torentino.len(), 1);
     assert_eq!(torentino[0].id, "torentino");
 }
+
+/// What a source asks the browser to keep away from is declared with the
+/// source, not inside the browser layer.
+///
+/// This exists because the declaration can silently empty out: with
+/// `block_hosts: &[]` on rutracker the whole refactor still compiled, all
+/// the browser-layer tests still passed, and the ad CDN went back to
+/// keeping the compositor at two thirds of a core for as long as a page
+/// stayed open. Nothing failed; something was just slower.
+#[test]
+fn the_source_that_needs_hosts_blocked_declares_them() {
+    let rutracker = KNOWN_SOURCES
+        .iter()
+        .find(|s| s.id == "rutracker")
+        .expect("rutracker is registered");
+
+    assert!(
+        !rutracker.block_hosts.is_empty(),
+        "rutracker's pages load an ad CDN that keeps the compositor busy; \
+         the registry has to say so, since the browser layer no longer knows"
+    );
+    for host in rutracker.block_hosts {
+        assert!(
+            !host.trim().is_empty(),
+            "an empty host would block nothing and read as declared"
+        );
+        assert!(
+            !host.contains('/') && !host.contains(' '),
+            "a resolver rule wants a bare host, not a URL: {host:?}"
+        );
+    }
+}
+
+/// The rest of the registry declares nothing: the field is for the sources
+/// that have a reason, and an empty list is the honest default rather than
+/// a copied entry.
+#[test]
+fn sources_with_nothing_to_block_say_nothing() {
+    for info in KNOWN_SOURCES.iter().filter(|s| s.id != "rutracker") {
+        assert!(
+            info.block_hosts.is_empty(),
+            "{} declares {:?} with nothing in the code to justify it",
+            info.id,
+            info.block_hosts
+        );
+    }
+}

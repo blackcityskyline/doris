@@ -2311,11 +2311,24 @@ impl App {
             kind, self.browser_visibility
         ));
 
+        // What to keep the browser away from is a fact about the site that
+        // was just asked for, so it comes from that site's registry entry.
+        // It is decided by whichever source reached the browser first and
+        // then stands for the session, because one browser serves every
+        // source -- a second source's ad hosts need a second browser, not
+        // a second answer to this call.
+        let block_hosts: &'static [&'static str] = crate::sources::source::KNOWN_SOURCES
+            .iter()
+            .find(|s| s.home_url == home_url)
+            .map(|s| s.block_hosts)
+            .unwrap_or(&[]);
+
         let browser = Browser::launch(
             &path,
             self.browser_visibility,
             home_url,
             self.config.close_browser_on_exit,
+            block_hosts,
         )
         .await?;
         let browser = Arc::new(Mutex::new(browser));
