@@ -118,13 +118,15 @@ fn test_sources_cursor_uses_the_theme_selection_colours() {
 ///
 /// `menu_selected_bg` is the theme accent on several themes, so filling
 /// the glyphs with it drew a bright block around the word under the
-/// cursor -- the menu read as three coloured slabs rather than three
-/// lines of art. The picked item now takes the accent as its
-/// foreground, bold, and nothing behind it is painted at all.
+/// cursor. The picked item takes the accent as its foreground, bold, and
+/// the menu paints no background of its own anywhere.
+///
+/// "Paints nothing" is checked against the same app with the menu closed
+/// rather than against `Color::Reset`: the menu is drawn over the live
+/// panels, so its cells carry whatever background the panel underneath
+/// painted. Reading the cell's own background would be reading the panel.
 #[test]
 fn test_menu_selection_is_the_accent_colour_and_no_fill() {
-    use ratatui::style::Color;
-
     let mut app = make_app();
     app.show_menu = true;
     app.menu.selected = 1;
@@ -137,10 +139,13 @@ fn test_menu_selection_is_the_accent_colour_and_no_fill() {
         theme().primary_color(),
         "the picked item is written in the accent"
     );
+
+    app.show_menu = false;
+    let plain = buffer(&mut app, 120, 40);
     assert_eq!(
         buf[(x, y)].bg,
-        Color::Reset,
-        "and nothing is painted behind it"
+        plain[(x, y)].bg,
+        "and the menu painted nothing behind it"
     );
 
     // The cell two to the left is a space inside the same line of art,

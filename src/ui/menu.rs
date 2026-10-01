@@ -89,10 +89,11 @@ impl MenuState {
     }
 }
 
-/// The box the menu takes: one rect around the banner *and* the three items -- the wider of the
-/// two wins, and both are centred, so the rect covers them either way -- plus the border row a
-/// box needs.
-pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
+/// The box the menu takes: one rect around the banner *and* the three
+/// items -- the wider of the two wins, and both are centred, so the rect
+/// covers them either way -- with a row of padding so the glyphs do not
+/// touch its edge.
+pub fn menu_box_rect(area: Rect) -> Option<Rect> {
     let content_w = MENU_ITEMS
         .iter()
         .fold(BANNER[0].width() as u16, |w, block| {
@@ -110,27 +111,25 @@ pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
     ))
 }
 
-/// Nothing here paints a background, on any setting: the menu is an
-/// overlay, and a slab of the theme's colour behind the glyphs -- or
-/// behind the picked item, whose `menu_selected_bg` is the theme accent
-/// on several themes -- reads as a panel drawn over the app rather than
-/// text floating above it. "Theme background" has no say in it, which is
-/// why this takes no colour argument at all. The picked item is marked by
-/// its glyph colour instead: the accent, bold.
+/// The menu is glyphs and nothing else.
+///
+/// The reference draws the frame, then prints `Global::overlay` on top of
+/// it (`btop.cpp:760`), and that overlay is pure text: no box, no fill, no
+/// `Clear`. Every panel stays readable around and between the glyphs, which
+/// is the whole point of a menu you can open without losing the app you
+/// were looking at.
+///
+/// So this paints no background either -- not a slab under the banner, not
+/// a halo around the items, not `menu_selected_bg` behind the picked word.
+/// "Theme background" has nothing to say about the menu, which is why it
+/// takes no colour argument.
 pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &Theme) {
     let banner_w = BANNER[0].width() as u16;
-    let banner_h = BANNER_ROWS;
-    let menu_count = MENU_ITEMS.len() as u16;
-    let spacing = SPACING;
-
-    // No keybind footer: btop's main menu (`btop_menu.cpp:1219`,
-    let total_h = banner_h + spacing + menu_count * 4;
+    let total_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * MENU_ITEM_HEIGHT;
     let start_y = area.y + area.height.saturating_sub(total_h) / 2;
     let start_x = area.x + area.width.saturating_sub(banner_w) / 2;
 
     for (i, line) in BANNER.iter().enumerate() {
-        let render_area = Rect::new(start_x, start_y + i as u16, banner_w, 1);
-        frame.render_widget(Clear, render_area);
         frame.render_widget(
             Paragraph::new(Span::styled(
                 *line,
@@ -138,34 +137,22 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
                     .fg(theme.primary_color())
                     .add_modifier(Modifier::BOLD),
             )),
-            render_area,
+            Rect::new(start_x, start_y + i as u16, banner_w, 1),
         );
     }
 
-    // The gap row between the banner and the first item carries no glyph
-    // of its own. It is cleared (not filled): the reference lets the
-    // list behind show through here, and a filled slab here is what
-    // made the whole menu read as one panel.
-    let gap_y = start_y + banner_h;
-    let gap_w = BANNER[0].width() as u16;
-    frame.render_widget(Clear, Rect::new(start_x, gap_y, gap_w, 1));
-
-    let menu_y = start_y + banner_h + spacing;
-
+    let menu_y = start_y + BANNER_ROWS + SPACING;
     for (idx, block) in MENU_ITEMS.iter().enumerate() {
         let selected = idx == state.selected;
         let mw = block[0].width() as u16;
         let x = area.x + area.width.saturating_sub(mw) / 2;
-        let y = menu_y + idx as u16 * 4;
+        let y = menu_y + idx as u16 * MENU_ITEM_HEIGHT;
 
         for (j, line) in block.iter().enumerate() {
-            // Highlight the glyphs of the picked item, not the row they
+            // The picked item is marked by its glyph colour and weight.
             let spans: Vec<Span> = line
                 .chars()
                 .map(|c| {
-                    // The glyphs of the picked item take the accent;
-                    // the spaces between them take nothing, or the
-                    // word would read as one slab with holes in it.
                     let style = if selected && c != ' ' {
                         Style::default()
                             .fg(theme.primary_color())
@@ -176,9 +163,10 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
                     Span::styled(c.to_string(), style)
                 })
                 .collect();
-            let render_area = Rect::new(x, y + j as u16, mw, 1);
-            frame.render_widget(Clear, render_area);
-            frame.render_widget(Paragraph::new(Line::from(spans)), render_area);
+            frame.render_widget(
+                Paragraph::new(Line::from(spans)),
+                Rect::new(x, y + j as u16, mw, 1),
+            );
         }
     }
 }

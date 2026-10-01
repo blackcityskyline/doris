@@ -83,25 +83,13 @@ impl App {
     /// Draw the main view.
     pub fn render(&mut self, frame: &mut Frame, config: &Config) {
         let area = frame.area();
-
-        if self.show_menu {
-            self.render_menu_view(frame, area);
-            return;
-        }
-
+        // The app first, the menu's glyphs over it. The reference builds
+        // the frame and then prints `Global::overlay` on top of it
+        // (`btop.cpp:760`), so the panels stay readable behind the menu.
         self.render_main_view(frame, area, config);
-    }
-
-    fn render_menu_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.zones.update_areas(area);
-        // The menu takes the frame over rather than floating over it.
-        // Drawn on top of the zones it inherited every one of their
-        // backgrounds: with "Theme background" on, the panels behind
-        // showed through as slabs around the glyphs that the menu's own
-        // `Clear` did not cover. Clearing the whole frame once is the
-        // only way to be sure nothing of the old screen is left showing.
-        frame.render_widget(Clear, area);
-        super::menu::render_menu(frame, area, &self.menu, &self.theme);
+        if self.show_menu {
+            super::menu::render_menu(frame, area, &self.menu, &self.theme);
+        }
     }
 
     fn render_main_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
@@ -151,16 +139,17 @@ impl App {
             (false, false, true) => format!("filter: {}", self.zones.filter_input),
             _ => "Search".to_string(),
         };
-        // The `S` of Search is the key that opens this box, so it takes
-        // the same hotkey accent the zones give `L`/`T`/`R`. Without it
-        // the search bar was the one label on screen with no mark on
-        // its keybind while four others had one.
+        // The `S` of Search opens this box, so it is marked -- by weight, the
+        // way every other keybind letter in a word is. Its colour is the
+        // word's own: a letter inside a label that is a different hue
+        // from the rest of the label reads as part of another word, and
+        // this is the rule the panel titles and the frame buttons follow.
         let title_line = if title == "Search" {
             let word = Style::default().fg(self.theme.primary_color());
-            let hot = Style::default()
-                .fg(self.theme.on_hover_color())
-                .add_modifier(Modifier::BOLD);
-            Line::from(vec![Span::styled("S", hot), Span::styled("earch", word)])
+            Line::from(vec![
+                Span::styled("S", word.add_modifier(Modifier::BOLD)),
+                Span::styled("earch", word),
+            ])
         } else {
             Line::from(Span::styled(
                 title.clone(),

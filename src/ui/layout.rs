@@ -28,6 +28,14 @@ pub enum Dir {
     Right,
 }
 
+/// The cell of `row` whose column is closest to `want`.
+fn nearest_column(row: &[ZoneId], want: usize) -> Option<ZoneId> {
+    row.iter()
+        .enumerate()
+        .min_by_key(|(c, _)| c.abs_diff(want))
+        .map(|(_, id)| *id)
+}
+
 /// Which measurement of a panel a resize reads: the two are stored in
 /// two different fields and floored by two different numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -578,14 +586,14 @@ impl ZoneLayout {
         match dir {
             Dir::Left => rows[r].get(c.checked_sub(1)?).copied(),
             Dir::Right => rows[r].get(c + 1).copied(),
-            Dir::Up => rows.get(r.checked_sub(1)?)?.get(c).copied(),
-            // A row further down may hold fewer cells than the one the
-            // cursor is in; its last cell is then the nearest column.
-            Dir::Down => rows
-                .get(r + 1)?
-                .get(c)
-                .or_else(|| rows[r + 1].last())
-                .copied(),
+            // Rows are rarely the same width, so the panel above or below
+            // is the one *nearest* this column rather than the one in it.
+            // Requiring the same column left the right-hand panel of a
+            // narrow row with no way up at all, which is why Ctrl+Up,
+            // Shift+Up and Ctrl+Shift+Up all did nothing from Log on the
+            // default `1,3|4`.
+            Dir::Up => nearest_column(rows.get(r.checked_sub(1)?)?, c),
+            Dir::Down => nearest_column(rows.get(r + 1)?, c),
         }
     }
 
@@ -1026,8 +1034,14 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
     (5 + id.label().chars().count()) as u16
 }
 
-/// Spans for one button: `primary` for the word, `on_hover` + bold for the hotkey -- the glyph
-/// that acts is coloured the way a hover marks the actionable part.
+/// Spans for one button: `primary` for the word, bold for the hotkey.
+///
+/// The hotkey letter wears the word's own colour. It used to take
+/// `on_hover` instead, which made `f filter` and `g group` the only two
+/// labels on screen with a letter in a foreign colour -- and incoherent
+/// with the panel titles, where the detail key had already been given
+/// the number's colour. One rule now: a letter inside a word is marked
+/// by weight, never by hue.
 pub fn button_spans(
     theme: &Theme,
     button: &FrameButton,
@@ -1036,9 +1050,7 @@ pub fn button_spans(
 ) -> Vec<Span<'static>> {
     let text = button.text();
     let word_style = Style::default().fg(theme.primary_color());
-    let hotkey_style = Style::default()
-        .fg(theme.on_hover_color())
-        .add_modifier(Modifier::BOLD);
+    let hotkey_style = word_style.add_modifier(Modifier::BOLD);
 
     if button.is_category() {
         // `◀ name ▶`: the arrows are the targets, the name is not. The
@@ -1073,7 +1085,8 @@ pub fn button_spans(
         style = style.add_modifier(Modifier::BOLD);
     }
 
-    // The hotkey glyph joins the underline. It already carries `on_hover`
+    // The hotkey glyph takes the word's colour, bold. Under a hover it
+    // joins the underline with the rest.
     let key_style = if hovered { style } else { hotkey_style };
 
     vec![

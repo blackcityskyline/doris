@@ -189,3 +189,176 @@ fn test_the_layout_does_not_live_in_the_config() {
     // A stale section left in an old config is simply not a field.
     assert!(toml::to_string(&cfg).unwrap().contains("noctalia"));
 }
+
+/// A panel in the right-hand cell of a row can still reach the row above.
+///
+/// The default preset is `1,3|4`: `[[Results], [Trackers, Log]]`. Log sits
+/// in column 1 of a row one cell wide, so looking for a panel in *that*
+/// column found nothing, and Ctrl+Up, Shift+Up and Ctrl+Shift+Up all did
+/// nothing at all from there -- which is what was reported as "vertical
+/// does not work".
+#[test]
+fn test_a_narrow_row_still_has_a_panel_above_and_below_it() {
+    let z = preset("1,3|4");
+    assert_eq!(z.neighbour(ZoneId::Log, Dir::Up), Some(ZoneId::Results));
+    assert_eq!(
+        z.neighbour(ZoneId::Results, Dir::Down),
+        Some(ZoneId::Trackers)
+    );
+    assert_eq!(z.neighbour(ZoneId::Log, Dir::Left), Some(ZoneId::Trackers));
+    assert_eq!(z.neighbour(ZoneId::Trackers, Dir::Right), Some(ZoneId::Log));
+}
+
+/// Vertical movement reaches every panel that has a row above or below it,
+/// and only those: a panel alone in the grid has nowhere to go.
+#[test]
+fn test_every_panel_on_the_default_preset_can_move_vertically() {
+    let mut z = preset("1,3|4");
+    for (from, dir, to) in [
+        (ZoneId::Results, Dir::Down, ZoneId::Trackers),
+        (ZoneId::Trackers, Dir::Up, ZoneId::Results),
+        (ZoneId::Log, Dir::Up, ZoneId::Results),
+    ] {
+        z.focused = from;
+        assert!(
+            z.focus_neighbour(dir),
+            "{from:?} has no panel to the {dir:?} of it"
+        );
+        assert_eq!(z.focused, to);
+    }
+    // And the edge is still an edge.
+    z.focused = ZoneId::Results;
+    assert!(!z.focus_neighbour(Dir::Up), "nothing above the first row");
+}
+
+/// A keybind letter inside a label wears the label's own colour.
+///
+/// It used to take `on_hover`, which made `f filter` and `g group` the
+/// only labels on screen with a letter in a foreign colour, and
+/// disagreed with the panel titles where the detail key had already been
+/// given the number's colour. One rule everywhere: a letter inside a word
+/// is marked by weight, never by hue.
+#[test]
+fn test_a_hotkey_letter_wears_the_colour_of_the_word_it_sits_in() {
+    use doris::ui::layout::{button_spans, zone_buttons, ZoneId};
+    use doris::ui::theme::{ColorDef, Theme};
+
+    // The accents are named explicitly because the built-in theme falls
+    // all three of them back to the same `hi_fg`: a test run against it
+    // cannot tell the word's colour from the keybind accent, and passes
+    // either way.
+    let theme = Theme {
+        primary: Some(ColorDef::new(10, 20, 30)),
+        secondary: Some(ColorDef::new(40, 50, 60)),
+        on_hover: Some(ColorDef::new(70, 80, 90)),
+        ..Theme::default_theme()
+    };
+    let word = theme.primary_color();
+    assert_ne!(word, theme.on_hover_color(), "the accents must differ here");
+    for id in [
+        ZoneId::Results,
+        ZoneId::Torrent,
+        ZoneId::Trackers,
+        ZoneId::Log,
+    ] {
+        for button in zone_buttons(id) {
+            let spans = button_spans(&theme, &button, false, false);
+            for span in &spans {
+                assert_eq!(
+                    span.style.fg,
+                    Some(word),
+                    "{:?} on the {id:?} frame paints {:?}, not the word's own colour",
+                    button.text(),
+                    span.style.fg
+                );
+            }
+        }
+    }
+}
+
+/// The panel title's detail key wears the number's colour, like every
+/// other letter in a label now.
+#[test]
+fn test_the_panel_title_detail_key_wears_the_number() {
+    use doris::ui::layout::zone_title;
+    use doris::ui::theme::{ColorDef, Theme};
+
+    let theme = Theme {
+        primary: Some(ColorDef::new(10, 20, 30)),
+        secondary: Some(ColorDef::new(40, 50, 60)),
+        on_hover: Some(ColorDef::new(70, 80, 90)),
+        ..Theme::default_theme()
+    };
+    let number = theme.secondary_color();
+    assert_ne!(
+        number,
+        theme.on_hover_color(),
+        "the accents must differ here"
+    );
+    for (id, key) in [
+        (ZoneId::Results, 'R'),
+        (ZoneId::Torrent, 'T'),
+        (ZoneId::Log, 'L'),
+    ] {
+        let spans = zone_title(id, &theme, true).spans;
+        let found = spans
+            .iter()
+            .find(|s| s.content.as_ref() == key.to_string())
+            .map(|s| s.style.fg);
+        assert_eq!(
+            found,
+            Some(Some(number)),
+            "the `{key}` of the {id:?} title is not the number's colour"
+        );
+    }
+}
+
+/// The `S` of Search wears the label's own colour.
+///
+/// It was the last holdout: it took the keybind accent while every other
+/// letter in a label took the word's colour, so the search bar was the
+/// one title on screen that read as two colours.
+#[test]
+fn test_the_search_title_is_one_colour() {
+    use doris::config::Config;
+    use doris::ui::view::App as UiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
+    // The built-in theme falls `primary` and `on_hover` back to the same
+    // `hi_fg`, so a test run against it cannot tell the label's colour
+    // from the keybind accent and passes either way. Named apart here.
+    app.theme.primary = Some(doris::ui::theme::ColorDef::new(10, 20, 30));
+    app.theme.on_hover = Some(doris::ui::theme::ColorDef::new(70, 80, 90));
+    assert_ne!(app.theme.primary_color(), app.theme.on_hover_color());
+
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+
+    let label: Vec<String> = (0..buf.area.width)
+        .map(|x| buf[(x, 0)].symbol().to_string())
+        .collect();
+    let line: String = label.concat();
+    assert!(
+        line.contains("Search"),
+        "the search bar is titled Search; got {line:?}"
+    );
+
+    // The border row carries the title; the glyphs spell it out.
+    let fgs: Vec<_> = (0..buf.area.width)
+        .map(|x| &buf[(x, 0)])
+        .filter(|c| c.symbol() != " " && c.symbol() != "╭" && c.symbol() != "╮")
+        .filter(|c| !matches!(c.symbol(), "─" | "│"))
+        .map(|c| (c.symbol().to_string(), c.fg))
+        .collect();
+    let first = fgs.first().expect("the title has glyphs").1;
+    let odd: Vec<_> = fgs.iter().filter(|(_, fg)| *fg != first).collect();
+    assert!(
+        odd.is_empty(),
+        "every glyph of the title should share one colour; {odd:?} differ from {first:?}"
+    );
+}
