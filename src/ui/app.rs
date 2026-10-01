@@ -278,6 +278,24 @@ pub fn source_badge(item: &TorrentItem) -> String {
     }
 }
 
+/// `Src` sits between the metadata and the title: on the `all` tab a
+/// single page mixes trackers, and the row is the only place that says
+/// who returned it.
+fn results_header(theme: &Theme) -> Row<'static> {
+    Row::new(vec![
+        Cell::from("Seeds"),
+        Cell::from("Size"),
+        Cell::from("Date"),
+        Cell::from("Src"),
+        Cell::from("Title"),
+    ])
+    .style(
+        Style::default()
+            .fg(theme.primary_color())
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
 /// One row of the Trackers panel: the `all` switch, then the registry in
 /// order (П.4). A row past the end is `None`, so the cursor and the
 /// hit-test share one list to walk.
@@ -1114,48 +1132,59 @@ impl App {
         None
     }
 
-    /// Border+background styling for the four main zone panels,
-    /// respecting the "Rounded corners" and "Theme background" Options
-    /// toggles. Centralizes what used to be ~14 separate hand-rolled
-    /// `Block::default()...` call sites, each of which would have needed
-    /// this same two-setting check repeated -- previously these settings
-    /// were persisted in Config but had no rendering effect anywhere.
+    /// The block every zone frame is built from: themed, bordered, and
+    /// titled with the zone's own number and label.
     ///
-    /// Modal popups use `modal_block` instead, not this: "Theme
-    /// background" is about letting terminal transparency show through
-    /// the regular panels, which is a different concern from whether a
-    /// temporary popup dialog is legible on top of whatever's behind it.
+    /// Four renderers want exactly this, and each was spelling out the
+    /// same border-colour-then-title pair. What it costs to write it out
+    /// is that the label is where the focus mark lives, so a change to it
+    /// has to find all four or one zone stops showing it has focus.
+    fn zone_block(&self, id: ZoneId, config: &Config) -> Block<'static> {
+        self.themed_block(
+            super::zones::zone_border_color(id, self.zones.focused, &self.theme),
+            config,
+        )
+        .title(super::zones::zone_title(
+            id,
+            &self.theme,
+            id == self.zones.focused,
+        ))
+    }
+
+    /// Border+background styling for the four main zone panels,
+    /// respecting the "Rounded corners", "Theme background" and "Show
+    /// boxes" Options toggles. Centralizes what used to be ~14 separate
+    /// hand-rolled `Block::default()...` call sites, each of which would
+    /// have needed this same check repeated -- previously these settings
+    /// were persisted in Config but had no rendering effect anywhere.
     fn themed_block(&self, border_color: Color, config: &Config) -> Block<'static> {
-        let border_color = self.resolve_color(border_color, config);
-        let border_type = if config.rounded_corners && !config.false_tty {
-            BorderType::Rounded
-        } else {
-            BorderType::Plain
-        };
-        let mut block = Block::default()
-            .borders(if config.show_boxes {
+        self.themed_block_with_borders(
+            border_color,
+            config,
+            if config.show_boxes {
                 Borders::ALL
             } else {
                 Borders::NONE
-            })
-            .border_type(border_type)
-            .border_style(Style::default().fg(border_color));
-        if config.theme_background {
-            block = block.style(
-                Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)),
-            );
-        }
-        block
+            },
+        )
     }
 
-    /// Border+background styling for modal popups (Settings, Login,
-    /// HealthCheck). Respects "Theme background": when true, fills with
-    /// the theme's `main_bg` (as before); when false, omits the `bg`
-    /// style so the `Clear` rendered before the block (present in all
-    /// three modals) hides the content underneath while the terminal's
-    /// background color shows through. Still respects rounded corners and
-    /// truecolor/false_tty degradation like every other themed block.
+    /// [`themed_block`] for modal popups (Settings, Login, HealthCheck).
+    ///
+    /// One difference, and it is deliberate: a dialog keeps its border
+    /// even with "Show boxes" off. The option is about the four panels'
+    /// clutter, and a popup with no visible edge is a popup floating in
+    /// whatever the terminal happened to draw under it.
     pub(crate) fn modal_block(&self, border_color: Color, config: &Config) -> Block<'static> {
+        self.themed_block_with_borders(border_color, config, Borders::ALL)
+    }
+
+    fn themed_block_with_borders(
+        &self,
+        border_color: Color,
+        config: &Config,
+        borders: Borders,
+    ) -> Block<'static> {
         let border_color = self.resolve_color(border_color, config);
         let border_type = if config.rounded_corners && !config.false_tty {
             BorderType::Rounded
@@ -1163,9 +1192,12 @@ impl App {
             BorderType::Plain
         };
         let mut block = Block::default()
-            .borders(Borders::ALL)
+            .borders(borders)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
+        // Off, the block carries no `bg` so the `Clear` drawn before it
+        // hides the content underneath and the terminal's own background
+        // shows through.
         if config.theme_background {
             block = block.style(
                 Style::default().bg(self.resolve_color(self.theme.main_bg.to_color(), config)),
@@ -1646,14 +1678,7 @@ impl App {
     }
 
     fn render_results_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
-        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self
-            .themed_block(border_color, config)
-            .title(super::zones::zone_title(
-                id,
-                &self.theme,
-                id == self.zones.focused,
-            ));
+        let block = self.zone_block(id, config);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -1667,85 +1692,16 @@ impl App {
             .split(inner);
 
         // --- results table ---------------------------------------------------
-        // `Src` sits between the metadata and the title: on the `all`
-        // tab a single page mixes trackers, and the row is the only
-        // place that says who returned it.
-        let header = Row::new(vec![
-            Cell::from("Seeds"),
-            Cell::from("Size"),
-            Cell::from("Date"),
-            Cell::from("Src"),
-            Cell::from("Title"),
-        ])
-        .style(
-            Style::default()
-                .fg(self.theme.primary_color())
-                .add_modifier(Modifier::BOLD),
-        );
-
-        // Muted, but not `inactive_fg`: the tab bar gets away with that
-        // one because a tab is also spelled out in the title. Here the
-        // badge is the only thing saying who returned the row, and on
-        // the `all` tab that is the point of the column -- so it takes
-        // the informational mid-bright `graph_text` instead (≈6.7:1 on
-        // `main_bg`, versus ≈2.3:1 for `inactive_fg`), which the cursor
-        // row then writes in the theme's `selected_fg`.
-        // Accents, not a repaint: the row keeps the body colour and only
-        // two columns carry a token -- the seed count in the secondary
-        // accent (seed health), the date in the informational mid-bright
-        // next to the source badge. Size and title stay plain.
-        let badge_style = Style::default().fg(self.theme.graph_text.to_color());
-        let seed_style = Style::default().fg(self.theme.secondary_color());
-        let date_style = Style::default().fg(self.theme.graph_text.to_color());
-        let rows: Vec<Row> = self
-            .filtered_indices
-            .iter()
-            .filter_map(|&idx| self.results.get(idx))
-            .map(|item| {
-                Row::new(vec![
-                    Cell::from(item.seeds.as_str()).style(seed_style),
-                    Cell::from(item.size.as_str()),
-                    Cell::from(item.date.as_str()).style(date_style),
-                    Cell::from(source_badge(item)).style(badge_style),
-                    Cell::from(item.title.as_str()),
-                ])
-            })
-            .collect();
-
-        // Nothing to tabulate: say why instead of drawing the header
-        // over an empty body, which read as a broken table. The block is
-        // already on screen, so this only fills its inner area.
-        if rows.is_empty() {
-            let placeholder = Paragraph::new(self.results_placeholder())
-                .style(Style::default().fg(self.theme.graph_text.to_color()))
-                .wrap(Wrap { trim: true });
-            frame.render_widget(placeholder, inner);
+        // Widths are the panel's, not the detail view's: this one shares
+        // the frame with the zone buttons.
+        let Some(table) = self.results_table(6, 8, 8, 20) else {
+            // The block is already on screen, so this only fills its
+            // inner area.
+            self.render_results_placeholder(frame, inner);
             self.render_frame(frame, id, area, config);
             return;
-        }
-
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(6),
-                Constraint::Length(8),
-                Constraint::Length(8),
-                Constraint::Length(SOURCE_BADGE_WIDTH),
-                Constraint::Min(20),
-            ],
-        )
-        .header(header)
-        .row_highlight_style(self.theme.selection_style());
-
-        let mut state = TableState::default();
-        if let Some(local_pos) = self
-            .filtered_indices
-            .iter()
-            .position(|&i| i == self.selected)
-        {
-            state.select(Some(local_pos));
-        }
-        frame.render_stateful_widget(table, chunks[0], &mut state);
+        };
+        frame.render_stateful_widget(table, chunks[0], &mut self.results_cursor());
 
         // The keybind legend moved onto the frame with П.5, so the panel
         // body ends at the table and every remaining line is data.
@@ -1758,14 +1714,7 @@ impl App {
     /// selected result row is -- the cursor is the panel's only state, and
     /// it has to be visible the same way.
     fn render_trackers_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
-        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self
-            .themed_block(border_color, config)
-            .title(super::zones::zone_title(
-                id,
-                &self.theme,
-                id == self.zones.focused,
-            ));
+        let block = self.zone_block(id, config);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -1927,14 +1876,7 @@ impl App {
             )));
         }
 
-        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let block = self
-            .themed_block(border_color, config)
-            .title(super::zones::zone_title(
-                id,
-                &self.theme,
-                id == self.zones.focused,
-            ));
+        let block = self.zone_block(id, config);
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
 
@@ -1955,11 +1897,7 @@ impl App {
             .map(|l| Line::from(l.as_str()))
             .collect();
 
-        let border_color = super::zones::zone_border_color(id, self.zones.focused, &self.theme);
-        let log_panel =
-            Paragraph::new(visible_logs).block(self.themed_block(border_color, config).title(
-                super::zones::zone_title(id, &self.theme, id == self.zones.focused),
-            ));
+        let log_panel = Paragraph::new(visible_logs).block(self.zone_block(id, config));
 
         frame.render_widget(log_panel, area);
         // The "(n/m)" scroll position moved from the title onto the
@@ -2080,6 +2018,100 @@ impl App {
         frame.render_widget(paragraph, area);
     }
 
+    /// The results table's rows: every filtered row that still has an
+    /// index to land on.
+    ///
+    /// The panel and its detail view draw the same table, so this is the
+    /// one place the row is built. What they do differ on is the column
+    /// widths -- the detail view has the whole terminal, so its fixed
+    /// columns can be wider -- which is why the widths are a parameter
+    /// and not a constant here.
+    fn results_table(&self, seeds: u16, size: u16, date: u16, title_min: u16) -> Option<Table<'_>> {
+        // Muted, but not `inactive_fg`: the tab bar gets away with that
+        // one because a tab is also spelled out in the title. Here the
+        // badge is the only thing saying who returned the row, and on
+        // the `all` tab that is the point of the column -- so it takes
+        // the informational mid-bright `graph_text` instead (≈6.7:1 on
+        // `main_bg`, versus ≈2.3:1 for `inactive_fg`), which the cursor
+        // row then writes in the theme's `selected_fg`.
+        //
+        // Accents, not a repaint: a row keeps the body colour and only two
+        // columns carry a token -- the seed count in the secondary accent
+        // (seed health), the date in the informational mid-bright next to
+        // the source badge. Size and title stay plain.
+        let badge_style = Style::default().fg(self.theme.graph_text.to_color());
+        let seed_style = Style::default().fg(self.theme.secondary_color());
+        let date_style = Style::default().fg(self.theme.graph_text.to_color());
+
+        let rows: Vec<Row> = self
+            .filtered_indices
+            .iter()
+            .filter_map(|&idx| self.results.get(idx))
+            .map(|item| {
+                Row::new(vec![
+                    Cell::from(item.seeds.as_str()).style(seed_style),
+                    Cell::from(item.size.as_str()),
+                    Cell::from(item.date.as_str()).style(date_style),
+                    Cell::from(source_badge(item)).style(badge_style),
+                    Cell::from(item.title.as_str()),
+                ])
+            })
+            .collect();
+
+        // Nothing to tabulate: the caller says why rather than this
+        // drawing the header over an empty body, which read as a broken
+        // table.
+        if rows.is_empty() {
+            return None;
+        }
+        Some(
+            Table::new(rows, self.results_constraints(seeds, size, date, title_min))
+                .header(results_header(&self.theme))
+                .row_highlight_style(self.theme.selection_style()),
+        )
+    }
+
+    /// Why the table has no rows. Drawn instead of the header so an
+    /// empty Results panel reads as "nothing yet" rather than as a
+    /// broken table.
+    fn render_results_placeholder(&self, frame: &mut Frame, area: Rect) {
+        frame.render_widget(
+            Paragraph::new(self.results_placeholder())
+                .style(Style::default().fg(self.theme.graph_text.to_color()))
+                .wrap(Wrap { trim: true }),
+            area,
+        );
+    }
+
+    fn results_constraints(
+        &self,
+        seeds: u16,
+        size: u16,
+        date: u16,
+        title_min: u16,
+    ) -> [Constraint; 5] {
+        [
+            Constraint::Length(seeds),
+            Constraint::Length(size),
+            Constraint::Length(date),
+            Constraint::Length(SOURCE_BADGE_WIDTH),
+            Constraint::Min(title_min),
+        ]
+    }
+
+    /// Which of the table's rows carries the cursor, if any.
+    fn results_cursor(&self) -> TableState {
+        let mut state = TableState::default();
+        if let Some(local_pos) = self
+            .filtered_indices
+            .iter()
+            .position(|&i| i == self.selected)
+        {
+            state.select(Some(local_pos));
+        }
+        state
+    }
+
     /// The Results detail view (`R`): the table again, full frame, with
     /// a preview line under it naming the facts of the row under the
     /// cursor -- the detail modal's header row, without the modal.
@@ -2099,66 +2131,13 @@ impl App {
             .constraints([Constraint::Min(1), Constraint::Length(1)])
             .split(inner);
 
-        let header = Row::new(vec![
-            Cell::from("Seeds"),
-            Cell::from("Size"),
-            Cell::from("Date"),
-            Cell::from("Src"),
-            Cell::from("Title"),
-        ])
-        .style(
-            Style::default()
-                .fg(self.theme.primary_color())
-                .add_modifier(Modifier::BOLD),
-        );
-        let badge_style = Style::default().fg(self.theme.graph_text.to_color());
-        let seed_style = Style::default().fg(self.theme.secondary_color());
-        let date_style = Style::default().fg(self.theme.graph_text.to_color());
-        let rows: Vec<Row> = self
-            .filtered_indices
-            .iter()
-            .filter_map(|&idx| self.results.get(idx))
-            .map(|item| {
-                Row::new(vec![
-                    Cell::from(item.seeds.as_str()).style(seed_style),
-                    Cell::from(item.size.as_str()),
-                    Cell::from(item.date.as_str()).style(date_style),
-                    Cell::from(source_badge(item)).style(badge_style),
-                    Cell::from(item.title.as_str()),
-                ])
-            })
-            .collect();
-
-        if rows.is_empty() {
-            let placeholder = Paragraph::new(self.results_placeholder())
-                .style(Style::default().fg(self.theme.graph_text.to_color()))
-                .wrap(Wrap { trim: true });
-            frame.render_widget(placeholder, chunks[0]);
+        // The whole terminal is this table, so its fixed columns can be
+        // wider than the panel's.
+        let Some(table) = self.results_table(8, 10, 12, 30) else {
+            self.render_results_placeholder(frame, chunks[0]);
             return;
-        }
-
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(8),
-                Constraint::Length(10),
-                Constraint::Length(12),
-                Constraint::Length(SOURCE_BADGE_WIDTH),
-                Constraint::Min(30),
-            ],
-        )
-        .header(header)
-        .row_highlight_style(self.theme.selection_style());
-
-        let mut state = TableState::default();
-        if let Some(local_pos) = self
-            .filtered_indices
-            .iter()
-            .position(|&i| i == self.selected)
-        {
-            state.select(Some(local_pos));
-        }
-        frame.render_stateful_widget(table, chunks[0], &mut state);
+        };
+        frame.render_stateful_widget(table, chunks[0], &mut self.results_cursor());
 
         // The preview line: label accents on, facts in the body colour.
         let label = Style::default().fg(self.theme.secondary_color());

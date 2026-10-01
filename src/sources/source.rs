@@ -49,6 +49,35 @@ pub enum Group {
     Anime,
 }
 
+/// The `f[]` forum selector one DLE tracker's search form posts:
+/// `f%5B%5D=<id>` repeated for every forum of the chosen group, or
+/// `all_forums` when the group has none (and rutracker passes `""`,
+/// which is its own "no filter").
+///
+/// It is one function because two trackers built it the same way, down
+/// to the url-encoding, and a third that got it subtly different would
+/// be invisible until its results came back filtered by the wrong forum.
+pub fn forum_params(
+    table: &[(Group, &[i32])],
+    category: Option<Group>,
+    all_forums: &str,
+) -> String {
+    let ids = match category {
+        Some(group) => table
+            .iter()
+            .find(|(g, _)| *g == group)
+            .map_or(&[][..], |(_, ids)| ids),
+        None => &[],
+    };
+    if ids.is_empty() {
+        return all_forums.to_string();
+    }
+    ids.iter()
+        .map(|id| format!("f%5B%5D={}", id))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 impl Group {
     /// What this group is called where a user can read it: the category
     /// row under the source tabs, and the search log's category marker.
@@ -672,32 +701,20 @@ fn default_enabled_sources() -> Vec<String> {
 /// meant editing `config.rs` as well as this file, and forgetting that
 /// left it out of the defaults with nothing pointing at the omission.
 ///
-/// Give a config the source ids it has never heard of.
-///
-/// `enabled_sources` is opt-in, so a config saved before wave 1 --
-/// which lists only the sources that existed then -- would keep
-/// yts/tpb/subsplease/eztv switched off forever, with no UI able to
-/// switch them on until this build's Options rows arrived. That is
-/// not a hypothetical: it is what a live run of the finished wave
-/// hit.
-///
-/// The line between "new to this build" and "the user turned it
-/// off" is `Config::known_sources`: an id this config has already
-/// seen is never re-added. A config predating the field is
-/// recognised by being empty and seeded with `LEGACY_SOURCES`,
-/// which is what keeps somebody who disabled `rutor` back then from
-/// having it silently switched back on, while `tpb` -- an id they
-/// have never seen -- arrives enabled.
+/// "New to this config" is decided by `Config::known_sources`: an id it
+/// has already seen is never re-added, and a config predating the field
+/// is recognised by being empty and seeded with `LEGACY_SOURCES`. That
+/// keeps somebody who disabled `rutor` back then from having it silently
+/// switched back on, while `tpb` -- an id they have never seen --
+/// arrives enabled. `enabled_sources` is opt-in, so without this a
+/// config saved before wave 1 would have kept yts/tpb/subsplease/eztv
+/// switched off with no UI able to switch them on.
 ///
 /// "Seen" means *had a chance to be decided*, and a planned source
-/// gives no chance: its Options row is a caption, not a toggle, so
-/// an id the registry listed while it was still unbuilt was never
-/// something the user could accept or reject. Such ids are read as
-/// unknown and never written back, which is what makes the flip
-/// from planned to implemented arrive enabled -- wave 3's nnmclub
-/// was caught by exactly this hole (it sat in `known_sources` as a
-/// placeholder, then went live and stayed switched off), and its
-/// two followers in the same registry are what the rule now covers.
+/// gives no chance: its Options row is a caption, not a toggle. Such
+/// ids are read as unknown and never written back, which is what makes
+/// the flip from planned to implemented arrive enabled -- nnmclub was
+/// caught by exactly this hole.
 pub fn migrate_config(config: &mut crate::config::Config) {
     let seen: Vec<String> = if config.known_sources.is_empty() {
         LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()

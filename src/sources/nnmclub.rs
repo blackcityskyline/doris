@@ -44,7 +44,7 @@ use anyhow::{bail, ensure, Result};
 use async_trait::async_trait;
 use regex::Regex;
 
-use super::format::{format_bytes, format_date, unescape_entities};
+use super::format::{format_bytes, format_date};
 use super::models::TorrentItem;
 use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
@@ -133,28 +133,12 @@ pub fn group_for_forum(forum: i32) -> Option<Group> {
         .map(|(group, _)| *group)
 }
 
-/// The forum selector for one request: `f=-1` for everything, or every
-/// id of the chosen group as repeated `f%5B%5D=` (`f[]` url-encoded).
-/// One request holds the whole group -- live-checked with 58 ids at
-/// once: all sections answered, one page, `start=` still honoured --
-/// so unlike rutor there is nothing to fan out. A group with no list
-/// cannot be asked about and falls back to "all" rather than to a
-/// broken URL; no declared group is empty.
+/// The forum selector for one request. One request holds the whole
+/// group -- live-checked with 58 ids at once: all sections answered, one
+/// page, `start=` still honoured -- so unlike rutor there is nothing to
+/// fan out.
 fn forum_params(category: Option<Group>) -> String {
-    let ids = match category {
-        Some(group) => GROUP_FORUMS
-            .iter()
-            .find(|(g, _)| *g == group)
-            .map_or(&[][..], |(_, ids)| ids),
-        None => &[],
-    };
-    if ids.is_empty() {
-        return ALL_FORUMS.to_string();
-    }
-    ids.iter()
-        .map(|id| format!("f%5B%5D={}", id))
-        .collect::<Vec<_>>()
-        .join("&")
+    super::source::forum_params(&GROUP_FORUMS, category, ALL_FORUMS)
 }
 
 /// Site root; every path below lives under `/forum/`.
@@ -238,27 +222,17 @@ fn patterns() -> Option<&'static Patterns> {
     PATTERNS.get_or_init(Patterns::build).as_ref()
 }
 
-/// Remove tags and the `&nbsp;` the site uses for spacing, then decode
-/// entities and collapse whitespace -- torio's `stripHtml` +
-/// `unescapeEntities` in that order, which is what turns
-/// `<b>Фрирен&#039;s</b>&nbsp;<span ...>` back into a title.
-fn strip_html(input: &str) -> String {
-    let patterns = match patterns() {
-        Some(p) => p,
-        None => return input.to_string(),
-    };
-    let bare = patterns.tags.replace_all(input, "");
-    let bare = bare.replace("&nbsp;", " ").replace('\u{a0}', " ");
-    unescape_entities(&bare)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// The topic id and the title next to it. The first
 /// `viewtopic.php?t=` in a result row *is* the title's link: the row's
 /// other links point at `tracker.php?f=` (forum), `?pid=` (author) and
 /// `download.php?id=` -- live.
+fn strip_html(input: &str) -> String {
+    match patterns() {
+        Some(p) => super::format::strip_html(input, &p.tags),
+        None => input.to_string(),
+    }
+}
+
 fn topic(row: &str) -> Option<(String, String)> {
     let marker = "viewtopic.php?t=";
     let at = row.find(marker)?;

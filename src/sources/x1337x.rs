@@ -185,18 +185,12 @@ fn patterns() -> Option<&'static Patterns> {
     PATTERNS.get_or_init(Patterns::build).as_ref()
 }
 
-/// Remove tags, then decode entities and collapse whitespace --
-/// nnmclub's `strip_html` in the same order, which is what turns
-/// `Dune.2021.<span>1080p</span>&amp;Co` back into a title.
+/// Turns `Dune.2021.<span>1080p</span>&amp;Co` back into a title.
 fn strip_html(input: &str) -> String {
-    let patterns = match patterns() {
-        Some(p) => p,
-        None => return input.to_string(),
-    };
-    unescape_entities(&patterns.tags.replace_all(input, ""))
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    match patterns() {
+        Some(p) => super::format::strip_html(input, &p.tags),
+        None => input.to_string(),
+    }
 }
 
 /// The row's `/torrent/<id>/<slug>/` link and the title inside it.

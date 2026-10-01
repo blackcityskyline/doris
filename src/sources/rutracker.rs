@@ -112,21 +112,8 @@ pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
     ),
 ];
 
-/// `f%5B%5D=<id>` for every forum of the selected group, `""` when no
-/// category is selected -- the parameter the tracker's own search form
-/// posts (live 26.09.2026).
 fn forum_params(category: Option<Group>) -> String {
-    let ids = match category {
-        Some(group) => GROUP_FORUMS
-            .iter()
-            .find(|(g, _)| *g == group)
-            .map_or(&[][..], |(_, ids)| ids),
-        None => &[],
-    };
-    ids.iter()
-        .map(|id| format!("f%5B%5D={}", id))
-        .collect::<Vec<_>>()
-        .join("&")
+    super::source::forum_params(&GROUP_FORUMS, category, "")
 }
 
 /// The query URL: results ordered by the tracker (`o=10&s=2`), a
