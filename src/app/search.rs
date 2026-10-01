@@ -167,60 +167,53 @@ impl App {
             // so an unhonoured category reads as fewer rows rather than
             // as a category nobody actually applied.
             req.category = self.ui.active_group;
-            let task = if info.requires_browser {
+            // Login walk first, then the search, in one task. The two
+            // halves used to be two `tokio::spawn` calls around a
+            // `cached_fetch`, differing only in what went inside the
+            // `async move` -- so the arguments that have to agree (the
+            // timeout, the channel, the cache) were written twice and
+            // nothing made them agree.
+            let task = {
                 // If "Save cookies" is off, don't pass a cookie file
                 // path through at all -- see do_login for the same
                 // gating.
-                let event_tx_log = self.event_handler.sender();
                 let cookie_file = self.resolve_cookie_file();
                 let username = self.args.username.clone();
                 let password = self.args.password.clone();
                 let saved_creds = crate::credentials::load_credentials();
+                let event_tx_log = self.event_handler.sender();
+                let fetch = async move {
+                    if info.requires_browser {
+                        let log: LogFn = Arc::new(move |msg: &str| {
+                            let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
+                        });
+                        let (cred_user, cred_pass) = match (username, password) {
+                            (Some(u), Some(p)) => (Some(u), Some(p)),
+                            _ => match saved_creds {
+                                Some((u, p)) => {
+                                    log("Using saved credentials");
+                                    (Some(u), Some(p))
+                                }
+                                None => (None, None),
+                            },
+                        };
+                        let auth = AuthContext {
+                            cookie_file,
+                            username: cred_user,
+                            password: cred_pass,
+                        };
+                        match source.ensure_logged_in(&auth, &log).await {
+                            Ok(true) => log("SEARCH: logged in, proceeding with search"),
+                            Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
+                            Err(e) => log(&format!("SEARCH: login error: {}", e)),
+                        }
+                    }
+                    source.search(&req).await
+                };
                 tokio::spawn(orchestrator::run_source(
                     info.id,
                     generation,
-                    orchestrator::cached_fetch(
-                        async move {
-                            let log: LogFn = Arc::new(move |msg: &str| {
-                                let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
-                            });
-                            let (cred_user, cred_pass) = match (username, password) {
-                                (Some(u), Some(p)) => (Some(u), Some(p)),
-                                _ => match saved_creds {
-                                    Some((u, p)) => {
-                                        log("Using saved credentials");
-                                        (Some(u), Some(p))
-                                    }
-                                    None => (None, None),
-                                },
-                            };
-                            let auth = AuthContext {
-                                cookie_file,
-                                username: cred_user,
-                                password: cred_pass,
-                            };
-                            match source.ensure_logged_in(&auth, &log).await {
-                                Ok(true) => log("SEARCH: logged in, proceeding with search"),
-                                Ok(false) => log("SEARCH: not logged in, proceeding anyway"),
-                                Err(e) => log(&format!("SEARCH: login error: {}", e)),
-                            }
-                            source.search(&req).await
-                        },
-                        Arc::clone(&self.cache),
-                        key,
-                    ),
-                    orchestrator::PER_SOURCE_TIMEOUT,
-                    tx.clone(),
-                ))
-            } else {
-                tokio::spawn(orchestrator::run_source(
-                    info.id,
-                    generation,
-                    orchestrator::cached_fetch(
-                        async move { source.search(&req).await },
-                        Arc::clone(&self.cache),
-                        key,
-                    ),
+                    orchestrator::cached_fetch(fetch, Arc::clone(&self.cache), key),
                     orchestrator::PER_SOURCE_TIMEOUT,
                     tx.clone(),
                 ))

@@ -1047,3 +1047,78 @@ async fn the_wheel_scrolls_the_full_log_by_its_own_step() {
         "down moves the other way"
     );
 }
+
+/// Options' "cycle this row" keys move the value they name.
+///
+/// Three rows go through `cycle_str`, and the step it shares with
+/// `cycle_index` is the difference between Left and Right doing opposite
+/// things. Nothing above the helper was covered: `cycle_str` returning
+/// its first entry unconditionally passed every test in the file, and so
+/// would each of the three rows quietly refusing to move.
+///
+/// The keys are pressed rather than the helper called, because the thing
+/// that can be wrong is the row, not the step.
+#[tokio::test]
+async fn a_cycle_row_in_options_moves_the_value_it_names() {
+    /// Which row of the open category carries `label`.
+    fn row_of(app: &App, label: &str) -> usize {
+        match &app.ui.modal {
+            Modal::Settings(state) => {
+                let cat = &state.categories[state.selected_category];
+                cat.items
+                    .iter()
+                    .position(|i| i.label == label)
+                    .unwrap_or_else(|| panic!("the {label} row exists"))
+            }
+            other => panic!("expected Settings, got {other:?}"),
+        }
+    }
+
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.open_settings(&app.config, false);
+
+    // The cursor opens on row 0, so walking down `n` times lands on row
+    // `n` -- unless it is already further down, which a re-entered
+    // modal would be. Starting each walk from the top keeps the count
+    // honest.
+    async fn select_row(app: &mut App, at: usize) {
+        while row_at(app) > 0 {
+            app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
+        }
+        for _ in 0..at {
+            app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
+        }
+    }
+    fn row_at(app: &App) -> usize {
+        match &app.ui.modal {
+            Modal::Settings(state) => state.selected,
+            other => panic!("expected Settings, got {other:?}"),
+        }
+    }
+
+    let symbol_row = row_of(&app, "Graph symbol");
+    select_row(&mut app, symbol_row).await;
+    let before = app.config.graph_symbol.clone();
+
+    app.handle_key(press(KeyCode::Right)).await.expect("Right");
+    assert_ne!(
+        app.config.graph_symbol, before,
+        "one Right on the Graph symbol row must step it"
+    );
+
+    app.handle_key(press(KeyCode::Left)).await.expect("Left");
+    assert_eq!(
+        app.config.graph_symbol, before,
+        "and Left must step back, not forward again"
+    );
+
+    // A value not in the list at all lands on the first entry rather
+    // than on itself -- the alternative is a row that cannot be fixed
+    // from the UI at all.
+    app.config.graph_symbol = "nonsense".into();
+    app.handle_key(press(KeyCode::Right)).await.expect("Right");
+    assert_eq!(
+        app.config.graph_symbol, "braille",
+        "an unknown value snaps to the first entry"
+    );
+}

@@ -60,6 +60,21 @@ pub fn resolve_download_dir(config: &Config) -> String {
     }
 }
 
+/// Cycle a string-valued setting through a fixed list, the way every
+/// "cycle this option" row works: forward on Right, backward on Left,
+/// and back to the first entry when the current value is not in the list.
+///
+/// Three Options rows are one call to this with a different list, and
+/// they were three bodies each re-deriving the same `position` ->
+/// `cycle_index` -> `unwrap_or(first)` chain.
+pub fn cycle_str(current: &str, choices: &[&str], direction: i8) -> String {
+    let next = match choices.iter().position(|&c| c == current) {
+        Some(i) => choices[cycle_index(i, choices.len(), direction)],
+        None => choices.first().copied().unwrap_or_default(),
+    };
+    next.to_string()
+}
+
 /// Step `pos` by `direction` (+1/-1) within `0..len`, wrapping around --
 /// shared by every Options cycle-type action so Left and Right actually
 /// go opposite ways instead of both always stepping forward.

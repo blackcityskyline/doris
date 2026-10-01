@@ -289,10 +289,7 @@ impl App {
                         .first()
                         .cloned()
                         .unwrap_or_default();
-                    let next_first = match ORDER.iter().position(|&k| k == current) {
-                        Some(i) => ORDER[cycle_index(i, ORDER.len(), self.ui.last_cycle_direction)],
-                        None => ORDER[0],
-                    };
+                    let next_first = cycle_str(&current, ORDER, self.ui.last_cycle_direction);
                     // Move next_first to the front, keep the rest in
                     // their existing relative order.
                     let mut rest: Vec<String> = self
@@ -349,32 +346,27 @@ impl App {
                     // symbol above. A free-form numeric input is a
                     // reasonable follow-up once the modal supports one.
                     const STEPS: &[u64] = &[250, 500, 1000, 2000, 5000, 10000, 30000, 60000];
-                    let next = match STEPS.iter().position(|&v| v == self.config.update_ms) {
+                    self.config.update_ms = match STEPS
+                        .iter()
+                        .position(|&v| v == self.config.update_ms)
+                    {
                         Some(i) => STEPS[cycle_index(i, STEPS.len(), self.ui.last_cycle_direction)],
                         None => STEPS[0],
                     };
-                    self.config.update_ms = next;
                 }
                 SettingsAction::CycleGraphSymbol => {
-                    const SYMBOLS: &[&str] = &["braille", "block", "dot"];
-                    let next = match SYMBOLS.iter().position(|&s| s == self.config.graph_symbol) {
-                        Some(i) => {
-                            SYMBOLS[cycle_index(i, SYMBOLS.len(), self.ui.last_cycle_direction)]
-                        }
-                        None => SYMBOLS[0],
-                    };
-                    self.config.graph_symbol = next.to_string();
+                    self.config.graph_symbol = cycle_str(
+                        &self.config.graph_symbol,
+                        &["braille", "block", "dot"],
+                        self.ui.last_cycle_direction,
+                    );
                 }
                 SettingsAction::CycleDownloadDirMode => {
-                    const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
-                    let next = match MODES
-                        .iter()
-                        .position(|&m| m == self.config.download_dir_mode)
-                    {
-                        Some(i) => MODES[cycle_index(i, MODES.len(), self.ui.last_cycle_direction)],
-                        None => MODES[0],
-                    };
-                    self.config.download_dir_mode = next.to_string();
+                    self.config.download_dir_mode = cycle_str(
+                        &self.config.download_dir_mode,
+                        &["default", "custom1", "custom2", "custom3"],
+                        self.ui.last_cycle_direction,
+                    );
                 }
                 SettingsAction::Close => {}
                 // The bool toggles are handled above by the
