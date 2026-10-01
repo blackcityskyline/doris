@@ -163,6 +163,26 @@ impl App {
         }
     }
 
+    /// `PageUp`/`PageDown` over the focused zone.
+    ///
+    /// The Log scrolls by its page step and Results by half a terminal;
+    /// Torrent is a status readout and Trackers is ten rows, so neither
+    /// has a page to turn.
+    async fn page_scrolled(&mut self, down: bool) {
+        let step = crate::ui::app::LOG_PAGE_STEP as isize;
+        match self.ui.zones.focused {
+            ZoneId::Log => self.ui.scroll_logs(if down { step } else { -step }),
+            ZoneId::Results => {
+                self.ui.navigate_page(if down {
+                    self.result_page()
+                } else {
+                    -self.result_page()
+                });
+            }
+            ZoneId::Torrent | ZoneId::Trackers => {}
+        }
+    }
+
     /// One frame, bracketed by synchronized output when the option is on.
     ///
     /// It brackets the frame and nothing else: left on across the wait
@@ -403,26 +423,21 @@ impl App {
         Some(step)
     }
 
-    pub(super) async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
-        // An armed removal is a question waiting for an answer, and every
-        // key that is not `d` is a "no". Disarmed here, before any mode
-        // below reads the key, so no path that handles a key can miss the
-        // cancellation.
-        self.ui.disarm_remove();
-        // Quit first, always. Every mode below answers and returns
-        // before the plain-view match is reached -- the menu, a modal, a
-        // detail view, the search box -- so a Ctrl+C arm at the bottom
-        // of a match is a Ctrl+C that works in exactly one of them.
-        // Ctrl+Q quits the same way (btop's quit is `q`).
-        if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('c'))
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-        {
-            self.ui.quit();
-            return Ok(());
-        }
-
+    /// Every mode that takes the keyboard away from the plain view, in
+    /// the order they are asked about. `Some` means it took the key and
+    /// the plain match must not run.
+    ///
+    /// The order is the point, not the grouping: the detail view is
+    /// checked before any modal, a modal before the filter box, and the
+    /// search box last -- the search box has no zone of its own, so
+    /// "the Trackers panel is focused" and "a query is being typed"
+    /// are not mutually exclusive, and one check here replaces an
+    /// `!input_mode` guard every arm of the plain match would have to
+    /// remember (several were found without one).
+    async fn mode_owns_the_key(&mut self, key: KeyEvent) -> Result<Option<()>> {
         if self.ui.show_menu {
-            return self.handle_menu_key(key).await;
+            self.handle_menu_key(key).await?;
+            return Ok(Some(()));
         }
 
         // A detail view owns the keyboard until it is dismissed: no
@@ -456,21 +471,21 @@ impl App {
                 }
                 _ => {}
             }
-            return Ok(());
+            return Ok(Some(()));
         }
 
         if let Modal::HealthCheck(_) = self.ui.modal {
             if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
                 self.ui.modal = Modal::None;
             }
-            return Ok(());
+            return Ok(Some(()));
         }
 
         if let Modal::Help(_) = self.ui.modal {
             // The help page owns the keyboard while it is up, exactly
             // like btop's `helpMenu` -- every key lands here.
             self.ui.help_key(key);
-            return Ok(());
+            return Ok(Some(()));
         }
 
         if let Modal::TorrentDetail(_) = self.ui.modal {
@@ -488,7 +503,7 @@ impl App {
                     DetailAction::Download => self.download_selected_to_disk().await,
                 }
             }
-            return Ok(());
+            return Ok(Some(()));
         }
 
         if let Modal::Settings(_) = self.ui.modal {
@@ -503,7 +518,7 @@ impl App {
             if let Some((resource, username, password)) = self.ui.login_modal_key(key) {
                 self.do_login(resource, &username, &password).await;
             }
-            return Ok(());
+            return Ok(Some(()));
         }
 
         if self.ui.zones.filter_mode {
@@ -527,7 +542,7 @@ impl App {
                 }
                 _ => {}
             }
-            return Ok(());
+            return Ok(Some(()));
         }
 
         // The search box has no zone of its own, so "the Trackers panel is
@@ -538,9 +553,14 @@ impl App {
         // everywhere). Typing owns the key here instead, so one check
         // replaces a guard every future arm would have to remember.
         if self.ui.input_mode {
-            return self.handle_input_key(key).await;
+            self.handle_input_key(key).await?;
+            return Ok(Some(()));
         }
+        Ok(None)
+    }
 
+    /// The plain view: the one match that answers every remaining key.
+    async fn handle_plain_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('m') => {
                 self.ui.show_menu = !self.ui.show_menu;
@@ -555,17 +575,13 @@ impl App {
                     self.ui.zones.set_fullscreen(Some(self.ui.zones.focused));
                 }
             }
-            KeyCode::Char('1') => {
-                self.ui.zones.focus_or_toggle(ZoneId::Results);
-            }
-            KeyCode::Char('2') => {
-                self.ui.zones.focus_or_toggle(ZoneId::Torrent);
-            }
-            KeyCode::Char('3') => {
-                self.ui.zones.focus_or_toggle(ZoneId::Trackers);
-            }
-            KeyCode::Char('4') => {
-                self.ui.zones.focus_or_toggle(ZoneId::Log);
+            // `1`-`4`, read through the same table the frame and the
+            // hit-test read: four arms here was four places to forget a
+            // zone, and `from_key` already exists.
+            KeyCode::Char(c @ '1'..='4') => {
+                if let Some(id) = ZoneId::from_key(c) {
+                    self.ui.zones.focus_or_toggle(id);
+                }
             }
             // Shift+P: cycle the layout presets (П.8), the same list the
             // Options row cycles -- one list, not two. Lowercase `p` is
@@ -652,35 +668,18 @@ impl App {
             KeyCode::Up => {
                 self.handle_nav_up();
             }
+            KeyCode::PageUp => {
+                self.page_scrolled(false).await;
+            }
+            KeyCode::PageDown => {
+                self.page_scrolled(true).await;
+            }
             KeyCode::Tab => {
                 self.ui.zones.focus_next();
             }
             KeyCode::BackTab => {
                 self.ui.zones.focus_prev();
             }
-            KeyCode::PageUp => {
-                match self.ui.zones.focused {
-                    ZoneId::Log => {
-                        self.ui
-                            .scroll_logs(-(crate::ui::app::LOG_PAGE_STEP as isize));
-                    }
-                    ZoneId::Results => {
-                        self.ui.navigate_page(-self.result_page());
-                    }
-                    // Torrent is a status readout and Trackers is ten
-                    // rows: neither has a page to turn.
-                    ZoneId::Torrent | ZoneId::Trackers => {}
-                }
-            }
-            KeyCode::PageDown => match self.ui.zones.focused {
-                ZoneId::Log => {
-                    self.ui.scroll_logs(crate::ui::app::LOG_PAGE_STEP as isize);
-                }
-                ZoneId::Results => {
-                    self.ui.navigate_page(self.result_page());
-                }
-                ZoneId::Torrent | ZoneId::Trackers => {}
-            },
             // Three keys for one box: `s` and `i` as they always were,
             // plus `S` -- Settings moved to the menu, and the letter
             // this app's users already had under their pinky keeps
@@ -723,6 +722,29 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+    pub(super) async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        // An armed removal is a question waiting for an answer, and every
+        // key that is not `d` is a "no". Disarmed before any mode reads
+        // the key, so no path that handles one can miss the cancellation.
+        self.ui.disarm_remove();
+        // Quit first, always. Every mode below answers and returns
+        // before the plain-view match is reached -- the menu, a modal, a
+        // detail view, the search box -- so a Ctrl+C arm at the bottom
+        // of a match is a Ctrl+C that works in exactly one of them.
+        // Ctrl+Q quits the same way (btop's quit is `q`).
+        if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('c'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            self.ui.quit();
+            return Ok(());
+        }
+
+        if self.mode_owns_the_key(key).await?.is_some() {
+            return Ok(());
+        }
+
+        self.handle_plain_key(key).await
     }
 
     /// What Enter means on the main view (btop's `enter`/`play`): submit
