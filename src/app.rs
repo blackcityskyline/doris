@@ -78,6 +78,78 @@ pub fn source_needs_browser(source: &str) -> bool {
     source::requires_browser(source)
 }
 
+/// The Options rows that flip one bool and nothing else.
+///
+/// Data, not code: fifteen `||`-chained macro calls spelled this out
+/// before, and the chain read as fifteen statements where there is one
+/// rule. It is a table because the *pairing* is the content -- a row that
+/// names the wrong field is a button that flips the wrong setting -- and a
+/// table is where a pairing can be read at a glance and checked.
+/// An Options row and the field it inverts.
+type BoolToggle = (SettingsAction, fn(&mut Config));
+
+const BOOL_TOGGLES: &[BoolToggle] = &[
+    (SettingsAction::ToggleCloseBrowserOnExit, |c| {
+        c.close_browser_on_exit = !c.close_browser_on_exit
+    }),
+    (SettingsAction::ToggleSaveCookies, |c| {
+        c.save_cookies = !c.save_cookies
+    }),
+    (SettingsAction::ToggleSaveCredentials, |c| {
+        c.save_credentials = !c.save_credentials
+    }),
+    (SettingsAction::ToggleEnableTorrserver, |c| {
+        c.enable_torrserver = !c.enable_torrserver
+    }),
+    (SettingsAction::ToggleThemeBackground, |c| {
+        c.theme_background = !c.theme_background
+    }),
+    (SettingsAction::ToggleTruecolor, |c| {
+        c.truecolor = !c.truecolor
+    }),
+    (SettingsAction::ToggleFalseTty, |c| {
+        c.false_tty = !c.false_tty
+    }),
+    (SettingsAction::ToggleVimKeys, |c| c.vim_keys = !c.vim_keys),
+    (SettingsAction::ToggleMouse, |c| {
+        c.disable_mouse = !c.disable_mouse
+    }),
+    (SettingsAction::ToggleDisablePresets, |c| {
+        c.disable_presets = !c.disable_presets
+    }),
+    (SettingsAction::ToggleShowBoxes, |c| {
+        c.show_boxes = !c.show_boxes
+    }),
+    (SettingsAction::ToggleRoundedCorners, |c| {
+        c.rounded_corners = !c.rounded_corners
+    }),
+    (SettingsAction::ToggleTerminalSync, |c| {
+        c.terminal_sync = !c.terminal_sync
+    }),
+    (SettingsAction::ToggleDownloadEnabled, |c| {
+        c.download_enabled = !c.download_enabled
+    }),
+    (SettingsAction::ToggleCloseTorrentCoreOnExit, |c| {
+        c.close_torrent_core_on_exit = !c.close_torrent_core_on_exit
+    }),
+    (SettingsAction::ToggleSaveOnExit, |c| {
+        c.save_config_on_exit = !c.save_config_on_exit
+    }),
+];
+
+/// Flip the field `action` names, if it names one. Returns whether it
+/// did, which is what the caller uses to decide the modal needs
+/// rebuilding.
+fn apply_bool_toggle(config: &mut Config, action: SettingsAction) -> bool {
+    match BOOL_TOGGLES.iter().find(|(a, _)| *a == action) {
+        Some((_, flip)) => {
+            flip(config);
+            true
+        }
+        None => false,
+    }
+}
+
 /// The hash to stop on the way out, or `None` to leave it downloading.
 ///
 /// A free function taking the config rather than `self`, so what decides
@@ -1278,46 +1350,15 @@ impl App {
 
         if let Modal::Settings(_) = self.ui.modal {
             if let Some(action) = self.ui.settings_key(key) {
-                // 17 toggle-actions all do the same: invert a bool field,
-                // reopen the settings modal. Each is one macro call; `||`
-                // short-circuits so only the first match flips a field.
-                macro_rules! toggle {
-                    ($action:ident, $field:ident) => {
-                        if matches!(action, SettingsAction::$action) {
-                            self.config.$field = !self.config.$field;
-                            true
-                        } else {
-                            false
-                        }
-                    };
-                }
-                // Captured before the chain flips it: turning TorrServer
+                // Captured before the loop flips it: turning TorrServer
                 // *on* is the one toggle that owes the user an answer.
                 let torrserver_was_on = self.config.enable_torrserver;
-                let toggled = toggle!(ToggleCloseBrowserOnExit, close_browser_on_exit)
-                    || toggle!(ToggleSaveCookies, save_cookies)
-                    || toggle!(ToggleSaveCredentials, save_credentials)
-                    || toggle!(ToggleEnableTorrserver, enable_torrserver)
-                    || toggle!(ToggleThemeBackground, theme_background)
-                    || toggle!(ToggleTruecolor, truecolor)
-                    || toggle!(ToggleFalseTty, false_tty)
-                    || toggle!(ToggleVimKeys, vim_keys)
-                    || toggle!(ToggleMouse, disable_mouse)
-                    || toggle!(ToggleDisablePresets, disable_presets)
-                    || toggle!(ToggleShowBoxes, show_boxes)
-                    || toggle!(ToggleRoundedCorners, rounded_corners)
-                    || toggle!(ToggleTerminalSync, terminal_sync)
-                    || toggle!(ToggleDownloadEnabled, download_enabled)
-                    || toggle!(ToggleCloseTorrentCoreOnExit, close_torrent_core_on_exit)
-                    || toggle!(ToggleSaveOnExit, save_config_on_exit);
-                if toggled {
-                    self.ui.open_settings(
-                        &self.config,
-                        self.browser_visibility == BrowserVisibility::Hidden,
-                    );
-                    if self.config.enable_torrserver && !torrserver_was_on {
-                        self.check_torrserver_on_enable().await;
-                    }
+                let toggled = apply_bool_toggle(&mut self.config, action);
+                if toggled && self.config.enable_torrserver && !torrserver_was_on {
+                    // Turning TorrServer *on* is the one toggle that owes
+                    // the user an answer. It only writes to the log, so it
+                    // is safe before the modal is rebuilt.
+                    self.check_torrserver_on_enable().await;
                 }
                 match action {
                     SettingsAction::ToggleBrowserVisibility => {
@@ -1330,17 +1371,9 @@ impl App {
                             BrowserVisibility::Hidden => BrowserVisibility::Visible,
                             BrowserVisibility::Visible => BrowserVisibility::Hidden,
                         };
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::ToggleMode => {
                         self.ui.stream_mode = !self.ui.stream_mode;
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::CyclePrioritizeBrowser => {
                         const ORDER: &[&str] = &["helium", "brave", "chrome", "chromium"];
@@ -1368,10 +1401,6 @@ impl App {
                         let mut new_priority = vec![next_first.to_string()];
                         new_priority.append(&mut rest);
                         self.config.browser_priority = new_priority;
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::EditCredentials => {
                         self.ui.open_login_modal();
@@ -1385,10 +1414,6 @@ impl App {
                             format!("TorrServer: not answering at {url}")
                         };
                         self.report("torrserver", &msg);
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::OpenLog => {
                         self.ui.modal = Modal::None;
@@ -1409,17 +1434,9 @@ impl App {
                             self.ui.theme = themes[0].clone();
                         }
                         self.config.theme_name = Some(self.ui.theme.name.clone());
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::CyclePreset => {
                         self.cycle_layout_preset(self.ui.last_cycle_direction);
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::SetUpdateMs => {
                         // No numeric text-entry widget exists in the
@@ -1436,10 +1453,6 @@ impl App {
                             None => STEPS[0],
                         };
                         self.config.update_ms = next;
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::CycleGraphSymbol => {
                         const SYMBOLS: &[&str] = &["braille", "block", "dot"];
@@ -1451,10 +1464,6 @@ impl App {
                             None => SYMBOLS[0],
                         };
                         self.config.graph_symbol = next.to_string();
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::CycleDownloadDirMode => {
                         const MODES: &[&str] = &["default", "custom1", "custom2", "custom3"];
@@ -1468,16 +1477,26 @@ impl App {
                             None => MODES[0],
                         };
                         self.config.download_dir_mode = next.to_string();
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     SettingsAction::Close => {}
-                    // The 17 bool toggles are handled above by the
-                    // `toggle!` chain; nothing else to do here.
+                    // The bool toggles are handled above by the
+                    // `BOOL_TOGGLES` table; nothing else to do here.
                     _ => {}
                 }
+
+                // Rebuild the modal once, here, instead of nine times in
+                // the arms above -- all of them were this same call. The
+                // guard matters: three of those arms (`EditCredentials`,
+                // `RunHealthCheck`, `OpenLog`) replace the modal or the
+                // whole view, and rebuilding Options on top of the login
+                // or health window would put it back.
+                if matches!(self.ui.modal, Modal::Settings(_)) {
+                    self.ui.open_settings(
+                        &self.config,
+                        self.browser_visibility == BrowserVisibility::Hidden,
+                    );
+                }
+
                 // Persist every settings change immediately rather than
                 // only on a clean exit ("Save config on exit" governs a
                 // final flush, not whether changes are remembered at all
@@ -1807,10 +1826,6 @@ impl App {
                 match item {
                     MenuItem::Options => {
                         self.ui.show_menu = false;
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
                     }
                     MenuItem::Help => {
                         // The same page `?` opens -- one help modal, two
@@ -3093,6 +3108,115 @@ mod key_routing_tests {
             .await
             .expect("PageUp");
         assert!(app.ui.log_scroll < scrolled, "PageUp must scroll the log");
+    }
+
+    /// Options rows that hand the modal over do not get it handed back.
+    ///
+    /// `EditCredentials`, `RunHealthCheck` and `OpenLog` replace the modal
+    /// or the whole view, so the one rebuild at the end of the settings
+    /// arm has to be guarded by "the modal is still Options". Unguarded,
+    /// pressing Edit credentials lands on the login window and the next
+    /// frame puts Options back on top of it -- a bug that is invisible
+    /// until you press the key, and the guard is one line.
+    #[tokio::test]
+    async fn a_row_that_opens_another_window_keeps_it() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.open_settings(&app.config, true);
+
+        // Categories are chosen by digit or Tab -- `Left`/`Right` act on
+        // the row, not the tab -- so the row is found by index and reached
+        // with the digit.
+        let (category, row) = {
+            let state = match &app.ui.modal {
+                crate::ui::app::Modal::Settings(s) => s,
+                other => panic!("expected the Options modal, got {other:?}"),
+            };
+            state
+                .categories
+                .iter()
+                .enumerate()
+                .flat_map(|(c, cat)| cat.items.iter().enumerate().map(move |(r, it)| (c, r, it)))
+                .find(|(_, _, it)| {
+                    it.action == crate::ui::modals::settings::SettingsAction::EditCredentials
+                })
+                .map(|(c, r, _)| (c, r))
+                .expect("the Options list has an Edit credentials row")
+        };
+        app.ui
+            .settings_key(press(KeyCode::Char(char::from(b'1' + category as u8))));
+        for _ in 0..row {
+            app.ui.settings_key(press(KeyCode::Down));
+        }
+
+        app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
+
+        assert!(
+            matches!(app.ui.modal, crate::ui::app::Modal::Login(_)),
+            "the login window must survive; got {:?}",
+            app.ui.modal
+        );
+    }
+
+    /// Every bool row flips its own field.
+    ///
+    /// The table that replaced a chain of fifteen macro calls is a list of
+    /// pairs, and a pair is exactly the kind of thing that can name the
+    /// wrong right-hand side without anything noticing -- the user flips
+    /// "Show boxes" and rounded corners changes instead. Nothing failed
+    /// with that mutation applied: the routing tests only check that a key
+    /// reaches the modal, not what it did there.
+    #[tokio::test]
+    async fn every_bool_row_flips_its_own_field() {
+        // Find the row for each toggle the same way the modal does, then
+        // press it on a real `App` and read the field back.
+        for (action, _) in BOOL_TOGGLES {
+            let before = field_named(action, &Config::default());
+            let mut config = Config::default();
+            assert!(
+                apply_bool_toggle(&mut config, *action),
+                "{action:?} must be a bool row"
+            );
+            assert_eq!(
+                field_named(action, &config),
+                !before,
+                "{action:?} flipped something else"
+            );
+            // And exactly one field moved.
+            let moved = count_true_fields(&Config::default(), &config);
+            assert_eq!(moved, 1, "{action:?} moved {moved} fields");
+        }
+    }
+
+    /// The field an action names, read back off a `Config`.
+    fn field_named(action: &SettingsAction, config: &Config) -> bool {
+        match action {
+            SettingsAction::ToggleCloseBrowserOnExit => config.close_browser_on_exit,
+            SettingsAction::ToggleSaveCookies => config.save_cookies,
+            SettingsAction::ToggleSaveCredentials => config.save_credentials,
+            SettingsAction::ToggleEnableTorrserver => config.enable_torrserver,
+            SettingsAction::ToggleThemeBackground => config.theme_background,
+            SettingsAction::ToggleTruecolor => config.truecolor,
+            SettingsAction::ToggleFalseTty => config.false_tty,
+            SettingsAction::ToggleVimKeys => config.vim_keys,
+            SettingsAction::ToggleMouse => config.disable_mouse,
+            SettingsAction::ToggleDisablePresets => config.disable_presets,
+            SettingsAction::ToggleShowBoxes => config.show_boxes,
+            SettingsAction::ToggleRoundedCorners => config.rounded_corners,
+            SettingsAction::ToggleTerminalSync => config.terminal_sync,
+            SettingsAction::ToggleDownloadEnabled => config.download_enabled,
+            SettingsAction::ToggleCloseTorrentCoreOnExit => config.close_torrent_core_on_exit,
+            SettingsAction::ToggleSaveOnExit => config.save_config_on_exit,
+            other => panic!("{other:?} is not a bool row"),
+        }
+    }
+
+    /// How many bool fields differ between two configs -- a row that flips
+    /// one field must not flip two.
+    fn count_true_fields(a: &Config, b: &Config) -> usize {
+        BOOL_TOGGLES
+            .iter()
+            .filter(|(action, _)| field_named(action, a) != field_named(action, b))
+            .count()
     }
 
     /// The armed removal is cancelled by *any* other key, and that is a

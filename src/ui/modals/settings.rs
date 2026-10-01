@@ -54,7 +54,7 @@ pub struct SettingsItem {
     pub action: SettingsAction,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SettingsAction {
     ToggleBrowserVisibility,
     CyclePrioritizeBrowser,
@@ -639,14 +639,14 @@ impl App {
                     self.last_cycle_direction = -1;
                     let cat = &state.categories[state.selected_category];
                     if let Some(item) = cat.items.get(state.selected) {
-                        return Some(item.action.clone());
+                        return Some(item.action);
                     }
                 }
                 crossterm::event::KeyCode::Right => {
                     self.last_cycle_direction = 1;
                     let cat = &state.categories[state.selected_category];
                     if let Some(item) = cat.items.get(state.selected) {
-                        return Some(item.action.clone());
+                        return Some(item.action);
                     }
                 }
                 crossterm::event::KeyCode::Tab => {
@@ -680,7 +680,7 @@ impl App {
                     self.last_cycle_direction = 1;
                     let cat = &state.categories[state.selected_category];
                     if let Some(item) = cat.items.get(state.selected) {
-                        return Some(item.action.clone());
+                        return Some(item.action);
                     }
                 }
                 _ => {}
