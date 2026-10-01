@@ -1,25 +1,6 @@
-//! SubsPlease's JSON API ported from torio's
-//! `subsplease.ts`.
-//!
-//! The API is a map keyed by `"<show> - <episode>"`, and three live
-//! facts (checked 25.09.2026) shape the code:
-//!
-//! - **A miss answers `[]`, not `{}`** -- an array where the success
-//!   case is an object. Treating the type difference as a parse error
-//!   would turn "no results" into "the source is broken", which is the
-//!   exact opposite of what the user should see.
-//! - **Each entry ships up to three resolutions** (480/720/1080), each
-//!   with its own magnet. One row per entry, best resolution first --
-//!   the wave-1 decision, and torio's rule too: an episode that takes
-//!   three rows would triple the "latest" page for no navigational
-//!   gain.
-//! - **The size lives inside the magnet** (`xl=<bytes>`), which is the
-//!   only way to know it: the API sends no size field at all.
-//!
-//! Hashes arrive base32 inside the magnet (`xt=urn:btih:` + 32 chars);
-//! [`parse_magnet`] normalizes them to the lowercase hex
-//! `TorrentItem::info_hash` promises, so nothing here re-implements
-//! that conversion.
+//! SubsPlease's JSON API ported from torio's `subsplease.ts`. The API is a map keyed by
+//! `"<show> - <episode>"`, and three live facts (checked 25.09.2026) shape the code: - **A miss
+//! answers `[]`, not `{}`** -- an array where the success case is an object.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -33,8 +14,7 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 
 pub const API: &str = "https://subsplease.org/api/";
 
-/// The show page a row links to, e.g. `/shows/sousou-no-frieren/`
-/// (live-verified 200).
+/// The show page a row links to, e.g.
 const SHOWS_URL: &str = "https://subsplease.org/shows/";
 
 /// Best resolution wins, exactly torio's preference order: SubsPlease
@@ -83,10 +63,8 @@ fn pick_best(downloads: &[SpDownload]) -> Option<&SpDownload> {
     downloads.iter().find(|d| d.magnet.is_some())
 }
 
-/// The magnet's `xl=<bytes>` parameter -- SubsPlease is the only
-/// wave-1 source whose size travels *inside* the magnet, because the
-/// API sends no size of its own. torio reads it with `[?&]xl=(\d+)`;
-/// this is the same match without a regex engine.
+/// The magnet's `xl=<bytes>` parameter -- SubsPlease is the only wave-1 source whose size
+/// travels *inside* the magnet, because the API sends no size of its own.
 fn size_from_magnet(magnet: &str) -> u64 {
     for prefix in ["?xl=", "&xl="] {
         let Some(at) = magnet.find(prefix) else {
@@ -103,9 +81,7 @@ fn size_from_magnet(magnet: &str) -> u64 {
     0
 }
 
-/// The API document -> rows. Public so the fixture tests can exercise
-/// the real parser with no network, as with `yts::parse_page` and
-/// `tpb::parse_rows`.
+/// The API document -> rows.
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let document: serde_json::Value = serde_json::from_str(body)
         .map_err(|e| anyhow!("SubsPlease response did not parse: {}", e))?;

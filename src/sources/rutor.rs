@@ -1,36 +1,6 @@
-//! Rutor search + download (host: rutor.info). Plain, unauthenticated
-//! HTTP -- no browser session, no login, no cookies (confirmed live,
-//! September 2026), which makes it the lightest `Source` in the tree.
-//!
-//! **Why rutor.info and not rutor.org.** Both mirrors serve identical
-//! results and share torrent ids, but rutor.org answers `302 -> /login`
-//! for `/download/{id}` and `/magnet/{id}` to a logged-out client -- a
-//! download there returns an HTML login page, and an HTML login page was
-//! what once got uploaded to TorrServer. rutor.info answers `200
-//! application/x-bittorrent` on the same path and carries an inline
-//! magnet per row, which rutor.org does not.
-//!
-//! **A category is a fan-out over rubric ids, not a comma list.** The
-//! search URL filters server-side, while a row carries no category at
-//! all -- the rubric is named only on the torrent's own page. So a
-//! selected group becomes one GET per id of `GROUP_IDS`, asked one after
-//! another (rutor answers 503 under load, so no burst), merged and
-//! deduped by `page_url`, and each row claims the category that fetched
-//! it. A comma list is not a shortcut: live, `cat=1,5` answered
-//! byte-for-byte the rows of `cat=1` and silently lost all 96 of `cat=5`,
-//! while an unknown id answers 0 rows rather than everything. No
-//! selection keeps `cat=0` and rows claim nothing.
-//!
-//! Markup notes worth knowing before changing the parser: the counts sit
-//! in the title's own row behind `alt="S"` / `alt="L"` icons with a
-//! literal `&nbsp;` entity and an extra `<span>` before peers; the date
-//! cell is the first `<td>` and uses `06 Сен 26` on one mirror and
-//! `06&nbsp;Сен&nbsp;26` on the other (both accepted, normalised to
-//! spaces); a page holds exactly 100 rows; and rows carry no category,
-//! which is why the fan-out above claims one on their behalf.
-//!
-//! If the markup changes, this file and `tests/rutor_parse_tests.rs`,
-//! which pins the exact row shape seen live, are what to fix.
+//! Rutor search + download (host: rutor.info). Plain, unauthenticated HTTP -- no browser
+//! session, no login, no cookies (confirmed live, September 2026), which makes it the lightest
+//! `Source` in the tree.
 
 use anyhow::Result;
 use regex::Regex;
@@ -43,25 +13,9 @@ use crate::sources::models::TorrentItem;
 use crate::sources::net::{browser_client, fetch_resilient, FetchOptions};
 use crate::sources::source::{Group, SearchPage};
 
-/// The rubric id behind each group this source declares -- one table
-/// for both halves of B6: the id the search URL is asked with, and the
-/// category a returned row claims, so the two can never drift apart.
-///
-/// Every id was read off the live site on 26.09.2026 by fetching a row
-/// from each rubric and taking the name its own page prints ("Категория
-///..."), rather than guessed from the URL:
-///
-/// - Movies: 1 Зарубежные фильмы, 5 Наши фильмы, 7 Мультипликация,
-///   12 Научно-популярные фильмы -- the four buckets holding films
-///   (decision with the user: cartoons and documentaries count).
-/// - TV: 4 Зарубежные сериалы, 16 Наши сериалы, 6 Телевизор, 15 Юмор --
-///   series plus everything else broadcast (decision with the user).
-/// - Games: 8 Игры. Anime: 10 Аниме.
-///
-/// Everything else stays out -- 2 Музыка, 9 Софт, 11 Книги, 13 Спорт и
-/// Здоровье, 14 Хозяйство и Быт, 17 Иностранные релизы and the
-/// remaining buckets -- because a row fetched from them would be shown
-/// under a group this registry never promised for rutor.
+/// The rubric id behind each group this source declares -- one table for both halves of B6: the
+/// id the search URL is asked with, and the category a returned row claims, so the two can
+/// never drift apart.
 pub const GROUP_IDS: [(Group, &[i64]); 4] = [
     (Group::Movies, &[1, 5, 7, 12]),
     (Group::TV, &[4, 6, 15, 16]),
@@ -69,10 +23,8 @@ pub const GROUP_IDS: [(Group, &[i64]); 4] = [
     (Group::Anime, &[10]),
 ];
 
-/// The ids a category search fans out over, or an empty list for a
-/// group rutor does not declare. The orchestrator only asks a source
-/// for groups it registered, so the empty list is a safe landing rather
-/// than a branch with a user behind it.
+/// The ids a category search fans out over, or an empty list for a group rutor does not
+/// declare.
 pub fn group_ids(group: Group) -> &'static [i64] {
     GROUP_IDS
         .iter()
@@ -91,12 +43,6 @@ impl Default for RutorSearcher {
     }
 }
 
-/// The browse URL: the homepage index. Live 26.09.2026 it
-/// answers 149 rows of the latest releases with the same row markup
-/// as the search results, and it has no pager -- so browse is one
-/// page and `has_more` is false. The category is not honoured: the
-/// homepage is one mixed list, which is why the `b` key returns the
-/// view to "all" before searching.
 pub const BROWSE_URL: &str = "https://rutor.info/";
 
 /// A real rutor search results page is large (many rows); a tiny
@@ -106,19 +52,11 @@ const EMPTY_PAGE_THRESHOLD: usize = 2000;
 
 impl RutorSearcher {
     pub const HOME_URL: &'static str = "https://rutor.info/";
-    /// Search/download host. rutor.info, not rutor.org: since
-    /// 25.09.2026 the.org mirror answers `302 -> /login` for
-    /// `/download/{id}`, so an unauthenticated download returns an HTML
-    /// login page instead of a.torrent (see the module docs).
+    /// Search/download host.
     const BASE: &'static str = "https://rutor.info";
-    /// Rutor's search pages hold a fixed 100 rows, verified live while
-    /// fixing the zero-results bug: `matrix` reports 219 hits and comes
-    /// back 100/100/22/0 rows on pages 1/2/3/4 (page 0 is a synonym of
-    /// page 1). Used to translate this app's "offset" pagination
-    /// convention (0, 100, 200,...) into rutor's 1-based page numbers
-    /// for "load more".
-    /// Rows per results page -- the unit `SearchRequest::offset` counts
-    /// in, and what `Source::search` uses to decide `has_more`.
+    /// Rutor's search pages hold a fixed 100 rows, verified live while fixing the zero-results
+    /// bug: `matrix` reports 219 hits and comes back 100/100/22/0 rows on pages 1/2/3/4 (page 0
+    /// is a synonym of page 1).
     pub const PAGE_SIZE: usize = 100;
 
     pub fn new() -> Self {
@@ -133,30 +71,8 @@ impl RutorSearcher {
         Ok(self.search_page(query, 0, None).await?.items)
     }
 
-    /// Rutor matches a multi-word query as a strict AND over *all* of its
-    /// words, in any order -- and words its index doesn't contain make the
-    /// whole query return zero hits. Two classes of words are effectively
-    /// unmatchable (both confirmed live while fixing this):
-    ///
-    /// - English/Russian stopwords ("the", "of", "a", "it", "am",...):
-    ///   they are stripped from the index but not from the query, so even
-    ///   `live the matrix` returns 0 while `live matrix` returns the very
-    ///   torrent that contains "The" in its title.
-    /// - Rare tokens no title contains ("z", "qq"), which is why the
-    ///   natural query `world war z` always came back empty.
-    ///
-    /// So when the literal query finds nothing, retry once with the
-    /// unmatchable words removed and then prefer the rows that do mention
-    /// them -- strict precision when rutor allows it, relaxed-but-useful
-    /// rows otherwise, instead of a guaranteed empty result list.
-    /// One page of results, fanned out over the selected category's
-    /// rubric ids: one request per id of [`GROUP_IDS`], asked one after
-    /// another (rutor answers 503 under load, so no burst), or a single
-    /// request with `cat=0` when no category is selected.
-    ///
-    /// `has_more` and the cursor are decided per id by [`to_page`]: a
-    /// merged row count would lie, because four partial pages can add up
-    /// past `PAGE_SIZE` while not one of them has a next page.
+    /// Rutor matches a multi-word query as a strict AND over *all* of its words, in any order
+    /// -- and words its index doesn't contain make the whole query return zero hits.
     pub async fn search_page(
         &self,
         query: &str,
@@ -297,11 +213,8 @@ impl RutorSearcher {
         Ok(items)
     }
 
-    /// The search URL for one rubric id: `/search/{page}/{cat}/000/0/
-    /// {query}` -- `cat` is rutor's own rubric slot, `0` meaning "all
-    /// categories" (its spelling, not ours). Public so tests can pin the
-    /// category slot without the network, the way the other sources'
-    /// URL builders are.
+    /// The search URL for one rubric id: `/search/{page}/{cat}/000/0/ {query}` -- `cat` is
+    /// rutor's own rubric slot, `0` meaning "all categories" (its spelling, not ours).
     pub fn search_url(page: usize, category: i64, query: &str) -> String {
         format!(
             "{}/search/{}/{}/000/0/{}",
@@ -325,10 +238,8 @@ impl RutorSearcher {
         self.fetch_url(&url).await
     }
 
-    /// One GET of any URL on this source's site, with the shared client
-    /// and the unconditional diagnostic log line. Browse reuses it:
-    /// the homepage is not a search URL, but it is fetched and parsed
-    /// exactly like one.
+    /// One GET of any URL on this source's site, with the shared client and the unconditional
+    /// diagnostic log line.
     async fn fetch_url(&self, url: &str) -> Result<(reqwest::StatusCode, String)> {
         // Accept/Accept-Language come from the shared client; the
         // only per-request header left is Referer, which names this
@@ -400,24 +311,7 @@ impl RutorSearcher {
     }
 }
 
-/// One fan-out's worth of pages -> the page the app sees. `per_id` is
-/// one `Vec` per rubric id asked for (a single one for an unfiltered
-/// `cat=0`), and the rules are:
-///
-/// - **Merge, then dedup by `page_url`.** Rubrics are disjoint on the
-///   live site (`cat=1` and `cat=5` shared zero ids on 26.09.2026), so
-///   the dedup is the belt on those braces: a torrent listed twice is
-///   still one torrent.
-/// - **`has_more` reads each id's own page** -- one full page means at
-///   least one rubric has a next one. A *merged* count would answer
-///   "more" whenever four partial pages add up past `PAGE_SIZE`, and
-///   then promise a page the site does not have.
-/// - **The cursor steps by exactly one page** (`offset + PAGE_SIZE`):
-///   every id was read at the same page number, so counting the merged
-///   rows instead would jump ahead and skip each rubric's rows.
-/// - **Rows claim the category that fetched them**. With no
-///   category they claim nothing -- the honest reading of an
-///   unfiltered row this parser cannot attribute.
+/// One fan-out's worth of pages -> the page the app sees.
 pub fn to_page(
     per_id: Vec<Vec<TorrentItem>>,
     category: Option<Group>,
@@ -456,13 +350,9 @@ pub fn count_title_links(html: &str) -> usize {
     }
 }
 
-/// Words rutor's index skips even though they appear in (English and
-/// Russian) titles all the time, so AND-ing them into a query can only
-/// ever produce zero hits -- the reason `world war z` and friends used to
-/// come back empty. Kept deliberately small and only for function words:
-/// dropping a real content word on the fallback path costs precision,
-/// dropping a stopword cannot, because rutor could not have matched it
-/// anyway.
+/// Words rutor's index skips even though they appear in (English and Russian) titles all the
+/// time, so AND-ing them into a query can only ever produce zero hits -- the reason `world war
+/// z` and friends used to come back empty.
 pub const STOPWORDS: &[&str] = &[
     // English
     "a", "an", "the", "of", "to", "it", "i", "am", "is", "are", "be", "in", "on", "at", "by", "for",
@@ -472,12 +362,8 @@ pub const STOPWORDS: &[&str] = &[
     "ни", "что", "как", "за", "у", "же", "бы", "то",
 ];
 
-/// Split a query into the words rutor can actually match and the ones
-/// that would poison the whole AND (see [`STOPWORDS`] and the
-/// [`RutorSearcher::search_page`] docs). Punctuation is trimmed off the
-/// edges first so `"the,"` and `the` are treated the same. Public for
-/// `tests/rutor_parse_tests.rs`; the fallback in `search_page` is its
-/// only in-crate user.
+/// Split a query into the words rutor can actually match and the ones that would poison the
+/// whole AND (see [`STOPWORDS`] and the [`RutorSearcher::search_page`] docs).
 pub fn split_query(query: &str) -> (Vec<String>, Vec<String>) {
     let mut kept = Vec::new();
     let mut dropped = Vec::new();
@@ -499,10 +385,9 @@ pub fn split_query(query: &str) -> (Vec<String>, Vec<String>) {
     (kept, dropped)
 }
 
-/// Whole-word, case-insensitive containment check used to decide whether
-/// a relaxed row really mentions the words that had to be dropped from
-/// the query ("the" in "Матрица / The Matrix (1999)" yes, "the" in
-/// "Theatre" no). Public for `tests/rutor_parse_tests.rs`.
+/// Whole-word, case-insensitive containment check used to decide whether a relaxed row really
+/// mentions the words that had to be dropped from the query ("the" in "Матрица / The Matrix
+/// (1999)" yes, "the" in "Theatre" no).
 pub fn title_has_word(title: &str, word: &str) -> bool {
     if word.is_empty() {
         return false;
@@ -658,11 +543,9 @@ pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     items
 }
 
-/// Walk up from a title `<a>` to its enclosing `<tr>` and return that
-/// row element, so size/seeds/date can be read from a small, known
-/// snippet instead of guessed at by absolute position in the whole
-/// document. Returns `None` (never panics) when the DOM shape isn't what
-/// was expected -- the caller skips that link entirely.
+/// Walk up from a title `<a>` to its enclosing `<tr>` and return that row element, so
+/// size/seeds/date can be read from a small, known snippet instead of guessed at by absolute
+/// position in the whole document.
 fn enclosing_row(el: scraper::ElementRef) -> Option<scraper::ElementRef> {
     for ancestor in el.ancestors() {
         if let Some(element) = ancestor.value().as_element() {
@@ -674,13 +557,7 @@ fn enclosing_row(el: scraper::ElementRef) -> Option<scraper::ElementRef> {
     None
 }
 
-/// Whether a row belongs to the search-results table. The page also
-/// lists the tracker's news posts in `table#news_table`, whose links use
-/// the same `/torrent/{id}` shape as real results (ids like 472) but have
-/// no size/seeds/date -- exactly those rows are skipped. Everything else
-/// that carries a numeric id is treated as a result, so a future change
-/// to the results rows' `gai`/`tum` classes cannot silently turn a
-/// working search into zero results.
+/// Whether a row belongs to the search-results table.
 fn is_results_row(row: &scraper::ElementRef) -> bool {
     for ancestor in row.ancestors() {
         if let Some(element) = ancestor.value().as_element() {
@@ -695,20 +572,14 @@ fn is_results_row(row: &scraper::ElementRef) -> bool {
     true
 }
 
-/// The row's inline magnet URI, when it has one. Read from the DOM
-/// attribute (entity-decoded at parse time) rather than regexing the
-/// row's serialized HTML, where the `&dn=`/`&tr=` query parts come back
-/// as `&amp;dn=`/`&amp;tr=` and would corrupt the stored URI.
+/// The row's inline magnet URI, when it has one.
 fn magnet_href(row: &scraper::ElementRef, sel: &Selector) -> Option<String> {
     row.select(sel)
         .next()
         .and_then(|a| a.value().attr("href").map(str::to_string))
 }
 
-/// `xt=urn:btih:{40 hex}` inside a magnet URI -> the lower-case hash, or
-/// `""`. Only the 40-hex form is accepted: base32 hashes need
-/// normalizing, which is `normalize_info_hash` job -- guessing in
-/// two places is how a wrong hash silently defeats dedup.
+/// `xt=urn:btih:{40 hex}` inside a magnet URI -> the lower-case hash, or `""`.
 fn info_hash_from_magnet(magnet: &str) -> String {
     info_hash_re()
         .and_then(|re| re.captures(magnet))
@@ -722,9 +593,7 @@ fn info_hash_re() -> Option<&'static Regex> {
         .as_ref()
 }
 
-/// `06 Сен 26` -> unix seconds of that UTC day, `0` when the date can't
-/// be read. Port of torio's `parseRutorDate`: three-letter Russian month
-/// abbreviations, two-digit years read as 20xx.
+/// `06 Сен 26` -> unix seconds of that UTC day, `0` when the date can't be read.
 fn parse_added(date: &str) -> i64 {
     const RU_MONTHS: [&str; 12] = [
         "Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
@@ -755,10 +624,6 @@ fn added_re() -> Option<&'static Regex> {
         .as_ref()
 }
 
-/// Days since 1970-01-01 for a civil (year, month, day) -- Howard
-/// Hinnant's `days_from_civil`. No date crate is in the dependency list
-/// (AGENTS.md: don't add dependencies speculatively) and this is the
-/// whole algorithm.
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = if y >= 0 { y } else { y - 399 } / 400;

@@ -16,9 +16,8 @@ pub struct LoginState {
     pub username: String,
     pub password: String,
     pub focus: LoginField,
-    /// Which resource tab is selected: the id the entered credentials
-    /// belong to, and the one Ctrl+S saves and the saved-indicator
-    /// reads. Switched with Left/Right.
+    /// Which resource tab is selected: the id the entered credentials belong to, and the one
+    /// Ctrl+S saves and the saved-indicator reads.
     pub resource: &'static str,
     pub message: Option<String>,
 }
@@ -56,10 +55,6 @@ impl App {
         self.modal = Modal::None;
     }
 
-    /// One keypress in the login modal. Returns the credentials to log
-    /// in with on Enter -- resource id included, since the tab selects
-    /// which resource they belong to. Left/Right switch the resource tab;
-    /// Ctrl+S saves the current tab's credentials without logging in.
     pub fn login_modal_key(
         &mut self,
         key: crossterm::event::KeyEvent,
@@ -143,9 +138,8 @@ impl App {
         None
     }
 
-    /// The login modal's own rendering: the resource tabs, the two
-    /// fields, the saved-indicator and the hint row. `&self` because it
-    /// only reads the modal state and the theme.
+    /// The login modal's own rendering: the resource tabs, the two fields, the saved-indicator
+    /// and the hint row.
     pub fn render_login_modal(&self, frame: &mut Frame, area: Rect, config: &Config) {
         if let Modal::Login(ref state) = self.modal {
             let popup = centered_rect(50, 40, area);

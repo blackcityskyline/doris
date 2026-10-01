@@ -1,16 +1,9 @@
-//! btop-style history sparklines.
-//!
-//! Replaces the old static `[#### ] 0%` progress bar in the Torrent
-//! panel with a compact graph of *recent* progress, matching btop's CPU/
-//! mem graph look instead of a plain fill bar. Three character sets are
-//! supported, matching Options -> general -> Graph symbol (`braille` /
-//! `block` / `dot`), the same three resolutions btop itself offers
-//! (braille / block / tty-safe ASCII).
+//! btop-style history sparklines. Replaces the old static `[#### ] 0%` progress bar in the
+//! Torrent panel with a compact graph of *recent* progress, matching btop's CPU/ mem graph look
+//! instead of a plain fill bar.
 
-/// Render one line of a history sparkline, `width` characters wide, from
-/// `history` (values expected in `0.0..=1.0`, oldest first). Fewer samples
-/// than `width` pads with zeros on the left, so a fresh/short history
-/// still lines up against the right edge instead of drifting.
+/// Render one line of a history sparkline, `width` characters wide, from `history` (values
+/// expected in `0.0..=1.0`, oldest first).
 pub fn render_sparkline(history: &[f64], width: usize, symbol_set: &str) -> String {
     if width == 0 {
         return String::new();
@@ -37,11 +30,9 @@ fn take_last_padded(history: &[f64], count: usize) -> Vec<f64> {
     }
 }
 
-/// Highest-resolution mode: each braille character packs two samples (left
-/// dot-column = older, right = newer), each quantized to 4 vertical
-/// levels using that column's four dot rows, filled from the bottom like a
-/// bar chart. This is the same trick btop uses to fit smooth-looking
-/// history graphs into a single terminal line.
+/// Highest-resolution mode: each braille character packs two samples (left dot-column = older,
+/// right = newer), each quantized to 4 vertical levels using that column's four dot rows,
+/// filled from the bottom like a bar chart.
 fn render_braille(history: &[f64], width: usize) -> String {
     // Unicode braille pattern dot-to-bit mapping:
     //   dot1 dot4      bit0 bit3
@@ -75,9 +66,8 @@ fn render_braille(history: &[f64], width: usize) -> String {
     out
 }
 
-/// Medium-resolution mode: one eighth-block character per sample (9 levels:
-/// blank plus ▁▂▃▄▅▆▇█). Half the horizontal density of braille but works
-/// on any UTF-8 terminal and reads a little more like a bar chart.
+/// Medium-resolution mode: one eighth-block character per sample (9 levels: blank plus
+/// ▁▂▃▄▅▆▇█).
 fn render_block(history: &[f64], width: usize) -> String {
     const LEVELS: [char; 9] = [
         ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
@@ -89,8 +79,8 @@ fn render_block(history: &[f64], width: usize) -> String {
         .collect()
 }
 
-/// Lowest-resolution, TTY-safe mode: plain ASCII characters, no Unicode
-/// block/braille glyphs required. For `false_tty`/very limited terminals.
+/// Lowest-resolution, TTY-safe mode: plain ASCII characters, no Unicode block/braille glyphs
+/// required.
 fn render_ascii(history: &[f64], width: usize) -> String {
     const LEVELS: [char; 5] = [' ', '.', ':', '+', '#'];
     take_last_padded(history, width)

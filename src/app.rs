@@ -35,16 +35,12 @@ use crate::ui::view::{
     TorrentStatus, UiAction,
 };
 
-/// How often the event handler wakes up to poll the terminal for keys,
-/// mouse and resize. 100 ms is the sweet spot: responsive enough that
-/// typing never feels laggy, cheap enough that an idle app does not spin.
+/// How often the event handler wakes up to poll the terminal for keys, mouse and resize.
 const EVENT_POLL_MS: u64 = 100;
 
-/// Resolve the effective download directory from `download_dir_mode` and
-/// the three custom slots (Options -> download), falling back to the OS
-/// Downloads folder for "default" or an unset/empty custom slot. A free
-/// function (rather than only an `App` method) so it can also be called
-/// during `App::new()`, before `self` exists.
+/// Resolve the effective download directory from `download_dir_mode` and the three custom slots
+/// (Options -> download), falling back to the OS Downloads folder for "default" or an
+/// unset/empty custom slot.
 pub fn resolve_download_dir(config: &Config) -> String {
     let custom = match config.download_dir_mode.as_str() {
         "custom1" => Some(&config.download_dir_custom_1),
@@ -60,13 +56,9 @@ pub fn resolve_download_dir(config: &Config) -> String {
     }
 }
 
-/// Cycle a string-valued setting through a fixed list, the way every
-/// "cycle this option" row works: forward on Right, backward on Left,
-/// and back to the first entry when the current value is not in the list.
-///
-/// Three Options rows are one call to this with a different list, and
-/// they were three bodies each re-deriving the same `position` ->
-/// `cycle_index` -> `unwrap_or(first)` chain.
+/// Cycle a string-valued setting through a fixed list, the way every "cycle this option" row
+/// works: forward on Right, backward on Left, and back to the first entry when the current
+/// value is not in the list.
 pub fn cycle_str(current: &str, choices: &[&str], direction: i8) -> String {
     let next = match choices.iter().position(|&c| c == current) {
         Some(i) => choices[cycle_index(i, choices.len(), direction)],
@@ -89,27 +81,12 @@ pub fn cycle_index(pos: usize, len: usize, direction: i8) -> usize {
     }
 }
 
-/// Whether fetching this source's `.torrent` files needs the browser-backed
-/// rutracker searcher. Rutor is plain unauthenticated HTTP; everything else
-/// -- including rows produced before the `source` field existed -- routes
-/// through the browser, which is what the old hardcoded path did. Extracted
-/// as a free function so tests can pin the routing choice.
-///
-/// Since B2 the answer comes from the registry (`SourceInfo::
-/// requires_browser`) instead of a literal `"rutor"` comparison, so a
-/// newly registered source gets its routing from one place.
+/// Whether fetching this source's `.torrent` files needs the browser-backed rutracker searcher.
 pub fn source_needs_browser(source: &str) -> bool {
     source::requires_browser(source)
 }
 
 /// The Options rows that flip one bool and nothing else.
-///
-/// Data, not code: fifteen `||`-chained macro calls spelled this out
-/// before, and the chain read as fifteen statements where there is one
-/// rule. It is a table because the *pairing* is the content -- a row that
-/// names the wrong field is a button that flips the wrong setting -- and a
-/// table is where a pairing can be read at a glance and checked.
-/// An Options row and the field it inverts.
 type BoolToggle = (SettingsAction, fn(&mut Config));
 
 const BOOL_TOGGLES: &[BoolToggle] = &[
@@ -161,9 +138,7 @@ const BOOL_TOGGLES: &[BoolToggle] = &[
     }),
 ];
 
-/// Flip the field `action` names, if it names one. Returns whether it
-/// did, which is what the caller uses to decide the modal needs
-/// rebuilding.
+/// Flip the field `action` names, if it names one.
 fn apply_bool_toggle(config: &mut Config, action: SettingsAction) -> bool {
     match BOOL_TOGGLES.iter().find(|(a, _)| *a == action) {
         Some((_, flip)) => {
@@ -175,11 +150,6 @@ fn apply_bool_toggle(config: &mut Config, action: SettingsAction) -> bool {
 }
 
 /// The hash to stop on the way out, or `None` to leave it downloading.
-///
-/// A free function taking the config rather than `self`, so what decides
-/// is testable without a terminal, a browser, or a running TorrServer --
-/// the exit path has all three, and is the one path nobody exercises by
-/// hand twice.
 pub fn stop_download_on_exit<'a>(config: &Config, active_hash: Option<&'a str>) -> Option<&'a str> {
     if config.close_torrent_core_on_exit {
         active_hash
@@ -189,15 +159,6 @@ pub fn stop_download_on_exit<'a>(config: &Config, active_hash: Option<&'a str>) 
 }
 
 /// Do the stop [`stop_download_on_exit`] asks for, and say what happened.
-///
-/// **`pause`, never `remove`.** Dropping the torrent is what "stop the
-/// download" means: it stays on the server and on disk and resumes when
-/// asked for again. Removing it would delete the user's file on the way
-/// out of the program they were watching it with.
-///
-/// Returns a line to show, or `None` when there was nothing to stop, so
-/// a run with the option off stays silent. Free function taking the
-/// client, so the test can watch the bytes rather than re-type the call.
 pub async fn stop_the_download(
     config: &Config,
     active_hash: Option<&str>,
@@ -210,11 +171,8 @@ pub async fn stop_the_download(
     })
 }
 
-/// The file name a result title may safely have on disk: everything
-/// outside alphanumerics, spaces and the usual punctuation becomes `_`.
-/// Shared by the `.torrent` and `.magnet` paths so the two spell the
-/// same title the same way -- they are siblings in one download
-/// directory, and a mismatch would show up as two names for one row.
+/// The file name a result title may safely have on disk: everything outside alphanumerics,
+/// spaces and the usual punctuation becomes `_`.
 pub fn safe_filename(title: &str) -> String {
     title
         .chars()
@@ -230,14 +188,9 @@ pub fn safe_filename(title: &str) -> String {
         .to_string()
 }
 
-/// What the download key owes a row that has no `.torrent` to fetch
-/// YTS publishes magnets, not files `(file name, contents)`
-/// for a `<title>.magnet` file, or `None` when the row *does* have a
-/// download URL and must go through its Source exactly as before.
-///
-/// A row with neither URL nor magnet also returns `None`: it then fails
-/// in the normal path with a message, which is the honest outcome --
-/// the alternative is writing an empty file that looks like a result.
+/// What the download key owes a row that has no `.torrent` to fetch YTS publishes magnets, not
+/// files `(file name, contents)` for a `<title>.magnet` file, or `None` when the row *does*
+/// have a download URL and must go through its Source exactly as before.
 pub fn magnet_only_download(
     item: &crate::sources::models::TorrentItem,
 ) -> Option<(String, String)> {
@@ -251,13 +204,7 @@ pub fn magnet_only_download(
     ))
 }
 
-/// The registered id to talk to for a result row. A row whose id is not
-/// in the registry (misspelled, or from a source since removed) holds
-/// rutracker-shaped URLs, so it falls back to `"rutracker"`.
-///
-/// That fallback is logged rather than silent: this is the one place a
-/// wrong id turns into a request to somebody else's server, and the log
-/// line costs nothing when the id is right.
+/// The registered id to talk to for a result row.
 pub fn source_id_for(item: &crate::sources::models::TorrentItem) -> &'static str {
     match source::get_source(&item.source) {
         Some(s) => s.id,
@@ -285,16 +232,8 @@ fn truncate_for_log(s: &str) -> &str {
     }
 }
 
-/// Fill a row's magnet in from the row's own page, for rows that carry
-/// neither a magnet nor a `.torrent` link (1337x, B8 wave 3).
-///
-/// Deliberately at play/download time, not at search time: the link is
-/// only worth a request for a row somebody actually picks, so a search
-/// of 20 rows stays one request instead of torio's fan-out of up to 8
-/// detail pages -- at the price that every one of those 20 rows is
-/// playable, where a fan-out leaves the rest unplayable. Rows that
-/// already carry a magnet or a file never reach the `Source` call, so
-/// the other six sources are not touched by this at all.
+/// Fill a row's magnet in from the row's own page, for rows that carry neither a magnet nor a
+/// `.torrent` link (1337x, B8 wave 3).
 pub async fn fill_missing_magnet(
     item: &mut crate::sources::models::TorrentItem,
     source: &dyn Source,
@@ -309,12 +248,6 @@ pub async fn fill_missing_magnet(
 }
 
 /// What pressing Enter in the results view means.
-///
-/// The old chain of `if let Some(..)` calls let an empty search query fall
-/// through: `submit_search()` turned `input_mode` off and returned `None`,
-/// so the very same key reached `submit_selection()` and started a stream.
-/// Making the decision a value -- with "typed but empty" spelled out as its
-/// own outcome -- is what makes that impossible to reintroduce silently.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EnterAction {
     /// Search input is focused and holds a non-empty query.
@@ -355,13 +288,6 @@ pub fn enter_action(
 }
 
 /// What the Log zone says after "Enable TorrServer" was switched on.
-///
-/// `start` is `None` when the server already answered the ping, `Some(Ok)`
-/// when `systemctl start` ran it, and `Some(Err(reason))` when the unit
-/// could not be started at all. doris has no password to give, so the
-/// refusal is the whole point: the user needs to see `Access denied`
-/// here, next to the switch that did nothing, rather than infer it from
-/// a stream that fails later with no reason attached.
 pub fn torrserver_enable_message(url: &str, start: Option<Result<String, String>>) -> String {
     match start {
         None => format!("TorrServer: reachable at {url}"),
@@ -377,15 +303,6 @@ pub fn torrserver_enable_message(url: &str, start: Option<Result<String, String>
 }
 
 /// Merge a detail modal's file list into the modal.
-///
-/// A free function over `&mut UiApp` for the same reason as
-/// [`apply_source_done`]: the "is this answer still wanted?" decision is
-/// the interesting part, and it should be testable without a terminal or
-/// a running event loop.
-///
-/// The answer is tagged with the page it was asked about, so opening
-/// another row's details drops the previous row's file list instead of
-/// showing it in the wrong modal. A closed modal drops it too.
 pub fn apply_detail_loaded(
     ui: &mut UiApp,
     page_url: &str,
@@ -413,22 +330,15 @@ pub struct App {
     event_handler: EventHandler,
     torrserver: TorrServer,
     browser: Option<Arc<Mutex<Browser>>>,
-    /// Live sources keyed by id, built once via `source::build_source`
-    /// and reused across start_search/load_more/do_login (all run in
-    /// spawned tasks). The session state that used to live in a cached
-    /// `RutrackerSearcher` -- its `logged_in` flag, so pagination didn't
-    /// re-login every call -- now lives in the `Arc<dyn Source>` itself;
-    /// the browser behind it was always reused via `get_browser()` and
-    /// still is.
+    /// Live sources keyed by id, built once via `source::build_source` and reused across
+    /// start_search/load_more/do_login (all run in spawned tasks).
     sources: HashMap<&'static str, Arc<dyn Source>>,
     /// Each source's last "has another page" verdict: consulted
     /// by "Load more" and turned into `ui.all_loaded` by
     /// [`finish_search`].
     source_has_more: HashMap<String, bool>,
-    /// How many rows each source has delivered for the current query:
-    /// the cursor "Load more" resumes it at. One per source, because
-    /// rutor pages by 100 and rutracker by 50 -- a shared counter walks
-    /// off rutor's page grid and it answers with nothing.
+    /// How many rows each source has delivered for the current query: the cursor "Load more"
+    /// resumes it at.
     source_offsets: HashMap<String, usize>,
     /// Recently fetched pages, consulted before any source is spawned
     /// a fresh hit answers immediately, browser and all.
@@ -439,11 +349,8 @@ pub struct App {
     #[allow(dead_code)]
     search_tx: mpsc::UnboundedSender<String>,
     search_rx: mpsc::UnboundedReceiver<String>,
-    /// Bumped by every `start_search`; each dispatch carries the value it
-    /// was started with, and results from an older generation are dropped.
-    /// Without this, a slow answer from the previous query landed after the
-    /// new one started and overwrote its results -- torio's
-    /// equivalent is the AbortController + `alive` flag on a search.
+    /// Bumped by every `start_search`; each dispatch carries the value it was started with, and
+    /// results from an older generation are dropped.
     search_generation: u64,
     terminal_size: (u16, u16),
     /// Set by the SIGHUP/SIGTERM/SIGINT listener spawned in [`App::run`] so

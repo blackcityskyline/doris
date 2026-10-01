@@ -1,15 +1,7 @@
-//! Magnet link parsing and building, ported from torio's
-//! `magnet.ts`.
-//!
-//! Why this exists: a result row that carries a magnet can go to
-//! TorrServer as a *link* -- no `.torrent` download, no source-side
-//! round trip, and the download starts from the DHT instead of waiting
-//! for one host to hand over a file. `parse_magnet`/`parse_input` also
-//! normalize every hash to 40-char hex, because that is the one form all
-//! of our sources, TorrServer and the torrent itself agree on.
-//!
-//! Everything here is a plain function, so `tests/magnet_tests.rs` ports
-//! torio's `magnet.test.ts` case for case.
+//! Magnet link parsing and building, ported from torio's `magnet.ts`. Why this exists: a result
+//! row that carries a magnet can go to TorrServer as a *link* -- no `.torrent` download, no
+//! source-side round trip, and the download starts from the DHT instead of waiting for one host
+//! to hand over a file.
 
 /// torio's `TRACKERS`: seven public trackers appended to any magnet we
 /// build ourselves, so a bare hash still has peers to ask when the row
@@ -62,10 +54,8 @@ pub fn normalize_info_hash(raw: &str) -> String {
     raw.to_lowercase()
 }
 
-/// torio's `parseMagnet`: a `magnet:?` URI containing an `xt=urn:btih:`
-/// with a 40-char hex or 32-char base32 hash. Anything else -- a plain
-/// string, a malformed hash, text that merely *contains* a magnet after
-/// a prefix -- is `None`.
+/// torio's `parseMagnet`: a `magnet:?` URI containing an `xt=urn:btih:` with a 40-char hex or
+/// 32-char base32 hash.
 pub fn parse_magnet(input: &str) -> Option<ParsedMagnet> {
     let s = input.trim();
     // `get(..8)` rather than a slice: a byte index past a multibyte
@@ -120,9 +110,8 @@ pub fn is_info_hash(input: &str) -> bool {
     false
 }
 
-/// torio's `parseInput`: a magnet URI, or a bare hash wrapped with the
-/// default [`TRACKERS`] so it downloads over DHT like any other magnet.
-/// `None` for anything that is neither.
+/// torio's `parseInput`: a magnet URI, or a bare hash wrapped with the default [`TRACKERS`] so
+/// it downloads over DHT like any other magnet.
 pub fn parse_input(input: &str) -> Option<ParsedMagnet> {
     let s = input.trim();
     if let Some(parsed) = parse_magnet(s) {
@@ -148,8 +137,7 @@ fn is_base32_alphabet(value: &str) -> bool {
         .all(|c| c.is_ascii_alphabetic() || ('2'..='7').contains(&c))
 }
 
-/// torio's `base32ToHex`: `None` unless the result is exactly 40 hex
-/// chars, i.e. unless the input really was a 32-char base32 hash.
+/// torio's `base32ToHex`: `None` unless the result is exactly 40 hex chars, i.e.
 fn base32_to_hex(b32: &str) -> Option<String> {
     const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     let mut bits = 0u32;

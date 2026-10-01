@@ -17,11 +17,7 @@ pub struct Theme {
     pub menu_fg: ColorDef,
     pub menu_selected_bg: ColorDef,
     pub menu_selected_fg: ColorDef,
-    /// Palette accents, all optional. A theme that spells them out (the
-    /// noctalia template does) uses its own; a theme that omits them --
-    /// every bundled one does -- gets the classic field each replaces,
-    /// so the colour distribution is one rule for every theme instead of
-    /// a special case per file.
+    /// Palette accents, all optional.
     pub primary: Option<ColorDef>,
     pub secondary: Option<ColorDef>,
     pub error: Option<ColorDef>,
@@ -57,17 +53,8 @@ impl Default for Theme {
     }
 }
 
-/// Every theme shipped in the repo's top-level `themes/` directory,
-/// embedded at compile time so they always work regardless of the
-/// current working directory or install location. `load_themes()` used
-/// to *only* look in `~/.config/doris/themes` (or `./themes` relative to
-/// whatever directory the binary happened to be launched from) -- so
-/// running the built binary from anywhere other than a checkout with
-/// that directory manually populated found zero themes and silently
-/// showed "Color theme 1/1". User-added files in
-/// `~/.config/doris/themes/*.toml` are still loaded on top of this list
-/// (and can override a bundled theme of the same name), so the
-/// extensibility that directory was meant to provide isn't lost.
+/// Every theme shipped in the repo's top-level `themes/` directory, embedded at compile time so
+/// they always work regardless of the current working directory or install location.
 const BUNDLED_THEMES: &[&str] = &[
     include_str!("../../themes/HotPurpleTrafficLight.toml"),
     include_str!("../../themes/adapta.toml"),
@@ -138,47 +125,36 @@ impl Theme {
         Self::dark()
     }
 
-    /// The style of the row under the cursor in any list -- the results
-    /// table, the Trackers panel, the detail modal's file list.
-    ///
-    /// Every bundled theme sets `selected_bg`/`selected_fg`, and before
-    /// this the renderer read neither: the cursor was reverse video of
-    /// whatever colours happened to be in play, so picking a theme could
-    /// not change how a selection looks. One helper keeps the three
-    /// lists agreeing with each other and with the theme file.
+    /// The style of the row under the cursor in any list -- the results table, the Trackers
+    /// panel, the detail modal's file list.
     pub fn selection_style(&self) -> Style {
         Style::default()
             .fg(self.selected_fg.to_color())
             .bg(self.selected_bg.to_color())
     }
 
-    /// Structure accent: frame borders, zone/button words, modal and
-    /// menu titles. Falls back to `title`, which is what drew them
-    /// before the tokens existed.
+    /// Structure accent: frame borders, zone/button words, modal and menu titles.
     pub fn primary_color(&self) -> Color {
         self.primary
             .as_ref()
             .map_or_else(|| self.title.to_color(), ColorDef::to_color)
     }
 
-    /// Secondary accent: frame furniture that must stay distinguishable
-    /// from the primary -- zone numbers, table headers, row accents.
-    /// Falls back to `hi_fg`.
+    /// Secondary accent: frame furniture that must stay distinguishable from the primary --
+    /// zone numbers, table headers, row accents.
     pub fn secondary_color(&self) -> Color {
         self.secondary
             .as_ref()
             .map_or_else(|| self.hi_fg.to_color(), ColorDef::to_color)
     }
 
-    /// Failure colour (source refusals, error log lines). Falls back to
-    /// plain red, the only failure colour the renderer ever used.
+    /// Failure colour (source refusals, error log lines).
     pub fn error_color(&self) -> Color {
         self.error.as_ref().map_or(Color::Red, ColorDef::to_color)
     }
 
-    /// The colour a keybind glyph is drawn in: what a hover would put
-    /// on the accent, so the hotkey reads as the actionable part of the
-    /// word. Falls back to `hi_fg`.
+    /// The colour a keybind glyph is drawn in: what a hover would put on the accent, so the
+    /// hotkey reads as the actionable part of the word.
     pub fn on_hover_color(&self) -> Color {
         self.on_hover
             .as_ref()
@@ -194,21 +170,8 @@ impl Theme {
         toml::from_str(content).ok()
     }
 
-    /// Every theme doris can offer: the bundled ones plus whatever the
-    /// user has in `~/.config/doris/themes`.
-    ///
-    /// Parsed once per process. It was 3.9 ms a call, and the Options
-    /// modal asks twice on every keypress -- a key that changes nothing
-    /// measurable was spending eight milliseconds re-parsing forty files
-    /// that cannot have changed.
-    ///
-    /// The cost of the cache is that a theme file written *while doris is
-    /// running* is not picked up until the next start. That is the right
-    /// way round for a file a user edits once and forgets, and the
-    /// alternative -- re-reading to notice -- is what this cache is.
-    /// [`load_themes_from`](Self::load_themes_from) is the uncached
-    /// entry point, and it is what the tests use, since a test's themes
-    /// live in a temp directory that changes between cases.
+    /// Every theme doris can offer: the bundled ones plus whatever the user has in
+    /// `~/.config/doris/themes`.
     pub fn load_themes() -> Vec<Self> {
         static CACHE: OnceLock<Vec<Theme>> = OnceLock::new();
         CACHE
@@ -220,13 +183,8 @@ impl Theme {
             .clone()
     }
 
-    /// `load_themes()` with the user themes directory made explicit, so
-    /// tests can point it at a temp dir instead of `$HOME`.
-    ///
-    /// This split is what keeps externally generated themes out of the
-    /// binary: noctalia writes `~/.config/doris/themes/noctalia.toml` from
-    /// its own template (`noctalia msg templates-apply`) and it shows up
-    /// here like any bundled theme, with no `BUNDLED_THEMES` entry for it.
+    /// `load_themes()` with the user themes directory made explicit, so tests can point it at a
+    /// temp dir instead of `$HOME`.
     pub fn load_themes_from(user_dir: Option<&std::path::Path>) -> Vec<Self> {
         let mut themes: Vec<Self> = BUNDLED_THEMES
             .iter()
@@ -254,17 +212,9 @@ impl Theme {
     }
 }
 
-/// Convert an RGB theme color to the nearest of the 16 basic ANSI colors,
-/// for the "Truecolor"/"False tty" Options toggles -- previously these
-/// just flipped a persisted config value with no rendering effect at all.
-/// Named/basic colors (e.g. `Color::Yellow` used for focus highlights)
-/// pass through unchanged since they're already safe on any terminal.
-///
-/// `allow_bright` controls whether the 8 "bright"/high-intensity ANSI
-/// colors are candidates too: Truecolor=false still allows them (256-ish
-/// color terminals almost always support the bright 8), while False
-/// tty=true restricts to the base 8 (real Linux console / very limited
-/// terminals typically only reliably support those).
+/// Convert an RGB theme color to the nearest of the 16 basic ANSI colors, for the
+/// "Truecolor"/"False tty" Options toggles -- previously these just flipped a persisted config
+/// value with no rendering effect at all.
 pub fn degrade_color(color: Color, allow_bright: bool) -> Color {
     let (r, g, b) = match color {
         Color::Rgb(r, g, b) => (r, g, b),

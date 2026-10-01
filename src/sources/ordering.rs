@@ -1,23 +1,10 @@
-//! Pure ordering functions for the merged multi-source result list.
-//!
-//! Everything here is a plain function over `&[TorrentItem]` returning a
-//! new `Vec` -- no UI, no network, no state.
-//!
-//! Applying any of them to `App::ui.results` happens once, when a search
-//! generation finishes (`search.rs::finish_search`): sorting per arriving
-//! batch would reshuffle rows under the user's selection while sources
-//! are still answering.
+//! Pure ordering functions for the merged multi-source result list. Everything here is a plain
+//! function over `&[TorrentItem]` returning a new `Vec` -- no UI, no network, no state.
 
 use super::models::TorrentItem;
 
-/// Rows carrying the same info hash are the same torrent, so keep only
-/// the healthiest copy (highest `seeds_n`) at the first occurrence's
-/// position.
-///
-/// Rows with an **empty** `info_hash` are never collapsed against each
-/// other: a missing hash proves nothing about two rows being the same
-/// torrent (rutracker doesn't expose hashes at all today), and keying on
-/// it would merge every hashless row into one.
+/// Rows carrying the same info hash are the same torrent, so keep only the healthiest copy
+/// (highest `seeds_n`) at the first occurrence's position.
 pub fn dedupe_by_hash(items: &[TorrentItem]) -> Vec<TorrentItem> {
     let mut out: Vec<TorrentItem> = Vec::with_capacity(items.len());
     // Keyed by the input's hash strings; the value is the position in
@@ -57,9 +44,7 @@ fn browse_priority(source: &str) -> u8 {
         .unwrap_or(u8::MAX)
 }
 
-/// The default order: healthiest first (`seeds_n` descending), then
-/// newest `added` first. Browse mode ("fresh releases") instead ranks
-/// sources by `BROWSE_SOURCE_PRIORITY` and then by `added`.
+/// The default order: healthiest first (`seeds_n` descending), then newest `added` first.
 pub fn default_order(items: &[TorrentItem], browsing: bool) -> Vec<TorrentItem> {
     let mut out = items.to_vec();
     if browsing {

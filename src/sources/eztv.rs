@@ -1,24 +1,6 @@
-//! EZTV's JSON API, ported from torio's `eztv.ts`.
-//!
-//! Live-checked 25.09.2026, and three findings shape this file:
-//!
-//! - **`eztvx.to` answers, `eztv.re` only 301s** -- so the host is the
-//!   one that works, not the one an older list may name.
-//! - **`search` is ignored.** Sending it and not sending it return the
-//!   identical rows with the identical `torrents_count`, so a query
-//!   cannot work no matter how it is spelled. Rather than pretend, a
-//!   non-empty query returns an error that *says* this -- the wave-1
-//!   decision -- because an empty table would read as "no results" and
-//!   that is a lie.
-//! - **Paging does work**: `limit=100&page=N` walks the whole index and
-//!   `torrents_count` says how far it goes. That makes eztv the one
-//!   wave-1 source with a real cursor, in rows, in steps of
-//!   [`PAGE_SIZE`].
-//!
-//! There is no per-torrent page URL in the response, and every URL this
-//! code could construct for one (`/torrent/<id>`, `/show/<id>`, an IMDb
-//! link) returns 403/202 to a non-browser client -- so `page_url` stays
-//! empty instead of claiming a link nobody here has seen load.
+//! EZTV's JSON API, ported from torio's `eztv.ts`. Live-checked 25.09.2026, and three findings
+//! shape this file: - **`eztvx.to` answers, `eztv.re` only 301s** -- so the host is the one
+//! that works, not the one an older list may name.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -34,8 +16,6 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 pub const API: &str = "https://eztvx.to/api/get-torrents";
 
 /// Rows per API page, and therefore the step the cursor advances by.
-/// The API takes any `limit`, but 100 is what it was checked with and
-/// what keeps "Load more" asking for the page after this one.
 pub const PAGE_SIZE: usize = 100;
 
 #[derive(Debug, Deserialize)]
@@ -66,9 +46,7 @@ pub fn torrents_url(offset: usize) -> String {
     format!("{}?limit={}&page={}", API, PAGE_SIZE, page)
 }
 
-/// One API page -> one [`SearchPage`]. Public so the fixture tests can
-/// exercise the real parser with no network, as with the other wave-1
-/// sources.
+/// One API page -> one [`SearchPage`].
 pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
     let response: EztvResponse =
         serde_json::from_str(body).map_err(|e| anyhow!("EZTV response did not parse: {}", e))?;

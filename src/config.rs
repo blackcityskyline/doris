@@ -6,21 +6,15 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub browser: Option<String>,
-    /// Browser window visibility: "visible" or "hidden". Defaults to hidden
-    /// (background) so a first run never pops a browser window.
+    /// Browser window visibility: "visible" or "hidden".
     #[serde(default = "default_browser_visibility", alias = "browser_mode")]
     pub browser_visibility: String,
-    /// Order to probe installed browsers in when `browser` isn't set to a
-    /// specific one. Any of "chrome", "chromium", "brave", "helium".
+    /// Order to probe installed browsers in when `browser` isn't set to a specific one.
     #[serde(default = "default_browser_priority")]
     pub browser_priority: Vec<String>,
     #[serde(default = "default_torrserver_url")]
     pub torrserver_url: String,
-    /// Whether streaming goes through TorrServer at all. `false` means
-    /// `spawn_stream` refuses with the reason instead of reaching for a
-    /// server the user has switched off -- the app-side gate that replaces
-    /// a guessed-at `systemctl` flow (which would need the user's sudo
-    /// password and assume their deployment).
+    /// Whether streaming goes through TorrServer at all.
     #[serde(default = "default_true")]
     pub enable_torrserver: bool,
     #[serde(default = "default_bridge_port")]
@@ -33,8 +27,7 @@ pub struct Config {
     // single source of truth the Options modal reads and writes -- unlike
     // the pre-Phase-5 UI, which displayed hardcoded literals with no
     // backing field at all.
-    /// Name of the active theme file (without extension). `None` means
-    /// "use the built-in default theme" (see `ui::theme::Theme::default_theme`).
+    /// Name of the active theme file (without extension).
     pub theme_name: Option<String>,
     #[serde(default = "default_true")]
     pub theme_background: bool,
@@ -48,9 +41,8 @@ pub struct Config {
     pub disable_mouse: bool,
     #[serde(default)]
     pub disable_presets: bool,
-    /// Each entry is a comma-separated list of zone key characters (the
-    /// same digits used for the 1/2/3/4 zone-toggle keybinds) describing
-    /// which zones a preset shows, e.g. "1,2,3,4" for every zone.
+    /// Each entry is a comma-separated list of zone key characters (the same digits used for
+    /// the 1/2/3/4 zone-toggle keybinds) describing which zones a preset shows, e.g.
     #[serde(default = "default_presets")]
     pub presets: Vec<String>,
     #[serde(default)]
@@ -65,35 +57,26 @@ pub struct Config {
     pub rounded_corners: bool,
     #[serde(default = "default_true")]
     pub terminal_sync: bool,
-    /// Symbol set for graph/sparkline widgets (the btop-style dot
-    /// progress bar). One of "braille", "block", "dot".
+    /// Symbol set for graph/sparkline widgets (the btop-style dot progress bar).
     #[serde(default = "default_graph_symbol")]
     pub graph_symbol: String,
     #[serde(default)]
     pub save_config_on_exit: bool,
-    /// Every source id this config has been shown to know -- the key
-    /// that lets `sources::source::migrate_config` tell "new to this build"
-    /// apart from
-    /// "the user turned it off". Written on every save; empty only in a
-    /// config written before B8 wave 1, which is exactly the case the
-    /// migration has to read carefully.
+    /// Every source id this config has been shown to know -- the key that lets
+    /// `sources::source::migrate_config` tell "new to this build" apart from "the user turned
+    /// it off".
     #[serde(default)]
     pub known_sources: Vec<String>,
 
     // --- Options / "streaming" category ---------------
-    /// Kill the automated browser when Doris exits. Note: this is already
-    /// the default outcome of `Browser`'s `Drop` impl regardless of this
-    /// flag; setting this to `false` intentionally leaks the browser
-    /// handle at exit so the browser process survives past Doris closing.
+    /// Kill the automated browser when Doris exits.
     #[serde(default = "default_true")]
     pub close_browser_on_exit: bool,
     #[serde(default = "default_true")]
     pub save_cookies: bool,
     #[serde(default = "default_true")]
     pub save_credentials: bool,
-    /// Which registered source ids are active. A
-    /// source id not in this list is treated as disabled even if
-    /// implemented.
+    /// Which registered source ids are active.
     #[serde(default)]
     pub enabled_sources: Vec<String>,
 
@@ -110,9 +93,7 @@ pub struct Config {
     pub download_dir_custom_2: String,
     #[serde(default)]
     pub download_dir_custom_3: String,
-    /// Stop the download when doris exits, instead of leaving it running
-    /// on TorrServer. Kept beside the download options because that is
-    /// what it governs.
+    /// Stop the download when doris exits, instead of leaving it running on TorrServer.
     #[serde(default = "default_true")]
     pub close_torrent_core_on_exit: bool,
 }
@@ -185,14 +166,7 @@ fn default_bridge_port() -> u16 {
     14141
 }
 
-/// Where a saved rutracker session lives by default: beside the config,
-/// in `~/.config/doris/`.
-///
-/// This used to be the bare relative string `"cookies.txt"`, which the
-/// app resolved against whatever directory it was started in -- so
-/// `target/release/doris` kept its session inside `target/release/`,
-/// where the next `cargo clean` was the only thing that ever removed it.
-/// A path that moves with the CWD is not a location.
+/// Where a saved rutracker session lives by default: beside the config, in `~/.config/doris/`.
 fn default_cookie_file() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     home.join(".config")
@@ -282,16 +256,8 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
     }
 }
 
-/// Resolve a relative `cookie_file` against the config's own directory and
-/// write the result back. Returns whether anything changed.
-///
-/// Only a *relative* value is touched: an absolute one named a file on
-/// purpose. A relative one named a different file depending on the shell's
-/// working directory, so pinning it beside the config is the only reading
-/// that keeps working. A file at the old location is moved rather than
-/// abandoned, so the migration does not cost the session it holds; if the
-/// move fails the path is still pinned, because writing into whatever
-/// directory the app happens to be run from is the worse failure.
+/// Resolve a relative `cookie_file` against the config's own directory and write the result
+/// back.
 fn migrate_cookie_file(config: &mut Config, config_path: &Path) -> bool {
     let configured = std::path::Path::new(&config.cookie_file);
     if configured.is_absolute() {
@@ -322,12 +288,9 @@ fn migrate_cookie_file(config: &mut Config, config_path: &Path) -> bool {
     true
 }
 
-/// `rename` is atomic but cannot cross a filesystem boundary, and the two
-/// ends here routinely are on different ones -- the config in `~/.config`
-/// on the root filesystem, the app started from a mounted data disk or a
-/// tmpfs. Fall back to copy-then-delete, and only delete once the copy is
-/// on disk, so a failure anywhere leaves the session where it was instead
-/// of removing it.
+/// `rename` is atomic but cannot cross a filesystem boundary, and the two ends here routinely
+/// are on different ones -- the config in `~/.config` on the root filesystem, the app started
+/// from a mounted data disk or a tmpfs.
 fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
     match std::fs::rename(from, to) {
         Ok(()) => Ok(()),
@@ -338,9 +301,7 @@ fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Write `config` back to disk as TOML, creating `~/.config/doris/` if it
-/// doesn't exist yet. Used by "Save config on exit" (Options -> general)
-/// and can be called directly for an explicit "save now" action later.
+/// Write `config` back to disk as TOML, creating `~/.config/doris/` if it doesn't exist yet.
 pub fn save(config: &Config, path: Option<&Path>) -> Result<()> {
     let config_path = match path {
         Some(p) => p.to_path_buf(),

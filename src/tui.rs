@@ -13,14 +13,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub type Terminal = ratatui::Terminal<CrosstermBackend<io::Stdout>>;
 
-/// `disambiguate_escape_codes`: Esc arrives as its own event instead of
-/// racing the ones that follow it, and -- the reason this wave pushed
-/// for it -- modified keys such as Shift+Enter arrive as *modified*
-/// keys. Terminals that do not implement the protocol ignore the push.
-/// crossterm's own sequences for mouse reporting, named here so the
-/// tests can look for them without hard-coding the numbers. 1003 is the
-/// one that matters: it reports the pointer with no button held, which is
-/// what makes a hover possible.
+/// `disambiguate_escape_codes`: Esc arrives as its own event instead of racing the ones that
+/// follow it, and -- the reason this wave pushed for it -- modified keys such as Shift+Enter
+/// arrive as *modified* keys.
 #[cfg(test)]
 const MOUSE_CAPTURE_ON: &str = "\x1b[?1003h";
 #[cfg(test)]
@@ -36,22 +31,8 @@ static ENHANCED: AtomicBool = AtomicBool::new(false);
 /// disables exactly what was enabled.
 static MOUSE_CAPTURED: AtomicBool = AtomicBool::new(false);
 
-/// DEC private mode 2026, synchronized output: the terminal buffers
-/// everything a frame writes and presents it in one go, so a frame is
-/// never shown half-drawn. Without it a redraw that takes longer than
-/// one frame period (a search answering, a directory with many rows)
-/// shows the old and the new content side by side on the way through.
-///
-/// Terminals that do not implement it ignore the pair, which is why the
-/// option exists at all: some users see the tearing, some would rather
-/// have the few microseconds back.
-///
-/// These are two functions rather than a guard object because a guard
-/// would have to hold the backend borrowed across `Terminal::draw`, and
-/// the draw cannot then run. Split this way the borrow ends before the
-/// frame and starts again after, and the closing sequence is written
-/// after `draw` returns whatever it returned -- a guard's one advantage
-/// was the same, and the two borrows give it without the type.
+/// DEC private mode 2026, synchronized output: the terminal buffers everything a frame writes
+/// and presents it in one go, so a frame is never shown half-drawn.
 pub const SYNC_BEGIN: &str = "\x1b[?2026h";
 pub const SYNC_END: &str = "\x1b[?2026l";
 
@@ -82,15 +63,12 @@ pub fn restore(terminal: &mut Terminal) -> Result<()> {
     Ok(())
 }
 
-/// Start buffering this frame. Paired with [`end_sync`], which must be
-/// called even if the draw in between failed.
+/// Start buffering this frame.
 pub fn begin_sync(terminal: &mut Terminal) {
     write_raw(terminal.backend_mut(), SYNC_BEGIN);
 }
 
-/// Stop buffering, so the terminal presents the frame. Skipping this after
-/// a [`begin_sync`] leaves the terminal in a state the user cannot get
-/// out of.
+/// Stop buffering, so the terminal presents the frame.
 pub fn end_sync(terminal: &mut Terminal) {
     write_raw(terminal.backend_mut(), SYNC_END);
 }
@@ -115,10 +93,8 @@ fn enter<W: Write>(w: &mut W, enhance_keys: bool, mouse: bool) -> io::Result<()>
     Ok(())
 }
 
-/// The reverse order: drop the protocol while the user can still see
-/// what happens, then leave the screen. Popping after
-/// `LeaveAlternateScreen` would be the same bytes with the wrong
-/// window of attention.
+/// The reverse order: drop the protocol while the user can still see what happens, then leave
+/// the screen.
 fn leave<W: Write>(w: &mut W, enhanced: bool, mouse: bool) -> io::Result<()> {
     if enhanced {
         execute!(w, PopKeyboardEnhancementFlags)?;
@@ -134,14 +110,8 @@ fn leave<W: Write>(w: &mut W, enhanced: bool, mouse: bool) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    /// Alternate screen, mouse capture and -- when asked -- the keyboard
-    /// enhancement protocol, in that order.
-    ///
-    /// The protocol is the whole reason this is a function and not an
-    /// `execute!` at the call site: without it a terminal reports
-    /// Shift+Enter as a plain Enter (or says nothing at all), and
-    /// `Shift+Enter` in the key table is then a lie the tests cannot
-    /// catch, because crossterm never sees the modifier.
+    /// Alternate screen, mouse capture and -- when asked -- the keyboard enhancement protocol,
+    /// in that order.
     #[test]
     fn entering_the_screen_requests_the_keyboard_protocol() {
         let mut buf = Vec::new();
@@ -207,15 +177,8 @@ mod tests {
         );
     }
 
-    /// The mouse is only asked for when the user has it on, and only
-    /// given back if it was asked for.
-    ///
-    /// `EnableMouseCapture` turns on 1000/1002/1003/1015/1006 together,
-    /// and 1003 -- reporting the pointer with no button held -- is what
-    /// makes a hover possible. It used to be enabled unconditionally
-    /// while "Disable mouse" merely stopped the app reading the events,
-    /// so a user who had switched the mouse off was still paying for a
-    /// stream of them arriving.
+    /// The mouse is only asked for when the user has it on, and only given back if it was asked
+    /// for.
     #[test]
     fn the_mouse_is_asked_for_only_when_it_is_on() {
         let mut buf = Vec::new();
@@ -255,23 +218,14 @@ mod tests {
         );
     }
 
-    /// Synchronized output is one private mode set and reset. Getting the
-    /// parameters wrong is not a syntax error the terminal complains
-    /// about -- it is a mode that never turns on, or worse one that turns
-    /// on and is never reset, leaving the terminal buffering with no way
-    /// out. So the bytes are pinned.
+    /// Synchronized output is one private mode set and reset.
     #[test]
     fn synchronized_output_is_a_dec_2026_pair() {
         assert_eq!(SYNC_BEGIN, "\x1b[?2026h", "begin: set mode 2026");
         assert_eq!(SYNC_END, "\x1b[?2026l", "end: reset the same mode");
     }
 
-    /// Every begin owes an end. `write_raw` is what both go through, and
-    /// it drops a write error rather than propagating it -- a terminal
-    /// that will not take the mode just does not get the feature -- so
-    /// what has to be checked here is that it writes and flushes, since a
-    /// buffered mode change that never reaches the terminal is the same
-    /// as no feature at all.
+    /// Every begin owes an end.
     #[test]
     fn the_sequence_is_written_and_flushed() {
         /// A writer that records what it was asked to do.

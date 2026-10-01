@@ -1,18 +1,6 @@
-//! Retrying HTTP fetch with backoff and challenge short-circuiting
-//! ported from torio's `util/net.ts`.
-//!
-//! Why this exists: retrying a *challenge* page is what turns a momentary
-//! block into a 90-second stall. `503` from a CDN front (`ddos-guard`,
-//! `cloudflare`) is not "try again later", it is "you are being tested" --
-//! so that one case errors out immediately instead of burning the retry
-//! budget. Everything else transient (timeouts, 429, 5xx) gets
-//! exponential-ish backoff with jitter, honoring `Retry-After`.
-//!
-//! The request itself is built by the caller (a closure, rebuilt for
-//! every attempt, because a `RequestBuilder` is consumed by `send()`),
-//! which keeps this module free of any one source's URL layout while
-//! still putting the shared policy -- which statuses, how often, how long
-//! to wait -- in exactly one place.
+//! Retrying HTTP fetch with backoff and challenge short-circuiting ported from torio's
+//! `util/net.ts`. Why this exists: retrying a *challenge* page is what turns a momentary block
+//! into a 90-second stall.
 
 use std::future::Future;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -29,8 +17,6 @@ pub const DEFAULT_BASE_MS: u64 = 500;
 pub const DEFAULT_CAP_MS: u64 = 20_000;
 
 /// torio's `RETRY_STATUS`: only these statuses are worth another attempt.
-/// `404`/`403`/`410` mean "wrong answer", not "try later", and are handed
-/// back to the caller untouched.
 pub const RETRY_STATUS: [u16; 7] = [408, 425, 429, 500, 502, 503, 504];
 
 /// Which statuses are retried -- see [`RETRY_STATUS`].
@@ -38,8 +24,7 @@ pub fn is_retryable(status: u16) -> bool {
     RETRY_STATUS.contains(&status)
 }
 
-/// Knobs of one [`fetch_resilient`] call. `Default` is torio's defaults;
-/// tests shrink `base_ms`/`cap_ms` so the backoff stays imperceptible.
+/// Knobs of one [`fetch_resilient`] call.
 #[derive(Debug, Clone, Copy)]
 pub struct FetchOptions {
     /// Attempts after the first one (torio: `retries`).
@@ -73,13 +58,8 @@ impl FetchOptions {
     }
 }
 
-/// The shared client for HTTP sources: uniform browser-like headers, so
-/// a request missing what a real browser always sends is not an easy
-/// bot-detection signal. Until B5 only rutor sent `Accept`/`Accept
-/// -Language`, per request; they now live here for every source to reuse.
-///
-/// `Referer` stays out of it -- it is per-source (it names the page that
-/// issued the request), so each source sets it on its own requests.
+/// The shared client for HTTP sources: uniform browser-like headers, so a request missing what
+/// a real browser always sends is not an easy bot-detection signal.
 pub fn browser_client() -> Client {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -103,10 +83,8 @@ pub fn browser_client() -> Client {
         .unwrap_or_else(|_| Client::new())
 }
 
-/// Parse `Retry-After` (torio's `parseRetryAfter`): either delta-seconds
-/// or an HTTP date, both returned as milliseconds relative to `now_ms`.
-/// Anything unparseable -- including `"soon"` -- is `None`, which means
-/// "fall back to the regular backoff".
+/// Parse `Retry-After` (torio's `parseRetryAfter`): either delta-seconds or an HTTP date, both
+/// returned as milliseconds relative to `now_ms`.
 pub fn parse_retry_after(value: Option<&str>, now_ms: i64) -> Option<u64> {
     let raw = value?.trim();
     if raw.is_empty() {
@@ -126,10 +104,8 @@ pub fn parse_retry_after(value: Option<&str>, now_ms: i64) -> Option<u64> {
     Some(delay.try_into().unwrap_or(0))
 }
 
-/// Backoff before `attempt` + 1 (torio's `backoffDelay`): a random point
-/// in `[0, min(cap, base * 2^attempt))`, floored -- never undercut -- by
-/// `Retry-After` when the server named one. `rand` is the caller's
-/// uniform random in `[0, 1)`, which keeps this function testable.
+/// Backoff before `attempt` + 1 (torio's `backoffDelay`): a random point in `[0, min(cap, base
+/// * 2^attempt))`, floored -- never undercut -- by `Retry-After` when the server named one.
 pub fn backoff_delay(
     attempt: u32,
     base_ms: u64,
@@ -146,17 +122,9 @@ pub fn backoff_delay(
     }
 }
 
-/// Send the request built by `build`, retrying transient failures:
-/// network errors and [`RETRY_STATUS`] responses get up to
-/// `opts.retries` more attempts, each preceded by [`backoff_delay`].
-///
-/// Returns the response as soon as it is *not* retryable -- including
-/// `404`/`403` -- so the caller keeps deciding what a given status means
-/// for its own parse. The two cases that end in `Err` are:
-/// - a `503` from a challenge front (`Server: ddos-guard|cloudflare`):
-///   no retry, because repeating the request is how a block becomes a
-///   90-second stall;
-/// - the retry budget exhausted.
+/// Send the request built by `build`, retrying transient failures: network errors and
+/// [`RETRY_STATUS`] responses get up to `opts.retries` more attempts, each preceded by
+/// [`backoff_delay`].
 pub async fn fetch_resilient<F>(
     url: &str,
     build: F,
@@ -224,9 +192,8 @@ where
     }
 }
 
-/// Uniform-ish random in `[0, 1)` for the backoff jitter: sub-second
-/// microseconds, so two waits in the same microsecond do not line up.
-/// (No RNG dependency for one fraction of one backoff step.)
+/// Uniform-ish random in `[0, 1)` for the backoff jitter: sub-second microseconds, so two waits
+/// in the same microsecond do not line up.
 fn rand_fraction() -> f64 {
     let micros = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -235,14 +202,9 @@ fn rand_fraction() -> f64 {
     micros as f64 / 1_000_000.0
 }
 
-/// Try `bases` in order and hand back the first success ( failover
-/// helper, deliberately deferred until a source actually had mirrors to
-/// fail over to -- yts is the first, B8 wave 1).
-///
-/// Mirrors torio's loop exactly: every host is given the same attempt,
-/// and on failure the *last* error is what surfaces, because that is the
-/// one describing the state of the list as a whole. An empty list is a
-/// caller bug, not a network condition, so it says so.
+/// Try `bases` in order and hand back the first success ( failover helper, deliberately
+/// deferred until a source actually had mirrors to fail over to -- yts is the first, B8 wave
+/// 1).
 pub async fn first_ok<T, F, Fut>(bases: &[&str], attempt: F) -> Result<T>
 where
     F: Fn(&str) -> Fut,

@@ -12,15 +12,6 @@ use crate::torrserver::api::TorrServer;
 use crate::ui::view::{centered_rect, App, Modal};
 
 /// One line of the health check about the saved cookie file.
-///
-/// It used to be `Path::new("cookies.txt")` written into the check
-/// itself: a path relative to whatever directory doris was started in,
-/// naming a file nothing else in the app reads. With the cookie path now
-/// configurable -- and `--cookie-file` able to point somewhere else
-/// entirely -- a user with a real session elsewhere was told their file
-/// was missing while a stray `cookies.txt` in the current directory was
-/// the one being measured. The path is the one the app will actually
-/// use, passed in.
 pub fn cookie_file_status(path: &std::path::Path) -> String {
     if !path.exists() {
         return format!("\u{26a0} Cookie file: not found ({})", path.display());
@@ -148,9 +139,8 @@ impl App {
         results
     }
 
-    /// The health check modal's own rendering: the results list,
-    /// coloured by the mark each line carries. `&self` because it
-    /// only reads the modal state and the theme.
+    /// The health check modal's own rendering: the results list, coloured by the mark each line
+    /// carries.
     pub fn render_health_modal(&self, frame: &mut Frame, area: Rect, config: &Config) {
         if let Modal::HealthCheck(ref lines) = self.modal {
             let popup = centered_rect(70, 80, area);

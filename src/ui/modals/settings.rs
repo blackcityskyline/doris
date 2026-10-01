@@ -16,16 +16,12 @@ use crate::config::Config;
 use crate::sources::source::{Group, GROUP_ORDER, KNOWN_SOURCES};
 use crate::ui::view::{centered_rect, App, Modal};
 
-/// Column where the settings modal draws its vertical divider between
-/// the option name and its value. Capped at `bw - 3` so a narrow modal
-/// still has room for the value.
+/// Column where the settings modal draws its vertical divider between the option name and its
+/// value.
 const SETTINGS_DIVIDER_COL: usize = 30;
 
 impl SettingsState {
-    /// Keep the visible page on the cursor. Called after every move, and
-    /// also after the modal is rebuilt at a different height -- so the
-    /// page is derived from the selection rather than tracked beside it,
-    /// which is what stops the two from disagreeing.
+    /// Keep the visible page on the cursor.
     pub fn follow_page(&mut self) {
         let page = self.selected / self.visible_items.max(1);
         if page != self.page {
@@ -39,18 +35,13 @@ pub struct SettingsState {
     pub selected_category: usize,
     pub selected: usize,
     pub page: usize,
-    /// Items shown per page, computed from the real terminal size the last
-    /// time this modal was rendered. `settings_key`'s pagination reads this
-    /// instead of guessing, so paging can never desync from what's on
-    /// screen. Starts at 1 (never 0, which would
-    /// divide-by-zero in pagination math) until the first render sets it.
+    /// Items shown per page, computed from the real terminal size the last time this modal was
+    /// rendered.
     pub visible_items: usize,
     pub categories: Vec<SettingsCategory>,
-    /// `(index, total)` of the *theme* the settings show, not of the row
-    /// that shows them: the one number on this modal that answers "which
-    /// one am I on" for a value with an order of its own. Measured in
-    /// `open_settings`, the same place the theme is read from disk, so
-    /// the renderer never has to load the theme files to draw a label.
+    /// `(index, total)` of the *theme* the settings show, not of the row that shows them: the
+    /// one number on this modal that answers "which one am I on" for a value with an order of
+    /// its own.
     pub theme_pos: Option<(usize, usize)>,
 }
 
@@ -109,13 +100,8 @@ pub(super) fn bool_str(b: bool) -> String {
     }
 }
 
-/// The category row's tabs: "all", then -- in `GROUP_ORDER` -- every
-/// group that at least one enabled, implemented source serves.
-///
-/// Availability rather than a fixed four (the layout question was
-/// asked in): a category no enabled source could answer would be a tab
-/// that can only show an empty table with no explanation, which is the
-/// trap the Trackers panel's rows avoid for unchecked sources.
+/// The category row's tabs: "all", then -- in `GROUP_ORDER` -- every group that at least one
+/// enabled, implemented source serves.
 pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
     let available = |group: Group| {
         KNOWN_SOURCES
@@ -134,11 +120,9 @@ pub fn group_tabs(config: &Config) -> Vec<Option<Group>> {
     tabs
 }
 
-/// The Options "streaming" category's items, built from the config the
-/// same way [`group_tabs`] builds the category row -- one place, so a
-/// test can assert what the category offers without a rendered modal.
-/// `browser_hidden` is the runtime UI state the
-/// `mode_str` is the "Play mode" row's value, computed by the caller.
+/// The Options "streaming" category's items, built from the config the same way [`group_tabs`]
+/// builds the category row -- one place, so a test can assert what the category offers without
+/// a rendered modal.
 pub fn streaming_settings_items(
     config: &Config,
     browser_hidden: bool,
@@ -274,10 +258,7 @@ fn center_str(s: &str, width: usize) -> String {
 }
 
 impl App {
-    /// Build the Settings modal from real, current state. Every `value`
-    /// here is computed from `self`/`config`, never a hardcoded literal --
-    /// roughly half of these used to be decorative strings with no
-    /// backing field at all.
+    /// Build the Settings modal from real, current state.
     pub fn open_settings(&mut self, config: &Config, browser_hidden: bool) {
         self.settings_browser_hidden = browser_hidden;
         let mode_str = if self.stream_mode {
@@ -408,9 +389,8 @@ impl App {
         None
     }
 
-    /// The settings modal's own rendering: the descriptor table with
-    /// its tab row, pagination and the item list. `&mut self` because
-    /// the list is a `Selector` that mutates the modal state.
+    /// The settings modal's own rendering: the descriptor table with its tab row, pagination
+    /// and the item list.
     pub fn render_settings_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         if matches!(self.modal, Modal::Settings(_)) {
             let popup = centered_rect(80, 80, area);

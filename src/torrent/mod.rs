@@ -1,41 +1,18 @@
-//! Background polling for live torrent status. It exists because the
-//! Torrent panel used to be permanently frozen at its default values:
-//! nothing ever polled TorrServer for status.
-//!
-//! `Manager` owns nothing but the spawned task itself -- the actual
-//! "current status" state lives on `ui::App` (`torrent_status`,
-//! `active_torrent_hash`), updated by the orchestrator whenever a
-//! [`crate::event::Event::TorrentListUpdate`] arrives. This keeps the
-//! polling concern (how often, how to fetch) separate from the
-//! presentation concern (what to show), so a future second poller -- e.g.
-//! for a local (non-TorrServer) download engine -- can post to the same
-//! event without either side knowing about the other.
+//! Background polling for live torrent status. It exists because the Torrent panel used to be
+//! permanently frozen at its default values: nothing ever polled TorrServer for status.
 
 use crate::event::Event;
 use crate::torrserver::api::TorrServer;
 use tokio::sync::mpsc::UnboundedSender;
 
-/// Minimum interval between TorrServer polls. A config value below this
-/// is clamped up, so a typo cannot hammer the server.
+/// Minimum interval between TorrServer polls.
 const MIN_POLL_INTERVAL_MS: u64 = 100;
 
 pub struct Manager;
 
 impl Manager {
-    /// Spawn a task that polls `torrserver.list_torrents()` every
-    /// `update_ms` and forwards the result as `Event::TorrentListUpdate`.
-    ///
-    /// The interval is fixed for the lifetime of the task: changing
-    /// "Update ms" in Options takes effect on the next restart, not live.
-    /// Making it live would mean sharing the value through something like
-    /// an `Arc<AtomicU64>` instead of a plain `Config` field -- a
-    /// reasonable follow-up, not done here to keep this first version
-    /// simple.
-    ///
-    /// A TorrServer that's unreachable just means quiet ticks (no event
-    /// sent) rather than an error -- TorrServer commonly isn't running
-    /// until the user actually starts a stream, and that's not a problem
-    /// worth logging on every poll.
+    /// Spawn a task that polls `torrserver.list_torrents()` every `update_ms` and forwards the
+    /// result as `Event::TorrentListUpdate`.
     pub fn spawn(
         torrserver: TorrServer,
         update_ms: u64,

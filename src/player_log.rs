@@ -1,8 +1,4 @@
 /// MPV stderr filter: true when the line is worth showing in the log.
-///
-/// `spawn_stream` pipes the player's stderr into the Log zone, but most
-/// of it is chatter. This is the single keyword list that decides what
-/// survives — lowercased substring match, so callers can pass raw lines.
 pub fn should_log(line: &str) -> bool {
     let low = line.to_lowercase();
     [

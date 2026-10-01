@@ -1,26 +1,7 @@
-//! The Pirate Bay through apibay.org's JSON.
-//!
-//! apibay is the front door torio uses too, and it has one quirk worth
-//! the module doc: **the same field arrives as a string and as a number
-//! depending on the endpoint** -- checked live 25.09.2026:
-//! `q.php` answers `"size":"1992277407"`, the precompiled top-100 lists
-//! answer `"size":3808117223`. A parser that only reads one spelling
-//! silently zeroes the other, so `ApibayItem` types those fields
-//! against [`FlexNum`] and accepts both.
-//!
-//! Two more live facts shape the code:
-//!
-//! - **A query returns at most 100 rows and there is no cursor**:
-//!   `page=`/`start=` are ignored (verified: both return the identical
-//!   first 100). So `has_more` is always `false` -- not "there is
-//!   nothing more" but "this API will not hand over more", and paging
-//!   would need a different endpoint.
-//! - **"No results" is a row, not an empty array**: `id == "0"` with an
-//!   all-zero `info_hash` and the name "No results returned". Rendering
-//!   it would show one fake result for every miss.
-//!
-//! Both search and browse are magnet-only (`download_url == ""`), which
-//! routes the download key to a `.magnet` file; see `magnet_only_download`.
+//! The Pirate Bay through apibay.org's JSON. apibay is the front door torio uses too, and it
+//! has one quirk worth the module doc: **the same field arrives as a string and as a number
+//! depending on the endpoint** -- checked live 25.09.2026: `q.php` answers
+//! `"size":"1992277407"`, the precompiled top-100 lists answer `"size":3808117223`.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -32,8 +13,6 @@ use super::models::{FlexNum, TorrentItem};
 use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
-/// The API base. Single host: apibay *is* the service, so there is no
-/// mirror list to fail over to and no `first_ok` in this file.
 pub const API: &str = "https://apibay.org";
 
 /// apibay's answer to a query that matched nothing: one row that is a
@@ -46,9 +25,7 @@ const ZERO_HASH: &str = "0000000000000000000000000000000000000000";
 pub const TOP_MOVIES_URL: &str = "https://apibay.org/precompiled/data_top100_207.json";
 pub const TOP_TV_URL: &str = "https://apibay.org/precompiled/data_top100_208.json";
 
-/// One apibay row. Fields are optional because the two endpoints do not
-/// agree on which ones they send (`num_files`/`username`/`imdb` come and
-/// go); a missing field degrades, it does not fail the page.
+/// One apibay row.
 #[derive(Debug, Deserialize)]
 struct ApibayItem {
     id: Option<FlexNum>,
@@ -61,21 +38,9 @@ struct ApibayItem {
     category: Option<FlexNum>,
 }
 
-/// The apibay category ids behind each group this source declares --
-/// the single source of truth for both halves of B6: the `cat=` list
-/// the server is asked to trim by, and the mapping a returned row's
-/// own `category` is read back through. One list for both is what
-/// makes "the server fetched exactly what the view will show"
-/// structural instead of a promise.
-///
-/// Classified live against `q.php` on 26.09.2026, sampling every id
-/// that exists in the 200 tree: 201 video, 202 DVD, 207 HD, 209 3D
-/// and 211 UHD are films; 205 (specials), 208 and 212 (1080p/2160p
-/// episodes) are series. 203 concerts, 204 animation and 206 -- films
-/// *and* series mixed -- stay out: none can be attributed to a group
-/// this registry entry promises without lying about it. torio's
-/// MOVIE_CATS/TV_CATS predate 211/212, and leaving them out hid real
-/// rows: 23 of the first 100 "matrix" hits are 211.
+/// The apibay category ids behind each group this source declares -- the single source of truth
+/// for both halves of B6: the `cat=` list the server is asked to trim by, and the mapping a
+/// returned row's own `category` is read back through.
 const GROUP_CATS: [(Group, &[i64]); 2] = [
     (Group::Movies, &[201, 202, 207, 209, 211]),
     (Group::TV, &[205, 208, 212]),
@@ -94,12 +59,6 @@ fn group_cats(group: Group) -> &'static [i64] {
         .unwrap_or(&[])
 }
 
-/// The search URL for one query. A selected category becomes apibay's
-/// `cat=` list -- comma-separated, which the API takes (live
-/// 26.09.2026: `cat=201,202,207,209` returned only those four rows),
-/// built from `GROUP_CATS` so the trim and the row attribution can
-/// never drift apart. `None` keeps unfiltered URL: with no
-/// category selected the whole corpus is the honest answer.
 pub fn search_url(query: &str, category: Option<Group>) -> String {
     let mut url = format!("{}/q.php?q={}", API, urlencoding::encode(query.trim()));
     if let Some(group) = category {
@@ -112,11 +71,8 @@ pub fn search_url(query: &str, category: Option<Group>) -> String {
     url
 }
 
-/// TPB's category -> [`Group`] mapping, read back through [`GROUP_CATS`]
-/// -- the same list the server filter is built from. Everything else
-/// stays `None`: unattributed rows show only in the "all" view, and
-/// claiming a group the registry does not promise would put them
-/// somewhere the source was never asked to speak for.
+/// TPB's category -> [`Group`] mapping, read back through [`GROUP_CATS`] -- the same list the
+/// server filter is built from.
 fn group_for_category(category: i64) -> Option<Group> {
     GROUP_CATS
         .iter()
@@ -124,9 +80,7 @@ fn group_for_category(category: i64) -> Option<Group> {
         .map(|(group, _)| *group)
 }
 
-/// apibay JSON -> rows, with the placeholder row dropped. Public so the
-/// fixture tests can exercise the real parser with no network (the same
-/// split `yts::parse_page` has).
+/// apibay JSON -> rows, with the placeholder row dropped.
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let items: Vec<ApibayItem> =
         serde_json::from_str(body).map_err(|e| anyhow!("apibay response did not parse: {}", e))?;

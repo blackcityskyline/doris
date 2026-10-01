@@ -89,13 +89,9 @@ impl MenuState {
     }
 }
 
-/// The box the menu takes: one rect around the banner *and* the three
-/// items -- the wider of the two wins, and both are centred, so the
-/// rect covers them either way -- plus the border row a box needs.
-///
-/// `None` when the terminal cannot hold it: the menu then draws without
-/// a backdrop, the way it always did, rather than clipping itself into
-/// a frame whose inside is smaller than what it frames.
+/// The box the menu takes: one rect around the banner *and* the three items -- the wider of the
+/// two wins, and both are centred, so the rect covers them either way -- plus the border row a
+/// box needs.
 pub fn menu_backdrop_rect(area: Rect) -> Option<Rect> {
     let content_w = MENU_ITEMS
         .iter()

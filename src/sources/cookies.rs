@@ -12,13 +12,6 @@ pub struct Cookie {
 
 impl Cookie {
     /// The payload `Browser::add_cookies` wants.
-    ///
-    /// The leading dot a Netscape file carries in its domain column is the
-    /// *Set-Cookie* spelling; Chrome's own `Network.setCookie` rejects it
-    /// ("invalid cookie domain"), so the domain goes in bare. For the host
-    /// a cookie is set on that changes nothing, and it is the difference
-    /// between the session an app run saved being reusable and being
-    /// silently re-logged-in every time.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "name": self.name,

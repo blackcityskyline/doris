@@ -1,25 +1,7 @@
-//! YTS's JSON API ported from torio's `yts.ts`.
-//!
-//! Why it is the first wave-1 source to land: it is pure JSON over
-//! plain HTTP -- no browser, no login, no HTML -- and it is the source
-//! that needs [`first_ok`] ( deferred failover helper), because a
-//! list of mirror hosts is the only way to stay up when one of them
-//! moves, dies or starts rate-limiting.
-//!
-//! Three things differ from torio and are worth saying out loud:
-//!
-//! - **Hosts.** torio's `yts.mx / yts.am / yts.rs` no longer answers as
-//!   a set (checked live on 25.09.2026: `yts.gg` 200,
-//!   `movies-api.accel.li` 200 and announced by the API itself as its
-//!   future base, `yts.am` 301 -> `yts.gg`, `yts.mx` does not resolve
-//!   from here, `yts.rs` 500). See [`HOSTS`].
-//! - **The cursor counts API pages, not rows.** The API pages by
-//!   *movie* (`page_number`, `limit=50`) while a movie may carry
-//!   several qualities, so rows per page vary: [`SearchPage::next_offset`]
-//!   is what keeps "Load more" aligned (see `orchestrator::advance_offset`).
-//! - **Everything is magnet-only.** There is no `.torrent` to download,
-//!   so `download_url` stays empty and the row streams over its magnet
-//!   (B7); `download_torrent` says as much rather than failing obscurely.
+//! YTS's JSON API ported from torio's `yts.ts`. Why it is the first wave-1 source to land: it
+//! is pure JSON over plain HTTP -- no browser, no login, no HTML -- and it is the source that
+//! needs [`first_ok`] ( deferred failover helper), because a list of mirror hosts is the only
+//! way to stay up when one of them moves, dies or starts rate-limiting.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -32,20 +14,12 @@ use super::net::{browser_client, fetch_resilient, first_ok, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// Mirror hosts, first live-verified answer first (see the module doc).
-/// `yts.am` stays in the list on purpose: it 301s to `yts.gg`, and
-/// reqwest follows redirects, so it works -- it just isn't the fast
-/// path. `yts.mx` is last: unreachable from this network, but it is
-/// still YTS's own domain and may well resolve elsewhere, which is
-/// exactly the case failover exists for.
 pub const HOSTS: [&str; 4] = ["yts.gg", "movies-api.accel.li", "yts.am", "yts.mx"];
 
-/// The API's `limit`: movies per page. This is *not* a row count --
-/// each movie contributes one row per quality it ships, which is why
-/// the cursor is a page number (see the module doc).
+/// The API's `limit`: movies per page.
 pub const PAGE_SIZE: usize = 50;
 
-/// One YTS movie. Every field optional: the API has grown fields over
-/// time and a missing one must degrade, not fail the whole page.
+/// One YTS movie.
 #[derive(Debug, Deserialize)]
 struct YtsMovie {
     title: Option<String>,
@@ -81,9 +55,7 @@ struct YtsResponse {
     data: Option<YtsData>,
 }
 
-/// The search/browse URL for one host. `offset` is a 0-based API page
-/// (so page 1 of the API is `offset == 0`); an empty query means
-/// browse, which YTS expresses as "sort by newest" (torio's rule).
+/// The search/browse URL for one host.
 pub fn list_movies_url(base: &str, query: &str, offset: usize) -> String {
     let mut url = format!(
         "https://{}/api/v2/list_movies.json?limit={}&page_number={}",
@@ -100,8 +72,7 @@ pub fn list_movies_url(base: &str, query: &str, offset: usize) -> String {
     url
 }
 
-/// One API page -> one [`SearchPage`]. Split out of [`YtsSearcher::search`]
-/// so the fixture tests can exercise the real parser with no network.
+/// One API page -> one [`SearchPage`].
 pub fn parse_page(body: &str, offset: usize) -> Result<SearchPage> {
     let parsed: YtsResponse =
         serde_json::from_str(body).map_err(|e| anyhow!("YTS response did not parse: {}", e))?;

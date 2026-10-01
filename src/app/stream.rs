@@ -3,9 +3,7 @@
 use super::*;
 
 impl App {
-    /// Pause (drop) or resume (re-get) the torrent the panel is currently
-    /// showing. See the doc comment on `ui::App::torrent_paused` for why
-    /// this is tracked client-side rather than read back from TorrServer.
+    /// Pause (drop) or resume (re-get) the torrent the panel is currently showing.
     pub(super) async fn toggle_pause_active_torrent(&mut self) {
         let Some(hash) = self.ui.active_torrent_hash.clone() else {
             self.ui.add_log("No active torrent to pause/resume.");
@@ -30,7 +28,6 @@ impl App {
         }
     }
 
-    /// Remove the active torrent from TorrServer entirely.
     pub(super) async fn remove_active_torrent(&mut self) {
         let Some(hash) = self.ui.active_torrent_hash.take() else {
             self.ui.add_log("No active torrent to remove.");
@@ -47,14 +44,10 @@ impl App {
         }
     }
 
-    /// Fetch a result's `.torrent` bytes through the `Source` that
-    /// actually owns it, instead of always going through rutracker's
-    /// browser session -- which for a rutor row either failed ("No
-    /// browser session") or fetched `rutor.org/download/...`
-    /// cross-origin from a rutracker page. Since B2 the client is
-    /// just `&dyn Source`: which one to hand in is decided by
-    /// [`source_id_for`] + [`source_needs_browser`] at the call site.
-    /// Shared by `spawn_stream` and `download_selected_to_disk`.
+    /// Fetch a result's `.torrent` bytes through the `Source` that actually owns it, instead of
+    /// always going through rutracker's browser session -- which for a rutor row either failed
+    /// ("No browser session") or fetched `rutor.org/download/...` cross-origin from a rutracker
+    /// page.
     pub(super) async fn download_bytes_for(
         item: &crate::sources::models::TorrentItem,
         source: &dyn Source,
@@ -320,14 +313,8 @@ impl App {
         ));
     }
 
-    /// Open the detail modal for the selected row Shift+Enter and
-    /// ask its source for the file list.
-    ///
-    /// The row's own facts go on screen at once -- the modal is never an
-    /// empty box waiting on the network. The file list is one request
-    /// away and arrives as [`Event::DetailLoaded`], tagged with the page
-    /// it was asked about so an answer for a row the user has already
-    /// left is dropped rather than shown in the next row's modal.
+    /// Open the detail modal for the selected row Shift+Enter and ask its source for the file
+    /// list.
     pub(super) async fn open_detail_modal(&mut self) {
         let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
             self.ui.add_log("No result selected.");

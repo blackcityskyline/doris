@@ -1,11 +1,5 @@
-//! The Options modal's descriptor table: every category, every row, and
-//! the text on it.
-//!
-//! It is data, not logic, and it was 290 of the 940 lines of
-//! `settings.rs`. What it does carry is the rule every `value` here
-//! follows -- read from `config` or from live state, never a literal,
-//! because a row showing a stale answer is worse than no row. That was
-//! roughly half these rows before they were rebuilt from real state.
+//! The Options modal's descriptor table: every category, every row, and the text on it. It is
+//! data, not logic, and it was 290 of the 940 lines of `settings.rs`.
 
 use super::settings::{
     bool_str, streaming_settings_items, SettingsAction, SettingsCategory, SettingsItem,

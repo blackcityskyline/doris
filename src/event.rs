@@ -8,22 +8,16 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
-    /// One source of `generation` answered: its rows render immediately
-    /// instead of after the slowest source. Tagged with the
-    /// `search_generation` of the dispatch that produced it, so a late
-    /// answer from a query that has since been replaced is dropped
-    /// instead of overwriting the fresh one.
+    /// One source of `generation` answered: its rows render immediately instead of after the
+    /// slowest source.
     SourceDone {
         source: String,
         generation: u64,
         items: Vec<crate::sources::models::TorrentItem>,
-        /// Whether *that* source has another page. `App` remembers
-        /// it per source so "Load more" only asks the ones that do.
+        /// Whether *that* source has another page.
         has_more: bool,
-        /// Where that source's next page starts, in its own cursor unit;
-        /// `None` for row-paged sources and for every failure, both of
-        /// which leave the cursor where it is. See
-        /// `SearchPage::next_offset`.
+        /// Where that source's next page starts, in its own cursor unit; `None` for row-paged
+        /// sources and for every failure, both of which leave the cursor where it is.
         next_offset: Option<usize>,
         /// `Some` when the source failed; the message says what happened
         /// (including "timed out after 25s").
@@ -32,9 +26,8 @@ pub enum Event {
         /// error -- reported so status can distinguish the two.
         timed_out: bool,
     },
-    /// Every source of `generation` has reported in (or failed to):
-    /// nothing more will arrive for it, so the UI may go idle. Rows
-    /// already arrived individually via [`Event::SourceDone`].
+    /// Every source of `generation` has reported in (or failed to): nothing more will arrive
+    /// for it, so the UI may go idle.
     SearchComplete {
         generation: u64,
     },
@@ -48,14 +41,10 @@ pub enum Event {
     /// anything changed -- the receiver decides what (if anything) to
     /// update.
     TorrentListUpdate(Vec<crate::torrserver::api::TorrentInfo>),
-    /// A torrent just became the "active" one to show/manage in the
-    /// Torrent panel (e.g. right after it was uploaded to TorrServer for
-    /// streaming).
+    /// A torrent just became the "active" one to show/manage in the Torrent panel (e.g.
     TorrentActive(String),
-    /// The answer to a detail modal's `Source::details` request:
-    /// the file list for the page it was asked about, or the error.
-    /// Tagged with that page so an answer for a row the user has already
-    /// left is dropped instead of landing in the next row's modal.
+    /// The answer to a detail modal's `Source::details` request: the file list for the page it
+    /// was asked about, or the error.
     DetailLoaded {
         page_url: String,
         files: Vec<crate::sources::models::FileEntry>,

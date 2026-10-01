@@ -1,10 +1,6 @@
-//! Key routing: what each keypress does, and what it must not reach.
-//!
-//! These live beside `handle_key` because that function is private, so a
-//! test outside this module could not call it. That is the only reason
-//! they are here rather than in `tests/` -- and it is a real reason:
-//! each of these was written after finding that the obvious test in
-//! `tests/` passed with the routing broken.
+//! Key routing: what each keypress does, and what it must not reach. These live beside
+//! `handle_key` because that function is private, so a test outside this module could not call
+//! it.
 
 use super::input::MOUSE_SCROLL_STEP;
 use super::*;
@@ -40,10 +36,9 @@ fn press(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-/// `i`, `s` and `S` all focus the search box -- three keys for one
-/// action, so muscle memory from vi (`i`), from this app (`s`) and
-/// from the old Settings binding (`S`) all land in the same place.
-/// `S` used to open Settings; Settings lives in the menu now.
+/// `i`, `s` and `S` all focus the search box -- three keys for one action, so muscle memory
+/// from vi (`i`), from this app (`s`) and from the old Settings binding (`S`) all land in the
+/// same place.
 #[tokio::test]
 async fn all_three_search_keys_enter_input_mode() {
     for code in [KeyCode::Char('i'), KeyCode::Char('s'), KeyCode::Char('S')] {
@@ -138,10 +133,8 @@ async fn zone_digit_keys_focus_first_and_hide_second() {
     assert_eq!(app.ui.zones.focused, ZoneId::Log);
 }
 
-/// A fresh app applies `presets[preset_index]`, and the default
-/// first preset is `1,3|4`: Torrent starts hidden, Trackers and Log
-/// share the row under Results. The zones know nothing about Config,
-/// so this apply happens here rather than in `ZoneLayout::new`.
+/// A fresh app applies `presets[preset_index]`, and the default first preset is `1,3|4`:
+/// Torrent starts hidden, Trackers and Log share the row under Results.
 #[tokio::test]
 async fn startup_applies_the_first_config_preset() {
     let app = app_focused_on_sources(None).await;
@@ -250,10 +243,8 @@ async fn switching_a_source_row_persists_the_config() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The path every "you should know this" line takes: the Log zone,
-/// the full log `L` opens, and the file. TorrServer's answer used to
-/// reach none of the first two, so a switch that could not work
-/// showed nothing at all.
+/// The path every "you should know this" line takes: the Log zone, the full log `L` opens, and
+/// the file.
 #[tokio::test]
 async fn report_reaches_both_logs() {
     let mut app = app_focused_on_sources(None).await;
@@ -396,17 +387,7 @@ async fn g_cycles_the_category_and_types_when_the_box_is_open() {
     assert_eq!(app.ui.search_input, "g", "the letter belongs to the query");
 }
 
-/// A category is a request, not only a view. `g` re-asks the
-/// sources for the category it just selected, because rutracker,
-/// rutor and x1337x can only tag a row with the category they were
-/// *asked* for -- the rows an "all" search left behind carry no
-/// category, and showing them under Movies was the reported bug.
-///
-/// Nothing is checked in this fixture, so dispatch has nothing to
-/// send; what the test reads is that the re-ask happened: the log
-/// line names the new category, the debt `group_changed` held is
-/// paid, and the untagged row is gone rather than shown under
-/// something it was never filed under.
+/// A category is a request, not only a view.
 #[tokio::test]
 async fn switching_the_category_reasks_the_sources() {
     let mut app = app_focused_on_sources(None).await;
@@ -492,14 +473,8 @@ async fn a_search_names_its_category_and_says_when_nothing_can_answer_it() {
     );
 }
 
-/// `L`, `T` and `R` each open their zone's detail view -- the same
-/// full-frame takeover the detailed log already had -- and the same
-/// key closes it again. Esc closes whichever is open.
-/// Shift+Enter is the documented "show me the details" key next to
-/// `D`. It has to reach `open_detail_modal` from the Results panel,
-/// which is the only panel that has a row to show -- and it has to
-/// do so *before* Enter's other meanings (Trackers switches a row),
-/// because a modifier is what says the key is not plain Enter.
+/// `L`, `T` and `R` each open their zone's detail view -- the same full-frame takeover the
+/// detailed log already had -- and the same key closes it again.
 #[tokio::test]
 async fn shift_enter_opens_the_detail_modal() {
     let mut app = app_focused_on_sources(None).await;
@@ -536,10 +511,7 @@ async fn shift_enter_opens_the_detail_modal() {
     );
 }
 
-/// The theme row's number has to survive the cycle that changes the
-/// theme. It is measured in `open_settings`, so the only way it can
-/// go stale is the handler skipping that rebuild -- which is the
-/// shape of the old bug (a number that never moved).
+/// The theme row's number has to survive the cycle that changes the theme.
 #[tokio::test]
 async fn cycling_the_theme_moves_the_row_number_with_it() {
     let mut app = app_focused_on_sources(None).await;
@@ -570,11 +542,9 @@ async fn cycling_the_theme_moves_the_row_number_with_it() {
     );
 }
 
-/// Every mode that grabs the keyboard -- the menu, the search box, a
-/// modal, a detail view -- answers before the plain-view Ctrl+C arm
-/// is ever reached, so quitting has to be the *first* thing
-/// `handle_key` asks, not the last. Otherwise a takeover is also an
-/// exit lockout and the only way out is a signal.
+/// Every mode that grabs the keyboard -- the menu, the search box, a modal, a detail view --
+/// answers before the plain-view Ctrl+C arm is ever reached, so quitting has to be the *first*
+/// thing `handle_key` asks, not the last.
 #[tokio::test]
 async fn ctrl_c_quits_from_every_mode() {
     for mode in ["main", "search", "menu", "detail"] {
@@ -688,12 +658,6 @@ async fn nothing_checked_points_at_the_panel_that_switches_them() {
 }
 
 /// `PageUp`/`PageDown` page the Results table.
-///
-/// A claim about the key *routing*, not about the movement: the
-/// movement is `UiApp::navigate_page`, which the paging tests pin
-/// directly. Those passed with this arm removed -- the key did
-/// nothing in the one panel with five hundred rows in it, and no
-/// test noticed. So this is here, where `handle_key` is reachable.
 #[tokio::test]
 async fn page_keys_page_the_results_and_still_page_the_log() {
     let mut app = app_focused_on_sources(None).await;
@@ -748,13 +712,6 @@ async fn page_keys_page_the_results_and_still_page_the_log() {
 }
 
 /// Options rows that hand the modal over do not get it handed back.
-///
-/// `EditCredentials`, `RunHealthCheck` and `OpenLog` replace the modal
-/// or the whole view, so the one rebuild at the end of the settings
-/// arm has to be guarded by "the modal is still Options". Unguarded,
-/// pressing Edit credentials lands on the login window and the next
-/// frame puts Options back on top of it -- a bug that is invisible
-/// until you press the key, and the guard is one line.
 #[tokio::test]
 async fn a_row_that_opens_another_window_keeps_it() {
     let mut app = app_focused_on_sources(None).await;
@@ -795,13 +752,6 @@ async fn a_row_that_opens_another_window_keeps_it() {
 }
 
 /// Every bool row flips its own field.
-///
-/// The table that replaced a chain of fifteen macro calls is a list of
-/// pairs, and a pair is exactly the kind of thing that can name the
-/// wrong right-hand side without anything noticing -- the user flips
-/// "Show boxes" and rounded corners changes instead. Nothing failed
-/// with that mutation applied: the routing tests only check that a key
-/// reaches the modal, not what it did there.
 #[tokio::test]
 async fn every_bool_row_flips_its_own_field() {
     // Find the row for each toggle the same way the modal does, then
@@ -856,17 +806,9 @@ fn count_true_fields(a: &Config, b: &Config) -> usize {
         .count()
 }
 
-/// A modal owns the keyboard: a keypress handled inside Options never
-/// reaches the main view, so `2` does not move the zone focus behind
-/// the window and `d` does not start a download while the user is
-/// looking at a settings list.
-///
-/// This started as a test for the `return` after the Options arm, and
-/// the mutation check showed that `return` was not what enforces it --
-/// removing it changed nothing, because the very next line tests
-/// `modal != None`, which is still true for Options and returns for
-/// both. So the `return` went and this test now pins the property
-/// rather than one way of writing it.
+/// A modal owns the keyboard: a keypress handled inside Options never reaches the main view, so
+/// `2` does not move the zone focus behind the window and `d` does not start a download while
+/// the user is looking at a settings list.
 #[tokio::test]
 async fn a_key_the_modal_handles_does_not_reach_the_main_view() {
     let mut app = app_focused_on_sources(None).await;
@@ -887,12 +829,9 @@ async fn a_key_the_modal_handles_does_not_reach_the_main_view() {
     );
 }
 
-/// The armed removal is cancelled by *any* other key, and that is a
-/// claim about `handle_key` rather than about the state machine --
-/// the state machine only knows that something cancelled it. So it is
-/// checked here, where the keys are actually routed. Getting it wrong
-/// means `d`, then `j`, then `d` removes a torrent the user thought
-/// they had cancelled twice.
+/// The armed removal is cancelled by *any* other key, and that is a claim about `handle_key`
+/// rather than about the state machine -- the state machine only knows that something cancelled
+/// it.
 #[tokio::test]
 async fn any_key_other_than_d_cancels_an_armed_removal() {
     for code in [
@@ -922,8 +861,7 @@ async fn any_key_other_than_d_cancels_an_armed_removal() {
     }
 }
 
-/// And the second `d` is the one that goes through -- the whole point
-/// of arming it. A cancel in between sends it back to asking.
+/// And the second `d` is the one that goes through -- the whole point of arming it.
 #[tokio::test]
 async fn d_arms_then_removes_and_a_cancelled_d_asks_again() {
     let mut app = app_focused_on_sources(None).await;
@@ -949,14 +887,7 @@ async fn d_arms_then_removes_and_a_cancelled_d_asks_again() {
     assert!(app.ui.active_torrent_hash.is_some());
 }
 
-/// The full Log view scrolls by line and by page, in the direction the
-/// key names.
-///
-/// This is a pair of assertions about arithmetic that used to be spelled
-/// out in six match arms, three of them writing the same clamped `min`.
-/// Collapsing them into one helper is only safe if the direction
-/// survives it, and swapping two signs fails no build and trips no lint
-/// -- it just scrolls the wrong way.
+/// The full Log view scrolls by line and by page, in the direction the key names.
 #[tokio::test]
 async fn the_full_log_scrolls_the_way_the_key_names() {
     let mut app = app_focused_on_sources(None).await;
@@ -1049,15 +980,6 @@ async fn the_wheel_scrolls_the_full_log_by_its_own_step() {
 }
 
 /// Options' "cycle this row" keys move the value they name.
-///
-/// Three rows go through `cycle_str`, and the step it shares with
-/// `cycle_index` is the difference between Left and Right doing opposite
-/// things. Nothing above the helper was covered: `cycle_str` returning
-/// its first entry unconditionally passed every test in the file, and so
-/// would each of the three rows quietly refusing to move.
-///
-/// The keys are pressed rather than the helper called, because the thing
-/// that can be wrong is the row, not the step.
 #[tokio::test]
 async fn a_cycle_row_in_options_moves_the_value_it_names() {
     /// Which row of the open category carries `label`.

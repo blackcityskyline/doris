@@ -15,13 +15,8 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 impl App {
-    /// The block every zone frame is built from: themed, bordered, and
-    /// titled with the zone's own number and label.
-    ///
-    /// Four renderers want exactly this, and each was spelling out the
-    /// same border-colour-then-title pair. What it costs to write it out
-    /// is that the label is where the focus mark lives, so a change to it
-    /// has to find all four or one zone stops showing it has focus.
+    /// The block every zone frame is built from: themed, bordered, and titled with the zone's
+    /// own number and label.
     fn zone_block(&self, id: ZoneId, config: &Config) -> Block<'static> {
         self.themed_block(
             super::layout::zone_border_color(id, self.zones.focused, &self.theme),
@@ -34,12 +29,8 @@ impl App {
         ))
     }
 
-    /// Border+background styling for the four main zone panels,
-    /// respecting the "Rounded corners", "Theme background" and "Show
-    /// boxes" Options toggles. Centralizes what used to be ~14 separate
-    /// hand-rolled `Block::default()...` call sites, each of which would
-    /// have needed this same check repeated -- previously these settings
-    /// were persisted in Config but had no rendering effect anywhere.
+    /// Border+background styling for the four main zone panels, respecting the "Rounded
+    /// corners", "Theme background" and "Show boxes" Options toggles.
     fn themed_block(&self, border_color: Color, config: &Config) -> Block<'static> {
         self.themed_block_with_borders(
             border_color,
@@ -80,7 +71,7 @@ impl App {
     }
 
     /// Degrade an RGB color per the "Truecolor"/"False tty" toggles; see
-    /// `theme::degrade_color`. Named/basic colors pass through untouched.
+    /// `theme::degrade_color`.
     fn resolve_color(&self, color: Color, config: &Config) -> Color {
         if config.false_tty {
             super::theme::degrade_color(color, false)
@@ -91,9 +82,7 @@ impl App {
         }
     }
 
-    /// Draw the main view. `config` rides along because the zones read
-    /// it: the Trackers panel's checkboxes and the Results frame's "what
-    /// the search is asking" slot both come from `enabled_sources`.
+    /// Draw the main view.
     pub fn render(&mut self, frame: &mut Frame, config: &Config) {
         let area = frame.area();
 
@@ -241,7 +230,7 @@ impl App {
         frame.render_widget(block, area);
 
         // One row inside the border: the table. The category row that
-        // used to sit above it moved onto the frame (П.4 follow-up) --
+        // used to sit above it moved onto the frame --
         // the current category is read off the `◀ name ▶` button next to
         // `group`, so a row here would have been a second copy of it.
         let chunks = Layout::default()
@@ -261,16 +250,13 @@ impl App {
         };
         frame.render_stateful_widget(table, chunks[0], &mut self.results_cursor());
 
-        // The keybind legend moved onto the frame with П.5, so the panel
+        // The keybind legend moved onto the frame, so the panel
         // body ends at the table and every remaining line is data.
         self.render_frame(frame, id, area, config);
     }
 
-    /// The Trackers panel: the `all` master switch on top, then one
-    /// row per registered source, `[x]`/`[ ]` showing whether the search
-    /// asks it. The row under the cursor is reversed, the same way the
-    /// selected result row is -- the cursor is the panel's only state, and
-    /// it has to be visible the same way.
+    /// The Trackers panel: the `all` master switch on top, then one row per registered source,
+    /// `[x]`/`[ ]` showing whether the search asks it.
     fn render_trackers_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let block = self.zone_block(id, config);
         let inner = block.inner(area);
@@ -576,14 +562,7 @@ impl App {
         frame.render_widget(paragraph, area);
     }
 
-    /// The results table's rows: every filtered row that still has an
-    /// index to land on.
-    ///
-    /// The panel and its detail view draw the same table, so this is the
-    /// one place the row is built. What they do differ on is the column
-    /// widths -- the detail view has the whole terminal, so its fixed
-    /// columns can be wider -- which is why the widths are a parameter
-    /// and not a constant here.
+    /// The results table's rows: every filtered row that still has an index to land on.
     fn results_table(&self, seeds: u16, size: u16, date: u16, title_min: u16) -> Option<Table<'_>> {
         // Muted, but not `inactive_fg`: the tab bar gets away with that
         // one because a tab is also spelled out in the title. Here the
@@ -629,9 +608,7 @@ impl App {
         )
     }
 
-    /// Why the table has no rows. Drawn instead of the header so an
-    /// empty Results panel reads as "nothing yet" rather than as a
-    /// broken table.
+    /// Why the table has no rows.
     fn render_results_placeholder(&self, frame: &mut Frame, area: Rect) {
         frame.render_widget(
             Paragraph::new(self.results_placeholder())
@@ -820,13 +797,11 @@ impl App {
     }
 }
 
-/// How much of a source's error text a Sources row shows. An error is a
-/// sentence, and a sentence does not fit on a one-line row.
+/// How much of a source's error text a Sources row shows.
 const STATUS_TEXT_WIDTH: usize = 24;
 
-/// What a Sources row appends after its checkbox: what that source
-/// answered for the search that ran. Without it the panel said only
-/// which sources were *asked*, never which of them replied.
+/// What a Sources row appends after its checkbox: what that source answered for the search that
+/// ran.
 fn source_status_text(status: &SourceStatus) -> String {
     match status {
         SourceStatus::Pending => "…".to_string(),
@@ -843,10 +818,8 @@ fn source_status_text(status: &SourceStatus) -> String {
     }
 }
 
-/// The status's own colour, so a failure reads at a glance: dim while
-/// still in flight, the informational mid-bright for an answer, the
-/// error accent for a refusal. The label says it in words too, so
-/// colour is never the only channel carrying the meaning.
+/// The status's own colour, so a failure reads at a glance: dim while still in flight, the
+/// informational mid-bright for an answer, the error accent for a refusal.
 pub(super) fn source_status_style(status: &SourceStatus, theme: &Theme) -> Style {
     match status {
         SourceStatus::Pending => Style::default().fg(theme.inactive_fg.to_color()),
@@ -855,12 +828,8 @@ pub(super) fn source_status_style(status: &SourceStatus, theme: &Theme) -> Style
     }
 }
 
-/// The detail log's line colour: the error accent for a refusal,
-/// `secondary` for a success, `primary` for a warning, the body colour
-/// for everything else. Severity is spelled in the line as well
-/// (`ERROR`/`OK`/`WARN`), so the colour is a second channel, never the
-/// only one -- and never a colour the theme did not choose: these were
-/// hardcoded red/green/yellow before the tokens existed.
+/// The detail log's line colour: the error accent for a refusal, `secondary` for a success,
+/// `primary` for a warning, the body colour for everything else.
 pub(super) fn detail_log_style(line: &str, theme: &Theme) -> Style {
     if line.contains("ERROR") || line.contains("FAIL") || line.contains("error:") {
         Style::default().fg(theme.error_color())

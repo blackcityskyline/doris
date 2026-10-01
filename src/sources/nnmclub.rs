@@ -1,42 +1,10 @@
-//! NNM-Club over its tracker HTML, parsed from the markup as it came
-//! back live on 25.09.2026: windows-1251 in both the header and the
-//! `<meta>`, cloudflare-fronted, but a browser UA alone was enough -- no
-//! JS challenge, no login, no cookie jar.
-//!
-//! Five things the live pages established, which the code therefore does:
-//!
-//! - **One request per search.** Each row carries its title, a
-//!   `download.php?id=` link, raw bytes, seeders, leechers and its own
-//!   timestamp, so no row needs a second request; `download.php?id=` was
-//!   checked live to answer `302 -> application/x-bittorrent` with a real
-//!   bencoded file. The cost is that rows carry no `info_hash`, which
-//!   `dedupe_by_hash` lets through untouched rather than collapsing.
-//!
-//! - **`start=` for page two, not an offset derived from rows.** Both the
-//!   query and browse URLs paginate at 50 with zero id overlap between
-//!   pages, so `next_offset = offset + 50` is spelled out: a single
-//!   dropped row must not be able to misalign the cursor.
-//!
-//! - **A group per row, and one request per group.** Every row carries
-//!   its own forum id, and the ids behind each group come from a live
-//!   inventory of the forum select (698 forums in 18 optgroups; parent
-//!   sections hold no rows). So a category request asks the tracker for
-//!   that group's forums in a single GET with `f[]=` repeated -- the
-//!   whole list is honoured, which is why this source needs none of
-//!   rutor's fan-out. Sections outside the four groups (music, books,
-//!   programs) map to no group and live in "all" only.
-//!
-//! - **Dead rows are rows.** Roughly two thirds of a browse page came
-//!   back with no seeders, spelled by the site as an emptied cell whose
-//!   title changed from `Seeders` to `Last seen: ...`. They are kept with
-//!   `seeds = 0`, which is also what keeps a full page reading as a full
-//!   page and pagination alive with it. Regression in `nnmclub_parse_tests`.
-//!
-//! - **A miss is a miss, and a block is an error.** A query with no
-//!   matches answers 200 with the results table present and `Не найдено`
-//!   inside it; a page with no results table at all is something else --
-//!   a challenge, a moved layout, a login wall -- and says so, because to
-//!   a user those three all look like "the tracker found nothing".
+//! NNM-Club over its tracker HTML, parsed from the markup as it came back live on 25.09.2026:
+//! windows-1251 in both the header and the `<meta>`, cloudflare-fronted, but a browser UA alone
+//! was enough -- no JS challenge, no login, no cookie jar. Five things the live pages
+//! established, which the code therefore does: - **One request per search.** Each row carries
+//! its title, a `download.php?id=` link, raw bytes, seeders, leechers and its own timestamp, so
+//! no row needs a second request; `download.php?id=` was checked live to answer `302 ->
+//! application/x-bittorrent` with a real bencoded file.
 
 use std::sync::OnceLock;
 
@@ -54,32 +22,16 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 /// two cannot drift apart.
 const GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
-/// Rows the site puts on one page, live on both a broad query and
-/// browse (50 each, page 2 disjoint). A full page is what "may be
-/// more" means here.
+/// Rows the site puts on one page, live on both a broad query and browse (50 each, page 2
+/// disjoint).
 pub const PAGE_SIZE: usize = 50;
 
 /// `f=-1`: every forum, which is the id the site's own navigation
 /// links as "all".
 const ALL_FORUMS: &str = "f=-1";
 
-/// Every forum one group asks the tracker for -- leaf ids read off the
-/// live `<select name="f[]">` on `tracker.php` (698 options in 18
-/// optgroups). Parent sections hold no rows of their own (live: `f=224`,
-/// parent of the 58 cinema forums, answers zero), so only leaves here.
-///
-/// Composition decided with the user, live facts included: Movies = the
-/// cinema optgroup (58) + the kids' film and cartoon forums (18) + four
-/// archives; TV = series (44) + docs/shows/sport (63, sport included by
-/// choice) + three archives; Games = the games optgroup (60) + its
-/// archive; Anime = all of "Anime, Manga" (23) + its archive. The
-/// archives are the "Temp, Архив" section, joined to their rubric by
-/// the rule "an archive belongs to the rubric it archives"; kids'
-/// educational video (725/729), kids' music (734) and books (738) stay
-/// out -- checked live, they are not films. The four lists are pairwise
-/// disjoint (asserted in tests): a forum in two groups could not be
-/// attributed to one. Public as the live inventory it is -- the tests
-/// read the table rather than a copy of it.
+/// Every forum one group asks the tracker for -- leaf ids read off the live `<select
+/// name="f[]">` on `tracker.php` (698 options in 18 optgroups).
 pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
     (
         Group::Movies,
@@ -121,11 +73,8 @@ pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
     ),
 ];
 
-/// The group one forum belongs to -- the row's own `tracker.php?f=<id>`
-/// cell looked up in `GROUP_FORUMS`. `None` means the section is not in
-/// any group (music, books, programs) or is a forum id the table does
-/// not know; either way the row is an "all"-only row, which is the
-/// honest answer rather than a guess.
+/// The group one forum belongs to -- the row's own `tracker.php?f=<id>` cell looked up in
+/// `GROUP_FORUMS`.
 pub fn group_for_forum(forum: i32) -> Option<Group> {
     GROUP_FORUMS
         .iter()
@@ -133,10 +82,7 @@ pub fn group_for_forum(forum: i32) -> Option<Group> {
         .map(|(group, _)| *group)
 }
 
-/// The forum selector for one request. One request holds the whole
-/// group -- live-checked with 58 ids at once: all sections answered, one
-/// page, `start=` still honoured -- so unlike rutor there is nothing to
-/// fan out.
+/// The forum selector for one request.
 fn forum_params(category: Option<Group>) -> String {
     super::source::forum_params(&GROUP_FORUMS, category, ALL_FORUMS)
 }
@@ -144,9 +90,8 @@ fn forum_params(category: Option<Group>) -> String {
 /// Site root; every path below lives under `/forum/`.
 pub const FORUM: &str = "https://nnmclub.to/forum/";
 
-/// The page the query URL was verified against: results ordered by the
-/// tracker, tokens matched server-side (all of a row's words present).
-/// A selected group narrows the forums the query runs over.
+/// The page the query URL was verified against: results ordered by the tracker, tokens matched
+/// server-side (all of a row's words present).
 pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String {
     let query = query.trim();
     if query.is_empty() {
@@ -186,15 +131,11 @@ fn with_offset(url: String, offset: usize) -> String {
     }
 }
 
-/// The regexes the parser needs, built once. Patterns rather than hand
-/// scanning because the two cells worth reading are distinguished by
-/// Russian `title=` attributes the site writes for us (verified live),
-/// and a pattern documents that better than an index arithmetic.
+/// The regexes the parser needs, built once.
 struct Patterns {
     /// The results table, and only that one.
     table: Regex,
-    /// One row inside it. The table's rows are flat -- no nested
-    /// `<tr>`, live -- which is what makes this split safe.
+    /// One row inside it.
     row: Regex,
     /// `<u>12345678</u>`: the site wraps both a size in raw bytes and
     /// a unix timestamp in `<u>`.
@@ -222,10 +163,7 @@ fn patterns() -> Option<&'static Patterns> {
     PATTERNS.get_or_init(Patterns::build).as_ref()
 }
 
-/// The topic id and the title next to it. The first
-/// `viewtopic.php?t=` in a result row *is* the title's link: the row's
-/// other links point at `tracker.php?f=` (forum), `?pid=` (author) and
-/// `download.php?id=` -- live.
+/// The topic id and the title next to it.
 fn strip_html(input: &str) -> String {
     match patterns() {
         Some(p) => super::format::strip_html(input, &p.tags),
@@ -265,10 +203,8 @@ fn download_id(row: &str) -> Option<String> {
     (!id.is_empty()).then_some(id)
 }
 
-/// The row's forum id, read off the `tracker.php?f=<id>` cell the site
-/// fills with the section's Russian name -- live present in every row
-/// of both a query and browse. The author's link is `tracker.php?pid=`
-/// and the topic's is `viewtopic.php?t=`, so `f=` picks this one.
+/// The row's forum id, read off the `tracker.php?f=<id>` cell the site fills with the section's
+/// Russian name -- live present in every row of both a query and browse.
 fn forum_of(row: &str) -> Option<i32> {
     let marker = "tracker.php?f=";
     let at = row.find(marker)?;
@@ -299,15 +235,7 @@ fn first_number(cell: &str) -> u32 {
     digits.parse::<u32>().unwrap_or(0)
 }
 
-/// Raw bytes and the topic timestamp, both of which the site wraps in
-/// `<u>`. Told apart by the added cell's own marker
-/// (`title="Торрент-файл добавлен"`) rather than by position, so the
-/// two values cannot swap places if a column moves.
-///
-/// Without that marker the first `<u>` is still the size (it sits in
-/// the column before the timestamp, live); the timestamp is then left
-/// at `0` -- "unknown", which is what `format_date` refuses to print
-/// as 1970-01-01.
+/// Raw bytes and the topic timestamp, both of which the site wraps in `<u>`.
 fn size_and_added(row: &str, patterns: &Patterns) -> (u64, i64) {
     let added_cell = cell_span(row, "title=\"Торрент-файл добавлен\"");
     let mut size = 0_u64;
@@ -336,9 +264,8 @@ fn size_and_added(row: &str, patterns: &Patterns) -> (u64, i64) {
     (size, added)
 }
 
-/// One result row -> its row, or `None` when the row cannot become
-/// one: no topic id, no download link, no title. One malformed row
-/// costs one row, never the page.
+/// One result row -> its row, or `None` when the row cannot become one: no topic id, no
+/// download link, no title.
 fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
     let (topic_id, title) = topic(row)?;
     let download_id = download_id(row)?;
@@ -386,8 +313,7 @@ fn cell_of(row: &str, marker: &str) -> Option<String> {
     Some(row[start..end].to_string())
 }
 
-/// The results table -> rows. Public so the fixture tests exercise the
-/// real parser with no network, as with `yts::parse_page`.
+/// The results table -> rows.
 pub fn parse_rows(body: &str) -> Result<Vec<TorrentItem>> {
     let patterns = match patterns() {
         Some(p) => p,

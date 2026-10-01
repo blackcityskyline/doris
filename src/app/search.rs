@@ -7,16 +7,7 @@
 use super::*;
 
 impl App {
-    /// A category switch asks again rather than re-labelling what is
-    /// already on screen. Two sources can only tag a row with the
-    /// category they were *asked* for (`rutracker`, `rutor`, `x1337x` do
-    /// `item.group = category`), so rows an "all" search fetched carry
-    /// no category at all: switching to Movies afterwards used to hide
-    /// them and show only the sources that read the category off the
-    /// row -- the reported "rutracker/rutor live in `all` only" bug.
-    ///
-    /// Nothing to re-ask with before the first search: the category is
-    /// then a plain filter, and Enter keeps the debt it always had.
+    /// A category switch asks again rather than re-labelling what is already on screen.
     pub(super) async fn reask_for_category(&mut self) {
         if let Some(query) = self.ui.search_query.clone() {
             self.start_search(query).await;
@@ -53,21 +44,11 @@ impl App {
         self.dispatch_search(query, generation).await;
     }
 
-    /// Kick off the search for `query`: one task per source
-    /// `orchestrator::selected_sources` picks (the Trackers panel's
-    /// checkboxes, narrowed by the selected category) and `orchestrator::dispatch_plan` says is worth asking (a fresh
-    /// search asks everyone, a "load more" asks only the sources that
-    /// reported another page, each at its own cursor), each task under
-    /// the per-source deadline. Every task reports in on its
-    /// own through `Event::SourceDone`, so rows render as sources answer
-    /// instead of after the slowest one, and `Event::SearchComplete`
-    /// closes the generation -- both stamped with it, so an answer
-    /// arriving after a newer search started is dropped instead of
-    /// merged into it.
-    ///
-    /// Rutor needs no browser/login at all; a source that does (rutracker)
-    /// walks login *inside* its task, so the deadline covers that walk
-    /// too rather than timing only the page fetch.
+    /// Kick off the search for `query`: one task per source `orchestrator::selected_sources`
+    /// picks (the Trackers panel's checkboxes, narrowed by the selected category) and
+    /// `orchestrator::dispatch_plan` says is worth asking (a fresh search asks everyone, a
+    /// "load more" asks only the sources that reported another page, each at its own cursor),
+    /// each task under the per-source deadline.
     pub(super) async fn dispatch_search(&mut self, query: String, generation: u64) {
         // An empty query is browse mode: only sources that can
         // answer one are asked, and the merged list is ordered

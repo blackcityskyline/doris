@@ -1,21 +1,9 @@
-//! The Results filter's syntax -- a grep-shaped mini-language rather
-//! than one opaque substring.
-//!
-//! | token | matches |
-//! |-----------------|------------------------------------------------|
-//! | `word` | substring of title+size+source+group |
-//! | `-word` | NOT that |
-//! | `src:id` | the tracker id (`tracker:` is the alias) |
-//! | `group:name` | the category (`cat:` is the alias) |
-//! | `title:word` | the title alone |
-//! | `size:>1gb` | `size_bytes`, units b/kb/mb/gb/tb |
-//! | `seeds:>50` | `seeds_n` |
-//!
-//! Tokens are ANDed, so narrowing is the default. A token that names a
-//! field this table does not have -- or names one whose value will not
-//! parse -- falls back to being a plain word rather than silently
-//! matching nothing: a filter that quietly eats every row is a filter
-//! that reads as a broken app.
+//! The Results filter's syntax -- a grep-shaped mini-language rather than one opaque substring.
+//! | token | matches | |-----------------|------------------------------------------------| |
+//! `word` | substring of title+size+source+group | | `-word` | NOT that | | `src:id` | the
+//! tracker id (`tracker:` is the alias) | | `group:name` | the category (`cat:` is the alias) |
+//! | `title:word` | the title alone | | `size:>1gb` | `size_bytes`, units b/kb/mb/gb/tb | |
+//! `seeds:>50` | `seeds_n` | Tokens are ANDed, so narrowing is the default.
 
 use crate::sources::format::parse_size;
 use crate::sources::models::TorrentItem;
@@ -81,8 +69,7 @@ pub struct Filter {
 }
 
 impl Filter {
-    /// Split `text` into whitespace-separated terms. Unknown fields and
-    /// unparsable numbers degrade to plain words (see the module docs).
+    /// Split `text` into whitespace-separated terms.
     pub fn parse(text: &str) -> Self {
         let mut terms = Vec::new();
         let mut negated = Vec::new();
@@ -122,8 +109,7 @@ impl Filter {
         Term::Word(token.to_lowercase())
     }
 
-    /// Whether `item` survives this filter. An empty filter matches
-    /// everything, which is what "no filter" has to mean.
+    /// Whether `item` survives this filter.
     pub fn matches(&self, item: &TorrentItem) -> bool {
         self.terms.iter().zip(&self.negated).all(|(term, bang)| {
             let hit = match term {
@@ -141,8 +127,7 @@ impl Filter {
     }
 }
 
-/// The four fields a bare word searches. One place, so the docs and
-/// the behaviour cannot drift apart.
+/// The four fields a bare word searches.
 fn haystack(item: &TorrentItem) -> String {
     format!(
         "{} {} {} {}",

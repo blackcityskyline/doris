@@ -1,27 +1,10 @@
-//! The help page: doris' counterpart of btop's `helpMenu`
-//! (`btop_menu.cpp:1743`).
-//!
-//! btop draws it as a centred box titled `help` with the ASCII banner
-//! above it, a `Key:`/`Description:` header line, one `[key, description]`
-//! pair per row from `help_text` (`btop_menu.cpp:174`) -- the key in
-//! `hi_fg` + bold padded to 20 columns (`cjust(..., 20)`), the
-//! description in `main_fg` -- and, when the table is taller than the
-//! box, an `↑ page 1/2 ↓` indicator on the bottom border with
-//! `j`/`k`/`PageUp`/`Tab` flipping pages and `Esc`/`q`/`h`/`Space`/
+//! The help page: doris' counterpart of btop's `helpMenu` (`btop_menu.cpp:1743`). btop draws it
+//! as a centred box titled `help` with the ASCII banner above it, a `Key:`/`Description:`
+//! header line, one `[key, description]` pair per row from `help_text` (`btop_menu.cpp:174`) --
+//! the key in `hi_fg` + bold padded to 20 columns (`cjust(..., 20)`), the description in
+//! `main_fg` -- and, when the table is taller than the box, an `↑ page 1/2 ↓` indicator on the
+//! bottom border with `j`/`k`/`PageUp`/`Tab` flipping pages and `Esc`/`q`/`h`/`Space`/
 //! `Enter`/`Backspace` closing it.
-//!
-//! Two tables, not one: [`HELP_TEXT`] for the keys, [`FILTER_HELP`] for
-//! the filter's syntax and for how a row gets its category -- the two
-//! things `f` and `g` do that a key list cannot explain. `←`/`→` pick
-//! the table, `j`/`k`/`Tab` keep paging through whichever is showing,
-//! and the box's title says which one it is.
-//!
-//! One structural difference: btop computes the page count inside the
-//! draw function, where the terminal size is in scope, and reads it back
-//! from `static` state when a key arrives. Rust's `&self`/`&mut self`
-//! split makes that state explicit instead: the renderer writes
-//! [`HelpState::pages`] and [`HelpState::visible`] on every pass, and
-//! `help_key` clamps against the numbers the renderer last used.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
@@ -34,9 +17,8 @@ use crate::ui::view::{centered_rect, App, Modal};
 /// Columns the key column is padded to -- btop's `cjust(..., 20)`.
 const KEY_WIDTH: usize = 20;
 
-/// `[key, description]` pairs, in the order they are drawn: btop's
-/// `help_text` (`btop_menu.cpp:174`). Kept public so a test can check
-/// it still names every keybind AGENTS.md documents.
+/// `[key, description]` pairs, in the order they are drawn: btop's `help_text`
+/// (`btop_menu.cpp:174`).
 pub const HELP_TEXT: &[(&str, &str)] = &[
     ("Mouse 1", "Clicks zones and frame buttons; the box types."),
     ("Mouse scroll", "Scrolls what is under the cursor."),
@@ -74,10 +56,9 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("? , /, F1", "Shows this window."),
 ];
 
-/// The second table: what the filter box accepts (`src/filter.rs`) and
-/// where a row's category comes from -- written down because those two
-/// are the parts of the UI a key list cannot reach. Public so a test can
-/// check it still describes what the parser and the sources really do.
+/// The second table: what the filter box accepts (`src/filter.rs`) and where a row's category
+/// comes from -- written down because those two are the parts of the UI a key list cannot
+/// reach.
 pub const FILTER_HELP: &[(&str, &str)] = &[
     ("f", "Opens the filter box (Results focused)."),
     ("word", "Substring of title, size, source, group."),
@@ -99,7 +80,6 @@ pub const FILTER_HELP: &[(&str, &str)] = &[
 ];
 
 /// The tables the help page walks through, in order: `(title, rows)`.
-/// `HELP_TEXT` stays the first one, so a fresh page opens on the keys.
 pub fn sections() -> &'static [(&'static str, &'static [(&'static str, &'static str)])] {
     &[("keys", HELP_TEXT), ("filter & grouping", FILTER_HELP)]
 }
@@ -111,10 +91,6 @@ fn cjust(text: &str, width: usize) -> String {
 }
 
 /// Which page of the help table is showing.
-///
-/// `pages` and `visible` are filled in by the renderer rather than
-/// computed by the key handler: how many rows fit depends on the
-/// terminal, and only the draw pass knows the area.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HelpState {
     /// 0-based page index.
@@ -128,17 +104,12 @@ pub struct HelpState {
 }
 
 impl App {
-    /// Re-open the help page at the top. btop does the same: its
-    /// `helpMenu` resets `page = 0` whenever `bg` is empty, and `bg` is
-    /// cleared when the box closes.
+    /// Re-open the help page at the top.
     pub fn open_help_modal(&mut self) {
         self.modal = Modal::Help(HelpState::default());
     }
 
-    /// One keypress while the help page is open. Every key is consumed
-    /// -- btop's `helpMenu` returns `NoChange` for anything it doesn't
-    /// recognise, which is how a modal swallows the keys behind it --
-    /// so the caller does not need to check whether anything matched.
+    /// One keypress while the help page is open.
     pub fn help_key(&mut self, key: KeyEvent) {
         if matches!(
             key.code,
@@ -195,11 +166,8 @@ impl App {
         }
     }
 
-    /// The help page itself: the box, the header, the visible slice of
-    /// the section's table and the page indicator.
-    ///
-    /// `&mut self` because it publishes `pages`/`visible` for
-    /// [`App::help_key`] on the way through.
+    /// The help page itself: the box, the header, the visible slice of the section's table and
+    /// the page indicator.
     pub fn render_help_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
         // btop's help box is a fixed 78 columns wide -- nearly the
         // whole terminal on an 80-column screen -- because a two-column

@@ -14,11 +14,7 @@ use ratatui::widgets::*;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
-/// Where the search is. Failures deliberately have no variant: an error
-/// belongs to one source, not to the whole app, so it lives in
-/// [`App::source_status`] (drawn in the Trackers panel) and in the log's
-/// per-source outcome line -- one source failing never stops the ones
-/// that answered, and the panel must not claim otherwise.
+/// Where the search is.
 #[derive(PartialEq)]
 pub enum AppState {
     Idle,
@@ -26,13 +22,7 @@ pub enum AppState {
     Streaming,
 }
 
-/// What a frame-button click (or the equivalent key) needs the
-/// orchestrator to do.
-///
-/// Buttons whose effect `ui::App` can perform itself -- filter, group,
-/// source -- are handled inside `click_at` and never surface as an
-/// `UiAction`; these are the ones that reach outside the UI state (an
-/// async TorrServer call, a search restart, the results list).
+/// What a frame-button click (or the equivalent key) needs the orchestrator to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
     Play,
@@ -56,19 +46,12 @@ pub enum Modal {
     Settings(SettingsState),
     HealthCheck(Vec<String>),
     Help(HelpState),
-    /// The selected row's details: the row itself, the file list
-    /// its source is still fetching (or has fetched), and the cursor
-    /// into that list.
-    ///
-    /// Boxed because the state carries a whole `TorrentItem`: an enum
-    /// variant that big would make every `Modal` -- including the
-    /// `HealthCheck(Vec<String>)` that is just a few lines -- pay for it.
+    /// The selected row's details: the row itself, the file list its source is still fetching
+    /// (or has fetched), and the cursor into that list.
     TorrentDetail(Box<TorrentDetailState>),
 }
 
-/// What a key in the detail modal asks the orchestrator for. The modal
-/// owns the cursor and the list; playing and downloading are the
-/// orchestrator's, exactly like a frame button's [`UiAction`].
+/// What a key in the detail modal asks the orchestrator for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetailAction {
     Play,
@@ -78,8 +61,7 @@ pub enum DetailAction {
 /// The detail modal's state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TorrentDetailState {
-    /// The row the modal was opened from. Its facts are on screen before
-    /// anything is fetched, so the modal is never an empty box.
+    /// The row the modal was opened from.
     pub item: TorrentItem,
     /// The files inside the torrent, once `Source::details` answered.
     pub files: Vec<FileEntry>,
@@ -88,7 +70,6 @@ pub struct TorrentDetailState {
     pub pending: bool,
     /// Why the file list could not be read, when it could not.
     pub error: Option<String>,
-    /// Which file the cursor is on.
     pub cursor: usize,
 }
 
@@ -125,24 +106,15 @@ pub struct App {
     pub logs: VecDeque<String>,
     pub log_scroll: usize,
     pub detail_logs: Vec<String>,
-    /// Which zone has taken over the whole frame (`L`/`T`/`R`). `None`
-    /// is the normal tiled view; a `Some` is a full-frame takeover that
-    /// owns the keyboard until Esc or the same key again. It used to be
-    /// a `detail_log_mode` bool, which could only ever say "log, or
-    /// not".
+    /// Which zone has taken over the whole frame (`L`/`T`/`R`).
     pub detail_view: Option<ZoneId>,
     pub detail_log_scroll: usize,
     pub state: AppState,
-    /// What each source answered for the running search: pending, how
-    /// many rows, an error or a deadline. Lives here because this is
-    /// the only place that ever shows it -- the Trackers panel reads it
-    /// per row.
+    /// What each source answered for the running search: pending, how many rows, an error or a
+    /// deadline.
     pub source_status: HashMap<String, SourceStatus>,
     pub torrserver_url: String,
-    /// Where the Login modal's Ctrl+S writes the credential store. It is
-    /// a field rather than a call to `credentials::credentials_path()`
-    /// inside the modal because that call resolved `$HOME` from inside
-    /// the save, so a test of the modal overwrote the user's real login.
+    /// Where the Login modal's Ctrl+S writes the credential store.
     pub credentials_path: PathBuf,
     pub running: bool,
     pub input_mode: bool,
@@ -156,120 +128,60 @@ pub struct App {
     pub show_menu: bool,
     pub torrent_status: TorrentStatus,
     /// Hash of the torrent the Torrent panel currently shows/manages.
-    /// `None` means "show whatever TorrServer reports first" (see
-    /// app.rs's TorrentListUpdate handler); set once a stream is started
-    /// via spawn_stream so pause/resume/remove act on the right torrent
-    /// even if others are also active.
     pub active_torrent_hash: Option<String>,
-    /// A `d` on the Torrent zone has been pressed once and the removal is
-    /// waiting for a second one. Removing takes the torrent off
-    /// TorrServer's disk, the same key downloads a row in the zone next
-    /// door, and there is no undo -- so the first press asks.
+    /// A `d` on the Torrent zone has been pressed once and the removal is waiting for a second
+    /// one.
     pub remove_armed: bool,
-    /// Where the pointer is, when the terminal reports motion (`tui.rs`
-    /// turns mode 1003 on). `None` when the pointer is outside the frame
-    /// or the terminal does not report it.
-    ///
-    /// A frame button that is only clickable looks like a word, so the
-    /// user has no way to know it is there until they click it and
-    /// something happens. Highlighting what is under the pointer is the
-    /// difference between a control and a caption.
+    /// Where the pointer is, when the terminal reports motion (`tui.rs` turns mode 1003 on).
     pub hover: Option<(u16, u16)>,
-    /// Client-side pause tracking. TorrServer has no "paused" torrent
-    /// state to read back -- pausing means `drop`ping the torrent, which
-    /// typically removes it from the live list entirely rather than
-    /// reporting it as paused -- so this is the source of truth for what
-    /// the 'p' key should do next, not something derived from polling.
+    /// Client-side pause tracking.
     pub torrent_paused: bool,
-    /// Which row of the Trackers panel the cursor sits on: 0 is the `all`
-    /// master switch, 1.. the registry entries. The panel is the only
-    /// place sources are switched, so this is the only cursor the
-    /// enabled set has.
+    /// Which row of the Trackers panel the cursor sits on: 0 is the `all` master switch, 1..
     pub sources_cursor: usize,
-    /// Which category the Results table is showing -- the tab row under
-    /// the frame; `None` is the "all" tab. Search dispatch in app.rs
-    /// reads this to fill `SearchRequest.category` and to skip the
-    /// sources that do not serve it.
+    /// Which category the Results table is showing -- the tab row under the frame; `None` is
+    /// the "all" tab.
     pub active_group: Option<Group>,
-    /// The category row itself: "all", then every group at least one
-    /// enabled, implemented source serves, in `GROUP_ORDER`. Held rather
-    /// than computed per frame so the drawn row, the hit-test and the
-    /// selection can never disagree -- and so a group nothing can answer
-    /// is never drawn, the same reasoning wave 1 settled on for disabled
-    /// sources.
+    /// The category row itself: "all", then every group at least one enabled, implemented
+    /// source serves, in `GROUP_ORDER`.
     pub group_tabs: Vec<Option<Group>>,
-    /// Set when the category is switched (`g`/`G` or a click), cleared by
-    /// the next `start_search`: Enter means "re-search with the new
-    /// selection" for this row too. The other half of a switch happens
-    /// right there in [`App::set_group`] -- the view is re-derived from
-    /// the rows already on screen -- so nothing here implies a request
-    /// was already made.
+    /// Set when the category is switched (`g`/`G` or a click), cleared by the next
+    /// `start_search`: Enter means "re-search with the new selection" for this row too.
     pub group_changed: bool,
-    /// Browse mode: the current search is an empty query asking
-    /// browse-capable sources for their freshest rows. Set by the `b`
-    /// key, which also returns the category to "all" -- a browse list is
-    /// mixed by nature, so rows claiming no group must stay visible.
+    /// Browse mode: the current search is an empty query asking browse-capable sources for
+    /// their freshest rows.
     pub browsing: bool,
-    /// Set whenever the user switches the active source tab (via `]` key or
-    /// mouse click). Cleared on the next Enter press, which uses it to
-    /// decide whether Enter means "re-search with the new source" (true)
-    /// or "play the selected torrent" (false).
+    /// Set whenever the user switches the active source tab (via `]` key or mouse click).
     pub source_changed: bool,
-    /// Set by `settings_key` right before it returns a cycle-type
-    /// SettingsAction (CycleTheme/CyclePreset/etc): +1 for Right/Enter,
-    /// -1 for Left. The orchestrator's handler for that action reads this
-    /// to decide which direction to step -- SettingsAction itself has no
-    /// payload, so this is how Left and Right stop being identical
-    /// (previously both always cycled forward).
+    /// Set by `settings_key` right before it returns a cycle-type SettingsAction
+    /// (CycleTheme/CyclePreset/etc): +1 for Right/Enter, -1 for Left.
     pub last_cycle_direction: i8,
     /// Rolling progress history feeding the Torrent panel's sparkline
     /// Oldest first; capped in app.rs's
     /// TorrentListUpdate handler so a long session doesn't grow this
     /// unboundedly.
     pub progress_history: std::collections::VecDeque<f64>,
-    /// Session copy of the runtime browser visibility, refreshed from
-    /// `App::browser_visibility` every time the settings modal opens. The
-    /// modal displays and toggles it; the orchestrator owns the value.
+    /// Session copy of the runtime browser visibility, refreshed from `App::browser_visibility`
+    /// every time the settings modal opens.
     pub settings_browser_hidden: bool,
     pub filtered_indices: Vec<usize>,
-    /// The row the cursor stood on before a filter pushed it off the
-    /// list, kept so that widening the filter can put it back instead
-    /// of leaving the cursor parked on the first match. Cleared when
-    /// the user moves the cursor by hand -- a row nobody is standing on
-    /// any more is not one to return to.
+    /// The row the cursor stood on before a filter pushed it off the list, kept so that
+    /// widening the filter can put it back instead of leaving the cursor parked on the first
+    /// match.
     pub filter_anchor: Option<usize>,
-    /// Set when a search starts *without* dropping the rows -- see
-    /// [`App::begin_search`]. The first answer of the new round spends
-    /// it, so the table never blanks on the way out.
+    /// Set when a search starts *without* dropping the rows -- see [`App::begin_search`].
     pub pending_clear: bool,
 }
 
-/// Width of the `Src` column in the results table. Fixed on purpose:
-/// the longest source id in `KNOWN_SOURCES` is 10 characters, so the
-/// columns never shift as the results change -- see
-/// `test_every_known_source_fits_the_badge_column`.
+/// Width of the `Src` column in the results table.
 pub const SOURCE_BADGE_WIDTH: u16 = 10;
 
-/// How many log lines the ring buffer holds before it starts dropping
-/// the oldest. A reader who wants to scroll back further than this has
-/// to open the full log (`L`).
+/// How many log lines the ring buffer holds before it starts dropping the oldest.
 const LOG_CAPACITY: usize = 500;
 
-/// How many lines PgUp/PgDn move the log scroll. One screen's worth on
-/// a typical terminal, so a page turn feels like a page turn.
+/// How many lines PgUp/PgDn move the log scroll.
 pub const LOG_PAGE_STEP: usize = 10;
 
-/// The `Src` cell for one result: the source id, or `-` when it is
-/// missing.
-///
-/// `TorrentItem::source` is `#[serde(default)]`, so rows persisted
-/// before the field existed (or produced by a path that never filled it
-/// in) arrive empty. A blank cell would read as "the column is empty
-/// here" rather than "nobody knows", hence the explicit placeholder.
-///
-/// Most useful on the `all` tab, where a single page mixes results from
-/// several trackers and the row itself is the only place that says who
-/// returned it.
+/// The `Src` cell for one result: the source id, or `-` when it is missing.
 pub fn source_badge(item: &TorrentItem) -> String {
     if item.source.is_empty() {
         "-".to_string()
@@ -278,9 +190,7 @@ pub fn source_badge(item: &TorrentItem) -> String {
     }
 }
 
-/// One row of the Trackers panel: the `all` switch, then the registry in
-/// order. A row past the end is `None`, so the cursor and the
-/// hit-test share one list to walk.
+/// One row of the Trackers panel: the `all` switch, then the registry in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceRow {
     /// "Ask every checked source" -- the default view, and the row that
@@ -291,8 +201,7 @@ pub enum SourceRow {
 }
 
 impl SourceRow {
-    /// What the row says on screen. `all` is the master switch, so it
-    /// carries the same `[x]`/`[ ]` as the sources below it.
+    /// What the row says on screen.
     pub fn id(&self) -> &'static str {
         match self {
             SourceRow::All => "all",
@@ -314,10 +223,7 @@ impl SourceRow {
         }
     }
 
-    /// The checkbox state this row draws, read from the config the panel
-    /// edits. `all` is checked when *every* implemented source is -- with
-    /// none implemented it reads as off rather than claiming a default
-    /// nobody set.
+    /// The checkbox state this row draws, read from the config the panel edits.
     pub fn is_checked(&self, config: &Config) -> bool {
         match self {
             SourceRow::All => {
@@ -350,14 +256,9 @@ pub fn source_row_at(index: usize) -> Option<SourceRow> {
     source_rows().into_iter().nth(index)
 }
 
-/// What the Results frame's info slot says the search is asking:
-/// `all` when every implemented source is checked (the default view),
-/// `none` when nothing is, otherwise the checked ids in registry order.
-///
-/// Short because that slot shares the top border with the zone title,
-/// the frame buttons and the row counts -- and anything that does not fit
-/// is dropped rather than clipped, so a long list must not be the
-/// only way to say what is on.
+/// What the Results frame's info slot says the search is asking: `all` when every implemented
+/// source is checked (the default view), `none` when nothing is, otherwise the checked ids in
+/// registry order.
 pub fn sources_summary(config: &Config) -> String {
     let ids: Vec<&'static str> = KNOWN_SOURCES
         .iter()
@@ -392,10 +293,6 @@ pub struct FrameLayout {
 }
 
 impl FrameLayout {
-    /// Which button (and the rect it occupies), if any, is under
-    /// `(col, row)`. The rect comes back with it because the category
-    /// button's two arrow cells are separate targets, and telling them
-    /// apart needs to know where the click landed inside the button.
     pub fn button_at(&self, col: u16, row: u16) -> Option<(FrameButton, Rect)> {
         let pos = ratatui::layout::Position::new(col, row);
         self.buttons
@@ -462,13 +359,10 @@ impl App {
         }
     }
 
-    /// The start of a search for `query`, decided in one place: a
-    /// *re-ask* of the query already on screen (a category switch, which
-    /// `g` fires itself now) keeps the rows the user is looking at until
-    /// the first answer of the new round lands -- blanking the table on
-    /// every `g` would trade one wrong answer for a flicker. A different
-    /// query drops them at once: that table is not the one being asked
-    /// about any more.
+    /// The start of a search for `query`, decided in one place: a *re-ask* of the query already
+    /// on screen (a category switch, which `g` fires itself now) keeps the rows the user is
+    /// looking at until the first answer of the new round lands -- blanking the table on every
+    /// `g` would trade one wrong answer for a flicker.
     pub fn begin_search(&mut self, query: &str) {
         let reask = self.search_query.as_deref() == Some(query);
         self.state = AppState::Searching;
@@ -544,13 +438,7 @@ impl App {
         };
     }
 
-    /// Move the Log panel's scroll position by `delta` lines, clamped to
-    /// the lines there are.
-    ///
-    /// Four named methods became this one: `up`, `down`, `page_up` and
-    /// `page_down` each answered the same question with a different
-    /// literal, and a fifth -- `mouse_scroll_logs` -- looped the first two
-    /// to produce a step size the wheel actually uses.
+    /// Move the Log panel's scroll position by `delta` lines, clamped to the lines there are.
     pub fn scroll_logs(&mut self, delta: isize) {
         let end = self.logs.len() as isize;
         self.log_scroll = (self.log_scroll as isize + delta).clamp(0, end) as usize;
@@ -562,18 +450,8 @@ impl App {
         self.detail_log_scroll = (self.detail_log_scroll as i64 + delta).clamp(0, end) as usize;
     }
 
-    /// Switch the category row to `group` -- the single path behind both
-    /// `g`/`G` and a click on the row.
-    ///
-    /// Two halves of the same decision: the view is re-derived from the
-    /// rows already on screen, so "Movies" means Movies *now* and not
-    /// after the next search; and `group_changed` tells Enter that the
-    /// sources still owe the server-side answer. This half makes no
-    /// request on its own -- it has neither an `async` caller nor a
-    /// config to ask with. The re-ask lives in `App::reask_for_category`,
-    /// which every entry point (`g`, `G`, the frame arrows, the `g`
-    /// button) fires immediately after this returns; browse's `b` is the
-    /// one caller that skips it, and it is about to search anyway.
+    /// Switch the category row to `group` -- the single path behind both `g`/`G` and a click on
+    /// the row.
     pub fn set_group(&mut self, group: Option<Group>) {
         if self.active_group == group {
             return;
@@ -583,9 +461,7 @@ impl App {
         self.update_filter();
     }
 
-    /// Move the category row one tab, forward for `g` and back for `G`
-    /// (wraps). The row always holds "all", so the modulo is safe even
-    /// with every source switched off.
+    /// Move the category row one tab, forward for `g` and back for `G` (wraps).
     pub fn cycle_group(&mut self, forward: bool) {
         let pos = self
             .group_tabs
@@ -609,15 +485,9 @@ impl App {
         self
     }
 
-    /// Re-derive the category row from `config` and repair
-    /// `active_group` when the tab it pointed at has just disappeared (a
-    /// source switched off in the Trackers panel can take a group with it
-    /// when no other enabled source serves it).
-    ///
-    /// Called once from `App::new` and after every enable/disable --
-    /// the two moments the enabled set changes. A *valid* tab is left
-    /// alone, so opening and closing Settings never disturbs where the
-    /// user already was.
+    /// Re-derive the category row from `config` and repair `active_group` when the tab it
+    /// pointed at has just disappeared (a source switched off in the Trackers panel can take a
+    /// group with it when no other enabled source serves it).
     pub fn set_group_tabs(&mut self, config: &Config) {
         self.group_tabs = group_tabs(config);
         if !self.group_tabs.contains(&self.active_group) {
@@ -640,13 +510,8 @@ impl App {
         self.sources_cursor = next as usize;
     }
 
-    /// The row of the Trackers panel under `(row, col)`, given that zone's
-    /// current area: the top border, then one row per entry of
-    /// [`source_rows`], starting one column in. Kept in lockstep with
-    /// render_trackers_zone's own layout by construction -- both are one
-    /// row below the top border and start one column after the left
-    /// border, the same convention `frame_layout` uses for the buttons it
-    /// hangs there.
+    /// The row of the Trackers panel under `(row, col)`, given that zone's current area: the
+    /// top border, then one row per entry of [`source_rows`], starting one column in.
     pub fn sources_row_at(&self, row: u16, _col: u16) -> Option<SourceRow> {
         let area = self.zones.get_area(ZoneId::Trackers);
         if area.width == 0 || area.height == 0 {
@@ -658,14 +523,9 @@ impl App {
         source_row_at(index)
     }
 
-    /// Switch the row under the cursor in `config`, then re-derive the
-    /// category row (a source switched off can take a group with it) and
-    /// tell Enter that the enabled set owes a search.
-    ///
-    /// The `all` row is the master switch: checked, it checks the whole
-    /// roster; unchecked, it clears it. A source that is not implemented
-    /// is left alone -- toggling something that cannot run would be a lie
-    /// in the other direction (the same rule the old Options rows had).
+    /// Switch the row under the cursor in `config`, then re-derive the category row (a source
+    /// switched off can take a group with it) and tell Enter that the enabled set owes a
+    /// search.
     pub fn toggle_source(&mut self, config: &mut Config) {
         let before = config.enabled_sources.clone();
         match source_row_at(self.sources_cursor) {
@@ -702,11 +562,8 @@ impl App {
         }
     }
 
-    /// Which zone (if any) contains screen position `(row, col)`, honoring
-    /// fullscreen mode (only the fullscreened zone is hit-testable while
-    /// active). Shared by mouse clicks and scroll-wheel hover-targeting,
-    /// so "click a panel" and "scroll over a panel" agree on which panel
-    /// that is.
+    /// Which zone (if any) contains screen position `(row, col)`, honoring fullscreen mode
+    /// (only the fullscreened zone is hit-testable while active).
     pub fn zone_at(&self, row: u16, col: u16) -> Option<ZoneId> {
         for &id in ZoneId::all() {
             if let Some(fs) = self.zones.fullscreen {
@@ -729,14 +586,8 @@ impl App {
         None
     }
 
-    /// The text a zone shows next to its frame buttons: the sources the
-    /// search asks and the row counts for Results, the checked count for
-    /// Sources, the scroll position for Log.
-    ///
-    /// One function so the renderer and [`App::frame_layout`] always
-    /// agree on how wide it is -- `frame_layout` is what `click_at` hits
-    /// against, so a width that differed between the two would make the
-    /// legend drawn and the legend clickable two different things.
+    /// The text a zone shows next to its frame buttons: the sources the search asks and the row
+    /// counts for Results, the checked count for Sources, the scroll position for Log.
     pub fn frame_info(&self, id: ZoneId, area: Rect, config: &Config) -> String {
         match id {
             ZoneId::Results => {
@@ -783,16 +634,6 @@ impl App {
     }
 
     /// Screen rects for `id`'s frame buttons and info text.
-    ///
-    /// Single source of truth: the renderer draws into exactly these
-    /// rects and `click_at` tests exactly these rects, so what is drawn
-    /// on the border is what a click hits. btop pairs them the same way
-    /// -- each span written in `btop_draw.cpp` is immediately followed by
-    /// the `Input::mouse_mappings[...]` line covering those columns.
-    ///
-    /// Anything that does not fit is dropped rather than clipped: the
-    /// top-right cluster disappears when the zone gets narrow, which is
-    /// btop's `if (width > 60 + sort_len)` guard in rect form.
     pub fn frame_layout(&self, id: ZoneId, area: Rect, config: &Config) -> FrameLayout {
         let mut out = FrameLayout::default();
         // Two border columns plus somewhere to put something: shorter or
@@ -889,14 +730,7 @@ impl App {
         out
     }
 
-    /// Perform a frame button's effect. The ones `ui::App` owns -- the
-    /// filter prompt and the category arrows -- happen right here; the
-    /// rest come back as a [`UiAction`] for the orchestrator, which owns
-    /// the async work and the results list.
-    ///
-    /// `col` and `rect` are where the click landed: the category button's
-    /// left and right arrow cells are separate targets (previous / next
-    /// category), and the name between them is not a target at all.
+    /// Perform a frame button's effect.
     fn activate_frame_button(
         &mut self,
         id: ZoneId,
@@ -932,16 +766,10 @@ impl App {
         }
     }
 
-    /// Handle a left click anywhere in the main view: focuses whichever
-    /// zone the click landed in (matching btop's click-to-focus), then
-    /// tries the zone's frame legend (btop's buttons are click targets
-    /// too), then the zone's own content -- a Results row, the category
-    /// row, a Sources checkbox. Actions that need the orchestrator (an
-    /// async TorrServer call, a search restart) are returned rather than
-    /// performed here, since `ui::App` doesn't own that state.
-    ///
-    /// `config` is the live one: the Trackers panel edits it, and the
-    /// Results frame's info slot reads the selection it implies.
+    /// Handle a left click anywhere in the main view: focuses whichever zone the click landed
+    /// in (matching btop's click-to-focus), then tries the zone's frame legend (btop's buttons
+    /// are click targets too), then the zone's own content -- a Results row, the category row,
+    /// a Sources checkbox.
     pub fn click_at(&mut self, row: u16, col: u16, config: &mut Config) -> Option<UiAction> {
         let id = self.zone_at(row, col)?;
         let area = self.zones.get_area(id);
@@ -1014,12 +842,8 @@ impl App {
         None
     }
 
-    /// [`themed_block`] for modal popups (Settings, Login, HealthCheck).
-    ///
-    /// One difference, and it is deliberate: a dialog keeps its border
-    /// even with "Show boxes" off. The option is about the four panels'
-    /// clutter, and a popup with no visible edge is a popup floating in
-    /// whatever the terminal happened to draw under it.
+    /// One difference, and it is deliberate: a dialog keeps its border even with "Show boxes"
+    /// off.
     pub(crate) fn modal_block(&self, border_color: Color, config: &Config) -> Block<'static> {
         self.themed_block_with_borders(border_color, config, Borders::ALL)
     }
@@ -1078,14 +902,8 @@ impl App {
         }
     }
 
-    /// True when the list is at (or within three rows of) its end and
-    /// the server says there is another page.
-    ///
-    /// No `!results.is_empty()`: an empty table is still a place the
-    /// user is stuck, and refusing to fetch page 2 from it is what
-    /// forced 1337x to hand back pages raw (the "Games" tab full of
-    /// repacks the query never mentioned). With no rows the cursor is at
-    /// the end by definition.
+    /// True when the list is at (or within three rows of) its end and the server says there is
+    /// another page.
     pub fn needs_more(&self) -> bool {
         self.search_query.is_some()
             && !self.all_loaded
@@ -1109,19 +927,7 @@ impl App {
         }
     }
 
-    /// Move the selection a page at a time, for `PageUp`/`PageDown` in
-    /// the Results panel.
-    ///
-    /// `PageUp`/`PageDown` used to be answered only in the Log panel, so
-    /// in a result list of five hundred rows -- which is what a search
-    /// across ten sources returns -- scrolling back meant pressing `k`
-    /// once per row. `navigate_down` calls `load_more` when it reaches
-    /// the end of what is loaded, so a *forward* page could be made to
-    /// fetch; a *backward* one had nothing to fall back on.
-    ///
-    /// `page` is in rows and comes from the caller, which is the only
-    /// place that knows how tall the panel is. A page never goes past the
-    /// ends, and moving down stops on the last row rather than wrapping.
+    /// Move the selection a page at a time, for `PageUp`/`PageDown` in the Results panel.
     pub fn navigate_page(&mut self, page: isize) -> bool {
         if self.results.is_empty()
             || self.input_mode
@@ -1143,9 +949,7 @@ impl App {
         true
     }
 
-    /// Note where the pointer is. Returns whether that changed anything
-    /// the next frame will look different for -- which is what decides
-    /// whether the pointer moving at all is worth a redraw.
+    /// Note where the pointer is.
     pub fn set_hover(&mut self, row: u16, col: u16) -> bool {
         match self.hover {
             Some((r, c)) if r == row && c == col => false,
@@ -1156,9 +960,7 @@ impl App {
         }
     }
 
-    /// The pointer is over a frame button, given where that button is
-    /// drawn. Public for the test that ties what is drawn to what is
-    /// clickable.
+    /// The pointer is over a frame button, given where that button is drawn.
     pub fn hovers(&self, rect: Rect) -> bool {
         self.hover.is_some_and(|(row, col)| {
             (rect.y..rect.y + rect.height).contains(&row)
@@ -1166,12 +968,7 @@ impl App {
         })
     }
 
-    /// `d` on the Torrent zone. Returns `true` only on the second press,
-    /// which is the one that removes.
-    ///
-    /// Removing takes the torrent off TorrServer's disk and there is no
-    /// undo, so the first press only arms the question the panel shows.
-    /// `d` again goes through; anything else calls [`App::disarm_remove`].
+    /// `d` on the Torrent zone.
     pub fn confirm_remove(&mut self) -> bool {
         if self.remove_armed {
             self.remove_armed = false;
@@ -1189,7 +986,6 @@ impl App {
     }
 
     /// The question line the Torrent zone shows while a removal is armed.
-    /// `None` when nothing is armed.
     pub fn remove_prompt(&self) -> Option<String> {
         self.remove_armed
             .then(|| "Remove this torrent? d again to confirm, any other key to cancel".to_string())
@@ -1221,15 +1017,8 @@ impl App {
         }
     }
 
-    /// Which rows the Results panel shows: the selected category first,
-    /// then the `F` text filter on top of it.
-    ///
-    /// The category half is  *instant* side: switching the row
-    /// re-derives this from the rows already on screen, so a selected
-    /// category never sits above a table still showing every group.
-    /// Rows a source could not attribute (`item.group = None`) belong to
-    /// the "all" view only -- hiding them here is what makes that rule
-    /// mean something instead of being a comment.
+    /// Which rows the Results panel shows: the selected category first, then the `F` text
+    /// filter on top of it.
     pub fn update_filter(&mut self) {
         let filter = crate::filter::Filter::parse(&self.zones.filter_input);
         // The filter matches any field a result carries, not just the
@@ -1275,34 +1064,22 @@ impl App {
         self.filtered_indices = visible;
     }
 
-    /// Move the cursor by the user's own hand (keys, click). Any anchor
-    /// a filter was holding is released: this is the moment the cursor
-    /// stops being "temporarily displaced".
+    /// Move the cursor by the user's own hand (keys, click).
     fn move_selection_to(&mut self, idx: usize) {
         self.filter_anchor = None;
         self.selected = idx;
     }
 
-    /// Whether `row` is inside the search input's box: the top
-    /// [`SEARCH_BAR_HEIGHT`] rows of the frame, which `render_search_bar`
-    /// is handed straight from `render` and `update_areas` leaves to the
-    /// input instead of to any zone. The box is full-width, so the row
-    /// alone decides.
-    ///
-    /// Clicking it starts editing -- the job the clickable header hints
-    /// (`"s: search |..."`) used to do before П.3 deleted them; the box
-    /// itself is the natural target now that nothing else on that line
-    /// is interactive. It is not a target while something paints over
-    /// it: fullscreen stretches a zone across the whole frame and the
-    /// detail log takes it too.
+    /// Whether `row` is inside the search input's box: the top [`SEARCH_BAR_HEIGHT`] rows of
+    /// the frame, which `render_search_bar` is handed straight from `render` and `update_areas`
+    /// leaves to the input instead of to any zone.
     pub fn search_box_at(&self, row: u16) -> bool {
         let covered = self.zones.fullscreen.is_some() || self.detail_view.is_some();
         !covered && row < SEARCH_BAR_HEIGHT
     }
 
-    /// Whether the search's answer was "the network said no" rather
-    /// than "nobody has it": every source that was dispatched ended in
-    /// an error or a deadline. `Ok(0)` is an answer, not a failure.
+    /// Whether the search's answer was "the network said no" rather than "nobody has it": every
+    /// source that was dispatched ended in an error or a deadline.
     fn all_sources_failed(&self) -> bool {
         !self.source_status.is_empty()
             && self
@@ -1312,12 +1089,6 @@ impl App {
     }
 
     /// What the Results panel says in place of an empty table.
-    ///
-    /// A blank table is five different situations wearing the same face
-    /// -- nothing asked for yet, a search still running, a query that
-    /// came back empty, every source down, and a filter that hid every
-    /// row -- and the log was the only place that told them apart. The
-    /// panel answers its own "why is this blank?".
     pub(super) fn results_placeholder(&self) -> String {
         if self.state == AppState::Searching {
             return "Searching...".to_string();
@@ -1339,11 +1110,8 @@ impl App {
         }
     }
 
-    /// The detail modal's keys: j/k move the cursor through the
-    /// file list, Enter plays the row, `d` downloads it, Esc/q close.
-    ///
-    /// Returns the actions that belong to the orchestrator; everything
-    /// the modal owns itself (the cursor, closing) happens right here.
+    /// The detail modal's keys: j/k move the cursor through the file list, Enter plays the row,
+    /// `d` downloads it, Esc/q close.
     pub fn detail_key(&mut self, key: KeyEvent, vim_keys: bool) -> Option<DetailAction> {
         let Modal::TorrentDetail(ref mut state) = self.modal else {
             return None;

@@ -310,7 +310,7 @@ fn the_per_source_deadline_is_torios_25_seconds() {
     assert_eq!(orchestrator::PER_SOURCE_TIMEOUT, Duration::from_secs(25));
 }
 
-/// П.4 removed the Results tab bar: the panel's checkboxes *are* the
+/// The Results tab bar is gone: the panel's checkboxes *are* the
 /// selection, so "ask everything" is simply every checked source and
 /// "ask one source" means checking only it.
 #[test]

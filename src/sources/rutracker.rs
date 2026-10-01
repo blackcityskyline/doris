@@ -8,10 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// The site root. Every rutracker URL in this file is built from it, so
-/// a domain that moves is a one-line change rather than a hunt through
-/// nine literals -- one of which is inside injected JavaScript, where a
-/// stale host fails as a login that silently does nothing.
 const SITE_ROOT: &str = "https://rutracker.org";
 
 /// The search endpoint under [`SITE_ROOT`]: results ordered by the
@@ -22,9 +18,7 @@ const TRACKER_URL: &str = "https://rutracker.org/forum/tracker.php";
 /// fallback inside the injected script.
 const LOGIN_URL: &str = "https://rutracker.org/forum/login.php";
 
-/// Resolve a rutracker download URL against the forum root. Lives here,
-/// not in the source-agnostic `models.rs`, because the host is baked in:
-/// only rutracker produces these `/forum/...` and bare `dl.php?t=` forms
+/// Resolve a rutracker download URL against the forum root.
 pub fn resolve_url(url: &str) -> String {
     if url.starts_with("http") {
         url.to_string()
@@ -45,25 +39,9 @@ pub struct RutrackerSearcher {
     logged_in: AtomicBool,
 }
 
-/// The site sections that map onto a `Group`, read live off the search
-/// form's own `f[]` multi-select on 26.09.2026 (1339 forums, the whole
-/// tree, nested under a `|-` prefix) and grouped with the user. A
-/// category here is a **forum id**, the way it is on nnmclub: the form
-/// offers ids, and `tracker.php?f[]=<id>` answers with that forum's
-/// topics alone -- verified live, a topic from forum 941 is *not* found
-/// under `f[]=22`, so the filter is exact and a parent's id does not
-/// carry its children. Parent ids are listed too (a parent answers
-/// topics of its own: `f[]=22` returned 50), which is harmless when it
-/// does not.
-///
-/// Sections that claim no group, deliberately: sport (Olympics,
-/// Футбол, Баскетбол, Хоккей, Рестлинг, Спорт и боевые искусства),
-/// books and education, music and music video, software, Rutracker
-/// Awards, car/moto (1202 «Фильмы и передачи по авто/мото», 1964
-/// «Ремонт и эксплуатация транспортных средств») and «Разное». Rows
-/// from those sections claim no group and live in the "all" view only.
-/// Pages smaller than this are worth dumping to the log in full -- they
-/// are almost certainly a challenge or interstitial, not a real result.
+/// The site sections that map onto a `Group`, read live off the search form's own `f[]`
+/// multi-select on 26.09.2026 (1339 forums, the whole tree, nested under a `|-` prefix) and
+/// grouped with the user.
 const DUMP_THRESHOLD: usize = 5000;
 
 pub const GROUP_FORUMS: [(Group, &[i32]); 4] = [
@@ -115,9 +93,8 @@ fn forum_params(category: Option<Group>) -> String {
     super::source::forum_params(&GROUP_FORUMS, category, "")
 }
 
-/// The query URL: results ordered by the tracker (`o=10&s=2`), a
-/// selected group narrowing the forums the query runs over.
-/// `start=` only on the second page and later.
+/// The query URL: results ordered by the tracker (`o=10&s=2`), a selected group narrowing the
+/// forums the query runs over.
 pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String {
     let encoded_query = urlencoding::encode(query);
     let params = forum_params(category);
@@ -136,11 +113,8 @@ pub fn search_url(query: &str, offset: usize, category: Option<Group>) -> String
 }
 
 impl RutrackerSearcher {
-    /// Rutracker's forum index — used as the generic "domain home page" a
-    /// hidden-mode browser session navigates to before cookie injection.
-    /// Once the `Source` trait lands this becomes
-    /// `Source::home_url()` and callers stop reaching into this searcher
-    /// just to get a URL constant.
+    /// Rutracker's forum index — used as the generic "domain home page" a hidden-mode browser
+    /// session navigates to before cookie injection.
     pub const HOME_URL: &'static str = "https://rutracker.org/forum/index.php";
     // (built from SITE_ROOT like every other URL here; the associated
     // const cannot interpolate, so this one spells the host out)
@@ -158,13 +132,6 @@ impl RutrackerSearcher {
     }
 
     /// Park the tab on `about:blank` between operations.
-    ///
-    /// Everything below navigates somewhere expensive (rutracker's pages
-    /// carry looping ad video/GIFs, and with chromedriver forcing
-    /// `--disable-background-timer-throttling` nothing ever throttles them),
-    /// while cookies -- the only state that has to survive -- live in the
-    /// browser profile. So each public operation ends here instead of
-    /// leaving a live page behind for Doris's whole idle lifetime.
     async fn park(&self) {
         let browser = self.browser.lock().await;
         if let Err(e) = browser.park().await {
@@ -861,12 +828,6 @@ impl RutrackerSearcher {
     }
 
     /// Wait out a Cloudflare challenge, but only if there is one.
-    ///
-    /// [`Self::wait_cloudflare`] always spends at least 4s (its first poll
-    /// sleeps before looking at the title, then a three second settle) --
-    /// right for the login/search paths where a challenge is expected, but
-    /// pure overhead on a path that just navigated to a page known to load
-    /// clean, which would only keep an ad-heavy page rendering for longer.
     async fn wait_cloudflare_if_needed(browser: &Browser) {
         let challenged = matches!(
             browser.eval_js("document.title").await,

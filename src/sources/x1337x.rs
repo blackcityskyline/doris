@@ -1,38 +1,5 @@
-//! 1337x over its search HTML, shaped by live probes on 25.09.2026.
-//! Four things about this site are not visible from the code.
-//!
-//! - **`requires_browser` is false because of one mirror, not because of
-//!   the site.** Three of the four hosts answer 403 with a Cloudflare JS
-//!   challenge to any plain client; `1337xx.to` answers 200 on every path
-//!   checked. The challenge belongs to those mirrors, so the one that
-//!   answered leads the failover order and there is no browser to launch.
-//!
-//! - **The engine ORs a multi-word query, so the client filters.** Live:
-//!   `frieren 2026` and `2026 frieren` both return 60 rows containing
-//!   "2026" and none containing "frieren", while `frieren` alone returns
-//!   20 of 20. Hence a *one-word* query is trusted exactly as answered
-//!   (the engine also matches on metadata -- 8 of 20 rows for `frieren
-//!   crack` carry neither word in the title, and dropping those would
-//!   delete rows the site vouched for), and a longer one keeps only rows
-//!   carrying every meaningful word. That filter is what stops a "Games"
-//!   tab answering in repacks of other titles; `witcher s03` keeps 4 of 20,
-//!   while `dune 1080p` keeps none on any page checked. An empty page is
-//!   then the honest answer, and `needs_more` is the way out -- it does
-//!   not need rows to scroll, so Down still fetches page 2.
-//!
-//! - **The list's freshest rows show a time instead of a date.** 23 of
-//!   672 live `coll-date` cells read `03:15am`, and those rows' own pages
-//!   say `Date uploaded: Sep. 23rd '26`. The day exists; the list does
-//!   not spell it out for recent uploads. Only rows the list gave no
-//!   `added` for fetch their own page, so a search pays nothing and
-//!   browse pays a handful.
-//!
-//! - **A miss is a miss and a block is an error.** A query with no
-//!   matches answers 200 with the header present and no rows, so zero
-//!   rows mean an empty page; a page with no `table-list` at all is
-//!   something else -- a challenge that answered 200, a moved layout --
-//!   and is an error. That is also what lets `first_ok` try the next
-//!   mirror instead of calling all of them "no results".
+//! 1337x over its search HTML, shaped by live probes on 25.09.2026. Four things about this site
+//! are not visible from the code.
 
 use std::sync::OnceLock;
 
@@ -57,27 +24,21 @@ pub const HOSTS: &[&str] = &[
     "x1337x.ws",
 ];
 
-/// Rows the site puts on one search page, live on pages 1-3 of `dune`
-/// (20 each, page 2 disjoint from page 1). A full page is what "may be
-/// more" means here -- browse never has one, see `to_browse_page`.
+/// Rows the site puts on one search page, live on pages 1-3 of `dune` (20 each, page 2 disjoint
+/// from page 1).
 pub const PAGE_SIZE: usize = 20;
 
-/// The site's categories that *have* a [`Group`] to go to -- and
-/// exactly the four the site's own `/category-search/<q>/<label>/` and
-/// `/popular-<label>/` paths spell the same way (live 26.09.2026), so
-/// a declared group is a URL this source can really be trimmed by.
-/// Music, Documentaries, Applications, Other and XXX have none, and an
-/// unfiltered row's `/sub/<category>/` link is still uninventoried:
-/// such a row keeps `group = None`, like nnmclub's.
+/// The site's categories that *have* a [`Group`] to go to -- and exactly the four the site's
+/// own `/category-search/<q>/<label>/` and `/popular-<label>/` paths spell the same way (live
+/// 26.09.2026), so a declared group is a URL this source can really be trimmed by.
 const GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// Words that carry no match of their own once the engine ORs them
 /// (torio's `STOP` set).
 const STOP: &[&str] = &["the", "a", "an", "of", "and", "or", "to"];
 
-/// The string every results page carries before its rows -- search,
-/// category-search, and each of `/home/`'s sections. Its absence means
-/// we are not reading 1337x.
+/// The string every results page carries before its rows -- search, category-search, and each
+/// of `/home/`'s sections.
 const TABLE: &str = "table-list";
 
 /// How many undated rows' own pages are read at once (module doc):
@@ -86,21 +47,6 @@ const TABLE: &str = "table-list";
 /// browse into a burst.
 const DATE_FETCHES: usize = 4;
 
-/// The search URL for `host`. `offset` counts rows and the site counts
-/// pages, so the page number is derived rather than stored -- which is
-/// also what keeps a restarted search on the site's grid.
-///
-/// A selected category picks the site's own server-side slot: the
-/// path becomes `/category-search/<q>/<label>/<page>/`, spelled with
-/// [`Group::label`] -- the very word the tabs show, which live
-/// 26.09.2026 is also the word the site filters by (every row of the
-/// `Movies` answer carried `/sub/movies/`; a label the site does not
-/// know answers zero rows, so a typo cannot pass for a hit). `None`
-/// keeps the plain `/search/`, whose rows claim nothing (see
-/// [`stamp_category`]).
-///
-/// An empty query goes to browse, whose URL takes the same category
-/// (`/home/` vs `/popular-<label>/`).
 pub fn search_url(host: &str, query: &str, offset: usize, category: Option<Group>) -> String {
     let query = query.trim();
     if query.is_empty() {
@@ -136,18 +82,11 @@ pub fn browse_url(host: &str, category: Option<Group>) -> String {
     }
 }
 
-/// `/search/<q>/<page>/` counts pages from 1; our offsets count rows
-/// from 0. Floored, so an offset that does not land on a page
-/// boundary still asks for a page that exists.
+/// `/search/<q>/<page>/` counts pages from 1; our offsets count rows from 0.
 fn page_of(offset: usize) -> usize {
     offset / PAGE_SIZE + 1
 }
 
-/// The path half of an absolute URL. A row's page URL belongs to the
-/// mirror that served it, and every mirror serves the same paths
-/// (live), so the same path on another host is still the same page --
-/// which is what lets `resolve_magnet` fail over after its own mirror
-/// goes down.
 fn path_of(url: &str) -> Option<String> {
     let rest = url.split_once("://")?.1;
     let at = rest.find('/')?;
@@ -157,14 +96,10 @@ fn path_of(url: &str) -> Option<String> {
 /// The regexes the parser needs, built once: the row split, and the
 /// tags that come off a title or a cell.
 struct Patterns {
-    /// One row. The tables are flat -- no nested `<tr>`, live -- which
-    /// is what makes this split safe.
     row: Regex,
     /// Tags, for title and cell text.
     tags: Regex,
-    /// The magnet on a detail page. Case-insensitive because torio's
-    /// matcher is, and a site that writes `MAGNET:?XT=` would otherwise
-    /// be read as a page with no link at all.
+    /// The magnet on a detail page.
     magnet: Regex,
 }
 
@@ -194,8 +129,6 @@ fn strip_html(input: &str) -> String {
 }
 
 /// The row's `/torrent/<id>/<slug>/` link and the title inside it.
-/// The anchor before it points at `/sub/<category>/...`, so the link is
-/// found by its path rather than by position.
 fn title_anchor(row: &str) -> Option<(String, String)> {
     let marker = "href=\"/torrent/";
     let at = row.find(marker)?;
@@ -237,7 +170,6 @@ fn first_number(cell: &str) -> u32 {
         .unwrap_or(0)
 }
 
-/// The digits in a token (`01st` -> `01`, `'22` -> `22`).
 fn digits(token: &str) -> String {
     token.chars().filter(|c| c.is_ascii_digit()).collect()
 }
@@ -261,11 +193,7 @@ fn month_number(token: &str) -> u32 {
     }
 }
 
-/// `Oct. 01st '22` -> unix seconds. This is torio's "Date uploaded"
-/// from the detail page, found in the row's own `coll-date` cell
-/// instead -- so a row's date costs no request. Unparseable is `0`,
-/// "unknown", which is what `format_date` refuses to print as
-/// 1970-01-01.
+/// `Oct.
 fn parse_upload_date(text: &str) -> i64 {
     let mut parts = text.split_whitespace();
     let month = parts.next().map(month_number).unwrap_or(0);
@@ -295,9 +223,8 @@ fn parse_upload_date(text: &str) -> i64 {
         .unwrap_or(0)
 }
 
-/// One result row -> a row, or `None` when the row cannot become one:
-/// no torrent link, no title, or one of the four cells missing. A
-/// malformed row costs one row, never the page.
+/// One result row -> a row, or `None` when the row cannot become one: no torrent link, no
+/// title, or one of the four cells missing.
 fn to_row(row: &str, host: &str) -> Option<TorrentItem> {
     let (path, title) = title_anchor(row)?;
     let seeds = first_number(&cell_of(row, "class=\"coll-2 seeds\"")?);
@@ -332,8 +259,7 @@ fn to_row(row: &str, host: &str) -> Option<TorrentItem> {
     })
 }
 
-/// The results page -> rows. Public so the fixture tests exercise the
-/// real parser with no network, as with `yts::parse_page`.
+/// The results page -> rows.
 pub fn parse_rows(body: &str, host: &str) -> Result<Vec<TorrentItem>> {
     let patterns = match patterns() {
         Some(p) => p,
@@ -363,10 +289,8 @@ pub fn parse_rows(body: &str, host: &str) -> Result<Vec<TorrentItem>> {
     Ok(rows)
 }
 
-/// Keep the rows answering the query (module doc: the engine ORs, so
-/// the page has to be narrowed here). One word is left exactly as the
-/// site answered it -- it matches on metadata too, and filtering a
-/// trusted answer would delete rows rather than sharpen them.
+/// Keep the rows answering the query (module doc: the engine ORs, so the page has to be
+/// narrowed here).
 pub fn filter_rows(items: &[TorrentItem], query: &str) -> Vec<TorrentItem> {
     let tokens: Vec<String> = query
         .split_whitespace()
@@ -394,19 +318,8 @@ pub fn filter_rows(items: &[TorrentItem], query: &str) -> Vec<TorrentItem> {
         .collect()
 }
 
-/// The rows fetched *inside* a selected category claim it; with no
-/// selection they claim nothing. Live 26.09.2026, every row the
-/// category paths answered with carried the matching `/sub/` link
-/// (Movies 20 of 20, TV 20 of 20, Games 11 of 11, Anime 1 of 1 for
-/// `matrix`; `/popular-games` 23 of 23), so claiming the category that
-/// picked the URL is the site's own claim, not a guess. An unfiltered
-/// row stays `None` -- the "all" view is the only one it honestly
-/// belongs to, and a title is not a category (the honesty gap in
-/// `source.rs`).
-///
-/// `if row.group.is_none()` rather than an overwrite: attribution the
-/// parser ever learns from the row itself outranks the URL that
-/// fetched it.
+/// The rows fetched *inside* a selected category claim it; with no selection they claim
+/// nothing.
 pub fn stamp_category(rows: Vec<TorrentItem>, category: Option<Group>) -> Vec<TorrentItem> {
     rows.into_iter()
         .map(|mut row| {
@@ -418,17 +331,9 @@ pub fn stamp_category(rows: Vec<TorrentItem>, category: Option<Group>) -> Vec<To
         .collect()
 }
 
-/// The rows -> a search page, with `has_more` read off the server's
-/// page and *then* the filter applied: a full page trimmed to three
-/// rows is still a full page, and `next_offset` steps by the site's
-/// pages, not by the survivors (the nnmclub dead-row lesson).
-///
-/// A page the filter empties stays empty. The site ORs a multi-word
-/// query, so "no row carries every word" is a real answer, not a
-/// failure -- and an empty table is no longer a dead end: `needs_more`
-/// fetches page 2 without needing rows to scroll. Handing the raw page
-/// back instead (what this used to do) showed torrents the query never
-/// asked for.
+/// The rows -> a search page, with `has_more` read off the server's page and *then* the filter
+/// applied: a full page trimmed to three rows is still a full page, and `next_offset` steps by
+/// the site's pages, not by the survivors (the nnmclub dead-row lesson).
 pub fn to_page(raw: Vec<TorrentItem>, query: &str, offset: usize) -> SearchPage {
     let has_more = raw.len() >= PAGE_SIZE;
     SearchPage {
@@ -450,9 +355,7 @@ pub fn to_browse_page(items: Vec<TorrentItem>) -> SearchPage {
     }
 }
 
-/// One page over the wire: one retry, then its body or why not. The
-/// URL carries the host, so this reads a row's own page (the mirror
-/// that just answered us) as happily as one [`first_ok`] picked.
+/// One page over the wire: one retry, then its body or why not.
 async fn get(client: &reqwest::Client, url: &str) -> Result<String> {
     let options = FetchOptions {
         retries: 1,
@@ -472,10 +375,8 @@ async fn get(client: &reqwest::Client, url: &str) -> Result<String> {
         .context("1337x: reading the page failed")
 }
 
-/// The upload day from a detail page:
-/// `<strong>Date uploaded</strong><span>Sep. 23rd '26</span>`, live.
-/// `None` when the field is not there or does not parse: a page we
-/// could not read must leave the row's date empty, never fill it in.
+/// The upload day from a detail page, which prints `Date uploaded`
+/// followed by the month name.
 pub fn date_from_detail(body: &str) -> Option<i64> {
     let at = body.find("Date uploaded")?;
     let open = at + body[at..].find("<span>")? + "<span>".len();
@@ -484,10 +385,6 @@ pub fn date_from_detail(body: &str) -> Option<i64> {
     (stamp > 0).then_some(stamp)
 }
 
-/// The magnet on a detail page, as written there. Live the site writes
-/// raw `&` (no `&amp;` anywhere on the page); the shared decoder runs
-/// over it anyway, since one mirrored entity in a tracker URL would
-/// otherwise be handed to TorrServer as part of the link.
 pub fn magnet_from_detail(body: &str) -> Option<String> {
     let found = patterns()?.magnet.find(body)?;
     Some(unescape_entities(found.as_str()))
@@ -504,10 +401,8 @@ impl Default for X1337xSearcher {
 }
 
 impl X1337xSearcher {
-    /// The canonical name of the site, which is not the mirror the
-    /// probes found answering (module doc). Nothing here navigates to
-    /// it: `requires_browser` is false, so it is only ever the label a
-    /// browser session would have used.
+    /// The canonical name of the site, which is not the mirror the probes found answering
+    /// (module doc).
     pub const HOME_URL: &str = "https://1337x.to";
 
     pub fn new() -> Self {
@@ -516,11 +411,8 @@ impl X1337xSearcher {
         }
     }
 
-    /// The rows the list dated, left alone; the ones it only gave a
-    /// time to, sent to their own pages for `Date uploaded` (module
-    /// doc). Four at a time, and a row whose page fails to answer
-    /// keeps the empty date the list gave it rather than being handed
-    /// somebody else's day.
+    /// The rows the list dated, left alone; the ones it only gave a time to, sent to their own
+    /// pages for `Date uploaded` (module doc).
     async fn with_detail_dates(&self, mut rows: Vec<TorrentItem>) -> Vec<TorrentItem> {
         let pending: Vec<usize> = rows
             .iter()
@@ -554,9 +446,7 @@ impl X1337xSearcher {
     }
 }
 
-/// One detail page's answer, onto the row it belongs to. A fetch that
-/// failed, a task that died, or a page without a readable date all
-/// leave the row as the list gave it: an empty date, never a guess.
+/// One detail page's answer, onto the row it belongs to.
 fn apply_detail_date(
     rows: &mut [TorrentItem],
     result: Result<(usize, Option<String>), tokio::task::JoinError>,

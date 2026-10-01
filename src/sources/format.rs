@@ -1,20 +1,10 @@
-//! Size/date parsing and formatting shared by every source
-//!.
-//!
-//! [`parse_size`] is a port of torio's `util/format.ts` `parseSize`,
-//! keeping its unit table and its one non-obvious rule: Russian units
-//! are read as *binary* (`КБ` = 1024) while Latin ones are read as
-//! *decimal* (`KB` = 1000), with `GiB`/`MiB`-style spellings binary as
-//! usual. Every HTML source feeds its display string here instead of
-//! growing its own size regex.
+//! Size/date parsing and formatting shared by every source . Every HTML source feeds its
+//! display string here instead of growing its own size regex.
 
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// Number + unit, e.g. `2.27`, `1.45 GiB`, `82.73&nbsp;MB` (after the
-/// caller normalizes entities), `500 KiB`. `(?i)` accepts any case, so
-/// the Cyrillic alternative covers `гб`/`мб` as well -- rutor serves
-/// both casings.
+/// Number + unit, e.g.
 const SIZE_PATTERN: &str = r"(?i)([\d.]+)\s*((?:[KMGT]I?)?B|КБ|МБ|ГБ|ТБ)";
 
 fn size_regex() -> Option<&'static Regex> {
@@ -22,8 +12,7 @@ fn size_regex() -> Option<&'static Regex> {
     RE.get_or_init(|| Regex::new(SIZE_PATTERN).ok()).as_ref()
 }
 
-/// Bytes per unit, or `None` for a spelling outside the table. Units are
-/// upper-cased first, so `гб`/`GB`/`ГБ` all land on one arm each.
+/// Bytes per unit, or `None` for a spelling outside the table.
 fn multiplier(unit: &str) -> Option<f64> {
     match unit {
         // Russian units: binary, matching how trackers use them (torio
@@ -69,14 +58,9 @@ fn js_parse_float(s: &str) -> Option<f64> {
         .filter(|n| n.is_finite() && *n >= 0.0)
 }
 
-/// Parse a human-readable size into bytes: `"1.45 GiB"`, `"82.73 MB"`,
-/// `"2,27 ГБ"`, `"750 мб"` all work; a plain digit string is taken as an
-/// already-raw byte count; anything unparseable is `0` (the "unknown
-/// size" sentinel every field of that type uses).
-///
-/// The raw-digit branch is a deliberate addition over torio: it handles
-/// the `<td>12345678</td>` rows torio catches in its source-specific
-/// size regex instead of in `parseSize`.
+/// Parse a human-readable size into bytes: `"1.45 GiB"`, `"82.73 MB"`, `"2,27 ГБ"`, `"750 мб"`
+/// all work; a plain digit string is taken as an already-raw byte count; anything unparseable
+/// is `0` (the "unknown size" sentinel every field of that type uses).
 pub fn parse_size(s: &str) -> u64 {
     let normalized = s.replace(',', ".");
     if let Some(caps) = size_regex().and_then(|re| re.captures(&normalized)) {
@@ -93,16 +77,8 @@ pub fn parse_size(s: &str) -> u64 {
     normalized.trim().parse::<u64>().unwrap_or(0)
 }
 
-/// torio's `unescapeEntities` from `rss.ts`, in the same order: `&amp;`
-/// first, then the typographic pairs, then the angle brackets. nyaa's
-/// titles carry `&#39;`, `&#34;`, `&amp;` and `&gt;` live -- all four
-/// are in this table; anything outside it (say `&#8230;`) survives as
-/// written rather than being guessed at.
-///
-/// It lives here rather than inside `nyaa.rs` because decoding markup
-/// entities is not an RSS concern: nnmclub serves the same escapes from
-/// an HTML table, and a second copy of this order would be a second place
-/// for the `&amp;`-before-`&lt;` sequencing to drift.
+/// torio's `unescapeEntities` from `rss.ts`, in the same order: `&amp;` first, then the
+/// typographic pairs, then the angle brackets.
 pub fn unescape_entities(input: &str) -> String {
     input
         .replace("&#038;", "&")
@@ -121,13 +97,9 @@ pub fn unescape_entities(input: &str) -> String {
         .replace("&gt;", ">")
 }
 
-/// Tags out, entities decoded, whitespace collapsed to single spaces --
-/// torio's `stripHtml` + `unescapeEntities` in that order, which is what
-/// turns `<b>Фрирен&#039;s</b>&nbsp;<span...>` back into a title.
-///
-/// `tags` is passed rather than compiled here because each source keeps
-/// its own compiled regexes in a `OnceLock` and compiling a fourth for
-/// this would be a fourth thing to keep alive.
+/// Tags out, entities decoded, whitespace collapsed to single spaces -- torio's `stripHtml` +
+/// `unescapeEntities` in that order, which is what turns `<b>Фрирен&#039;s</b>&nbsp;<span...>`
+/// back into a title.
 pub fn strip_html(input: &str, tags: &Regex) -> String {
     let bare = tags.replace_all(input, "");
     let bare = bare.replace("&nbsp;", " ").replace('\u{a0}', " ");
@@ -137,16 +109,10 @@ pub fn strip_html(input: &str, tags: &Regex) -> String {
         .join(" ")
 }
 
-/// The display string for a source that hands us bytes rather than a
-/// pre-rendered size (the JSON API sources, B8 wave 1) -- a port of
-/// torio's `formatBytes`, kept byte-for-byte compatible with it: step
-/// by 1024, print two decimals past the byte unit, and label the steps
-/// `KB`/`MB`/`GB` even though the step is binary, which is torio's own
-/// quirk. Matching it means a YTS row and a rutor row read the same
-/// number for the same movie.
-///
-/// `0` reads `"0 B"`: an unknown size should look like a size, not like
-/// a gap in the column.
+/// The display string for a source that hands us bytes rather than a pre-rendered size (the
+/// JSON API sources, B8 wave 1) -- a port of torio's `formatBytes`, kept byte-for-byte
+/// compatible with it: step by 1024, print two decimals past the byte unit, and label the steps
+/// `KB`/`MB`/`GB` even though the step is binary, which is torio's own quirk.
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     if bytes == 0 {

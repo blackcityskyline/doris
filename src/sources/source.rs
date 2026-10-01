@@ -1,16 +1,5 @@
-//! `Source` is the seam the whole app is meant to depend on instead of
-//! reaching into `rutracker.rs` by name. Adding a new content source is
-//! meant to be:
-//!
-//! 1. Write `src/sources/<name>.rs` implementing [`Source`].
-//! 2. Add one entry to [`KNOWN_SOURCES`].
-//!
-//! Nothing else in the orchestrator, browser layer, or Options UI should
-//! need to change. This file is intentionally the *only* place that knows
-//! the concrete list of sources.
-//!
-//! (Phase 3's original note about rewiring `app.rs`/`main.rs` onto this
-//! trait is what the registry is for.)
+//! `Source` is the seam the whole app is meant to depend on instead of reaching into
+//! `rutracker.rs` by name. Adding a new content source is meant to be: 1.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -33,13 +22,7 @@ use super::tpb::TpbSearcher;
 use super::x1337x::X1337xSearcher;
 use super::yts::YtsSearcher;
 
-/// Content categories a source can attribute its results to. Declared
-/// here, next to the registry it describes (and not in `models.rs`) so
-/// `TorrentItem.group` is typed against the same enum the `Source` trait
-/// hands out.
-///
-/// Serde renders variants as plain strings (`"Games"`), which is what
-/// `TorrentItem`'s JSON needs.
+/// Content categories a source can attribute its results to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Group {
     #[default]
@@ -49,14 +32,9 @@ pub enum Group {
     Anime,
 }
 
-/// The `f[]` forum selector one DLE tracker's search form posts:
-/// `f%5B%5D=<id>` repeated for every forum of the chosen group, or
-/// `all_forums` when the group has none (and rutracker passes `""`,
-/// which is its own "no filter").
-///
-/// It is one function because two trackers built it the same way, down
-/// to the url-encoding, and a third that got it subtly different would
-/// be invisible until its results came back filtered by the wrong forum.
+/// The `f[]` forum selector one DLE tracker's search form posts: `f%5B%5D=<id>` repeated for
+/// every forum of the chosen group, or `all_forums` when the group has none (and rutracker
+/// passes `""`, which is its own "no filter").
 pub fn forum_params(
     table: &[(Group, &[i32])],
     category: Option<Group>,
@@ -97,20 +75,14 @@ impl Group {
 /// of where a variant happened to be typed above.
 pub const GROUP_ORDER: [Group; 4] = [Group::Movies, Group::TV, Group::Games, Group::Anime];
 
-/// One run of a query against a source. Replaces the old
-/// `search(query)` / `search_page(query, start)` trait pair: the page
-/// cursor moved into the request, and a category slot was added for B6.
+/// One run of a query against a source.
 #[derive(Debug, Clone)]
 pub struct SearchRequest {
     /// The words to look for.
     pub query: String,
-    /// Page cursor. Its unit (rows vs. page index) is deliberately owned
-    /// by the source -- rutor counts rows of 100, rutracker counts the
-    /// forum's own `start=` step -- so callers treat it as opaque and
-    /// just hand back what the previous [`SearchPage`] implied.
+    /// Page cursor.
     pub offset: usize,
-    /// `None` = all categories. B6 passes a real group down so sources
-    /// can filter server-side (rutor's URL has a category slot).
+    /// `None` = all categories.
     pub category: Option<Group>,
 }
 
@@ -126,29 +98,18 @@ impl SearchRequest {
 }
 
 /// One page of results plus an honest "was that the last page?".
-///
-/// `has_more` replaces app.rs's `count < 50` guess, which only worked by
-/// accident (rutracker really does page by 50, while rutor pages by 100
-/// and so could never trip it).
 #[derive(Debug, Clone, Default)]
 pub struct SearchPage {
     pub items: Vec<TorrentItem>,
     pub has_more: bool,
-    /// The cursor the *next* dispatch should hand back, in this source's
-    /// own unit -- rows for row-paged sources, a page number for an API
-    /// that counts pages of its own (yts pages by *movie*, and how many
-    /// rows a page yields depends on how many qualities each movie has,
+    /// The cursor the *next* dispatch should hand back, in this source's own unit -- rows for
+    /// row-paged sources, a page number for an API that counts pages of its own (yts pages by
+    /// *movie*, and how many rows a page yields depends on how many qualities each movie has,
     /// so any row-derived cursor would skip or repeat).
-    ///
-    /// `None` = "rows": `offset + items.len()`, which is exactly what
-    /// rutor/rutracker want and what a *failed* page wants too (no rows
-    /// -> cursor unchanged). See `orchestrator::advance_offset`.
     pub next_offset: Option<usize>,
 }
 
 /// Credentials + cookie path handed to [`Source::ensure_logged_in`].
-/// Bundled into one struct so a source gaining an auth detail (a second
-/// cookie jar, a token) doesn't change the trait's signature.
 #[derive(Debug, Clone, Default)]
 pub struct AuthContext {
     /// Where to load/save the browser cookie jar; `None` when the user
@@ -162,73 +123,43 @@ pub struct AuthContext {
 /// the TUI's detailed log view.
 pub type LogFn = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// One pluggable content source. Everything the orchestrator, the browser
-/// layer, and the Options "Sources" checklist need from a source goes
-/// through here.
+/// One pluggable content source.
 #[async_trait]
 pub trait Source: Send + Sync {
-    /// Stable lowercase identifier, e.g. `"rutracker"`. Used as the
-    /// credentials-store key and the Options "Sources" checklist key.
+    /// Stable lowercase identifier, e.g.
     fn id(&self) -> &'static str;
 
     /// Human-readable name shown in the UI ("Rutor").
     fn label(&self) -> &'static str;
 
-    /// Groups this source can attribute results to -- the instance-side
-    /// view of [`SourceInfo::groups`], so a live source and the
-    /// metadata-only registry can never disagree. B6 passes a group down
-    /// through [`SearchRequest::category`].
+    /// Groups this source can attribute results to -- the instance-side view of
+    /// [`SourceInfo::groups`], so a live source and the metadata-only registry can never
+    /// disagree.
     fn groups(&self) -> &'static [Group];
 
-    /// A page on this source's domain. Used as the navigation target for
-    /// cookie injection when the browser runs hidden -- see
-    /// `browser::cdp::Browser::launch`.
+    /// A page on this source's domain.
     fn home_url(&self) -> &'static str;
 
-    /// Whether talking to this source requires a running browser
-    /// session. Only rutracker does; plain-HTTP sources are skipped by
-    /// the orchestrator instead of being handed a no-op login.
+    /// Whether talking to this source requires a running browser session.
     fn requires_browser(&self) -> bool;
 
-    /// Whether it can answer a `SearchRequest` with an empty `query`
-    /// (browse mode -- the `b` key). A source that has a fresh-releases
-    /// page answers; one that only accepts search terms does not, and the
-    /// Browse key is then answered by the sources that do.
+    /// Whether it can answer a `SearchRequest` with an empty `query` (browse mode -- the `b`
+    /// key).
     fn supports_browse(&self) -> bool;
 
-    /// Establish (or verify) a session, reusing cached state when the
-    /// source already has one. Takes `&self` because a registry hands
-    /// out `Arc<dyn Source>` with no `&mut` to give; the mutable session
-    /// flag lives behind interior mutability.
+    /// Establish (or verify) a session, reusing cached state when the source already has one.
     async fn ensure_logged_in(&self, auth: &AuthContext, log: &LogFn) -> Result<bool>;
 
     async fn search(&self, req: &SearchRequest) -> Result<SearchPage>;
     async fn download_torrent(&self, url: &str) -> Result<Vec<u8>>;
 
-    /// The magnet link that lives on the row's *own* page, fetched when
-    /// a row arrives with neither a magnet nor a `.torrent` link.
-    ///
-    /// Most sources fill `magnet`/`download_url` while parsing the
-    /// results page and never need this. An aggregator that links to
-    /// torrent pages instead of serving files does (1337x, B8 wave 3):
-    /// its rows carry the page URL, and the link is one request away.
-    /// The default answers "no such link" without touching the network,
-    /// so the other six sources keep their shape, and the caller pays
-    /// the request only for a row it is about to play -- never per row
-    /// of a search.
+    /// The magnet link that lives on the row's *own* page, fetched when a row arrives with
+    /// neither a magnet nor a `.torrent` link.
     async fn resolve_magnet(&self, _page_url: &str) -> Result<Option<String>> {
         Ok(None)
     }
 
     /// The files inside a torrent, read from the row's own page.
-    ///
-    /// The default answers "this source cannot list files" with an
-    /// empty list rather than an error: the modal is opened on demand,
-    /// so a source with nothing to add should leave the row's own facts
-    /// on screen, not fail the modal. A source that can list files
-    /// overrides this the same way `resolve_magnet` is overridden --
-    /// one method with a default, so no source has to change and the
-    /// orchestrator does not know the method exists.
     async fn details(&self, _page_url: &str) -> Result<Vec<FileEntry>> {
         Ok(Vec::new())
     }
@@ -239,11 +170,6 @@ pub trait Source: Send + Sync {
 /// filter, and `rutracker::GROUP_FORUMS` maps them onto forum ids.
 const RUTRACKER_GROUPS: &[Group] = &[Group::Games, Group::Movies, Group::TV, Group::Anime];
 
-/// Rutracker's ad CDN. It serves the looping `<video>`/GIF banners that
-/// keep the compositor busy for as long as a page stays open -- measured
-/// as the largest idle-CPU cost of a session, VizCompositor near 66% of a
-/// core. No parsing depends on ad creatives, so the browser is told not to
-/// resolve it; drop this entry if a page ever legitimately needs it.
 const RUTRACKER_AD_CDN: &str = "rutrk.org";
 
 /// Torentino is a games tracker, top to bottom, so it declares the
@@ -276,20 +202,15 @@ const SUBSPLEASE_GROUPS: &[Group] = &[Group::Anime];
 /// rows nyaa calls Audio/Literature claim none at all.
 const NYAA_GROUPS: &[Group] = &[Group::Anime];
 
-/// NNM-Club spans four forums -- the three torio splits (movies, TV,
-/// games) plus the anime ones. Since B6 each row claims the
-/// group of its own forum (`nnmclub::group_for_forum`), and the same
-/// four groups are what `nnmclub::GROUP_FORUMS` asks the tracker for;
-/// a test keeps the two declarations equal.
+/// NNM-Club spans four forums -- the three torio splits (movies, TV, games) plus the anime
+/// ones.
 const NNMCLUB_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 /// EZTV is TV-only, and its rows say `Group::TV` to match.
 const EZTV_GROUPS: &[Group] = &[Group::TV];
 
-/// 1337x's site sections that map onto a `Group`, declared when wave 3
-/// landed it as implemented. Music, Documentaries,
-/// Applications, Other and XXX map onto none and are queried without a
-/// group; rows claim none of them either -- see `x1337x`'s module doc.
+/// 1337x's site sections that map onto a `Group`, declared when wave 3 landed it as
+/// implemented.
 const X1337X_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
 
 #[async_trait]
@@ -394,64 +315,31 @@ impl Source for RutorSearcher {
     }
 }
 
-/// Metadata-only description of a source, for listing in the Options
-/// "Sources" checklist without needing a live, logged-in instance (which
-/// requires a running `Browser`). Real `Source` instances are constructed
-/// lazily by the orchestrator only when a source is actually used.
-///
-/// The `groups`/`requires_browser`/`home_url` values mirror what the
-/// corresponding `Source` impl returns -- `source_registry_tests.rs`
-/// pins that correspondence where it can be checked offline.
+/// Metadata-only description of a source, for listing in the Options "Sources" checklist
+/// without needing a live, logged-in instance (which requires a running `Browser`).
 #[derive(Debug, Clone, Copy)]
 pub struct SourceInfo {
     pub id: &'static str,
-    /// Human-readable name shown in the UI. Was called `display_name`
-    /// until B2 renamed it to match `Source::label()`.
+    /// Human-readable name shown in the UI.
     pub label: &'static str,
-    /// `false` for sources reserved for the future (e.g. nnm-club)
-    /// so Options can list them as coming-soon rather than hide them.
+    /// `false` for sources reserved for the future (e.g.
     pub implemented: bool,
     pub groups: &'static [Group],
-    /// Whether a *selected category* may be asked of this source. `true`
-    /// means every row it would return belongs to that category -- by
-    /// filtering server-side (`SearchRequest.category`), or because the
-    /// source only has that one group to begin with. `false` means it
-    /// would answer with rows the view has to drop, so
-    /// `orchestrator::selected_sources` leaves it out of a category
-    /// search instead of asking and discarding (B6, decided with the
-    /// user: a source whose category slot is unverified is not asked).
-    /// A `false` on an implemented source needs its reason next to it
-    /// in the entry below -- `source_registry_tests` checks that.
+    /// Whether a *selected category* may be asked of this source.
     pub category_filter: bool,
-    /// Whether the source can answer an *empty query* -- browse mode
-    /// the freshest rows it has, with no search terms. `false`
-    /// means an empty query would come back as a broken page rather
-    /// than as a list, so `selected_sources` leaves it out of a browse.
+    /// Whether the source can answer an *empty query* -- browse mode the freshest rows it has,
+    /// with no search terms.
     pub supports_browse: bool,
-    /// Whether using this source needs a browser session launched first
-    /// (see `Source::requires_browser`). `false` for planned sources:
-    /// nothing constructs them yet, so nothing may promise a browser.
+    /// Whether using this source needs a browser session launched first (see
+    /// `Source::requires_browser`).
     pub requires_browser: bool,
-    /// Domain home page, `""` while the source isn't implemented. The
-    /// orchestrator passes it to `Browser::launch` before the `Source`
-    /// instance itself exists (the instance is what *needs* the browser,
-    /// so it can't supply its own home page).
+    /// Domain home page, `""` while the source isn't implemented.
     pub home_url: &'static str,
     /// Hosts the browser should not resolve for this source's pages.
-    ///
-    /// A fact about the site, so it lives with the site: an ad CDN serving
-    /// looping video keeps the compositor producing frames at full speed
-    /// for as long as a page stays open, which was measured as the largest
-    /// idle-CPU cost of a session. It used to be one hardcoded host in
-    /// `browser::cdp`, which put one tracker's ad server in the module
-    /// that drives a browser for every source.
     pub block_hosts: &'static [&'static str],
 }
 
-/// The full list of sources the app knows about, implemented or not. This
-/// is the single place to touch when adding a new source's *listing*;
-/// implementing [`Source`] for it is the separate step that makes
-/// `implemented` become `true`.
+/// The full list of sources the app knows about, implemented or not.
 pub const KNOWN_SOURCES: &[SourceInfo] = &[
     SourceInfo {
         id: "rutracker",
@@ -597,22 +485,15 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
     },
 ];
 
-/// What a source needs from the app in order to be *built*. Browser
-/// lifecycle (detect, visibility, close-on-exit) stays in `app.rs`,
-/// where that config lives; this struct is the hand-off point.
+/// What a source needs from the app in order to be *built*.
 pub struct SourceEnv {
-    /// An already-launched browser session. Required by sources with
-    /// `requires_browser() == true`, ignored by plain-HTTP ones.
+    /// An already-launched browser session.
     pub browser: Option<Arc<Mutex<Browser>>>,
 }
 
-/// Build the live instance for `id`: the one place that maps ids to
-/// concrete types, so `app.rs`/`main.rs` only ever handle
-/// `Arc<dyn Source>` (B2 closes Phase 3's "rewire app.rs" note).
-///
-/// Browser-backed sources need `env.browser` handed in rather than
-/// launching one themselves -- they are exactly the thing that *needs*
-/// the browser, so they cannot exist before it.
+/// Build the live instance for `id`: the one place that maps ids to concrete types, so
+/// `app.rs`/`main.rs` only ever handle `Arc<dyn Source>` (B2 closes Phase 3's "rewire app.rs"
+/// note).
 pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
     match id {
         "rutracker" => {
@@ -641,10 +522,6 @@ pub fn get_source(id: &str) -> Option<&'static SourceInfo> {
 }
 
 /// Whether orchestrating `id` needs a browser session launched first.
-/// Unknown ids fall back to `true`: the conservative answer, because
-/// guessing "no browser" for a source we don't know about would send its
-/// login through a path that can't reach a browser (same fallback
-/// `app.rs::source_needs_browser` has always had).
 pub fn requires_browser(id: &str) -> bool {
     get_source(id).map(|s| s.requires_browser).unwrap_or(true)
 }
@@ -675,10 +552,8 @@ pub fn cli_sources(
     }
 }
 
-/// Source ids a config written before B8 wave 1 could possibly mention:
-/// exactly what [`KNOWN_SOURCES`] held at `9d5ae14`, the last commit
-/// before wave 1 added yts. Seeds `known_sources` for a config that
-/// predates the field.
+/// Source ids a config written before B8 wave 1 could possibly mention: exactly what
+/// [`KNOWN_SOURCES`] held at `9d5ae14`, the last commit before wave 1 added yts.
 const LEGACY_SOURCES: &[&str] = &["rutracker", "rutor", "nnmclub"];
 
 /// "Every implemented source ships turned on" -- stated against the
@@ -693,19 +568,6 @@ fn default_enabled_sources() -> Vec<String> {
 }
 
 /// Give a config the source ids it has never heard of.
-///
-/// It lives here and not on `Config` because the source list is a fact
-/// about the build, not a setting; `config.rs` knowing it meant a source
-/// had to be added to two files and forgetting the second left it
-/// implemented but switched off.
-///
-/// "Never heard of" is `Config::known_sources`: an id the config has
-/// already seen is not re-added, and one predating the field is
-/// recognised by being empty and seeded with `LEGACY_SOURCES` -- so
-/// somebody who disabled `rutor` back then keeps it off while `tpb`,
-/// which they have never seen, arrives enabled. A *planned* source
-/// counts as never heard of: its Options row is a caption, not a toggle,
-/// so it was never something to accept or reject.
 pub fn migrate_config(config: &mut crate::config::Config) {
     let seen: Vec<String> = if config.known_sources.is_empty() {
         LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()
@@ -756,11 +618,6 @@ pub fn migrate_config(config: &mut crate::config::Config) {
 }
 
 /// Every id this build implements, in registry order.
-///
-/// The first-run defaults. Exposed because "no config file" and "an
-/// empty config file" are different situations that happen to look alike
-/// from inside `Config`: one is a machine that has decided nothing, the
-/// other is a file from before the field existed.
 pub fn first_run_config(config: &mut crate::config::Config) {
     let ids = implemented_source_ids();
     config.known_sources = ids.clone();
@@ -768,11 +625,6 @@ pub fn first_run_config(config: &mut crate::config::Config) {
 }
 
 /// The config a machine with no config file starts with.
-///
-/// Used by `load` and by the UI's own construction, which both need the
-/// same thing: a config that has the source list filled in. `Config::default()`
-/// on its own is not that -- it is the raw struct, which deliberately
-/// carries no opinion about which sources exist.
 pub fn first_run() -> crate::config::Config {
     let mut config = crate::config::Config::default();
     first_run_config(&mut config);

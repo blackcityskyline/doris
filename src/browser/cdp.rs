@@ -24,16 +24,11 @@ const XVFB_PID_FILE: &str = ".xvfb-pid";
 /// Grace between SIGTERM and SIGKILL for anything we are tearing down.
 const SIGTERM_GRACE: Duration = Duration::from_millis(600);
 
-/// How often those short reaps check whether the process is gone. Fine
-/// enough that a normal exit is not visibly delayed, coarse enough to be
-/// free -- this runs on a blocking thread at process teardown.
+/// How often those short reaps check whether the process is gone.
 const REAP_POLL: Duration = Duration::from_millis(50);
 
-/// A stale lock file means a *previous doris run* still held the profile
-/// and has not finished releasing it. That is a different question from
-/// "is this process still dying": a clean shutdown can take seconds, so
-/// this one waits an order of magnitude longer before insisting. Polled
-/// coarsely to match -- at a ten second horizon, 200ms costs nothing.
+/// A stale lock file means a *previous doris run* still held the profile and has not finished
+/// releasing it.
 const STALE_LOCK_GRACE: Duration = Duration::from_secs(10);
 const STALE_LOCK_POLL: Duration = Duration::from_millis(200);
 
@@ -56,21 +51,13 @@ const SIGKILL_SETTLE: Duration = Duration::from_secs(2);
 /// exists fails, and there is no API that says "ready".
 const XVFB_SOCKET_WAIT: Duration = Duration::from_secs(1);
 
-/// chromedriver binds its port during startup. Same story: the spawn
-/// returning says nothing about the listener being up, and `connect` is
-/// the first thing that would notice.
+/// chromedriver binds its port during startup.
 const DRIVER_BIND_WAIT: Duration = Duration::from_secs(2);
 
 /// The cookie-injection navigation has to finish before the cookies are
 /// written, or they land on a document that has not yet parsed.
 const PAGE_SETTLE: Duration = Duration::from_secs(3);
 
-/// Poll `done` every `poll` until it holds or `grace` elapses.
-///
-/// `true` once `done` held, `false` on timeout -- the caller's cue to
-/// escalate to SIGKILL. The condition is checked before the deadline
-/// because a process that exited during the last sleep should count as
-/// gone, not as a timeout.
 fn wait_until(grace: Duration, poll: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + grace;
     loop {
@@ -84,10 +71,7 @@ fn wait_until(grace: Duration, poll: Duration, mut done: impl FnMut() -> bool) -
     }
 }
 
-/// Browser window visibility. Renamed from the old "headless/gui" naming:
-/// `Visible` shows the real browser window, `Hidden` runs it off-screen
-/// (still a real, non-headless-flagged Chromium session when Xvfb is
-/// available, falling back to `--headless=new` otherwise).
+/// Browser window visibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BrowserVisibility {
     Visible,
@@ -131,14 +115,9 @@ pub struct Browser {
 }
 
 impl Browser {
-    /// `cookie_injection_url` is where a hidden-mode session navigates to
-    /// before injecting cookies extracted from the browser's native (real)
-    /// profile — it must be a page on the same domain those cookies belong
-    /// to. Callers pass the active search source's home page; this module
-    /// stays source-agnostic on purpose, which is why the host to read
-    /// cookies for is derived from this URL rather than written here, and
-    /// why `block_hosts` comes from the caller: an ad host to keep the
-    /// compositor idle is a fact about one site, not about browsers.
+    /// `cookie_injection_url` is where a hidden-mode session navigates to before injecting
+    /// cookies extracted from the browser's native (real) profile — it must be a page on the
+    /// same domain those cookies belong to.
     pub async fn launch(
         binary: &Path,
         mode: BrowserVisibility,
@@ -320,28 +299,14 @@ impl Browser {
             .ok_or_else(|| anyhow::anyhow!("browser session is already closed"))
     }
 
-    /// Park the tab on `about:blank` so nothing keeps running while Doris is
-    /// idle.
-    ///
-    /// Without this, whatever page an operation last touched stays loaded
-    /// forever: rutracker's pages carry looping ad video/GIF banners, the tab
-    /// counts as visible (under Xvfb nothing ever occludes the window) and
-    /// chromedriver forces `--disable-background-timer-throttling`, so Chrome
-    /// produces frames at full speed indefinitely -- measured at ~90% of a
-    /// core with no operations in flight. Cookies are unaffected: they belong
-    /// to the profile, which survives navigation.
+    /// Park the tab on `about:blank` so nothing keeps running while Doris is idle.
     pub async fn park(&self) -> Result<()> {
         self.client()?.goto("about:blank").await?;
         Ok(())
     }
 
-    /// Close the session properly: end the WebDriver session first (that
-    /// DELETE is what makes chromedriver take the browser down with it), and
-    /// only then reap chromedriver itself.
-    ///
-    /// Call this on the normal exit path -- [`Drop`] cannot await the session
-    /// DELETE, and killing chromedriver with SIGKILL before it ran leaves the
-    /// browser orphaned, still burning CPU on the page it was showing.
+    /// Close the session properly: end the WebDriver session first (that DELETE is what makes
+    /// chromedriver take the browser down with it), and only then reap chromedriver itself.
     pub async fn shutdown(&mut self) {
         if let Some(client) = self.client.take() {
             if self.close_on_drop {
@@ -360,9 +325,8 @@ impl Browser {
         self.reap();
     }
 
-    /// Kill chromedriver (and Xvfb), sweep browser processes that outlived
-    /// them, and drop the temp profile. All fields are taken, so a second
-    /// pass -- [`Browser::shutdown`] then [`Drop`] -- is a no-op.
+    /// Kill chromedriver (and Xvfb), sweep browser processes that outlived them, and drop the
+    /// temp profile.
     fn reap(&mut self) {
         if self.close_on_drop {
             if let Some(mut child) = self.child.take() {
@@ -483,8 +447,7 @@ fn send_signal(pid: u32, hard: bool) {
     let _ = cmd.stdout(Stdio::null()).stderr(Stdio::null()).output();
 }
 
-/// Terminate a child, giving it a short grace period to exit on SIGTERM
-/// before escalating. Returns as soon as it's gone -- normally immediately.
+/// Terminate a child, giving it a short grace period to exit on SIGTERM before escalating.
 fn terminate_child(child: &mut std::process::Child) {
     send_signal(child.id(), false);
     // `Ok(None)` is the only "still running" answer, so it is also the
@@ -499,12 +462,8 @@ fn terminate_child(child: &mut std::process::Child) {
     }
 }
 
-/// Kill every browser process still holding `profile_dir` (matched by its
-/// `--user-data-dir=`), escalating to SIGKILL if they don't go away.
-///
-/// This is what stops an orphaned browser -- one whose chromedriver died
-/// without delivering the session DELETE -- from staying behind and burning
-/// CPU on a loaded page forever.
+/// Kill every browser process still holding `profile_dir` (matched by its `--user-data-dir=`),
+/// escalating to SIGKILL if they don't go away.
 fn sweep_profile(profile_dir: &Path) {
     let pids = find_pids_by_profile(profile_dir);
     if pids.is_empty() {
@@ -539,9 +498,8 @@ fn record_xvfb_pid(child: Option<&std::process::Child>, profile: Option<&PathBuf
     }
 }
 
-/// Sweep the leftovers of runs whose doris is gone: their temp profile
-/// (a ~100MB directory), any browser still holding it, and the Xvfb they
-/// started. Called before every launch.
+/// Sweep the leftovers of runs whose doris is gone: their temp profile (a ~100MB directory),
+/// any browser still holding it, and the Xvfb they started.
 fn cleanup_stale_profiles() {
     let me = std::process::id();
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
@@ -579,9 +537,6 @@ fn process_exists(pid: u32) -> bool {
     Path::new(&format!("/proc/{}", pid)).exists()
 }
 
-/// Kill the Xvfb a dead run recorded in its profile dir. Only if it still
-/// really is an Xvfb -- pids are reused, and killing an unrelated process
-/// would take down whatever else owns it.
 fn kill_recorded_xvfb(profile_dir: &Path) {
     let Ok(record) = std::fs::read_to_string(profile_dir.join(XVFB_PID_FILE)) else {
         return;
@@ -605,10 +560,6 @@ fn kill_recorded_xvfb(profile_dir: &Path) {
     );
 }
 
-/// Drain chromedriver's stderr on its own thread. Its output must not reach
-/// the terminal (it would corrupt the TUI), but a piped stderr nobody reads
-/// blocks the writer for good once the pipe buffer fills -- which would hang
-/// the whole session. Keep only the lines that carry a failure.
 fn spawn_chromedriver_log_drain(stderr: std::process::ChildStderr) {
     std::thread::spawn(move || {
         use std::io::{BufRead, BufReader};
@@ -787,14 +738,6 @@ async fn get_or_patch_chromedriver(browser_major: u32) -> Result<PathBuf> {
     Ok(patched_path)
 }
 
-/// Where the patched driver for `browser_major` is cached.
-///
-/// One file per major because a chromedriver only starts browsers of its
-/// own major: the cache was a single `chromedriver_patched` file reused
-/// for whichever browser launched first, so a 152 driver was handed to
-/// Helium 154 and the session died with "This version of ChromeDriver
-/// only supports Chrome version 152" (live, 25.09.2026) -- and switching
-/// the browser priority in Options hit that every time.
 pub fn patched_chromedriver_path(data_dir: &Path, browser_major: u32) -> PathBuf {
     data_dir.join(format!("chromedriver_patched-{}", browser_major))
 }
@@ -807,8 +750,6 @@ pub fn has_patched_chromedriver(data_dir: &Path, browser_major: u32) -> bool {
 }
 
 /// Drop the un-suffixed cache file the pre-versioning code left behind.
-/// It can only ever be right for the browser it was first built for, so
-/// keeping it around is a trap, not a cache.
 fn drop_un_keyed_cache(data_dir: &Path) {
     let legacy = data_dir.join("chromedriver_patched");
     if !legacy.exists() {
@@ -826,13 +767,9 @@ fn drop_un_keyed_cache(data_dir: &Path) {
     }
 }
 
-/// Re-home the download made before the cache was keyed by browser
-/// major: it sits at `root/chromedriver-linux64/chromedriver`, a path
-/// nothing reads anymore, and is good for exactly one browser. Moved
-/// into this major's directory when its own version agrees -- so a
-/// machine that already has the right driver never needs the network
-/// again -- and left where it is otherwise, since it may still serve
-/// another browser. Returns the new path when it moved.
+/// Re-home the download made before the cache was keyed by browser major: it sits at
+/// `root/chromedriver-linux64/chromedriver`, a path nothing reads anymore, and is good for
+/// exactly one browser.
 pub fn adopt_legacy_download(root: &Path, browser_major: u32) -> Option<PathBuf> {
     let legacy_dir = root.join("chromedriver-linux64");
     let legacy = legacy_dir.join("chromedriver");
@@ -864,11 +801,6 @@ pub fn adopt_legacy_download(root: &Path, browser_major: u32) -> Option<PathBuf>
     }
 }
 
-/// Can this driver start a browser of `browser_major`? The binary is
-/// asked, because nothing on disk records which browser a driver was
-/// built for and a driver answers with its own major
-/// (`ChromeDriver 152.0.7977.82 (...)`). Missing, unreadable or
-/// version-less binaries simply do not serve.
 pub fn driver_serves(path: &Path, browser_major: u32) -> bool {
     let output = match std::process::Command::new(path).arg("--version").output() {
         Ok(o) => o,
@@ -882,9 +814,7 @@ pub fn driver_serves(path: &Path, browser_major: u32) -> bool {
     driver_major(&text) == Some(browser_major)
 }
 
-/// The major a `--version` line reports, `None` when it carries no
-/// version at all. The `> 10` floor discards stray numbers -- a date, a
-/// build id -- the same way [`detect_browser_major_version`] does.
+/// The major a `--version` line reports, `None` when it carries no version at all.
 fn driver_major(version_output: &str) -> Option<u32> {
     for part in version_output.split_whitespace() {
         if let Some(major) = part.split('.').next().and_then(|s| s.parse::<u32>().ok()) {
@@ -896,9 +826,7 @@ fn driver_major(version_output: &str) -> Option<u32> {
     None
 }
 
-/// The drivers already on this machine, in the order they are worth
-/// trying. Existence only -- each candidate still has to prove its
-/// major with [`driver_serves`] before being used.
+/// The drivers already on this machine, in the order they are worth trying.
 fn system_driver_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(path) = which::which("chromedriver") {
@@ -917,10 +845,8 @@ fn system_driver_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-/// Whether the first launch of `binary` can start without fetching
-/// anything: a patched driver cached for its major, or a system driver
-/// reporting the same major. The health check shows this; `launch`
-/// enforces the same rule when it actually picks a driver.
+/// Whether the first launch of `binary` can start without fetching anything: a patched driver
+/// cached for its major, or a system driver reporting the same major.
 pub fn driver_ready_for(binary: &Path) -> bool {
     let browser_major = match detect_browser_major_version(binary) {
         Ok(major) => major,
@@ -1160,10 +1086,6 @@ fn detect_browser_major_version(binary: &Path) -> Result<u32> {
 }
 
 /// The cookie query, with the host as a bound parameter.
-///
-/// It used to have the host written into the string, which made this a
-/// function that could only ever answer for one site. The host now comes
-/// from the caller and is data, so the same query serves any source.
 fn cookie_query() -> &'static str {
     "SELECT host_key, name, value, path, is_secure, is_httponly, encrypted_value \
      FROM cookies WHERE host_key LIKE ?"
@@ -1240,11 +1162,6 @@ fn extract_cookies_from_native_profile(
 }
 
 /// The `--flag` list handed to Chrome via `goog:chromeOptions`.
-///
-/// Pure data: visibility picks `--headless=new`, Xvfb picks
-/// `--ozone-platform=x11` (and suppresses headless), the temp profile
-/// picks `--user-data-dir`. Extracted from `launch` so the list is
-/// testable without spawning chromedriver.
 fn build_chrome_args(
     mode: BrowserVisibility,
     use_xvfb: bool,
@@ -1308,11 +1225,8 @@ fn build_chrome_args(
 mod tests {
     use super::*;
 
-    /// `wait_until` decides whether a process gets to die politely or gets
-    /// killed, and every shutdown path routes through it. Two things can
-    /// go wrong and neither shows up as a crash: returning `true` when
-    /// the condition never held (a killed-but-lingering process, left to
-    /// burn CPU on its page), or spinning past the grace.
+    /// `wait_until` decides whether a process gets to die politely or gets killed, and every
+    /// shutdown path routes through it.
     #[test]
     fn wait_until_reports_a_condition_that_holds() {
         // Holds immediately: no sleeping, and it must not wait out the
@@ -1355,14 +1269,7 @@ mod tests {
         );
     }
 
-    /// Polling stops the instant the condition holds. The other half of
-    /// the contract -- a condition that holds *on* the deadline counts as
-    /// a success -- is what the ordering of the two checks in `wait_until`
-    /// buys, and it is deliberately not tested here: making it observable
-    /// needs the condition to flip true on the exact iteration the grace
-    /// expires, which no wall-clock test can hit reliably. It costs
-    /// nothing to be right about (the escalation it avoids is an ignored
-    /// error and one log line) and is noted in the helper's docs.
+    /// Polling stops the instant the condition holds.
     #[test]
     fn wait_until_stops_polling_once_the_condition_holds() {
         let polls = std::cell::Cell::new(0u32);
@@ -1378,9 +1285,7 @@ mod tests {
         );
     }
 
-    /// The four shutdown paths are the same decision, so they read the
-    /// same knob. `terminate_child` is the one that runs on every exit:
-    /// if it waits long enough to be noticeable, quitting doris does.
+    /// The four shutdown paths are the same decision, so they read the same knob.
     #[test]
     fn the_shutdown_grace_is_short_enough_to_be_invisible() {
         assert!(
@@ -1414,17 +1319,6 @@ mod tests {
     }
 
     /// The browser layer does not know which site it is being pointed at.
-    ///
-    /// It used to: `--host-resolver-rules=MAP rutrk.org ~NOTFOUND` sat in
-    /// the base args and `host_key LIKE '%rutracker%'` sat in the cookie
-    /// query, both naming one tracker inside a module whose job is to
-    /// drive any browser for anyone. A second source that needed an ad
-    /// host blocked would have meant editing the shared layer, and the
-    /// cookie query would have read every tracker's cookies into whichever
-    /// tracker happened to launch the browser first.
-    ///
-    /// The rule this pins: no tracker host is written here, and a source
-    /// with nothing to block gets nothing blocked.
     #[test]
     fn no_tracker_is_named_inside_the_browser_layer() {
         for mode in [BrowserVisibility::Visible, BrowserVisibility::Hidden] {
@@ -1487,10 +1381,7 @@ mod tests {
         );
     }
 
-    /// The cookie query is built from the host the caller names. It is a
-    /// prepared statement rather than a format string, so a host is data
-    /// and never a fragment of SQL -- which matters now that the value
-    /// comes from outside this module.
+    /// The cookie query is built from the host the caller names.
     #[test]
     fn the_cookie_query_binds_its_host() {
         let sql = cookie_query();

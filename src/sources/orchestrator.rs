@@ -1,21 +1,12 @@
-//! Registry-driven concurrent fan-out for one search.
-//!
-//! `app.rs` decides *which* sources run (Results tab + Options) and owns
-//! their instances; everything about *how* they run lives here so it can
-//! be tested without a terminal, a browser or a network:
-//!
-//! - one task per selected source, each under a deadline, so a wedged
-//!   source can't hold the whole fan-out hostage;
-//! - every source reports on its own as soon as it answers
-//!   ([`Event::SourceDone`], sent from inside its own task, so events
-//!   arrive in completion order) -- rows render incrementally instead of
-//!   waiting for the slowest source (today rutor's answer waits for
-//!   rutracker's Cloudflare walk);
-//! - a final [`Event::SearchComplete`] once the set is exhausted, which
-//!   is what puts the UI back to idle.
-//!
-//! Which sources a dispatch includes is decided here too
-//! (`selected_sources`) so the rule is testable as a plain function.
+//! Registry-driven concurrent fan-out for one search. `app.rs` decides *which* sources run
+//! (Results tab + Options) and owns their instances; everything about *how* they run lives here
+//! so it can be tested without a terminal, a browser or a network: - one task per selected
+//! source, each under a deadline, so a wedged source can't hold the whole fan-out hostage; -
+//! every source reports on its own as soon as it answers ([`Event::SourceDone`], sent from
+//! inside its own task, so events arrive in completion order) -- rows render incrementally
+//! instead of waiting for the slowest source (today rutor's answer waits for rutracker's
+//! Cloudflare walk); - a final [`Event::SearchComplete`] once the set is exhausted, which is
+//! what puts the UI back to idle.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -32,14 +23,10 @@ use super::models::TorrentItem;
 use super::source::{Group, SearchPage, SourceInfo, KNOWN_SOURCES};
 use crate::event::Event;
 
-/// torio's `PER_SOURCE_TIMEOUT_MS`: one slow source must not hold the
-/// whole fan-out hostage. Timeout is per source, not per dispatch, so a
-/// hung rutracker still lets rutor's rows through.
+/// torio's `PER_SOURCE_TIMEOUT_MS`: one slow source must not hold the whole fan-out hostage.
 pub const PER_SOURCE_TIMEOUT: Duration = Duration::from_secs(25);
 
-/// Where one source of the current dispatch stands. Kept on `App` so a
-/// future status row can render it; until then the log line is the
-/// interim surface.
+/// Where one source of the current dispatch stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceStatus {
     Pending,
@@ -72,9 +59,7 @@ impl fmt::Display for SourceStatus {
     }
 }
 
-/// What one source's page fetch came back as. Failures are values here,
-/// not `Err`: every source must report in, because `Event::SearchComplete`
-/// only fires once all of them did.
+/// What one source's page fetch came back as.
 #[derive(Debug, Clone)]
 pub struct SourceOutcome {
     pub items: Vec<TorrentItem>,
@@ -125,20 +110,9 @@ impl SourceOutcome {
     }
 }
 
-/// Run one source's whole page fetch -- login walk included, since that
-/// is where rutracker's time goes -- under `timeout`, and report the
-/// outcome as [`Event::SourceDone`] the moment it lands.
-///
-/// The send happens inside the source's own task, so events arrive in
-/// *completion* order: a source stuck behind a Cloudflare walk cannot
-/// delay a source that already answered ( whole point), and
-/// `Event::SearchComplete` still comes last because [`coordinate`] only
-/// emits it after every task has finished -- and every task sends its
-/// `SourceDone` before finishing.
-///
-/// Never returns `Err`: a timeout, an error and a success are all
-/// outcomes, because a source that fails has to say so rather than stay
-/// silent and leave the UI waiting forever.
+/// Run one source's whole page fetch -- login walk included, since that is where rutracker's
+/// time goes -- under `timeout`, and report the outcome as [`Event::SourceDone`] the moment it
+/// lands.
 pub async fn run_source(
     source_id: &'static str,
     generation: u64,
@@ -162,12 +136,7 @@ pub async fn run_source(
     });
 }
 
-/// Wait out every per-source task, then close the generation with
-/// [`Event::SearchComplete`].
-///
-/// A task that panicked is reported as a failed `SourceDone` rather than
-/// dropped: it must neither swallow the healthy sources' results nor
-/// leave the UI stuck in `Searching`.
+/// Wait out every per-source task, then close the generation with [`Event::SearchComplete`].
 pub async fn coordinate(
     generation: u64,
     tasks: Vec<(&'static str, JoinHandle<()>)>,
@@ -189,32 +158,8 @@ pub async fn coordinate(
     let _ = tx.send(Event::SearchComplete { generation });
 }
 
-/// Which sources one dispatch runs: implemented, enabled in Options, and
-/// on the active Results tab (`"all"` means every one of them). This is
-/// the registry-driven replacement for `app.rs`'s two hardcoded
-/// branches -- a source registered later needs no orchestrator change.
-/// Which sources a dispatch should ask: the Trackers panel's checkboxes,
-/// and -- since B6 -- the selected category.
-///
-/// A source that does not serve the category is *not asked* rather than
-/// asked and filtered afterwards: it would answer with rows that claim
-/// no category, the view would drop every one of them, and the table
-/// would read as "this category is empty" while sources able to filter
-/// it server-side were the only ones consulted. Two ways a source fails
-/// that test, both handled here: it does not declare the group at all
-/// (yts cannot answer TV), or it declares it but cannot filter by it
-/// (`SourceInfo::category_filter` -- today only rutracker, whose `c[]`
-/// slot has never been verified live, so a category search skips the
-/// slow browser round-trip instead of discarding its rows).
-///
-/// `browse` is the empty-query case: a source that cannot answer a
-/// query with no terms is not asked, because its "browse" would be a
-/// search for the empty string and read as a broken page rather than as
-/// the freshest rows the user asked for.
-///
-/// There is no "one source at a time" mode any more: the panel's
-/// checkboxes *are* the selection, so asking a single source means
-/// checking only it.
+/// Which sources one dispatch runs: implemented, enabled in Options, and on the active Results
+/// tab (`"all"` means every one of them).
 pub fn selected_sources(
     enabled: &[String],
     group: Option<Group>,
@@ -232,15 +177,8 @@ pub fn selected_sources(
         .collect()
 }
 
-/// The log line for a category search that selected nobody, phrased by
-/// what would actually change the outcome.
-///
-/// Two cases, and only one of them is fixed in the panel: a source that
-/// declares the group but cannot filter by it (rutracker, until its `c[]`
-/// probe passes) is told so -- the panel shows it enabled and its groups
-/// unchanged, so sending the user there would send them in a circle.
-/// Everything else keeps the older line, where checking another source
-/// is the real fix.
+/// The log line for a category search that selected nobody, phrased by what would actually
+/// change the outcome.
 pub fn nothing_to_ask_reason(enabled: &[String], group: Group) -> String {
     let blocked = KNOWN_SOURCES.iter().find(|info| {
         enabled.iter().any(|e| e == info.id)
@@ -263,34 +201,13 @@ pub fn nothing_to_ask_reason(enabled: &[String], group: Group) -> String {
 }
 
 /// The cursor a source gets after reporting a page.
-///
-/// `next_offset` wins when the source gave one: that is how a source
-/// whose API counts pages of its own (yts counts *movies*, and rows per
-/// page vary with how many qualities each has) stays aligned, instead of
-/// deriving a cursor from a row count that does not match its unit.
-///
-/// Otherwise the row-paged default applies: `current + count`, which is
-/// also the right answer for a *failed* page -- failures carry no rows
-/// and no cursor, so `current + 0` leaves the cursor where it was and
-/// the source is asked again from there.
 pub fn advance_offset(current: usize, count: usize, next_offset: Option<usize>) -> usize {
     next_offset.unwrap_or(current + count)
 }
 
-/// The `(source, offset)` pairs a dispatch should run: every selected
-/// source on a fresh search, and on a "load more" only the ones that
-/// said they have another page -- each at *its own* cursor.
-///
-/// Own cursors are the fix for a real bug: offsets used to be one shared
-/// row count, which drifts off rutor's 100-row page grid the moment two
-/// sources with different page sizes are merged, and rutor silently
-/// answers a misaligned offset with nothing (it guards `offset %
-/// PAGE_SIZE`, see `rutor.rs`).
-///
-/// Skipping exactly `Some(false)` rather than requiring `Some(true)` is
-/// deliberate: a source that failed last time has no verdict, so it gets
-/// another chance -- which is what the old always-dispatch-both behavior
-/// did.
+/// The `(source, offset)` pairs a dispatch should run: every selected source on a fresh search,
+/// and on a "load more" only the ones that said they have another page -- each at *its own*
+/// cursor.
 pub fn dispatch_plan(
     selected: &[&'static SourceInfo],
     offsets: &HashMap<String, usize>,
@@ -304,12 +221,8 @@ pub fn dispatch_plan(
         .collect()
 }
 
-/// Wrap one source's page fetch so a *successful* page is stored under
-/// `key` before it is reported.
-///
-/// Failures pass through untouched: caching an error would pin "no
-/// results" for the whole TTL, turning one bad request into five minutes
-/// of empty output.
+/// Wrap one source's page fetch so a *successful* page is stored under `key` before it is
+/// reported.
 pub async fn cached_fetch(
     fetch: impl Future<Output = Result<SearchPage>>,
     cache: Arc<SearchCache>,
@@ -320,13 +233,10 @@ pub async fn cached_fetch(
     Ok(page)
 }
 
-/// The cache-first half of a dispatch: a fresh hit becomes the very
-/// same [`Event::SourceDone`] a live fetch would have produced, so the
-/// UI, the per-source offsets and the paging verdict all update through
-/// the normal path -- the only thing skipped is the network, and with it
-/// the browser launch a browser-backed source would otherwise need.
-///
-/// `None` means miss or expired: spawn the source.
+/// The cache-first half of a dispatch: a fresh hit becomes the very same [`Event::SourceDone`]
+/// a live fetch would have produced, so the UI, the per-source offsets and the paging verdict
+/// all update through the normal path -- the only thing skipped is the network, and with it the
+/// browser launch a browser-backed source would otherwise need.
 pub fn cached_source_done(cache: &SearchCache, key: &CacheKey, generation: u64) -> Option<Event> {
     let page = cache.get(key)?;
     Some(Event::SourceDone {

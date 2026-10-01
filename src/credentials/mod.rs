@@ -1,34 +1,6 @@
-//! Encrypted credential storage.
-//!
-//! Storage is keyed by resource id (`"rutracker"`, later `"rutor"`,...) so
-//! the multi-tab Login modal can hold one saved login
-//! per source without them clobbering each other. The payload is JSON
-//! before encryption, not a hand-rolled `"user:pass"` string — the old
-//! colon-joined format silently corrupted any password containing `:`.
-//!
-//! Reading an old (pre-keyed-store) credentials file still works: the
-//! legacy `"user:pass"` payload is recognised and transparently treated as
-//! the `rutracker` entry, so nobody has to re-enter a saved login just
-//! because of this change.
-//!
-//! # What the encryption does and does not buy
-//!
-//! The key is `SHA256(hostname + username + "doris-cred-salt-v1")` -- both
-//! inputs are readable by anyone who can read this file (`/etc/hostname`,
-//! `whoami`), so **this does not protect against a local reader running as
-//! your user**: such a process derives the same key and decrypts the store.
-//! Verified by doing exactly that against a real store.
-//!
-//! What it does buy: the file is not a plaintext password sitting in a
-//! config directory (so a stray `cat`, a grep, a crash reporter, a backup
-//! that gets attached to a bug report, or an editor that autosaves it does
-//! not hand the password over), and the file is 0600, which does stop
-//! every *other* account on the machine -- the realistic case for a desktop
-//! with more than one user.
-//!
-//! Protecting against a process running as you would need a key you never
-//! write down (a passphrase, or libsecret), which is a UX cost, so it is
-//! not done here. That is a deliberate boundary, not an oversight.
+//! Encrypted credential storage. Storage is keyed by resource id (`"rutracker"`, later
+//! `"rutor"`,...) so the multi-tab Login modal can hold one saved login per source without them
+//! clobbering each other.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -39,15 +11,11 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 16;
 
 /// Resource id used by the single-resource compatibility wrappers
-/// (`save_credentials`/`load_credentials`) at the bottom of this file, and
-/// by the legacy-format migration. Matches `Source::id()` for Rutracker,
-/// the only source that exists today.
+/// (`save_credentials`/`load_credentials`) at the bottom of this file, and by the legacy-format
+/// migration.
 const DEFAULT_RESOURCE: &str = "rutracker";
 
-/// The resource ids the login modal manages, in tab order. Today that is
-/// rutracker alone -- the store is keyed by id, so a future source with
-/// a session of its own adds its tab here and the modal picks it up
-/// without a UI change.
+/// The resource ids the login modal manages, in tab order.
 pub const LOGIN_RESOURCES: &[&str] = &[DEFAULT_RESOURCE];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,27 +30,11 @@ pub fn credentials_path() -> PathBuf {
     home.join(".config").join("doris").join("credentials.enc")
 }
 
-/// The store's file name inside whatever directory it is kept in. The
-/// `_at` functions take a directory rather than a file so a caller (a
-/// test, or a second store) supplies a location without repeating the
-/// name -- and, more to the point, so a test can point the whole store
-/// at a scratch directory. The store used to resolve `$HOME` from inside
-/// its own I/O, and every test that saved a fake login overwrote the real
-/// one.
+/// The store's file name inside whatever directory it is kept in.
 pub const STORE_FILE: &str = "credentials.enc";
 
-/// Write a file only its owner can read or write, and repair the mode of
-/// one that already exists.
-///
-/// Both files holding a live login -- this store and the saved rutracker
-/// cookies, where `bb_session` *is* the session -- go through here, so
-/// "this file is secret" is one rule rather than a `fs::write` each
-/// somebody can forget; `fs::write` creates 0644 under umask 022, which
-/// every account on the machine can read.
-///
-/// The explicit `set_permissions` is not redundant: `mode` on
-/// `OpenOptions` only applies when the file is *created*, so a store an
-/// older build wrote at 0644 would keep that mode forever.
+/// Write a file only its owner can read or write, and repair the mode of one that already
+/// exists.
 #[cfg(unix)]
 pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
     use std::io::Write;
@@ -179,10 +131,6 @@ fn encrypt_and_write(path: &Path, plaintext: &[u8]) -> Result<()> {
 }
 
 /// Load the full keyed credential store (resource id -> Credential).
-/// Returns an empty map if the file doesn't exist, can't be decrypted
-/// (e.g. the machine identity used to derive the key changed), or is
-/// corrupt. Transparently upgrades the pre-Phase-4 `"user:pass"` format
-/// into `{ DEFAULT_RESOURCE: { username, password } }` on read.
 pub fn load_store() -> HashMap<String, Credential> {
     load_store_at(&credentials_path())
 }

@@ -1,16 +1,11 @@
 use super::theme::Theme;
 use ratatui::prelude::*;
 
-/// Rows the always-visible search input takes: top border, one line of
-/// text, bottom border. `update_areas` splits it off the top of the
-/// terminal, `App::render_search_bar` draws into it and
-/// `App::search_box_at` recognises it -- one number for all three, so
-/// the zones can never drift under the box.
+/// Rows the always-visible search input takes: top border, one line of text, bottom border.
 pub const SEARCH_BAR_HEIGHT: u16 = 3;
 
-/// How small a mouse drag may leave a zone: still a frame, still a
-/// border to grab again, still room for the one line a panel needs to
-/// say anything. Same job a WM's minimum window size does.
+/// How small a mouse drag may leave a zone: still a frame, still a border to grab again, still
+/// room for the one line a panel needs to say anything.
 pub const RESIZE_MIN_HEIGHT: u16 = 3;
 
 /// The width floor, wider than the height one because a table that
@@ -34,21 +29,13 @@ pub enum ZoneId {
     Results = 1,
     Torrent = 2,
     /// The trackers checklist: which sources the search asks.
-    /// It took the number the "Extra" placeholder used to hold, so the
-    /// zone a user actually touches sits at `3` instead of hiding
-    /// behind a fifth key of a panel that drew nothing.
     Trackers = 3,
     /// The log moved to the last slot so the zone keyboard reads
     /// Results / Torrent / Trackers / Log in row order.
     Log = 4,
 }
 
-/// `(digit key, label)` per zone. One row per [`ZoneId`] -- the three
-/// lookups below all read it, so adding a zone means appending a variant
-/// and a row instead of editing three matches.
-///
-/// The render/navigation dispatch on `ZoneId` in `ui/app.rs` cannot be
-/// table-driven: each zone draws different state.
+/// `(digit key, label)` per zone.
 const ZONE_ROWS: &[(ZoneId, char, &str)] = &[
     (ZoneId::Results, '1', "Results"),
     (ZoneId::Torrent, '2', "Torrent"),
@@ -87,10 +74,8 @@ impl ZoneId {
             .map(|&(id, ..)| id)
     }
 
-    /// The key that takes over the frame with this zone's detail view
-    /// (`L`/`T`/`R`), or `None` for a zone that has none. It is the
-    /// label's first letter, which is what lets `zone_title` highlight
-    /// it without a second table to keep in step.
+    /// The key that takes over the frame with this zone's detail view (`L`/`T`/`R`), or `None`
+    /// for a zone that has none.
     pub fn detail_key(&self) -> Option<char> {
         match self {
             ZoneId::Results => Some('R'),
@@ -109,9 +94,7 @@ pub struct Zone {
     /// Its share of its row's width: `1.0` is an equal split, which is
     /// exactly what the layout did before there was a share at all.
     pub flex: f32,
-    /// Its share of the height among rows. Written uniformly to every
-    /// zone of a row -- a row has one height whichever cell you read it
-    /// from -- and read back from the row's first cell.
+    /// Its share of the height among rows.
     pub row_flex: f32,
 }
 
@@ -138,15 +121,10 @@ pub struct ZoneLayout {
     pub fullscreen: Option<ZoneId>,
     pub filter_mode: bool,
     pub filter_input: String,
-    /// The tiling: rows of cells, one cell per zone, left to right and
-    /// top to bottom. Written as `rows via ","`, `columns via "|"` --
-    /// see [`ZoneLayout::apply_preset`].
+    /// The tiling: rows of cells, one cell per zone, left to right and top to bottom.
     pub grid: Vec<Vec<ZoneId>>,
-    /// The border the pointer is holding, set by [`Self::resize_start`]
-    /// on a click and cleared by [`Self::resize_end`] on the release.
-    /// Transient on purpose: a split you dragged is yours until the
-    /// next preset, not a line in `config.toml` for the next run to
-    /// wonder about.
+    /// The border the pointer is holding, set by [`Self::resize_start`] on a click and cleared
+    /// by [`Self::resize_end`] on the release.
     pub resize: Option<ResizeKind>,
 }
 
@@ -188,12 +166,6 @@ impl ZoneLayout {
     }
 
     /// What a zone digit means.
-    ///
-    /// A zone the user is not standing in is a zone they want to look
-    /// at, so the first press *focuses* it (showing it if it was
-    /// hidden); only the zone already under the focus is taken away --
-    /// and when it goes, the focus walks to the next zone still on
-    /// screen instead of parking somewhere nobody can see.
     pub fn focus_or_toggle(&mut self, id: ZoneId) {
         if self.fullscreen == Some(id) {
             self.fullscreen = None;
@@ -239,10 +211,7 @@ impl ZoneLayout {
         }
     }
 
-    /// Set a zone's visibility directly, rather than flipping it. Used by
-    /// [`apply_preset`](Self::apply_preset) so a preset can show exactly
-    /// the zones it names instead of toggling from an unknown starting
-    /// state.
+    /// Set a zone's visibility directly, rather than flipping it.
     pub fn set_visible(&mut self, id: ZoneId, visible: bool) {
         if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
             zone.visible = visible;
@@ -252,14 +221,6 @@ impl ZoneLayout {
         }
     }
 
-    /// Apply a tiling spec. Rows are separated by `,`, columns inside a
-    /// row by `|`, and every zone is named by its 1/2/3/4 key digit, so
-    /// `"1,3|4"` is the default UI: Results alone across the top, then
-    /// Trackers beside Log. A cell may hold several digits (`"34"` reads
-    /// as `"3|4"`), and any character that is not a zone key is ignored,
-    /// which keeps the old flat `"1,2,3,4"` meaning exactly what it
-    /// always did -- four rows, one zone each. If focus would land on a
-    /// now-hidden zone, it moves to the first visible one.
     pub fn apply_preset(&mut self, spec: &str) {
         self.grid = Self::parse_spec(spec);
         // A preset is a *new* arrangement, and the weights are a
@@ -336,9 +297,8 @@ impl ZoneLayout {
         self.layout_grid(area);
     }
 
-    /// Split a spec into rows of zone keys: `,` starts a new row, and
-    /// the digits inside one chunk are its cells left to right. Empty
-    /// rows (a chunk with no zone key in it) are dropped.
+    /// Split a spec into rows of zone keys: `,` starts a new row, and the digits inside one
+    /// chunk are its cells left to right.
     fn parse_spec(spec: &str) -> Vec<Vec<ZoneId>> {
         spec.split(',')
             .map(|row| row.chars().filter_map(ZoneId::from_key).collect())
@@ -346,17 +306,10 @@ impl ZoneLayout {
             .collect()
     }
 
-    /// The grid: rows from `grid` top to bottom, cells left to right,
-    /// each row taking an equal share of the height below the search
-    /// bar and each cell an equal share of its row's width -- the
-    /// first row and the first cells of a row taking the remainder, so
-    /// no row of the terminal is wasted.
-    ///
-    /// A cell whose zone is switched off is dropped, giving its width
-    /// to the rest of its row; a row that ends up empty is dropped,
-    /// giving its height to the rows that remain. A visible zone the
-    /// spec never named (switched back on with its digit key) gets a
-    /// row of its own at the bottom rather than vanishing.
+    /// The grid: rows from `grid` top to bottom, cells left to right, each row taking an equal
+    /// share of the height below the search bar and each cell an equal share of its row's width
+    /// -- the first row and the first cells of a row taking the remainder, so no row of the
+    /// terminal is wasted.
     fn layout_grid(&mut self, area: Rect) {
         let rows = self.visible_rows();
 
@@ -395,10 +348,8 @@ impl ZoneLayout {
         }
     }
 
-    /// The rows to lay out, in drawing order: the grid's own rows with
-    /// hidden zones dropped, then any visible zone the spec never named
-    /// as a row of its own at the bottom. Read by the layout *and* by
-    /// the resize, which must see the arrangement it is moving.
+    /// The rows to lay out, in drawing order: the grid's own rows with hidden zones dropped,
+    /// then any visible zone the spec never named as a row of its own at the bottom.
     fn visible_rows(&self) -> Vec<Vec<ZoneId>> {
         let mut rows: Vec<Vec<ZoneId>> = self
             .grid
@@ -437,26 +388,15 @@ impl ZoneLayout {
         row.first().map(|id| self.row_flex_of(*id)).unwrap_or(1.0)
     }
 
-    /// Arm the drag when `(row, col)` sits on a border that separates
-    /// two zones: the top edge of any row but the first, or the left
-    /// edge of any cell but the first. Returns whether it armed, so the
-    /// caller can let the click fall through to focusing the panel.
-    ///
-    /// The first row's top edge is the search bar -- nothing above it
-    /// to move -- and the last row's bottom edge is the terminal, so
-    /// every divider is somebody's top edge exactly once.
+    /// Arm the drag when `(row, col)` sits on a border that separates two zones: the top edge
+    /// of any row but the first, or the left edge of any cell but the first.
     pub fn resize_start(&mut self, row: u16, col: u16) -> bool {
         let kind = self.resize_target(row, col);
         self.resize = kind;
         kind.is_some()
     }
 
-    /// Follow the pointer while a drag is armed. The new weights come
-    /// from the geometry the pointer is over -- measured heights and
-    /// widths, with the dragged pair split at the pointer -- so the
-    /// boundary lands where the pointer is and nothing else moves (the
-    /// weights of the untouched rows are their own heights, and a
-    /// weight equal to its share of the total reproduces exactly).
+    /// Follow the pointer while a drag is armed.
     pub fn resize_drag(&mut self, row: u16, col: u16) {
         match self.resize {
             Some(ResizeKind::Row { above, below }) => self.drag_row(above, below, row),
@@ -598,16 +538,9 @@ impl ZoneLayout {
     }
 }
 
-/// Split `total` cells over `weights`: exact shares floored, then the
-/// leftover cells handed to the shares that lost the most to flooring
-/// (ties in list order -- which is what keeps an equal split identical
-/// to the old `total / n` plus "the first rows take the remainder").
-///
-/// The invariant is `sum(out) == total`: a share that overshoots puts a
-/// zone off the bottom of the terminal, one that undershoots leaves a
-/// dead band nobody can click. A `0` weight means "no opinion" (and a
-/// NaN means no arithmetic at all), so both fall back to an equal
-/// split rather than to nothing.
+/// Split `total` cells over `weights`: exact shares floored, then the leftover cells handed to
+/// the shares that lost the most to flooring (ties in list order -- which is what keeps an
+/// equal split identical to the old `total / n` plus "the first rows take the remainder").
 fn distribute(total: u16, weights: &[f32]) -> Vec<u16> {
     let count = weights.len();
     if count == 0 {
@@ -660,14 +593,6 @@ pub fn superscript_digit(n: u8) -> &'static str {
 }
 
 /// Which edge of a zone's frame carries a button.
-///
-/// btop draws every panel action on the border line itself instead of
-/// inside the box: `filter` right after the box title
-/// (`btop_draw.cpp:1902`), `pause`/`per-core`/`reverse`/`tree` right
-/// aligned on the top border (`:1915`-`:1940`), and
-/// `terminate`/`kill`/`signals`/`Nice`/`follow` running along the
-/// bottom one (`:1956`-`:1979`). The border doubles as the keybind
-/// legend, which is why the zone body itself can stay clean.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameSlot {
     /// Top border, left, immediately after the zone title.
@@ -680,34 +605,18 @@ pub enum FrameSlot {
 }
 
 /// One function drawn on a zone's frame.
-///
-/// The word is `title` colour and the character that triggers it is
-/// `hi_fg` + bold: the highlight marks the hotkey, not the alphabet --
-/// btop spells it "pa**u**se" (`:1923`) precisely because `p` was taken,
-/// and renders "info ⏎" (`:1956`) where the key is a glyph rather than a
-/// letter. Clicking the word fires the same action as pressing the key
-/// (btop registers both: the spans above and `Input::mouse_mappings`).
-///
-/// `label` is a `String` rather than `&'static str` because one button
-/// -- the Results category -- names the thing it switches, and that
-/// changes as the category does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameButton {
     pub slot: FrameSlot,
-    /// The character that triggers it. A glyph such as `⏎` stands in for
-    /// a non-text key, so this is always exactly one column wide.
+    /// The character that triggers it.
     pub key: char,
     /// The word shown on the frame, e.g. "filter".
     pub label: String,
 }
 
 impl FrameButton {
-    /// What actually gets drawn: `label` when it already contains the
-    /// hotkey, otherwise `label` followed by the key.
-    ///
-    /// The category button is the exception: it is mouse-only (its two
-    /// arrows are the targets), so no key is appended -- the `g` keybind
-    /// it shares with `group` is advertised on that button instead.
+    /// What actually gets drawn: `label` when it already contains the hotkey, otherwise `label`
+    /// followed by the key.
     pub fn text(&self) -> String {
         if self.is_category() {
             return self.label.clone();
@@ -739,16 +648,6 @@ impl FrameButton {
 }
 
 /// Frame buttons per zone.
-///
-/// The keys are the bindings in AGENTS.md; a word is picked so its first
-/// letter is free for the hotkey whenever possible (`f` filters and `F`
-/// goes fullscreen, so in both cases the label leads with the binding).
-/// Kept next to `zone_title` so the legend and the bindings it
-/// advertises are edited together.
-///
-/// The tables are `(slot, key, label)` tuples rather than `FrameButton`s
-/// so they stay `const` -- only the category button has a dynamic label,
-/// and it is built in `frame_layout`, not here.
 const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // Lowercase `f`: the filter is the Results panel's primary function,
     // so it gets the letter unshifted while fullscreen -- which used to
@@ -771,11 +670,6 @@ const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
 ];
 
 /// The buttons drawn on `id`'s frame; empty for zones with no actions.
-///
-/// The Trackers panel has none on purpose: its rows are the actions, and
-/// a frame legend would only repeat what `j`/`k` and Enter already say
-/// (btop's proc panel draws its actions on the border because the rows
-/// there are data, not controls).
 pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
     let table: &[(FrameSlot, char, &str)] = match id {
         ZoneId::Results => RESULTS_BUTTONS,
@@ -793,23 +687,9 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
         .collect()
 }
 
-/// The zone's own title, btop `createBox` style: superscript number in
-/// `secondary` + bold, label in `primary` (`btop_draw.cpp:290` for the
-/// numbering colour, `:332` for where it is drawn).
-///
-/// The label leads with its detail-view key (`L`/`T`/`R`), drawn the
-/// way a frame button draws its hotkey -- `on_hover` + bold -- so the
-/// letter that opens the full-frame takeover is visible where the zone
-/// is. Trackers has no detail view, so its label stays one plain span.
-///
-/// `focused` adds a `▸` marker, and it exists because colour is not
-/// always enough: `zone_border_color` gives the focused zone `primary`
-/// and the rest `div_line`, and in five bundled themes those two are the
-/// *same* colour -- so the frame said nothing about which zone the
-/// keyboard was driving, and pressing `1`-`4` appeared to do nothing. A
-/// theme chooses its colours; it cannot choose whether a glyph is there.
-/// The marker is that second channel, and it is why those five themes
-/// are usable at all.
+/// The zone's own title, btop `createBox` style: superscript number in `secondary` + bold,
+/// label in `primary` (`btop_draw.cpp:290` for the numbering colour, `:332` for where it is
+/// drawn).
 pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
     let word = Style::default().fg(theme.primary_color());
     let number = Style::default()
@@ -842,26 +722,14 @@ pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Columns [`zone_title`] occupies, so the frame row starts right after
-/// it: space + superscript + space + label + space.
-/// How many columns `zone_title` draws, which is what positions the
-/// frame legend beside it. The marker is two cells in both states (`▸ `
-/// or ` `) so the legend does not shift when focus moves.
+/// Columns [`zone_title`] occupies, so the frame row starts right after it: space + superscript
+/// + space + label + space.
 pub fn zone_title_width(id: ZoneId) -> u16 {
     (5 + id.label().chars().count()) as u16
 }
 
-/// Spans for one button: `primary` for the word, `on_hover` + bold for
-/// the hotkey -- the glyph that acts is coloured the way a hover marks
-/// the actionable part. `active` bolds the whole word, which is how
-/// btop marks a toggle that is currently on (`Fx::b` around `pause`
-/// when `pause_proc_list`, around `tree` when `proc_tree`,...).
-///
-/// The category button is the exception: it has no single hotkey, but
-/// two arrow cells that are mouse targets, so both arrows take the
-/// `on_hover` + bold treatment and the name between them stays
-/// `primary` -- btop draws its sortable column headers the same way
-/// (`◀ name ▶`).
+/// Spans for one button: `primary` for the word, `on_hover` + bold for the hotkey -- the glyph
+/// that acts is coloured the way a hover marks the actionable part.
 pub fn button_spans(
     theme: &Theme,
     button: &FrameButton,
@@ -944,10 +812,8 @@ pub fn zone_border_color(id: ZoneId, focused: ZoneId, theme: &Theme) -> Color {
 mod layout_math_tests {
     use super::*;
 
-    /// The rule the layout had before it had weights, stated as a test:
-    /// `total / n` with the first `total % n` cells taking one more.
-    /// Weights of `1.0` must keep producing exactly that, or the whole
-    /// wave-8 resize would have quietly re-drawn every default tiling.
+    /// The rule the layout had before it had weights, stated as a test: `total / n` with the
+    /// first `total % n` cells taking one more.
     #[test]
     fn equal_weights_split_exactly_like_integer_division() {
         for total in 0..60u16 {
@@ -964,10 +830,7 @@ mod layout_math_tests {
         }
     }
 
-    /// The one invariant a split must never break: what comes out adds
-    /// up to what went in. A share that overshoots pushes a zone off the
-    /// bottom of the terminal; one that undershoots leaves a dead band
-    /// nobody can click.
+    /// The one invariant a split must never break: what comes out adds up to what went in.
     #[test]
     fn the_shares_always_add_up_to_the_total() {
         let cases = [
@@ -1007,11 +870,9 @@ mod layout_math_tests {
         assert_eq!(distribute(12, &[1.0; 6]), vec![2; 6]);
     }
 
-    /// The float case worth pinning: `1.0f32 / 41.0` rounds *below*
-    /// `1/41`, so `41 * that` is `0.99999994` and every share floors to
-    /// zero -- 41 cells to hand out and none of them taken. Flooring
-    /// lost exactly `total - sum(floors)` cells, so the remainder step
-    /// has to give every one of them back, in list order.
+    /// The float case worth pinning: `1.0f32 / 41.0` rounds *below* `1/41`, so `41 * that` is
+    /// `0.99999994` and every share floors to zero -- 41 cells to hand out and none of them
+    /// taken.
     #[test]
     fn a_share_lost_to_float_rounding_comes_back_as_a_remainder() {
         assert_eq!(distribute(41, &[1.0; 41]), vec![1; 41]);

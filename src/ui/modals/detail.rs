@@ -1,11 +1,6 @@
-//! The torrent detail modal: everything the
-//! selected row knows about itself, plus the file list its source can
-//! read off the row's page. Extracted from `ui/app.rs` with the other
-//! modals; `render_modal` dispatches to `render_detail_modal`.
-//!
-//! The row's own facts are drawn before anything is fetched, so the
-//! modal is never an empty box: the file list arrives as
-//! `Event::DetailLoaded` and lands in the state the render pass reads.
+//! The torrent detail modal: everything the selected row knows about itself, plus the file list
+//! its source can read off the row's page. Extracted from `ui/app.rs` with the other modals;
+//! `render_modal` dispatches to `render_detail_modal`.
 
 use ratatui::layout::Rect;
 use ratatui::prelude::*;

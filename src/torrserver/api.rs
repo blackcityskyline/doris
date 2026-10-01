@@ -2,34 +2,10 @@ use anyhow::Result;
 use reqwest::Client;
 use serde::Deserialize;
 
-/// The default TorrServer URL. Every place that needs to know where
-/// TorrServer lives reads this constant, so a non-default port is a
-/// one-line change instead of a five-place hunt.
 pub const DEFAULT_URL: &str = "http://127.0.0.1:8090";
 
-/// One torrent's live status, as reported by TorrServer's `/torrents`
-/// endpoint (`{"action": "list"}` or `{"action": "get", "hash":...}`).
-///
-/// **Two shapes exist in the wild, and both are accepted here.**
-///
-/// - Modern upstream (`state.TorrentStatus`, live-verified against the
-///   running server on 25.09.2026) has json tags: `title`, `hash`,
-///   `torrent_size`, `loaded_size`, `stat_string`, ...
-/// - An older sample this file was originally written against uses the
-///   capitalized Go field names, i.e. no json tags at all: `Name`,
-///   `Hash`, `TorrentSize`, `TorrentStatusString`, ...
-///
-/// So each field keeps its capitalized name as the primary spelling and
-/// carries an `alias` for the tagged one. Getting this wrong is silent:
-/// `#[serde(default)]` means an unrecognized key yields a zero value
-/// rather than an error, so against a modern server every field parsed
-/// empty and the Torrent zone showed no hash, name, size, speed or
-/// progress -- which is exactly what it did until this was fixed
-/// (found while live-verifying the add-by-link path).
-///
-/// `title` is deliberately *not* aliased to upstream's `name`: that key
-/// only appears once metadata is loaded, and two input keys mapping to
-/// one field would make the whole struct fail on `duplicate field`.
+/// One torrent's live status, as reported by TorrServer's `/torrents` endpoint (`{"action":
+/// "list"}` or `{"action": "get", "hash":...}`).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct TorrentInfo {
     #[serde(rename = "Name", alias = "title", default)]
@@ -55,8 +31,7 @@ pub struct TorrentInfo {
 }
 
 impl TorrentInfo {
-    /// Fraction downloaded, 0.0-1.0. 0.0 if the total size isn't known yet
-    /// (torrent just added, metadata still loading).
+    /// Fraction downloaded, 0.0-1.0.
     pub fn progress(&self) -> f64 {
         if self.total_size <= 0 {
             0.0
@@ -108,13 +83,7 @@ impl TorrServer {
     }
 }
 
-/// Reject a non-2xx answer from `/torrents` with a sentence the log can
-/// show. reqwest hands back a plain `Response` for a 4xx/5xx as well, so
-/// a call that only checks "did the request go out" reports success for
-/// a rejection: `remove` did exactly that, and the UI logged "Torrent
-/// removed." while the torrent was still in the list (seen live on
-/// 25.09.2026; every direct `rem`/`drop` since has answered 200, so the
-/// refusal itself stayed uncaught -- only the missing check is proven).
+/// Reject a non-2xx answer from `/torrents` with a sentence the log can show.
 async fn ensure_ok(resp: reqwest::Response, what: &str) -> Result<()> {
     let status = resp.status();
     if status.is_success() {
@@ -155,23 +124,13 @@ impl TorrServer {
     }
 
     /// Stop an active torrent's download/seeding without forgetting it.
-    /// TorrServer has no dedicated "pause" action; `drop` is the standard
-    /// way clients implement pause (it stops network activity but keeps
-    /// the torrent's metadata, unlike `rem` which forgets it entirely).
     pub async fn pause(&self, hash: &str) -> Result<()> {
         let body = serde_json::json!({ "action": "drop", "hash": hash });
         let resp = self.torrents_action(body).await?;
         ensure_ok(resp, "pause the torrent").await
     }
 
-    /// Resume a paused (dropped) torrent. There's no dedicated "resume"
-    /// action either; re-`get`-ting a dropped torrent's hash makes
-    /// TorrServer reload and resume it.
-    ///
-    /// It asks for the status itself instead of going through
-    /// [`get_torrent`](Self::get_torrent), which turns a refusal into
-    /// `Ok(None)` -- indistinguishable here from "no such torrent", and
-    /// so a resume that was rejected would still read as done.
+    /// Resume a paused (dropped) torrent.
     pub async fn resume(&self, hash: &str) -> Result<()> {
         let body = serde_json::json!({ "action": "get", "hash": hash });
         let resp = self.torrents_action(body).await?;
@@ -185,23 +144,8 @@ impl TorrServer {
         ensure_ok(resp, "remove the torrent").await
     }
 
-    /// Hand TorrServer a magnet link instead of a `.torrent` file:
-    /// no download round trip, and the fetch starts from the DHT plus
-    /// whatever trackers the link carries. Returns the torrent's hash,
-    /// the same way [`upload_torrent`](Self::upload_torrent) does, so the
-    /// caller has one thing to hold on to either way.
-    ///
-    /// Verified before use: the request fields come
-    /// from TorrServer's own `torrReqJS` (`link` required for `add`,
-    /// plus `title`/`poster`/`category`/`data`/`save_to_db`), and a
-    /// live `POST {"action":"add"}` answers `400 {"error":"link is
-    /// empty"}` -- which is how we know `link` is the field it reads.
-    /// `save_to_db` is set to stay symmetric with the `.torrent` upload
-    /// path (`/torrent/upload?save=db`), so an added magnet survives a
-    /// TorrServer restart and can be resumed later.
-    ///
-    /// On success the handler answers `200` with the torrent's status
-    /// object, whose `hash` is read here.
+    /// Hand TorrServer a magnet link instead of a `.torrent` file: no download round trip, and
+    /// the fetch starts from the DHT plus whatever trackers the link carries.
     pub async fn add_by_link(&self, link: &str, title: &str) -> Result<String> {
         let body = serde_json::json!({
             "action": "add",

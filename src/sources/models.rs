@@ -4,16 +4,6 @@ use super::format::parse_size;
 use super::source::Group;
 
 /// A number that arrives as either a JSON number or a numeric string.
-///
-/// Live-checked twice, and both times the endpoints disagree with
-/// themselves: apibay answers `"size":"1992277407"` on `q.php` but
-/// `"size":3808117223` on its top-100 lists, and ez'tv types
-/// `size_bytes` as `string | number`. Reading only one spelling does
-/// not fail the parse -- it silently zeroes the other, so a size column
-/// goes blank exactly where the parser guessed wrong.
-///
-/// Untagged, so serde picks by JSON type; garbage in a string costs
-/// zero for that field rather than the whole page.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum FlexNum {
@@ -53,13 +43,8 @@ pub struct TorrentItem {
     pub date: String,
     #[serde(default)]
     pub page_url: String,
-    /// Which Source produced this result ("rutracker"/"rutor"/...),
-    /// matching `search::source::Source::id()`. Needed once search can
-    /// mix results from multiple sources at once ("all" tab) so
-    /// downloading/streaming a given row knows which client to use.
-    /// #[serde(default)] so Rutracker's existing JS-eval-produced JSON
-    /// (which doesn't set this field) still deserializes fine; app.rs
-    /// fills it in to "rutracker" right after deserializing there instead.
+    /// Which Source produced this result ("rutracker"/"rutor"/...), matching
+    /// `search::source::Source::id()`.
     #[serde(default)]
     pub source: String,
 
@@ -67,19 +52,15 @@ pub struct TorrentItem {
     // All `#[serde(default)]`: Rutracker's JS-eval-produced JSON only sets
     // the display fields, and any source that cannot provide one of these
     // leaves it at the zero value rather than failing to deserialize.
-    /// Content group this row belongs to, or `None` when the result
-    /// cannot be attributed to one (searched with "all categories", or a
-    /// source that doesn't filter server-side). Rows with `None` show up
-    /// only in the "all" view --, which is what starts filling it.
+    /// Content group this row belongs to, or `None` when the result cannot be attributed to one
+    /// (searched with "all categories", or a source that doesn't filter server-side).
     #[serde(default)]
     pub group: Option<Group>,
     /// Lower-case hex info hash, `""` when the source can't provide it
     /// (rutracker's rows carry no magnet link at all).
     #[serde(default)]
     pub info_hash: String,
-    /// The row's magnet URI as-is, when it has one. B7 normalizes/rebuilds
-    /// these; keeping the original preserves whatever trackers it came
-    /// with.
+    /// The row's magnet URI as-is, when it has one.
     #[serde(default)]
     pub magnet: Option<String>,
     /// Numeric twin of `size`, in bytes; `0` = unknown.
@@ -89,7 +70,6 @@ pub struct TorrentItem {
     #[serde(default)]
     pub seeds_n: u32,
     /// Peer/leech count (rutor parses one and used to throw it away).
-    /// `0` = unknown.
     #[serde(default)]
     pub leechers: u32,
     /// Unix seconds when the row was added; `0` = unknown.
@@ -98,10 +78,6 @@ pub struct TorrentItem {
 }
 
 /// One file inside a torrent, as the detail modal lists it.
-///
-/// Deliberately two fields: a source that can list files has a name and
-/// a size for each, and one that cannot say more still lets the modal
-/// show the row's own facts instead of failing.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
     pub name: String,
@@ -109,10 +85,7 @@ pub struct FileEntry {
 }
 
 impl TorrentItem {
-    /// Derive the numeric twins from the display strings a source
-    /// produced. Sources that read a number directly (a `data-ts`
-    /// timestamp, a magnet's `btih`) set those fields themselves; this
-    /// only handles the two values every source renders as text.
+    /// Derive the numeric twins from the display strings a source produced.
     pub fn fill_from_display(&mut self) {
         self.size_bytes = parse_size(&self.size);
         self.seeds_n = self.seeds.trim().parse::<u32>().unwrap_or(0);

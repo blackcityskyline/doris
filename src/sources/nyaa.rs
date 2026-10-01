@@ -1,24 +1,9 @@
-//! Nyaa's RSS feed, parsed from the markup as it actually came back on
-//! 25.09.2026 -- one live response of 75 items, captured before
-//! `ddos-guard` started answering 504 to this network on every path.
-//!
-//! - **One `<item>` per release, everything we show inside it.** All of
-//!   title, hash, size, seeders, leechers, category id, pubDate and both
-//!   links were present in 75 of 75, so all are filled in -- links
-//!   included, because a link we *saw* is markup, and whether it answers
-//!   is the same question as whether search itself answers.
-//! - **No magnets**: 0 of 75 carry one, so a row's magnet is built from
-//!   its hash with the shared trackers.
-//! - **Every category is requested** (`c=0_0`), so a row's group comes
-//!   from its own `nyaa:categoryId` rather than from the query: `1_*`
-//!   *is* anime on the site, and whatever else `c=0_0` drags in (Audio)
-//!   has no group to claim and stays `None`.
-//!
-//! What could **not** be verified while the host was down, and is
-//! consequently not claimed anywhere in this file: pagination (`&p=2`),
-//! an empty-query feed, and the reachability of the `.torrent` and view
-//! links. Hence `has_more: false` -- one feed page with an unknown
-//! cursor, not "there is no second page" -- and `supports_browse` false.
+//! Nyaa's RSS feed, parsed from the markup as it actually came back on 25.09.2026 -- one live
+//! response of 75 items, captured before `ddos-guard` started answering 504 to this network on
+//! every path. - **One `<item>` per release, everything we show inside it.** All of title,
+//! hash, size, seeders, leechers, category id, pubDate and both links were present in 75 of 75,
+//! so all are filled in -- links included, because a link we *saw* is markup, and whether it
+//! answers is the same question as whether search itself answers.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -32,30 +17,17 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 /// The RSS endpoint: `page=rss` selects the feed, `c`/`f` scope it.
 pub const RSS: &str = "https://nyaa.si/?page=rss";
 
-/// `c=0_0` = every category (wave-2 decision, matching torio). The
-/// alternative, `c=1_0` for anime-only, would also drop nyaa's own
-/// soundtrack and audiobook uploads of anime -- something
-/// filtering should decide per search, not something the source should
-/// bake in.
+/// `c=0_0` = every category (wave-2 decision, matching torio).
 const ALL_CATEGORIES: &str = "0_0";
 
-/// One feed page: 75 items on the live query, and no cursor we have
-/// seen move (see the module doc). The UI must not offer "load more"
-/// into a page whose existence we never confirmed.
+/// One feed page: 75 items on the live query, and no cursor we have seen move (see the module
+/// doc).
 const PAGE_ITEMS: usize = 75;
 
-/// How hard nyaa tries -- one attempt, deliberately not torio's
-/// default of five (wave-2 decision, taken after measuring: a 504 from
-/// `ddos-guard` costs ~16 s *per attempt* here, and the orchestrator
-/// gives a source 25 s total, so five retries could never report their
-/// own outcome -- the user would just read `timed out after 25s` with
-/// the cause hidden behind it). One attempt spends ~16 s and names the
-/// status, which is the difference between "nyaa is blocked" and "the
-/// app is broken".
-///
-/// The download path uses the same budget: nothing downstream waits
-/// 96 s for it either, and a user who wants a second try can press the
-/// key again.
+/// How hard nyaa tries -- one attempt, deliberately not torio's default of five (wave-2
+/// decision, taken after measuring: a 504 from `ddos-guard` costs ~16 s *per attempt* here, and
+/// the orchestrator gives a source 25 s total, so five retries could never report their own
+/// outcome -- the user would just read `timed out after 25s` with the cause hidden behind it).
 pub fn fetch_options() -> FetchOptions {
     FetchOptions {
         retries: 0,
@@ -63,8 +35,6 @@ pub fn fetch_options() -> FetchOptions {
     }
 }
 
-/// The feed URL for `query`. Public so the fixture tests and the live
-/// test build exactly what `search` sends.
 pub fn feed_url(query: &str) -> String {
     format!(
         "{}&q={}&c={}&f=0",
@@ -97,11 +67,7 @@ fn tag(item: &str, name: &str) -> Option<String> {
     Some(inner.trim().to_string())
 }
 
-/// `nyaa:categoryId` -> the group the row may claim. `1_*` is the
-/// site's own Anime branch (1_2 English-translated, 1_3 Non-English,
-/// 1_4 Raw were all in the live feed); `2_*` and the rest are not
-/// Anime, and the `Group` enum has no honest name for them, so they
-/// stay `None` -- visible only under the "all" tab (B6 owns the rest).
+/// `nyaa:categoryId` -> the group the row may claim.
 fn group_from_category(category_id: &str) -> Option<Group> {
     if category_id.starts_with("1_") {
         Some(Group::Anime)
@@ -111,12 +77,6 @@ fn group_from_category(category_id: &str) -> Option<Group> {
 }
 
 /// `<pubDate>` -> unix seconds, `0` when absent or unparseable.
-///
-/// nyaa writes RFC-2822 with a `-0000` offset ("Sat, 12 Sep 2026
-/// 15:45:00 -0000", the live sample), which means "offset unknown"
-/// rather than a real zone; `chrono` reads it directly, and the
-/// `+0000` retry below exists only in case a stricter parser ever
-/// disagrees -- it says the same thing about the instant.
 fn parse_pubdate(raw: &str) -> i64 {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -133,9 +93,8 @@ fn parse_pubdate(raw: &str) -> i64 {
     0
 }
 
-/// One `<item>` -> its row, or `None` when the item cannot become one
-/// (no hash, a hash that is not a hash, no title). A single malformed
-/// item costs one row, never the page.
+/// One `<item>` -> its row, or `None` when the item cannot become one (no hash, a hash that is
+/// not a hash, no title).
 fn to_row(item: &str) -> Option<TorrentItem> {
     let title = unescape_entities(&tag(item, "title")?);
     if title.is_empty() {
@@ -176,8 +135,7 @@ fn to_row(item: &str) -> Option<TorrentItem> {
     })
 }
 
-/// The feed -> rows. Public so the fixture tests exercise the real
-/// parser with no network, as with `yts::parse_page` / `tpb::parse_rows`.
+/// The feed -> rows.
 pub fn parse_items(body: &str) -> Result<Vec<TorrentItem>> {
     // A `ddos-guard` challenge or an error page is not "no results":
     // saying so out loud is the difference between "the tracker is
@@ -189,10 +147,7 @@ pub fn parse_items(body: &str) -> Result<Vec<TorrentItem>> {
     Ok(rows)
 }
 
-/// The rows -> the page the UI sees. Split out so the two claims this
-/// source makes about paging are testable without the network: one
-/// feed page, no cursor (`SearchPage::has_more` lives here, not inside
-/// `search`, where only a live run could reach it).
+/// The rows -> the page the UI sees.
 pub fn to_page(items: Vec<TorrentItem>) -> SearchPage {
     SearchPage {
         items,

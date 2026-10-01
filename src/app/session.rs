@@ -52,10 +52,8 @@ impl App {
         Ok(browser)
     }
 
-    /// Build (once) and reuse the live `Source` for `id` -- the one
-    /// path from `app.rs` onto a concrete source type, via the registry
-    /// and `source::build_source`. Browser-backed sources get their
-    /// session launched here with the registry's `home_url`.
+    /// Build (once) and reuse the live `Source` for `id` -- the one path from `app.rs` onto a
+    /// concrete source type, via the registry and `source::build_source`.
     pub(super) async fn get_source(&mut self, id: &str) -> Result<Arc<dyn Source>> {
         if let Some(existing) = self.sources.get(id) {
             return Ok(Arc::clone(existing));
@@ -87,11 +85,7 @@ impl App {
         }
     }
 
-    /// Log in with the credentials the modal collected, for the resource
-    /// its tab had selected. The login itself still targets rutracker --
-    /// it is the only source with a session to establish (rutor's
-    /// `ensure_logged_in` is a no-op) -- so the target id is fixed
-    /// rather than read off the tab.
+    /// Log in with the credentials the modal collected, for the resource its tab had selected.
     pub(super) async fn do_login(&mut self, resource: &str, username: &str, password: &str) {
         self.ui.add_log(&format!("Logging in as '{}'...", username));
 

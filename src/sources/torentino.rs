@@ -1,24 +1,5 @@
-//! Torentino -- a DLE-based games tracker -- over its HTML //! B8 wave 3), probed live on 26.09.2026.
-//!
-//! What the live host established, and what the code therefore does:
-//!
-//! - **Search is a POST, not a GET**: `/load` with
-//!   `do=search&subaction=search&a=2`, answered with the results as HTML
-//!   rows under `<div id="entryID<N>">`. A plain browser-like client
-//!   gets a 200 with the results -- no challenge, no login.
-//! - **The `.torrent` link lives on the item page, not in the search
-//!   row** -- the row's own "Скачать торрент" button links the item page
-//!   itself. So `download_torrent` fetches the item page and follows the
-//!   `/load/0-0-0-<id>-<n>` link it finds there (`301 -> /_ld/.../*.torrent`,
-//!   a real bencoded file). That is why no bencode crate is needed: the
-//!   bytes travel the existing `.torrent -> upload_torrent` path (B7), and
-//!   no magnet is ever built because the site serves none. Rows carry no
-//!   `info_hash`, which `dedupe_by_hash` explicitly lets through.
-//! - **The pagination block never offered a next page** in four probes
-//!   ("matrix" 1 row, "gta" 34, "игра" 5, "скачать" 40), so `has_more`
-//!   reads the block and defaults to false -- the honest answer when the
-//!   site does not say there is a next page.
-//! - **Rows claim Games**: the site is a games tracker, top to bottom.
+//! Torentino -- a DLE-based games tracker -- over its HTML //! B8 wave 3), probed live on
+//! 26.09.2026.
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -32,13 +13,6 @@ use super::net::{browser_client, fetch_resilient, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// Every CSS selector this file needs, compiled once.
-///
-/// The selectors are literals in this file, so a failure to compile is a
-/// typo here and not a runtime condition -- but `parse_results`
-/// answering "no results" would hide the typo behind an empty page. One
-/// `OnceLock` for the set makes the failure a `None` every caller has to
-/// answer for, and keeps the parse off the hot path. (Same shape
-/// `format::size_regex` already uses.)
 struct Selectors {
     entry: Selector,
     title: Selector,
@@ -91,9 +65,6 @@ impl TorentinoSearcher {
         }
     }
 
-    /// One page of results for `query`. An empty query is refused with
-    /// the reason ( browse needs a feed this site has never shown):
-    /// "no results" and "this search needs terms" are different facts.
     pub async fn search_page(&self, query: &str, _offset: usize) -> Result<SearchPage> {
         if query.trim().is_empty() {
             bail!("Torentino's search needs terms -- there is no browse feed to fall back to");
@@ -128,10 +99,7 @@ impl TorentinoSearcher {
         })
     }
 
-    /// The `.torrent` bytes for a row. The row's `download_url` is the
-    /// item page, and the file link lives on it: fetch the page, take the
-    /// `/load/0-0-0-...` link, follow it (301 -> the file). No bencode
-    /// parsing -- the bytes are handed to TorrServer as-is.
+    /// The `.torrent` bytes for a row.
     pub async fn download_torrent(&self, url: &str) -> Result<Vec<u8>> {
         let item_url = resolve_url(url);
         let item = fetch_resilient(
@@ -182,11 +150,8 @@ impl TorentinoSearcher {
     }
 }
 
-/// The results rows: every `<div id="entryID<N>">` on the page, read
-/// for the title link, the date and the size cell. The download link is
-/// deliberately not read here -- it lives on the item page, one fetch
-/// per row, and a search that fetched it for every row would cost more
-/// than the search itself.
+/// The results rows: every `<div id="entryID<N>">` on the page, read for the title link, the
+/// date and the size cell.
 pub fn parse_results(html: &str) -> Vec<TorrentItem> {
     let document = Html::parse_document(html);
     let Some(sel) = selectors() else {
@@ -249,9 +214,7 @@ pub fn parse_date(text: &str) -> Option<String> {
     Some(format!("{}-{}-{}", &caps[3], &caps[2], &caps[1]))
 }
 
-/// Whether the pagination block offers a next page. The current page is
-/// a `<b>`; any other page is an `<a>` -- so a block with no links is a
-/// single-page answer, which is what every live probe showed.
+/// Whether the pagination block offers a next page.
 pub fn has_next_page(html: &str) -> bool {
     let document = Html::parse_document(html);
     let Some(sel) = selectors() else {

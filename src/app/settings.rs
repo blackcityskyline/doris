@@ -7,9 +7,7 @@
 use super::*;
 
 impl App {
-    /// Move `config.preset_index` one step and apply the spec it lands
-    /// on. Both `Shift+P` and the Options "Presets" row come through
-    /// here, so there is one place that decides what a preset cycle is.
+    /// Move `config.preset_index` one step and apply the spec it lands on.
     pub(super) fn cycle_layout_preset(&mut self, direction: i8) {
         if self.config.disable_presets || self.config.presets.is_empty() {
             return;
@@ -30,26 +28,14 @@ impl App {
     }
 
     /// Write the config back now rather than at exit.
-    ///
-    /// Every in-app edit of `self.config` goes through here: the
-    /// Settings modal always did this, and the Trackers checkboxes only
-    /// flipped a field in memory -- with "Save config on exit" defaulting
-    /// to off, a checked source simply evaporated when the app closed.
-    /// The path is `--config`, the one `config::load` read from, so a
-    /// run pointed at another file cannot be overwritten by (or overwrite
-    /// the contents of) the default one. A failure is worth saying out
-    /// loud in the Log zone: silently losing a setting is what this
-    /// function exists to stop.
     pub(super) fn persist_config(&mut self) {
         if let Err(e) = crate::config::save(&self.config, self.args.config.as_deref()) {
             self.ui.add_log(&format!("Failed to save config: {e}"));
         }
     }
 
-    /// A line the user must not miss: the Log zone, the full log `L`
-    /// opens, and the file on disk. TorrServer's failures used to reach
-    /// only the last of the three, so the panel said nothing while the
-    /// app already knew the answer.
+    /// A line the user must not miss: the Log zone, the full log `L` opens, and the file on
+    /// disk.
     pub(super) fn report(&mut self, module: &str, msg: &str) {
         self.ui.add_log(msg);
         self.ui.add_detail(msg);
@@ -57,14 +43,6 @@ impl App {
     }
 
     /// Turning TorrServer on says out loud whether it is actually up.
-    ///
-    /// The switch used to invert a bool and stop there: with the systemd
-    /// unit stopped nothing happened until a stream was started, and the
-    /// reason lived in the file log. So the moment it is enabled the
-    /// server is pinged; if it does not answer, the `systemctl` that
-    /// would start it gets one unprivileged chance -- never with a
-    /// password, which cannot be answered from here and would only hang
-    /// or fail silently -- and whatever it said is reported verbatim.
     pub(super) async fn check_torrserver_on_enable(&mut self) {
         let url = self.torrserver.base_url().to_string();
         let started = if self.torrserver.is_reachable().await {

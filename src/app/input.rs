@@ -7,9 +7,7 @@
 
 use super::*;
 
-/// Lines one notch of the mouse wheel moves. A wheel event carries no
-/// count, so this is a choice, and it matches what the wheel does in
-/// every other list on a desktop.
+/// Lines one notch of the mouse wheel moves.
 pub(super) const MOUSE_SCROLL_STEP: i64 = 3;
 
 impl App {
@@ -75,7 +73,7 @@ impl App {
                 } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
                     // The input box is the only thing left to hit on
                     // those rows: the header hints ("s: search | S:
-                    // settings |...") went with П.3, and clicking the
+                    // settings |...") are gone, and clicking the
                     // field does what `s`/`i` do.
                     self.ui.enter_input_mode();
                 } else if self.ui.modal == Modal::None {
@@ -128,10 +126,8 @@ impl App {
         }
     }
 
-    /// Move the selection down in the focused zone, loading the next page
-    /// of results if the Results zone just scrolled near its end. Shared
-    /// by the Down arrow (always active) and the vim-style 'j' (only when
-    /// `config.vim_keys` is on) -- see `handle_key`.
+    /// Move the selection down in the focused zone, loading the next page of results if the
+    /// Results zone just scrolled near its end.
     pub(super) async fn handle_nav_down(&mut self) {
         match self.ui.zones.focused {
             ZoneId::Results => {
@@ -164,10 +160,6 @@ impl App {
     }
 
     /// `PageUp`/`PageDown` over the focused zone.
-    ///
-    /// The Log scrolls by its page step and Results by half a terminal;
-    /// Torrent is a status readout and Trackers is ten rows, so neither
-    /// has a page to turn.
     async fn page_scrolled(&mut self, down: bool) {
         let step = crate::ui::view::LOG_PAGE_STEP as isize;
         match self.ui.zones.focused {
@@ -184,15 +176,6 @@ impl App {
     }
 
     /// One frame, bracketed by synchronized output when the option is on.
-    ///
-    /// It brackets the frame and nothing else: left on across the wait
-    /// between frames, the terminal would be buffering with nothing to
-    /// present and the app would look frozen.
-    ///
-    /// `?2026h` with no `?2026l` has the same effect, so the closing
-    /// sequence is written whatever `draw` returned. The two
-    /// `backend_mut()` borrows are separate on purpose -- that is what
-    /// makes the borrow checker prove the closing write is not skipped.
     pub(super) fn draw_frame(&mut self, terminal: &mut crate::tui::Terminal) -> Result<()> {
         if self.config.terminal_sync {
             crate::tui::begin_sync(terminal);
@@ -215,10 +198,8 @@ impl App {
         Ok(())
     }
 
-    /// How many rows one `PageUp`/`PageDown` covers in the Results
-    /// panel: half the terminal, less the frame and the row the cursor
-    /// has to stay visible in. A page the size of the whole window would
-    /// put the selection off the bottom on the way back.
+    /// How many rows one `PageUp`/`PageDown` covers in the Results panel: half the terminal,
+    /// less the frame and the row the cursor has to stay visible in.
     pub(super) fn result_page(&self) -> isize {
         // Two rows for the frame, one so the cursor row is still on
         // screen. `saturating_sub` rather than a clamp: on a terminal
@@ -228,15 +209,6 @@ impl App {
     }
 
     /// Re-run the query on screen, because the selection above it moved.
-    ///
-    /// Reached from Enter and from a click on the table, which are the
-    /// same question asked twice -- the block used to be written out
-    /// twice, and a fix that reached one of them would have been invisible
-    /// in the other.
-    ///
-    /// Both flags clear here as well as in `start_search`, for the only
-    /// path where no search follows: nothing has ever been searched, so
-    /// there is no query to restart and no row to play either.
     pub(super) async fn restart_search(&mut self) {
         self.ui.source_changed = false;
         self.ui.group_changed = false;
@@ -246,14 +218,6 @@ impl App {
     }
 
     /// One keypress inside the Options modal.
-    ///
-    /// Out of `handle_key` because that function is otherwise the whole
-    /// keyboard, and a modal's routing is a question with its own
-    /// answer: which row does this key land on, what does that row do,
-    /// and does anything else own the keyboard instead. The key never
-    /// comes back out to the main view -- the modal owns the keyboard
-    /// while it is up -- so there is nothing to unwind here, which is
-    /// why this returns rather than `Result`.
     pub(super) async fn handle_settings_key(&mut self, key: KeyEvent) {
         if let Some(action) = self.ui.settings_key(key) {
             // Captured before the loop flips it: turning TorrServer
@@ -395,12 +359,8 @@ impl App {
         }
     }
 
-    /// How far a Log-view key should move the scroll: 1 for a line,
-    /// `LOG_PAGE_STEP` for a page, down positive, `None` for a key that
-    /// is not a scroll at all.
-    ///
-    /// The vim letters are gated on the setting here rather than in the
-    /// match, so `j` scrolls exactly when `Down` does.
+    /// How far a Log-view key should move the scroll: 1 for a line, `LOG_PAGE_STEP` for a page,
+    /// down positive, `None` for a key that is not a scroll at all.
     fn log_scroll_step(&self, code: KeyCode) -> Option<i64> {
         let step = match code {
             KeyCode::Down => 1,
@@ -414,17 +374,8 @@ impl App {
         Some(step)
     }
 
-    /// Every mode that takes the keyboard away from the plain view, in
-    /// the order they are asked about. `Some` means it took the key and
-    /// the plain match must not run.
-    ///
-    /// The order is the point, not the grouping: the detail view is
-    /// checked before any modal, a modal before the filter box, and the
-    /// search box last -- the search box has no zone of its own, so
-    /// "the Trackers panel is focused" and "a query is being typed"
-    /// are not mutually exclusive, and one check here replaces an
-    /// `!input_mode` guard every arm of the plain match would have to
-    /// remember (several were found without one).
+    /// Every mode that takes the keyboard away from the plain view, in the order they are asked
+    /// about.
     async fn mode_owns_the_key(&mut self, key: KeyEvent) -> Result<Option<()>> {
         if self.ui.show_menu {
             self.handle_menu_key(key).await?;
@@ -738,11 +689,8 @@ impl App {
         self.handle_plain_key(key).await
     }
 
-    /// What Enter means on the main view (btop's `enter`/`play`): submit
-    /// the typed query, re-search a selection that just changed, or play
-    /// the highlighted row. Also the key input mode passes it to --
-    /// [`handle_input_key`] calls it with `input_mode` still on, where
-    /// `enter_action` can only answer SubmitQuery or DoNothing.
+    /// What Enter means on the main view (btop's `enter`/`play`): submit the typed query,
+    /// re-search a selection that just changed, or play the highlighted row.
     pub(super) async fn handle_enter(&mut self) {
         let action = enter_action(
             self.ui.input_mode,
@@ -765,14 +713,9 @@ impl App {
         }
     }
 
-    /// Every key typed into the search box, and nothing else: the box
-    /// has no zone of its own, so `input_mode` can overlap any focused
-    /// zone, and this is the single place that overlap is decided --
-    /// `handle_key` hands the key over before its own match runs.
-    ///
-    /// Esc and Enter go through the same paths they have on any other
-    /// view (leave input mode / the Enter decision tree); quitting stays
-    /// here so Ctrl+C works while a query is being typed.
+    /// Every key typed into the search box, and nothing else: the box has no zone of its own,
+    /// so `input_mode` can overlap any focused zone, and this is the single place that overlap
+    /// is decided -- `handle_key` hands the key over before its own match runs.
     pub(super) async fn handle_input_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Esc => self.ui.exit_input_mode(),
