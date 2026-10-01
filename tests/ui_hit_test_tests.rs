@@ -1,9 +1,9 @@
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
-use doris::ui::app::{App as UiApp, UiAction};
+use doris::ui::layout::ZoneId;
 use doris::ui::modals::help::HELP_TEXT;
-use doris::ui::zones::ZoneId;
+use doris::ui::view::{App as UiApp, UiAction};
 use ratatui::layout::Rect;
 
 /// A config as a first run gets it: every implemented source switched on.
@@ -177,8 +177,8 @@ fn test_click_at_respects_filtered_indices_not_raw_results_order() {
 /// the cursor and the hit-test walk the same one.
 #[test]
 fn test_the_panel_lists_all_then_the_registry_in_order() {
-    let rows = doris::ui::app::source_rows();
-    assert_eq!(rows.first(), Some(&doris::ui::app::SourceRow::All));
+    let rows = doris::ui::view::source_rows();
+    assert_eq!(rows.first(), Some(&doris::ui::view::SourceRow::All));
     let ids: Vec<&str> = rows[1..].iter().map(|r| r.id()).collect();
     let registry: Vec<&str> = doris::sources::source::KNOWN_SOURCES
         .iter()
@@ -193,7 +193,7 @@ fn test_the_panel_lists_all_then_the_registry_in_order() {
 fn test_all_is_checked_when_every_implemented_source_is() {
     let config = test_config();
     assert!(
-        doris::ui::app::SourceRow::All.is_checked(&config),
+        doris::ui::view::SourceRow::All.is_checked(&config),
         "a fresh config enables every implemented source"
     );
 
@@ -201,7 +201,7 @@ fn test_all_is_checked_when_every_implemented_source_is() {
         enabled_sources: vec!["rutracker".to_string()],
         ..Default::default()
     };
-    assert!(!doris::ui::app::SourceRow::All.is_checked(&partial));
+    assert!(!doris::ui::view::SourceRow::All.is_checked(&partial));
 }
 
 /// A source that is not implemented offers nothing: its row says so
@@ -211,7 +211,7 @@ fn test_all_is_checked_when_every_implemented_source_is() {
 /// into existence, and the row is where the user would find out.
 #[test]
 fn test_an_unimplemented_source_cannot_be_switched_on() {
-    let row = doris::ui::app::SourceRow::One("never-heard-of-it");
+    let row = doris::ui::view::SourceRow::One("never-heard-of-it");
     assert!(!row.is_implemented(), "an unknown id is not a source");
 
     let mut app = make_app();
@@ -220,7 +220,7 @@ fn test_an_unimplemented_source_cannot_be_switched_on() {
 
     // A cursor past the end of the panel is a no-op too: the row list
     // and the cursor are checked against each other, not trusted.
-    app.sources_cursor = doris::ui::app::source_rows().len();
+    app.sources_cursor = doris::ui::view::source_rows().len();
     app.toggle_source(&mut config);
 
     assert_eq!(config.enabled_sources, before);
@@ -319,7 +319,7 @@ fn test_keeping_the_category_leaves_the_selection_alone() {
 #[test]
 fn test_the_cursor_wraps_in_both_directions() {
     let mut app = make_app();
-    let len = doris::ui::app::source_rows().len() as i64;
+    let len = doris::ui::view::source_rows().len() as i64;
 
     app.navigate_trackers(-1);
     assert_eq!(
@@ -347,7 +347,7 @@ fn test_clicking_a_panel_row_switches_it() {
     // checkbox is not a frame action, but it has to report itself so the
     // orchestrator can persist the change.
     let action = app.click_at(area.y + 1, area.x + 1, &mut config);
-    assert_eq!(action, Some(doris::ui::app::UiAction::TrackersChanged));
+    assert_eq!(action, Some(doris::ui::view::UiAction::TrackersChanged));
     assert!(
         config.enabled_sources.is_empty(),
         "the default view has everything on, so the click cleared it"
@@ -552,7 +552,7 @@ fn test_clicking_the_filter_button_enters_filter_mode() {
 /// decides, so its rows come from the registry and nothing else.
 #[test]
 fn test_the_panel_offers_exactly_the_registry_in_order() {
-    let rows = doris::ui::app::source_rows();
+    let rows = doris::ui::view::source_rows();
     assert_eq!(rows.len(), doris::sources::source::KNOWN_SOURCES.len() + 1);
     assert_eq!(rows[0].id(), "all");
     for (row, info) in rows[1..]
@@ -568,7 +568,7 @@ fn test_the_panel_offers_exactly_the_registry_in_order() {
 /// the dispatch never asks it -- the same invariant the old tab bar had.
 #[test]
 fn test_unimplemented_sources_are_listed_but_never_asked() {
-    let rows = doris::ui::app::source_rows();
+    let rows = doris::ui::view::source_rows();
     for info in doris::sources::source::KNOWN_SOURCES
         .iter()
         .filter(|s| !s.implemented)
@@ -611,8 +611,8 @@ fn test_switching_every_source_off_leaves_the_panel_empty() {
         ..Default::default()
     };
 
-    assert!(!doris::ui::app::SourceRow::All.is_checked(&config));
-    assert_eq!(doris::ui::app::sources_summary(&config), "none");
+    assert!(!doris::ui::view::SourceRow::All.is_checked(&config));
+    assert_eq!(doris::ui::view::sources_summary(&config), "none");
     assert!(
         doris::sources::orchestrator::selected_sources(&config.enabled_sources, None, false)
             .is_empty(),

@@ -9,7 +9,7 @@
 //! it, since a prompt nobody sees is not a confirmation.
 
 use doris::config::Config;
-use doris::ui::app::App;
+use doris::ui::view::App;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
@@ -69,12 +69,13 @@ fn the_panel_shows_the_question_while_armed() {
     // the panel's four fact lines -- so the others are folded away to
     // give it room, which is also how it looks when a user has the zone
     // full-height.
-    app.zones.focus_or_toggle(doris::ui::zones::ZoneId::Torrent);
-    app.zones.focus_or_toggle(doris::ui::zones::ZoneId::Log);
     app.zones
-        .focus_or_toggle(doris::ui::zones::ZoneId::Trackers);
-    app.zones.focused = doris::ui::zones::ZoneId::Torrent;
-    assert!(app.zones.is_visible(doris::ui::zones::ZoneId::Torrent));
+        .focus_or_toggle(doris::ui::layout::ZoneId::Torrent);
+    app.zones.focus_or_toggle(doris::ui::layout::ZoneId::Log);
+    app.zones
+        .focus_or_toggle(doris::ui::layout::ZoneId::Trackers);
+    app.zones.focused = doris::ui::layout::ZoneId::Torrent;
+    assert!(app.zones.is_visible(doris::ui::layout::ZoneId::Torrent));
 
     let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
 

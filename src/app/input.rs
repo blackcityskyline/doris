@@ -169,7 +169,7 @@ impl App {
     /// Torrent is a status readout and Trackers is ten rows, so neither
     /// has a page to turn.
     async fn page_scrolled(&mut self, down: bool) {
-        let step = crate::ui::app::LOG_PAGE_STEP as isize;
+        let step = crate::ui::view::LOG_PAGE_STEP as isize;
         match self.ui.zones.focused {
             ZoneId::Log => self.ui.scroll_logs(if down { step } else { -step }),
             ZoneId::Results => {
@@ -406,8 +406,8 @@ impl App {
         let step = match code {
             KeyCode::Down => 1,
             KeyCode::Up => -1,
-            KeyCode::PageDown => crate::ui::app::LOG_PAGE_STEP as i64,
-            KeyCode::PageUp => -(crate::ui::app::LOG_PAGE_STEP as i64),
+            KeyCode::PageDown => crate::ui::view::LOG_PAGE_STEP as i64,
+            KeyCode::PageUp => -(crate::ui::view::LOG_PAGE_STEP as i64),
             KeyCode::Char('j') if self.config.vim_keys => 1,
             KeyCode::Char('k') if self.config.vim_keys => -1,
             _ => return None,

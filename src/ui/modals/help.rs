@@ -29,7 +29,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::config::Config;
-use crate::ui::app::{centered_rect, App, Modal};
+use crate::ui::view::{centered_rect, App, Modal};
 
 /// Columns the key column is padded to -- btop's `cjust(..., 20)`.
 const KEY_WIDTH: usize = 20;

@@ -6,8 +6,8 @@
 
 use doris::config::Config;
 use doris::sources::models::{FileEntry, TorrentItem};
-use doris::ui::app::{App as UiApp, Modal, TorrentDetailState};
 use doris::ui::theme::Theme;
+use doris::ui::view::{App as UiApp, Modal, TorrentDetailState};
 use ratatui::backend::TestBackend;
 use ratatui::style::Color;
 use ratatui::Terminal;

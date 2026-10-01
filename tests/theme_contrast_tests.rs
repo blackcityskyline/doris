@@ -124,7 +124,7 @@ fn the_cursor_row_is_legible_on_its_own_highlight() {
 /// by a column on every keypress.
 #[test]
 fn focus_is_not_carried_by_colour_alone() {
-    use doris::ui::zones::{zone_title, ZoneId};
+    use doris::ui::layout::{zone_title, ZoneId};
 
     let theme = Theme::default();
     let text = |line: ratatui::text::Line| -> String {

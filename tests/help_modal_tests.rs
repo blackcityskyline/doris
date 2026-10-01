@@ -3,8 +3,8 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use doris::config::Config;
-use doris::ui::app::App as UiApp;
 use doris::ui::modals::help::HELP_TEXT;
+use doris::ui::view::App as UiApp;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
@@ -132,7 +132,7 @@ fn test_help_opens_at_the_top() {
     let mut app = make_app();
     app.open_help_modal();
     let state = match &app.modal {
-        doris::ui::app::Modal::Help(s) => s.clone(),
+        doris::ui::view::Modal::Help(s) => s.clone(),
         other => panic!(
             "expected the help modal, got {:?}",
             std::mem::discriminant(other)
@@ -157,13 +157,13 @@ fn test_help_closes_on_the_close_keys_only() {
         let mut app = make_app();
         app.open_help_modal();
         app.help_key(key(code));
-        assert_eq!(app.modal, doris::ui::app::Modal::None, "{:?} closes", code);
+        assert_eq!(app.modal, doris::ui::view::Modal::None, "{:?} closes", code);
     }
 
     let mut app = make_app();
     app.open_help_modal();
     app.help_key(key(KeyCode::Char('x')));
-    assert_ne!(app.modal, doris::ui::app::Modal::None, "'x' does nothing");
+    assert_ne!(app.modal, doris::ui::view::Modal::None, "'x' does nothing");
 }
 
 /// The page count only exists once the renderer has measured the box, so
@@ -176,7 +176,7 @@ fn test_help_pages_forward_and_wraps() {
     let rows = render(&mut app, 80, 24);
 
     let page_indicator = |app: &UiApp| match &app.modal {
-        doris::ui::app::Modal::Help(s) => s.page,
+        doris::ui::view::Modal::Help(s) => s.page,
         _ => panic!("help modal is gone"),
     };
     assert!(
@@ -222,7 +222,7 @@ fn test_help_does_not_page_when_it_all_fits() {
 
     app.help_key(key(KeyCode::Char('j')));
     match &app.modal {
-        doris::ui::app::Modal::Help(s) => assert_eq!(s.page, 0),
+        doris::ui::view::Modal::Help(s) => assert_eq!(s.page, 0),
         other => panic!("help modal is gone: {:?}", std::mem::discriminant(other)),
     }
 }
@@ -293,7 +293,7 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
 
     // The frame legend is the other place these keys are named, so the
     // two tables have to agree about `f` or one of them is lying.
-    let legend = doris::ui::zones::zone_buttons(doris::ui::zones::ZoneId::Results);
+    let legend = doris::ui::layout::zone_buttons(doris::ui::layout::ZoneId::Results);
     assert!(
         legend.iter().any(|b| b.key == 'f' && b.label == "filter"),
         "the Results frame prints `f filter`: {:?}",
@@ -313,7 +313,7 @@ fn test_help_switches_sections_with_the_arrow_keys() {
     app.open_help_modal();
 
     let title = |app: &UiApp, rows: &[String]| match &app.modal {
-        doris::ui::app::Modal::Help(s) => rows
+        doris::ui::view::Modal::Help(s) => rows
             .iter()
             .find(|r| r.contains("help:"))
             .cloned()
@@ -361,12 +361,12 @@ fn test_help_switches_sections_even_when_one_page_fits() {
 
     app.help_key(key(KeyCode::Right));
     match &app.modal {
-        doris::ui::app::Modal::Help(s) => assert_eq!(s.section, 1, "Right switched section"),
+        doris::ui::view::Modal::Help(s) => assert_eq!(s.section, 1, "Right switched section"),
         other => panic!("help modal is gone: {:?}", std::mem::discriminant(other)),
     }
     app.help_key(key(KeyCode::Left));
     match &app.modal {
-        doris::ui::app::Modal::Help(s) => assert_eq!(s.section, 0, "and back"),
+        doris::ui::view::Modal::Help(s) => assert_eq!(s.section, 0, "and back"),
         other => panic!("help modal is gone: {:?}", std::mem::discriminant(other)),
     }
 }

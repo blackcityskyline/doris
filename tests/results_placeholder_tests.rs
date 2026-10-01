@@ -7,8 +7,8 @@
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::orchestrator::SourceStatus;
-use doris::ui::app::App as UiApp;
-use doris::ui::app::AppState;
+use doris::ui::view::App as UiApp;
+use doris::ui::view::AppState;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 

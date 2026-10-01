@@ -165,7 +165,7 @@ fn an_empty_filter_matches_everything() {
 /// rutracker's alone -- and the field syntax composes with it.
 #[test]
 fn the_filter_box_uses_the_syntax_on_real_rows() {
-    let mut app = doris::ui::app::App::new("http://127.0.0.1:8090".into(), None);
+    let mut app = doris::ui::view::App::new("http://127.0.0.1:8090".into(), None);
     app.results = vec![
         TorrentItem {
             title: "Dune 2024 1080p".into(),

@@ -1,9 +1,10 @@
 /target
 /debug
-*.swp
 *.swo
+*.swp
 *~
 .env
 cookies.txt
+
 # graphify knowledge graph (local, rebuilt by git hooks)
 graphify-out/

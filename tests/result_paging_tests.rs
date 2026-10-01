@@ -6,7 +6,7 @@
 //! did nothing at all where the list is.
 
 use doris::sources::models::TorrentItem;
-use doris::ui::app::App;
+use doris::ui::view::App;
 
 fn app_with(rows: usize) -> App {
     let mut app = App::new("http://127.0.0.1:1".into(), None);

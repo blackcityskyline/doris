@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use doris::config::Config;
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -16,7 +16,7 @@ fn make_app_in_settings() -> UiApp {
 fn test_settings_has_three_categories_general_streaming_download() {
     let app = make_app_in_settings();
     let names: Vec<&str> = match &app.modal {
-        doris::ui::app::Modal::Settings(state) => {
+        doris::ui::view::Modal::Settings(state) => {
             state.categories.iter().map(|c| c.name.as_str()).collect()
         }
         _ => panic!("expected Settings modal"),
@@ -32,7 +32,7 @@ fn test_digit_3_switches_to_the_third_category() {
     let mut app = make_app_in_settings();
     app.settings_key(key(KeyCode::Char('3')));
     match &app.modal {
-        doris::ui::app::Modal::Settings(state) => assert_eq!(state.selected_category, 2),
+        doris::ui::view::Modal::Settings(state) => assert_eq!(state.selected_category, 2),
         _ => panic!("expected Settings modal"),
     }
 }
@@ -42,12 +42,12 @@ fn test_digit_1_and_2_still_work() {
     let mut app = make_app_in_settings();
     app.settings_key(key(KeyCode::Char('2')));
     match &app.modal {
-        doris::ui::app::Modal::Settings(state) => assert_eq!(state.selected_category, 1),
+        doris::ui::view::Modal::Settings(state) => assert_eq!(state.selected_category, 1),
         _ => panic!("expected Settings modal"),
     }
     app.settings_key(key(KeyCode::Char('1')));
     match &app.modal {
-        doris::ui::app::Modal::Settings(state) => assert_eq!(state.selected_category, 0),
+        doris::ui::view::Modal::Settings(state) => assert_eq!(state.selected_category, 0),
         _ => panic!("expected Settings modal"),
     }
 }
@@ -59,7 +59,7 @@ fn test_digit_beyond_category_count_is_ignored() {
     match &app.modal {
         // Still on the default category -- '9' doesn't exist, so it must
         // not panic or jump anywhere.
-        doris::ui::app::Modal::Settings(state) => assert_eq!(state.selected_category, 0),
+        doris::ui::view::Modal::Settings(state) => assert_eq!(state.selected_category, 0),
         _ => panic!("expected Settings modal"),
     }
 }
@@ -68,12 +68,12 @@ fn test_digit_beyond_category_count_is_ignored() {
 fn test_down_arrow_moves_selection() {
     let mut app = make_app_in_settings();
     let before = match &app.modal {
-        doris::ui::app::Modal::Settings(state) => state.selected,
+        doris::ui::view::Modal::Settings(state) => state.selected,
         _ => panic!("expected Settings modal"),
     };
     app.settings_key(key(KeyCode::Down));
     let after = match &app.modal {
-        doris::ui::app::Modal::Settings(state) => state.selected,
+        doris::ui::view::Modal::Settings(state) => state.selected,
         _ => panic!("expected Settings modal"),
     };
     assert_eq!(after, before + 1);
@@ -102,7 +102,7 @@ fn test_enter_sets_forward_direction() {
 fn test_tab_and_backtab_cycle_all_three_categories() {
     let mut app = make_app_in_settings();
     let get_cat = |app: &UiApp| match &app.modal {
-        doris::ui::app::Modal::Settings(state) => state.selected_category,
+        doris::ui::view::Modal::Settings(state) => state.selected_category,
         _ => panic!("expected Settings modal"),
     };
 
@@ -138,7 +138,7 @@ fn test_the_color_theme_row_counts_the_themes() {
         .unwrap_or_else(|| panic!("the running theme is one of the files: {current}"));
 
     match &app.modal {
-        doris::ui::app::Modal::Settings(state) => {
+        doris::ui::view::Modal::Settings(state) => {
             let cat = &state.categories[state.selected_category];
             assert_eq!(
                 cat.items[state.selected].action,
@@ -172,7 +172,7 @@ fn test_the_drawn_theme_label_carries_the_theme_number() {
 
     let mut app = make_app_in_settings();
     let label = match &app.modal {
-        doris::ui::app::Modal::Settings(state) => {
+        doris::ui::view::Modal::Settings(state) => {
             let (n, total) = state
                 .theme_pos
                 .expect("the theme row carries its own index");

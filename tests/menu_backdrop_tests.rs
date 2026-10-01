@@ -8,7 +8,7 @@
 
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
 use ratatui::Terminal;

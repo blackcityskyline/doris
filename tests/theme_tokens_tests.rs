@@ -6,8 +6,8 @@
 //! token replaced, so nothing changes for themes that never heard of
 //! the accents.
 
+use doris::ui::layout::{zone_border_color, ZoneId};
 use doris::ui::theme::{ColorDef, Theme};
-use doris::ui::zones::{zone_border_color, ZoneId};
 use ratatui::style::Color;
 
 /// No accents in the file: each token falls back to whatever drew

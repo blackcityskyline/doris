@@ -4,7 +4,7 @@
 
 use doris::sources::models::{FileEntry, TorrentItem};
 use doris::sources::source::Source;
-use doris::ui::app::{App as UiApp, DetailAction, Modal, TorrentDetailState};
+use doris::ui::view::{App as UiApp, DetailAction, Modal, TorrentDetailState};
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;

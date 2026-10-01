@@ -1,7 +1,7 @@
-pub mod app;
+pub(crate) mod draw;
+pub mod layout;
 pub mod menu;
 pub mod modals;
-pub(crate) mod render;
 pub mod theme;
+pub mod view;
 pub mod widgets;
-pub mod zones;

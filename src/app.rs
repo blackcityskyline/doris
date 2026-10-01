@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
-mod config;
 mod input;
 mod search;
-mod sources;
-mod torrent;
+mod session;
+mod settings;
+mod stream;
 
 #[cfg(test)]
 mod tests;
@@ -20,20 +20,20 @@ use crate::browser::detect;
 use crate::cli::Args;
 use crate::config::Config;
 use crate::event::{Event, EventHandler};
-use crate::search::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
+use crate::results::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
 use crate::sources::cache::{CacheKey, SearchCache};
 use crate::sources::orchestrator::{self, SourceStatus};
 use crate::sources::source::{self, AuthContext, LogFn, SearchRequest, Source, SourceEnv};
 use crate::torrserver::api::TorrServer;
 use crate::tui;
-use crate::ui::app::{
-    sources_summary, App as UiApp, AppState, DetailAction, Modal, TorrentDetailState,
-    TorrentStatus, UiAction,
-};
+use crate::ui::layout::ZoneId;
 use crate::ui::menu::MenuItem;
 use crate::ui::modals::settings::SettingsAction;
 use crate::ui::theme::Theme;
-use crate::ui::zones::ZoneId;
+use crate::ui::view::{
+    sources_summary, App as UiApp, AppState, DetailAction, Modal, TorrentDetailState,
+    TorrentStatus, UiAction,
+};
 
 /// How often the event handler wakes up to poll the terminal for keys,
 /// mouse and resize. 100 ms is the sweet spot: responsive enough that

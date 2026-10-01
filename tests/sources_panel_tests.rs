@@ -4,8 +4,8 @@
 //! see.
 
 use doris::config::Config;
-use doris::ui::app::source_rows;
-use doris::ui::app::{App as UiApp, SourceRow};
+use doris::ui::view::source_rows;
+use doris::ui::view::{App as UiApp, SourceRow};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 

@@ -1,6 +1,6 @@
+use super::layout::{FrameButton, FrameSlot, ZoneId, ZoneLayout, SEARCH_BAR_HEIGHT};
 use super::menu::MenuState;
 use super::theme::Theme;
-use super::zones::{FrameButton, FrameSlot, ZoneId, ZoneLayout, SEARCH_BAR_HEIGHT};
 use crate::config::Config;
 use crate::sources::models::{FileEntry, TorrentItem};
 use crate::sources::orchestrator::SourceStatus;
@@ -807,7 +807,7 @@ impl App {
         let bottom = area.y + area.height - 1;
         let fits = |x: u16, w: u16| w > 0 && x <= right && x + w - 1 <= right;
 
-        let mut buttons = super::zones::zone_buttons(id);
+        let mut buttons = super::layout::zone_buttons(id);
         out.info_text = self.frame_info(id, area, config);
         let info_width = out.info_text.chars().count() as u16;
 
@@ -840,7 +840,7 @@ impl App {
 
         // Top left: the title already claims `zone_title_width` columns
         // after the border, then the buttons, then the info text.
-        let mut x = left + super::zones::zone_title_width(id);
+        let mut x = left + super::layout::zone_title_width(id);
         for b in buttons.iter().filter(|b| b.slot == FrameSlot::TopLeft) {
             if !fits(x, b.width()) {
                 break;
@@ -1406,7 +1406,7 @@ mod colour_tests {
     // tests came along because they are the reason those two functions
     // read a colour rather than return one.
     use crate::sources::orchestrator::SourceStatus;
-    use crate::ui::render::{detail_log_style, source_status_style};
+    use crate::ui::draw::{detail_log_style, source_status_style};
     use crate::ui::theme::Theme;
     use ratatui::style::Color;
 

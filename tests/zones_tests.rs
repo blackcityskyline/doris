@@ -1,9 +1,9 @@
 use doris::sources::source::Group;
-use doris::ui::theme::Theme;
-use doris::ui::zones::{
+use doris::ui::layout::{
     button_spans, zone_buttons, zone_title, zone_title_width, FrameSlot, ZoneId, ZoneLayout,
     SEARCH_BAR_HEIGHT,
 };
+use doris::ui::theme::Theme;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 
@@ -468,7 +468,7 @@ fn test_the_filter_button_sits_on_the_right_next_to_group() {
 /// shows: `◀..TV..▶` beside `◀Movies▶`, not `◀TV    ▶`.
 #[test]
 fn test_the_category_name_is_centred_in_its_slot() {
-    let mut app = doris::ui::app::App::new("http://127.0.0.1:8090".into(), None);
+    let mut app = doris::ui::view::App::new("http://127.0.0.1:8090".into(), None);
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
     let config = doris::config::Config::default();
@@ -508,7 +508,7 @@ fn test_the_category_name_is_centred_in_its_slot() {
 #[test]
 fn test_the_category_button_highlights_both_arrows() {
     let theme = Theme::dark();
-    let mut app = doris::ui::app::App::new("http://127.0.0.1:8090".into(), None);
+    let mut app = doris::ui::view::App::new("http://127.0.0.1:8090".into(), None);
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
     let area = app.zones.get_area(ZoneId::Results);
     let config = doris::config::Config::default();
@@ -738,7 +738,7 @@ fn test_the_search_bar_is_outside_every_spec() {
                 continue;
             }
             assert!(
-                area.y >= doris::ui::zones::SEARCH_BAR_HEIGHT,
+                area.y >= doris::ui::layout::SEARCH_BAR_HEIGHT,
                 "{:?} starts inside the search bar under `{}`",
                 id,
                 spec
@@ -916,13 +916,13 @@ fn test_a_drag_stops_at_the_minimum_zone() {
     zones.update_areas(area);
     assert_eq!(
         zones.get_area(ZoneId::Results).height,
-        doris::ui::zones::RESIZE_MIN_HEIGHT
+        doris::ui::layout::RESIZE_MIN_HEIGHT
     );
     // The pair only has `pair` rows between them, so the row under the
     // floor gets the rest of those, not the whole terminal.
     assert_eq!(
         zones.get_area(ZoneId::Torrent).height,
-        pair - doris::ui::zones::RESIZE_MIN_HEIGHT
+        pair - doris::ui::layout::RESIZE_MIN_HEIGHT
     );
 
     // And far below it: the lower row keeps its floor too. The divider
@@ -937,7 +937,7 @@ fn test_a_drag_stops_at_the_minimum_zone() {
     zones.update_areas(area);
     assert_eq!(
         zones.get_area(ZoneId::Torrent).height,
-        doris::ui::zones::RESIZE_MIN_HEIGHT
+        doris::ui::layout::RESIZE_MIN_HEIGHT
     );
 }
 

@@ -14,7 +14,7 @@ use ratatui::Frame;
 use super::settings_items::settings_categories;
 use crate::config::Config;
 use crate::sources::source::{Group, GROUP_ORDER, KNOWN_SOURCES};
-use crate::ui::app::{centered_rect, App, Modal};
+use crate::ui::view::{centered_rect, App, Modal};
 
 /// Column where the settings modal draws its vertical divider between
 /// the option name and its value. Capped at `bw - 3` so a narrow modal

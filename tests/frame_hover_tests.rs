@@ -16,8 +16,8 @@
 //! the wrong cell, which reads as "this is broken" rather than "this is
 //! off by one".
 
-use doris::ui::app::App;
-use doris::ui::zones::ZoneId;
+use doris::ui::layout::ZoneId;
+use doris::ui::view::App;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -180,14 +180,14 @@ fn the_drawn_frame_marks_the_hovered_button() {
 fn a_hovered_button_is_underlined_not_merely_tinted() {
     use doris::ui::theme::Theme;
     let theme = Theme::default();
-    let button = doris::ui::zones::FrameButton {
-        slot: doris::ui::zones::FrameSlot::TopLeft,
+    let button = doris::ui::layout::FrameButton {
+        slot: doris::ui::layout::FrameSlot::TopLeft,
         key: 'f',
         label: "filter".to_string(),
     };
 
-    let plain = doris::ui::zones::button_spans(&theme, &button, false, false);
-    let hovered = doris::ui::zones::button_spans(&theme, &button, false, true);
+    let plain = doris::ui::layout::button_spans(&theme, &button, false, false);
+    let hovered = doris::ui::layout::button_spans(&theme, &button, false, true);
 
     let underlined = |spans: &[ratatui::text::Span]| {
         spans

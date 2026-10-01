@@ -3,13 +3,13 @@ use doris::app::{
     source_id_for, source_needs_browser, EnterAction,
 };
 use doris::config::Config;
-use doris::search::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
+use doris::results::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
 use doris::sources::models::TorrentItem;
 use doris::sources::source::{
     build_source, AuthContext, Group, LogFn, SearchPage, SearchRequest, Source, SourceEnv,
 };
-use doris::ui::app::App as UiApp;
-use doris::ui::app::AppState;
+use doris::ui::view::App as UiApp;
+use doris::ui::view::AppState;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

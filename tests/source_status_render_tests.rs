@@ -5,7 +5,7 @@
 
 use doris::config::Config;
 use doris::sources::orchestrator::SourceStatus;
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 

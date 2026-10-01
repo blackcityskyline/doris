@@ -6,9 +6,9 @@
 //! `app.rs`, and a method that only reads has no business sitting next
 //! to the ones that mutate.
 
-use super::app::{source_badge, source_rows, App, AppState, Modal, SourceRow, SOURCE_BADGE_WIDTH};
+use super::layout::{FrameButton, ZoneId, SEARCH_BAR_HEIGHT};
 use super::theme::Theme;
-use super::zones::{FrameButton, ZoneId, SEARCH_BAR_HEIGHT};
+use super::view::{source_badge, source_rows, App, AppState, Modal, SourceRow, SOURCE_BADGE_WIDTH};
 use crate::config::Config;
 use crate::sources::orchestrator::SourceStatus;
 use ratatui::prelude::*;
@@ -24,10 +24,10 @@ impl App {
     /// has to find all four or one zone stops showing it has focus.
     fn zone_block(&self, id: ZoneId, config: &Config) -> Block<'static> {
         self.themed_block(
-            super::zones::zone_border_color(id, self.zones.focused, &self.theme),
+            super::layout::zone_border_color(id, self.zones.focused, &self.theme),
             config,
         )
-        .title(super::zones::zone_title(
+        .title(super::layout::zone_title(
             id,
             &self.theme,
             id == self.zones.focused,
@@ -809,7 +809,7 @@ impl App {
             // `click_at` hits, so what is drawn and what is clickable are
             // the same rectangle rather than two computations of it.
             let hovered = self.hovers(*rect);
-            let spans = super::zones::button_spans(
+            let spans = super::layout::button_spans(
                 &self.theme,
                 button,
                 self.frame_button_active(id, button),

@@ -6,10 +6,10 @@
 
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
-use doris::ui::app::App as UiApp;
-use doris::ui::app::AppState;
-use doris::ui::app::Modal;
-use doris::ui::app::TorrentDetailState;
+use doris::ui::view::App as UiApp;
+use doris::ui::view::AppState;
+use doris::ui::view::Modal;
+use doris::ui::view::TorrentDetailState;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::style::Color;

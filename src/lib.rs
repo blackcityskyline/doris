@@ -8,7 +8,7 @@ pub mod event;
 pub mod filter;
 pub mod log;
 pub mod player_log;
-pub mod search;
+pub mod results;
 pub mod sources;
 pub mod torrent;
 pub mod torrserver;

@@ -2,6 +2,9 @@
 name = "doris"
 version = "0.1.0"
 edition = "2021"
+description = "A terminal torrent client: search trackers, play or download, watch it live"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

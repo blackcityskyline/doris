@@ -3,7 +3,7 @@
 //! border.
 
 use doris::config::Config;
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 use ratatui::backend::{Backend, TestBackend};
 use ratatui::Terminal;
 

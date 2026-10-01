@@ -6,7 +6,7 @@
 //! middle of the list -- the row the user had been reading was one
 //! keystroke away and one keystroke was not enough to get back.
 
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 
 fn make_app() -> UiApp {
     let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);

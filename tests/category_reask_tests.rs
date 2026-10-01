@@ -10,9 +10,9 @@
 //! re-ask must not blank the table on the way out, or every `g` press
 //! trades one wrong answer for a flicker.
 
-use doris::search::apply_source_done;
+use doris::results::apply_source_done;
 use doris::sources::models::TorrentItem;
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 
 fn row(title: &str, group: Option<doris::sources::source::Group>) -> TorrentItem {
     TorrentItem {

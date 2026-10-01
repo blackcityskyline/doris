@@ -1,10 +1,10 @@
 use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
-use doris::ui::app::App as UiApp;
-use doris::ui::app::Modal;
+use doris::ui::layout::ZoneId;
 use doris::ui::modals::login::LoginField;
-use doris::ui::zones::ZoneId;
+use doris::ui::view::App as UiApp;
+use doris::ui::view::Modal;
 use ratatui::backend::TestBackend;
 use ratatui::prelude::*;
 
@@ -609,7 +609,7 @@ fn test_render_with_modal() {
 #[test]
 fn test_state_searching() {
     let mut app = make_test_app();
-    app.state = doris::ui::app::AppState::Searching;
+    app.state = doris::ui::view::AppState::Searching;
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -620,7 +620,7 @@ fn test_state_searching() {
 #[test]
 fn test_state_streaming() {
     let mut app = make_test_app();
-    app.state = doris::ui::app::AppState::Streaming;
+    app.state = doris::ui::view::AppState::Streaming;
     app.results = make_results(3);
     app.update_filter();
     app.selected = 1;
@@ -677,7 +677,7 @@ fn test_render_draws_the_table_header_under_the_frame() {
     app.results = make_results(3);
     app.update_filter();
     app.zones.update_areas(Rect::new(0, 0, 120, 40));
-    let results = app.zones.get_area(doris::ui::zones::ZoneId::Results);
+    let results = app.zones.get_area(doris::ui::layout::ZoneId::Results);
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -852,10 +852,10 @@ fn render_rows(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
 #[test]
 fn test_source_badge_marks_missing_sources_with_a_dash() {
     let mut item = TorrentItem::default();
-    assert_eq!(doris::ui::app::source_badge(&item), "-");
+    assert_eq!(doris::ui::view::source_badge(&item), "-");
 
     item.source = "nyaa".into();
-    assert_eq!(doris::ui::app::source_badge(&item), "nyaa");
+    assert_eq!(doris::ui::view::source_badge(&item), "nyaa");
 }
 
 /// The badge column has a fixed width so the table never re-flows as
@@ -864,7 +864,7 @@ fn test_source_badge_marks_missing_sources_with_a_dash() {
 fn test_every_known_source_fits_the_badge_column() {
     for info in doris::sources::source::KNOWN_SOURCES.iter() {
         assert!(
-            (info.id.chars().count() as u16) <= doris::ui::app::SOURCE_BADGE_WIDTH,
+            (info.id.chars().count() as u16) <= doris::ui::view::SOURCE_BADGE_WIDTH,
             "source '{}' is {} chars and would be clipped in the Src column",
             info.id,
             info.id.chars().count()
@@ -987,7 +987,7 @@ fn test_the_default_tiling_draws_two_columns() {
 #[test]
 fn test_the_torrent_detail_view_prints_every_known_field() {
     let mut app = make_test_app();
-    app.torrent_status = doris::ui::app::TorrentStatus {
+    app.torrent_status = doris::ui::view::TorrentStatus {
         hash: "abcdef0123456789".into(),
         title: "Some.Torrent.2024".into(),
         progress: 0.5,

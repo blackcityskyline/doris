@@ -13,7 +13,7 @@ use ratatui::widgets::*;
 
 use crate::config::Config;
 use crate::sources::source::Group;
-use crate::ui::app::{centered_rect, App, Modal};
+use crate::ui::view::{centered_rect, App, Modal};
 
 impl App {
     /// Draw the detail modal: `Label: value` rows for the row itself,

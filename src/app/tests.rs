@@ -8,7 +8,7 @@
 
 use super::input::MOUSE_SCROLL_STEP;
 use super::*;
-use crate::ui::app::source_rows;
+use crate::ui::view::source_rows;
 use clap::Parser;
 
 use std::path::PathBuf;
@@ -520,18 +520,18 @@ async fn shift_enter_opens_the_detail_modal() {
         .expect("Shift+Enter");
 
     assert!(
-        matches!(app.ui.modal, crate::ui::app::Modal::TorrentDetail(_)),
+        matches!(app.ui.modal, crate::ui::view::Modal::TorrentDetail(_)),
         "Shift+Enter opens the detail modal, got {:?}",
         app.ui.modal
     );
 
     // Plain Enter in the same place still plays.
-    app.ui.modal = crate::ui::app::Modal::None;
+    app.ui.modal = crate::ui::view::Modal::None;
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
         .await
         .expect("Enter");
     assert!(
-        !matches!(app.ui.modal, crate::ui::app::Modal::TorrentDetail(_)),
+        !matches!(app.ui.modal, crate::ui::view::Modal::TorrentDetail(_)),
         "plain Enter must not open the details"
     );
 }
@@ -552,7 +552,7 @@ async fn cycling_the_theme_moves_the_row_number_with_it() {
         .expect("Right");
 
     let (pos, name) = match &app.ui.modal {
-        crate::ui::app::Modal::Settings(state) => (state.theme_pos, app.ui.theme.name.clone()),
+        crate::ui::view::Modal::Settings(state) => (state.theme_pos, app.ui.theme.name.clone()),
         other => panic!("the settings modal stays open, got {other:?}"),
     };
     assert_ne!(name, was, "Right cycled the theme");
@@ -738,7 +738,7 @@ async fn page_keys_page_the_results_and_still_page_the_log() {
         app.ui.add_log(&format!("line {i}"));
     }
     app.ui.zones.focused = ZoneId::Log;
-    app.ui.scroll_logs(crate::ui::app::LOG_PAGE_STEP as isize);
+    app.ui.scroll_logs(crate::ui::view::LOG_PAGE_STEP as isize);
     let scrolled = app.ui.log_scroll;
     assert!(scrolled > 0, "the log has more than one page of log");
     app.handle_key(press(KeyCode::PageUp))
@@ -765,7 +765,7 @@ async fn a_row_that_opens_another_window_keeps_it() {
     // with the digit.
     let (category, row) = {
         let state = match &app.ui.modal {
-            crate::ui::app::Modal::Settings(s) => s,
+            crate::ui::view::Modal::Settings(s) => s,
             other => panic!("expected the Options modal, got {other:?}"),
         };
         state
@@ -788,7 +788,7 @@ async fn a_row_that_opens_another_window_keeps_it() {
     app.handle_key(press(KeyCode::Enter)).await.expect("Enter");
 
     assert!(
-        matches!(app.ui.modal, crate::ui::app::Modal::Login(_)),
+        matches!(app.ui.modal, crate::ui::view::Modal::Login(_)),
         "the login window must survive; got {:?}",
         app.ui.modal
     );
@@ -877,7 +877,7 @@ async fn a_key_the_modal_handles_does_not_reach_the_main_view() {
     app.handle_key(press(KeyCode::Char('2'))).await.expect("2");
 
     assert!(
-        matches!(app.ui.modal, crate::ui::app::Modal::Settings(_)),
+        matches!(app.ui.modal, crate::ui::view::Modal::Settings(_)),
         "Options must still be up"
     );
     assert_eq!(
@@ -977,7 +977,7 @@ async fn the_full_log_scrolls_the_way_the_key_names() {
         .expect("PageDown");
     assert_eq!(
         app.ui.detail_log_scroll,
-        50 + crate::ui::app::LOG_PAGE_STEP,
+        50 + crate::ui::view::LOG_PAGE_STEP,
         "a page is LOG_PAGE_STEP, not the bare literal 20 the old arms used"
     );
 

@@ -9,7 +9,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::config::Config;
-use crate::ui::app::{centered_rect, App, Modal};
+use crate::ui::view::{centered_rect, App, Modal};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoginState {

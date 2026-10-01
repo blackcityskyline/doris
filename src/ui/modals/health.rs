@@ -9,7 +9,7 @@ use ratatui::widgets::*;
 
 use crate::config::Config;
 use crate::torrserver::api::TorrServer;
-use crate::ui::app::{centered_rect, App, Modal};
+use crate::ui::view::{centered_rect, App, Modal};
 
 /// One line of the health check about the saved cookie file.
 ///

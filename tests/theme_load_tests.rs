@@ -177,14 +177,14 @@ fn test_zone_border_colours_do_not_come_from_the_dropped_fields() {
     // The focused zone and the unfocused ones differ, which is what makes
     // the focus visible -- and that difference is `primary` vs
     // `div_line`, never `search_box`/`log_box`/`player_box`.
-    let focused = doris::ui::zones::zone_border_color(
-        doris::ui::zones::ZoneId::Results,
-        doris::ui::zones::ZoneId::Results,
+    let focused = doris::ui::layout::zone_border_color(
+        doris::ui::layout::ZoneId::Results,
+        doris::ui::layout::ZoneId::Results,
         &theme,
     );
-    let unfocused = doris::ui::zones::zone_border_color(
-        doris::ui::zones::ZoneId::Results,
-        doris::ui::zones::ZoneId::Log,
+    let unfocused = doris::ui::layout::zone_border_color(
+        doris::ui::layout::ZoneId::Results,
+        doris::ui::layout::ZoneId::Log,
         &theme,
     );
     assert_ne!(focused, unfocused, "the focus must be visible");

@@ -2,7 +2,7 @@
 //! a new line used to drag the panel back to the bottom no matter where
 //! the user had scrolled to.
 
-use doris::ui::app::App as UiApp;
+use doris::ui::view::App as UiApp;
 
 fn make_app() -> UiApp {
     UiApp::new("http://127.0.0.1:8090".into(), None)
@@ -63,7 +63,7 @@ fn test_reader_position_survives_the_ring_buffer_turning_over() {
 fn test_page_scrolls_are_not_overwritten_either() {
     let mut app = make_app();
     fill(&mut app, 100);
-    app.scroll_logs(-(doris::ui::app::LOG_PAGE_STEP as isize));
+    app.scroll_logs(-(doris::ui::view::LOG_PAGE_STEP as isize));
     let parked = app.log_scroll;
 
     app.add_log("later");

@@ -92,7 +92,7 @@ async fn the_check_reports_the_path_it_is_handed() {
     let mine = dir.join("my-session.txt");
     save_to_file(&mine, &a_session()).unwrap();
 
-    let app = doris::ui::app::App::new("http://127.0.0.1:1".into(), None);
+    let app = doris::ui::view::App::new("http://127.0.0.1:1".into(), None);
     let lines = app.health_check(Some(&mine)).await;
     let cookie_line = lines
         .iter()

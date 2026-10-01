@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::config::Config;
 use crate::sources::ordering::{dedupe_by_hash, default_order};
-use crate::ui::app::{App as UiApp, AppState};
+use crate::ui::view::{App as UiApp, AppState};
 
 /// The single log line describing how one source's dispatch ended (B0.3):
 /// `rutor: 42 results` / `rutracker: HTTP 503`.
