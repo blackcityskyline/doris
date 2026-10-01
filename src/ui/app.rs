@@ -562,11 +562,6 @@ impl App {
         self.detail_log_scroll = (self.detail_log_scroll as i64 + delta).clamp(0, end) as usize;
     }
 
-    /// Which zone (if any) contains screen position `(row, col)`, honoring
-    /// fullscreen mode (only the fullscreened zone is hit-testable while
-    /// active). Shared by mouse clicks (`click_at`) and scroll-wheel
-    /// hover-targeting in the orchestrator, so "click a panel" and "scroll
-    /// over a panel" agree on which panel that is.
     /// Switch the category row to `group` -- the single path behind both
     /// `g`/`G` and a click on the row.
     ///
@@ -707,6 +702,11 @@ impl App {
         }
     }
 
+    /// Which zone (if any) contains screen position `(row, col)`, honoring
+    /// fullscreen mode (only the fullscreened zone is hit-testable while
+    /// active). Shared by mouse clicks and scroll-wheel hover-targeting,
+    /// so "click a panel" and "scroll over a panel" agree on which panel
+    /// that is.
     pub fn zone_at(&self, row: u16, col: u16) -> Option<ZoneId> {
         for &id in ZoneId::all() {
             if let Some(fs) = self.zones.fullscreen {

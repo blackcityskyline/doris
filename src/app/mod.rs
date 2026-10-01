@@ -176,15 +176,13 @@ pub fn stop_download_on_exit<'a>(config: &Config, active_hash: Option<&'a str>) 
 /// Do the stop [`stop_download_on_exit`] asks for, and say what happened.
 ///
 /// **`pause`, never `remove`.** Dropping the torrent is what "stop the
-/// download" means: it stays on the server and on disk and resumes the
-/// next time it is asked for. Removing it would delete the user's file on
-/// the way out of the program they were watching it with, which is not
-/// what any reading of the option asks for.
+/// download" means: it stays on the server and on disk and resumes when
+/// asked for again. Removing it would delete the user's file on the way
+/// out of the program they were watching it with.
 ///
-/// Returns a line to show, or `None` when there was nothing to stop --
-/// so a run with the option off stays silent rather than announcing a
-/// no-op. Free function taking the client, so the test can watch the
-/// bytes that go over the wire instead of re-typing the call.
+/// Returns a line to show, or `None` when there was nothing to stop, so
+/// a run with the option off stays silent. Free function taking the
+/// client, so the test can watch the bytes rather than re-type the call.
 pub async fn stop_the_download(
     config: &Config,
     active_hash: Option<&str>,
@@ -238,20 +236,13 @@ pub fn magnet_only_download(
     ))
 }
 
-/// The registered id to talk to for a result row. Rows carry their own
-/// source id; rows from before that field existed (or with an id no
-/// longer in the registry) hold rutracker-shaped URLs, so they fall back
-/// to `"rutracker"` -- the same conservative default
-/// [`source_needs_browser`] has had since B0.1.
+/// The registered id to talk to for a result row. A row whose id is not
+/// in the registry (misspelled, or from a source since removed) holds
+/// rutracker-shaped URLs, so it falls back to `"rutracker"`.
 ///
-/// The fallback is quiet about what it cannot be: a row whose id is
-/// misspelled, or belongs to a source that has been removed from the
-/// registry, is sent to rutracker with a URL of another tracker's shape.
-/// The user then gets a rutracker error about a row they did not ask
-/// about, and nothing anywhere says the id was substituted. So the
-/// substitution is said out loud -- this is the one place a wrong id can
-/// turn into a request to somebody else's server, and a log line costs
-/// nothing when the id is right.
+/// That fallback is logged rather than silent: this is the one place a
+/// wrong id turns into a request to somebody else's server, and the log
+/// line costs nothing when the id is right.
 pub fn source_id_for(item: &crate::sources::models::TorrentItem) -> &'static str {
     match source::get_source(&item.source) {
         Some(s) => s.id,

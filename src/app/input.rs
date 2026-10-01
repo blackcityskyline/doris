@@ -165,17 +165,14 @@ impl App {
 
     /// One frame, bracketed by synchronized output when the option is on.
     ///
-    /// The sequence brackets the frame and nothing else: turning it on
-    /// for the whole run would leave the terminal buffering through the
-    /// wait between frames, where there is nothing to present, and the
-    /// app would look frozen.
+    /// It brackets the frame and nothing else: left on across the wait
+    /// between frames, the terminal would be buffering with nothing to
+    /// present and the app would look frozen.
     ///
-    /// `?2026h` with no `?2026l` leaves the terminal *buffering* -- the
-    /// app then looks frozen with no error and no way out but killing it
-    /// -- so the closing sequence is written whatever `draw` returned.
-    /// The two `backend_mut()` borrows are separate on purpose: holding
-    /// a guard across `draw` would be the borrow error above, and the
-    /// borrow checker is what guarantees the closing write is not skipped.
+    /// `?2026h` with no `?2026l` has the same effect, so the closing
+    /// sequence is written whatever `draw` returned. The two
+    /// `backend_mut()` borrows are separate on purpose -- that is what
+    /// makes the borrow checker prove the closing write is not skipped.
     pub(super) fn draw_frame(&mut self, terminal: &mut crate::tui::Terminal) -> Result<()> {
         if self.config.terminal_sync {
             crate::tui::begin_sync(terminal);

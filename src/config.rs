@@ -269,19 +269,11 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             }
             Ok(config)
         }
-        // No config file is not the same as an empty one, and the
-        // difference is three sources.
-        //
-        // An empty *file* is a config written before `known_sources`
-        // existed: the migration seeds it with the ids that existed then
-        // and reads them as already decided, so rutracker/rutor/nnmclub
-        // stay off. A machine that has never had a file has decided
-        // nothing, and gets everything this build implements.
-        //
-        // Filling it here rather than in `Config::default()` is the point
-        // of the split: `Config` no longer imports the registry, and the
-        // first-run defaults are a fact about the build rather than about
-        // the settings struct.
+        // No config file is not an empty one. An empty *file* predates
+        // `known_sources`: the migration seeds it with the ids that
+        // existed then and reads them as decided, so those three stay off.
+        // A machine that never had one has decided nothing, and gets
+        // everything this build implements.
         None => {
             let mut fresh = crate::sources::source::first_run();
             crate::sources::source::migrate_config(&mut fresh);
@@ -293,18 +285,13 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
 /// Resolve a relative `cookie_file` against the config's own directory and
 /// write the result back. Returns whether anything changed.
 ///
-/// Only a *relative* value is touched: someone who named an absolute path
-/// meant it, and rewriting their choice would be a change nobody asked
-/// for. A relative one could not have been stable -- it named a different
-/// file depending on the shell's working directory -- so pinning it beside
-/// the config is the only reading of the user's intent that keeps
-/// working.
-///
-/// A file sitting at the old relative location is moved rather than
-/// abandoned, so the migration does not cost the session it holds. If the
-/// move cannot happen (the old path is gone, the new one is not writable)
-/// the path is still pinned: the app must not keep writing into whatever
-/// directory it happens to be run from.
+/// Only a *relative* value is touched: an absolute one named a file on
+/// purpose. A relative one named a different file depending on the shell's
+/// working directory, so pinning it beside the config is the only reading
+/// that keeps working. A file at the old location is moved rather than
+/// abandoned, so the migration does not cost the session it holds; if the
+/// move fails the path is still pinned, because writing into whatever
+/// directory the app happens to be run from is the worse failure.
 fn migrate_cookie_file(config: &mut Config, config_path: &Path) -> bool {
     let configured = std::path::Path::new(&config.cookie_file);
     if configured.is_absolute() {

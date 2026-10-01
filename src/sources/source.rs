@@ -694,27 +694,18 @@ fn default_enabled_sources() -> Vec<String> {
 
 /// Give a config the source ids it has never heard of.
 ///
-/// It lives here rather than on `Config` because it is a question about
-/// the registry -- what this build implements, and what it used to --
-/// and `config.rs` is a settings file that has no business knowing the
-/// source list. The dependency used to run the other way: adding a source
-/// meant editing `config.rs` as well as this file, and forgetting that
-/// left it out of the defaults with nothing pointing at the omission.
+/// It lives here and not on `Config` because the source list is a fact
+/// about the build, not a setting; `config.rs` knowing it meant a source
+/// had to be added to two files and forgetting the second left it
+/// implemented but switched off.
 ///
-/// "New to this config" is decided by `Config::known_sources`: an id it
-/// has already seen is never re-added, and a config predating the field
-/// is recognised by being empty and seeded with `LEGACY_SOURCES`. That
-/// keeps somebody who disabled `rutor` back then from having it silently
-/// switched back on, while `tpb` -- an id they have never seen --
-/// arrives enabled. `enabled_sources` is opt-in, so without this a
-/// config saved before wave 1 would have kept yts/tpb/subsplease/eztv
-/// switched off with no UI able to switch them on.
-///
-/// "Seen" means *had a chance to be decided*, and a planned source
-/// gives no chance: its Options row is a caption, not a toggle. Such
-/// ids are read as unknown and never written back, which is what makes
-/// the flip from planned to implemented arrive enabled -- nnmclub was
-/// caught by exactly this hole.
+/// "Never heard of" is `Config::known_sources`: an id the config has
+/// already seen is not re-added, and one predating the field is
+/// recognised by being empty and seeded with `LEGACY_SOURCES` -- so
+/// somebody who disabled `rutor` back then keeps it off while `tpb`,
+/// which they have never seen, arrives enabled. A *planned* source
+/// counts as never heard of: its Options row is a caption, not a toggle,
+/// so it was never something to accept or reject.
 pub fn migrate_config(config: &mut crate::config::Config) {
     let seen: Vec<String> = if config.known_sources.is_empty() {
         LEGACY_SOURCES.iter().map(|s| s.to_string()).collect()

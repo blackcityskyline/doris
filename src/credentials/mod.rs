@@ -67,23 +67,22 @@ pub fn credentials_path() -> PathBuf {
 /// test, or a second store) supplies a location without repeating the
 /// name -- and, more to the point, so a test can point the whole store
 /// at a scratch directory. The store used to resolve `$HOME` from inside
-/// its own I/O, and every test that saved a fake login overwrote the
-/// real one.
+/// its own I/O, and every test that saved a fake login overwrote the real
+/// one.
 pub const STORE_FILE: &str = "credentials.enc";
 
 /// Write a file only its owner can read or write, and repair the mode of
 /// one that already exists.
 ///
-/// Both files doris keeps that hold a live login -- this store and the
-/// saved rutracker cookies, where `bb_session` *is* the session -- go
-/// through here, so "this file is secret" is one rule in one place
-/// instead of a `fs::write` each somebody can forget. `fs::write` creates
-/// 0644 under the default umask 022, which makes both readable by every
-/// account on the machine.
+/// Both files holding a live login -- this store and the saved rutracker
+/// cookies, where `bb_session` *is* the session -- go through here, so
+/// "this file is secret" is one rule rather than a `fs::write` each
+/// somebody can forget; `fs::write` creates 0644 under umask 022, which
+/// every account on the machine can read.
 ///
-/// The `mode` on `OpenOptions` only applies when it *creates* the file, so
-/// a store an older build already wrote at 0644 would keep that mode
-/// forever; the explicit `set_permissions` is what actually repairs it.
+/// The explicit `set_permissions` is not redundant: `mode` on
+/// `OpenOptions` only applies when the file is *created*, so a store an
+/// older build wrote at 0644 would keep that mode forever.
 #[cfg(unix)]
 pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
     use std::io::Write;

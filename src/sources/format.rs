@@ -101,24 +101,8 @@ pub fn parse_size(s: &str) -> u64 {
 ///
 /// It lives here rather than inside `nyaa.rs` because decoding markup
 /// entities is not an RSS concern: nnmclub serves the same escapes from
-/// an HTML table (wave 3), and a second copy of this order would be a
-/// second place for the `&amp;`-before-`&lt;` sequencing to drift.
-/// Tags out, entities decoded, whitespace collapsed to single spaces --
-/// torio's `stripHtml` + `unescapeEntities` in that order, which is what
-/// turns `<b>Фрирен&#039;s</b>&nbsp;<span ...>` back into a title.
-///
-/// `tags` is passed rather than compiled here because each source keeps
-/// its own compiled regexes in a `OnceLock` and compiling a fourth for
-/// this would be a fourth thing to keep alive.
-pub fn strip_html(input: &str, tags: &Regex) -> String {
-    let bare = tags.replace_all(input, "");
-    let bare = bare.replace("&nbsp;", " ").replace('\u{a0}', " ");
-    unescape_entities(&bare)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
+/// an HTML table, and a second copy of this order would be a second place
+/// for the `&amp;`-before-`&lt;` sequencing to drift.
 pub fn unescape_entities(input: &str) -> String {
     input
         .replace("&#038;", "&")
@@ -135,6 +119,22 @@ pub fn unescape_entities(input: &str) -> String {
         .replace("&#39;", "'")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
+}
+
+/// Tags out, entities decoded, whitespace collapsed to single spaces --
+/// torio's `stripHtml` + `unescapeEntities` in that order, which is what
+/// turns `<b>Фрирен&#039;s</b>&nbsp;<span ...>` back into a title.
+///
+/// `tags` is passed rather than compiled here because each source keeps
+/// its own compiled regexes in a `OnceLock` and compiling a fourth for
+/// this would be a fourth thing to keep alive.
+pub fn strip_html(input: &str, tags: &Regex) -> String {
+    let bare = tags.replace_all(input, "");
+    let bare = bare.replace("&nbsp;", " ").replace('\u{a0}', " ");
+    unescape_entities(&bare)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The display string for a source that hands us bytes rather than a

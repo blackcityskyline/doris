@@ -46,6 +46,7 @@ pub enum ZoneId {
 /// `(digit key, label)` per zone. One row per [`ZoneId`] -- the three
 /// lookups below all read it, so adding a zone means appending a variant
 /// and a row instead of editing three matches.
+///
 /// The render/navigation dispatch on `ZoneId` in `ui/app.rs` cannot be
 /// table-driven: each zone draws different state.
 const ZONE_ROWS: &[(ZoneId, char, &str)] = &[
