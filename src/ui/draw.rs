@@ -85,35 +85,22 @@ impl App {
         let area = frame.area();
 
         if self.show_menu {
-            self.render_menu_view(frame, area, config);
+            self.render_menu_view(frame, area);
             return;
         }
 
         self.render_main_view(frame, area, config);
     }
 
-    fn render_menu_view(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
+    fn render_menu_view(&mut self, frame: &mut Frame, area: Rect) {
         self.zones.update_areas(area);
-        self.render_search_bar(frame, area, config);
-        for zone_id in ZoneId::all() {
-            let zone_area = self.zones.get_area(*zone_id);
-            if zone_area.width == 0 || zone_area.height == 0 {
-                continue;
-            }
-            match zone_id {
-                ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
-                ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
-                ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
-                ZoneId::Trackers => self.render_trackers_zone(frame, zone_area, *zone_id, config),
-            }
-        }
-        // No border and no title: this is a transient overlay, not a
-        // zone. `modal_block` draws the zone frame, and a bordered box
-        // around the banner read as a fifth panel the user could not
-        // click. The menu still needs the theme background painted
-        // (that is what covers the zones under it), so it takes the
-        // themed block with the borders turned off rather than a bare
-        // default.
+        // The menu takes the frame over rather than floating over it.
+        // Drawn on top of the zones it inherited every one of their
+        // backgrounds: with "Theme background" on, the panels behind
+        // showed through as slabs around the glyphs that the menu's own
+        // `Clear` did not cover. Clearing the whole frame once is the
+        // only way to be sure nothing of the old screen is left showing.
+        frame.render_widget(Clear, area);
         super::menu::render_menu(frame, area, &self.menu, &self.theme);
     }
 
@@ -270,10 +257,22 @@ impl App {
                 if cursor {
                     style = self.theme.selection_style();
                 }
-                let mut spans = vec![Span::styled(
-                    format!("[{}] {:<width$}", mark, row.id(), width = id_width),
-                    style,
-                )];
+                // The mark is the one character that states the row's state, so it
+                // wears the panel's own accent rather than the body
+                // colour the source id is drawn in -- and rather than the
+                // keybind accent, which is for keys.
+                let mut spans = vec![
+                    Span::styled("[", style),
+                    Span::styled(
+                        mark,
+                        if cursor {
+                            style
+                        } else {
+                            Style::default().fg(self.theme.primary_color())
+                        },
+                    ),
+                    Span::styled(format!("] {:<width$}", row.id(), width = id_width), style),
+                ];
                 if let SourceRow::One(source_id) = row {
                     if let Some(status) = self.source_status.get(source_id) {
                         let status_style = if cursor {

@@ -196,6 +196,43 @@ fn default_config_path() -> PathBuf {
     home.join(".config").join("doris").join("config.toml")
 }
 
+/// The panel arrangement, in a file of its own beside the config.
+///
+/// It is session state rather than a preference, which is why it is
+/// written on every exit instead of only when "Save config on exit" is
+/// on: that option is about the settings, and losing the window you
+/// arranged is not a setting anybody should have to opt back into.
+///
+/// Beside the config rather than inside it, so `--config some/file`
+/// gets its own arrangement and a test running against a temporary
+/// config is not reading the one the developer left at home.
+fn layout_path(config_path: Option<&Path>) -> PathBuf {
+    match config_path {
+        Some(p) => p.with_file_name("layout.toml"),
+        None => default_config_path().with_file_name("layout.toml"),
+    }
+}
+
+/// Read the arrangement left by the last session. A missing or
+/// unreadable file is not an error: it only means there is nothing to
+/// restore, which is what a first run looks like.
+pub fn load_layout(config_path: Option<&Path>) -> Option<crate::ui::layout::SavedLayout> {
+    let content = std::fs::read_to_string(layout_path(config_path)).ok()?;
+    toml::from_str(&content).ok()
+}
+
+pub fn save_layout(
+    layout: &crate::ui::layout::SavedLayout,
+    config_path: Option<&Path>,
+) -> Result<()> {
+    let path = layout_path(config_path);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&path, toml::to_string(layout)?)?;
+    Ok(())
+}
+
 /// Parse config TOML and run the migrations it needs: the single entry
 /// point `load` and the tests share, so what a test asserts is what a
 /// real config file goes through.

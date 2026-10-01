@@ -247,17 +247,23 @@ fn test_the_menu_paints_no_background() {
     }
 }
 
-/// The ASCII banner is drawn in one colour: the theme's accent.
+/// Nothing in the menu is drawn in `title`, and the banner is drawn in
+/// the accent.
 ///
-/// With `primary` left unset the accent falls back to `title`, which is
-/// near-white in the built-in theme -- so the one piece of ASCII art on
-/// screen came out the same colour as the default foreground, on a theme
-/// that already had an accent of its own.
+/// With `primary` left unset the accent falls back to `title`, which in
+/// the built-in theme is near-white -- so the ASCII banner came out the
+/// same colour as the default foreground on a theme that already had an
+/// accent of its own. The assertion is "no glyph carries `title`"
+/// rather than "the banner is row N", because the menu now clears the
+/// whole frame and the changed-cell set is no longer shaped like a
+/// menu.
 #[test]
 fn test_the_banner_is_drawn_in_the_accent() {
+    use ratatui::style::Color;
     let app = make_app();
     let accent = app.theme.primary_color();
     let title = app.theme.title.to_color();
+    let menu_fg = app.theme.menu_fg.to_color();
     assert_ne!(
         accent, title,
         "the built-in theme still has no accent of its own"
@@ -265,18 +271,31 @@ fn test_the_banner_is_drawn_in_the_accent() {
 
     let cfg = Config::default();
     let cells = menu_cells(app, &cfg);
-    let top = cells
+    let glyphs: Vec<_> = cells.iter().filter(|(_, _, c)| c.symbol() != " ").collect();
+
+    let painted: Vec<_> = glyphs
         .iter()
-        .map(|(_, y, _)| *y)
-        .min()
-        .expect("the menu drew something");
-    let fgs: Vec<_> = cells
-        .iter()
-        .filter(|(_, y, _)| *y < top + doris::ui::menu::BANNER_ROWS as i16)
+        .filter(|(_, _, c)| c.fg != Color::Reset)
         .map(|(_, _, c)| c.fg)
         .collect();
     assert!(
-        !fgs.is_empty() && fgs.iter().all(|fg| *fg == accent),
-        "the banner must be one colour, the accent {accent:?}; saw {fgs:?}"
+        !painted.is_empty(),
+        "the menu drew no glyph in any colour at all"
+    );
+    let stray: Vec<_> = painted
+        .iter()
+        .filter(|fg| **fg != accent && **fg != menu_fg)
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "the menu drew glyphs in colours it has no business using: {stray:?}"
+    );
+    assert!(
+        !painted.contains(&title),
+        "the banner came out in `title` ({title:?}) -- the accent fell back to it"
+    );
+    assert!(
+        painted.contains(&accent),
+        "no glyph carries the accent {accent:?}, so the banner is not in the theme's colour"
     );
 }

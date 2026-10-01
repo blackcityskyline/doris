@@ -395,8 +395,13 @@ impl App {
 
         let mut ui = UiApp::new(torrserver_url.clone(), config.theme_name.as_deref())
             .with_group_tabs(&config);
-        // The zones know nothing about Config, so the saved tiling is
-        if !config.disable_presets {
+        // The zones know nothing about Config, so the arrangement left by the
+        // last session is applied here. It wins over the preset list: it
+        // is what the user actually left the app in, sizes and all, and
+        // a preset only names a shape.
+        let restored = crate::config::load_layout(args.config.as_deref())
+            .is_some_and(|saved| ui.zones.restore(&saved));
+        if !restored && !config.disable_presets {
             if let Some(spec) = config.presets.get(config.preset_index) {
                 let spec = spec.clone();
                 ui.zones.apply_preset(&spec);
@@ -600,6 +605,14 @@ impl App {
             if let Err(e) = crate::config::save(&self.config, self.args.config.as_deref()) {
                 eprintln!("Failed to save config on exit: {}", e);
             }
+        }
+        // The arrangement goes out whatever `save_config_on_exit` says:
+        // the next session has to start where this one stopped, sizes
+        // and all, and that is not a preference to be opted into.
+        if let Err(e) =
+            crate::config::save_layout(&self.ui.zones.snapshot(), self.args.config.as_deref())
+        {
+            eprintln!("Failed to save the panel layout: {}", e);
         }
 
         Ok(())

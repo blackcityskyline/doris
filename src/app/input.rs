@@ -6,6 +6,7 @@
 //! one mode.
 
 use super::*;
+use crate::ui::layout::Dir;
 
 /// Lines one notch of the mouse wheel moves.
 pub(super) const MOUSE_SCROLL_STEP: i64 = 3;
@@ -427,6 +428,25 @@ impl App {
     }
 
     async fn handle_plain_key(&mut self, key: KeyEvent) -> Result<()> {
+        // The arrows carry the layout when they carry a modifier, and
+        // they are handled before the `match` because that match reads
+        // `key.code` -- which has already thrown the modifiers away.
+        if Self::layout_arrow(&key) {
+            let dir = Self::dir_of(key.code);
+            match (
+                key.modifiers.contains(KeyModifiers::CONTROL),
+                key.modifiers.contains(KeyModifiers::SHIFT),
+            ) {
+                // Focus, swap, resize. Nothing plain: a bare arrow is
+                // still the cursor.
+                (true, true) => self.ui.zones.resize_focused(dir),
+                (true, false) => self.ui.zones.focus_neighbour(dir),
+                (false, true) => self.ui.zones.swap_focused(dir),
+                (false, false) => false,
+            };
+            return Ok(());
+        }
+
         match key.code {
             KeyCode::Char('m') => {
                 self.ui.show_menu = !self.ui.show_menu;
@@ -667,5 +687,25 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Whether `key` is an arrow carrying a layout modifier -- one of
+    /// the four combinations that move, swap or resize panels. A bare
+    /// arrow is left to the cursor.
+    pub(super) fn layout_arrow(key: &KeyEvent) -> bool {
+        matches!(
+            key.code,
+            KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right
+        ) && (key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::SHIFT))
+    }
+
+    fn dir_of(code: KeyCode) -> Dir {
+        match code {
+            KeyCode::Up => Dir::Up,
+            KeyCode::Down => Dir::Down,
+            KeyCode::Left => Dir::Left,
+            _ => Dir::Right,
+        }
     }
 }

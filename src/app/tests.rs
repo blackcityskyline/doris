@@ -134,9 +134,20 @@ async fn zone_digit_keys_focus_first_and_hide_second() {
 
 /// A fresh app applies `presets[preset_index]`, and the default first preset is `1,3|4`:
 /// Torrent starts hidden, Trackers and Log share the row under Results.
+/// A config path nothing has written to, so the arrangement file that
+/// sits beside it is absent and the presets decide the tiling.
+fn throwaway_config() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("doris-layout-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::remove_file(dir.join("layout.toml"));
+    dir.join("config.toml")
+}
+
 #[tokio::test]
 async fn startup_applies_the_first_config_preset() {
-    let app = app_focused_on_sources(None).await;
+    // A temporary config: the arrangement lives beside the config file,
+    // and the one at the developer's home would decide this test.
+    let app = app_focused_on_sources(Some(throwaway_config())).await;
     assert!(app.ui.zones.is_visible(ZoneId::Results));
     assert!(
         !app.ui.zones.is_visible(ZoneId::Torrent),
@@ -151,7 +162,7 @@ async fn startup_applies_the_first_config_preset() {
 /// the zones.
 #[tokio::test]
 async fn shift_p_cycles_the_configured_presets() {
-    let mut app = app_focused_on_sources(None).await;
+    let mut app = app_focused_on_sources(Some(throwaway_config())).await;
     assert_eq!(app.config.preset_index, 0, "starts on the first preset");
 
     app.handle_key(press(KeyCode::Char('P'))).await.expect("P");
@@ -167,7 +178,7 @@ async fn shift_p_cycles_the_configured_presets() {
 /// must not move a layout the user turned off.
 #[tokio::test]
 async fn shift_p_is_a_no_op_when_presets_are_disabled() {
-    let mut app = app_focused_on_sources(None).await;
+    let mut app = app_focused_on_sources(Some(throwaway_config())).await;
     app.config.disable_presets = true;
     let before = app.config.preset_index;
 
@@ -1049,5 +1060,126 @@ async fn a_cycle_row_in_options_moves_the_value_it_names() {
     assert_eq!(
         app.config.graph_symbol, "braille",
         "an unknown value snaps to the first entry"
+    );
+}
+
+/// The three arrow bindings that arrange panels are told apart by their
+/// modifiers, and none of them is the bare arrow.
+///
+/// Driven through `handle_key` with the modifiers set by hand, because a
+/// plain terminal does not send a sequence for Ctrl+Shift+arrow that a
+/// pty can be made to distinguish from Ctrl+arrow: it collapses the two,
+/// so the live check can only prove the routing reads the modifiers it
+/// was given, which is where the decision is made.
+#[tokio::test]
+async fn the_three_arrow_bindings_are_told_apart_by_their_modifiers() {
+    use crate::ui::layout::ZoneId;
+
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.zones.apply_preset("1,2,3,4");
+    app.ui
+        .zones
+        .update_areas(ratatui::layout::Rect::new(0, 0, 120, 40));
+    app.ui.zones.focused = ZoneId::Results;
+    let before = app.ui.zones.get_area(ZoneId::Results).height;
+
+    let both = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+
+    // Ctrl+Shift+Down: the border moves.
+    app.handle_key(KeyEvent::new(KeyCode::Down, both))
+        .await
+        .expect("Ctrl+Shift+Down");
+    app.ui
+        .zones
+        .update_areas(ratatui::layout::Rect::new(0, 0, 120, 40));
+    assert!(
+        app.ui.zones.get_area(ZoneId::Results).height > before,
+        "the panel grew: {before} -> {}",
+        app.ui.zones.get_area(ZoneId::Results).height
+    );
+    assert_eq!(
+        app.ui.zones.focused,
+        ZoneId::Results,
+        "and the focus stayed put"
+    );
+
+    // Ctrl+Down: only the focus moves.
+    let results_at = app.ui.zones.get_area(ZoneId::Results).y;
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::CONTROL))
+        .await
+        .expect("Ctrl+Down");
+    assert_eq!(
+        app.ui.zones.focused,
+        ZoneId::Torrent,
+        "the focus moved down"
+    );
+    assert_eq!(
+        app.ui.zones.get_area(ZoneId::Results).y,
+        results_at,
+        "and no border moved with it"
+    );
+
+    // Shift+Down: the focused panel trades places with the one below it.
+    let trackers_at = app.ui.zones.get_area(ZoneId::Trackers).y;
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::SHIFT))
+        .await
+        .expect("Shift+Down");
+    app.ui
+        .zones
+        .update_areas(ratatui::layout::Rect::new(0, 0, 120, 40));
+    assert_eq!(
+        app.ui.zones.get_area(ZoneId::Torrent).y,
+        trackers_at,
+        "the focused panel took the neighbour's place"
+    );
+    assert_eq!(
+        app.ui.zones.focused,
+        ZoneId::Torrent,
+        "and the focus is still on the panel the user was on"
+    );
+}
+
+/// A bare arrow is still the cursor: none of the three meanings leaks
+/// into it.
+#[tokio::test]
+async fn a_bare_arrow_still_moves_the_cursor() {
+    use crate::ui::layout::ZoneId;
+
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.zones.apply_preset("1,2,3,4");
+    app.ui
+        .zones
+        .update_areas(ratatui::layout::Rect::new(0, 0, 120, 40));
+    app.ui.zones.focused = ZoneId::Results;
+    let before = app.ui.zones.get_area(ZoneId::Results).y;
+
+    // Rows to walk, so the cursor has somewhere to go.
+    app.ui.results = (0..5)
+        .map(|i| crate::sources::models::TorrentItem {
+            title: format!("row {i}"),
+            ..Default::default()
+        })
+        .collect();
+    app.ui.update_filter();
+    assert_eq!(app.ui.selected, 0);
+
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+        .await
+        .expect("Down");
+
+    assert_eq!(
+        app.ui.zones.focused,
+        ZoneId::Results,
+        "a plain arrow must not move between panels"
+    );
+    assert_eq!(
+        app.ui.zones.get_area(ZoneId::Results).y,
+        before,
+        "nor resize one"
+    );
+    assert_eq!(
+        app.ui.selected, 1,
+        "and it must still reach the cursor: the layout guard returns early, \
+         so a bare arrow that falls into it would be swallowed"
     );
 }

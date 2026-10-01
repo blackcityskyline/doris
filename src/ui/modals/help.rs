@@ -37,6 +37,16 @@ pub const HELP_TEXT: &[(&str, &str)] = &[
     ("1, 2, 3, 4", "Focuses that zone; again hides it."),
     ("Shift+P", "Cycles the saved zone layout (a preset)."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
+    ("ctrl + arrows", "Moves focus to the panel that way."),
+    (
+        "shift + arrows",
+        "Swaps the focused panel with its neighbour.",
+    ),
+    (
+        "ctrl + shift + arrows",
+        "Resizes the focused panel that way.",
+    ),
+    ("mouse drag", "Pulls the border between two panels."),
     (
         "j, k, Up, Down",
         "Moves in the focused zone (j/k: Vim keys).",
@@ -195,7 +205,12 @@ impl App {
                 Style::default().fg(self.theme.primary_color()),
             ));
         let inner = block.inner(popup);
-        let visible = (inner.height as usize).max(1);
+        // The first inner row is the `Key:` / `Description:` header, so
+        // it is not available to the entries. Counting it as one made
+        // the page count one too low whenever the table ended exactly
+        // on the fold, and the last key was then dropped with no
+        // second page and nothing to say so.
+        let visible = (inner.height as usize).saturating_sub(1).max(1);
         let pages = table.len().div_ceil(visible);
 
         if let Modal::Help(state) = &mut self.modal {

@@ -13,6 +13,45 @@ pub const RESIZE_MIN_HEIGHT: u16 = 3;
 /// ambitions.
 pub const RESIZE_MIN_WIDTH: u16 = 10;
 
+/// How far one keypress moves a shared border, in cells: two is enough
+/// to see and fine enough to place. A keypress that rounds away to no
+/// change at all is worse than no binding, so the step is never smaller
+/// than a cell the layout can actually give up.
+pub const RESIZE_STEP: u16 = 2;
+
+/// A side of the layout, named by the arrow key that means it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dir {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// Which measurement of a panel a resize reads: the two are stored in
+/// two different fields and floored by two different numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Axis {
+    Width,
+    Height,
+}
+
+impl Axis {
+    fn cells(self, area: Rect) -> u16 {
+        match self {
+            Axis::Width => area.width,
+            Axis::Height => area.height,
+        }
+    }
+
+    fn share(self, zone: &Zone) -> f32 {
+        match self {
+            Axis::Width => zone.flex,
+            Axis::Height => zone.row_flex,
+        }
+    }
+}
+
 /// A border the pointer is holding, or the one a click just armed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeKind {
@@ -513,6 +552,261 @@ impl ZoneLayout {
         }
     }
 
+    fn set_flex(&mut self, id: ZoneId, v: f32) {
+        if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+            zone.flex = v;
+        }
+    }
+
+    /// Where `id` sits in the grid: `(row, cell)`, counted over the rows that are on screen.
+    fn slot_of(&self, id: ZoneId) -> Option<(usize, usize)> {
+        self.visible_rows()
+            .iter()
+            .enumerate()
+            .find_map(|(r, cells)| cells.iter().position(|&c| c == id).map(|c| (r, c)))
+    }
+
+    /// The zone sharing a border with `from` on the side `dir` names.
+    ///
+    /// Read off the grid rather than off the drawn rectangles: the grid
+    /// is what the layout *is*, and the rectangles are what it produced
+    /// last pass, so a geometry test would answer with a one-frame-stale
+    /// copy of the same question.
+    pub fn neighbour(&self, from: ZoneId, dir: Dir) -> Option<ZoneId> {
+        let (r, c) = self.slot_of(from)?;
+        let rows = self.visible_rows();
+        match dir {
+            Dir::Left => rows[r].get(c.checked_sub(1)?).copied(),
+            Dir::Right => rows[r].get(c + 1).copied(),
+            Dir::Up => rows.get(r.checked_sub(1)?)?.get(c).copied(),
+            // A row further down may hold fewer cells than the one the
+            // cursor is in; its last cell is then the nearest column.
+            Dir::Down => rows
+                .get(r + 1)?
+                .get(c)
+                .or_else(|| rows[r + 1].last())
+                .copied(),
+        }
+    }
+
+    /// Move the focus to the panel on that side. `Ctrl`+arrow.
+    pub fn focus_neighbour(&mut self, dir: Dir) -> bool {
+        match self.neighbour(self.focused, dir) {
+            Some(next) => {
+                self.focused = next;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Trade places with the panel on that side, shares and all. `Shift`+arrow.
+    ///
+    /// Swapped in the grid, not by moving rectangles, so the next
+    /// `layout_grid` redraws both panels in their new homes from the one
+    /// source of truth.
+    pub fn swap_focused(&mut self, dir: Dir) -> bool {
+        let from = self.focused;
+        let Some(to) = self.neighbour(from, dir) else {
+            return false;
+        };
+        let (Some((fr, fc)), Some((tr, tc))) = (self.slot_of(from), self.slot_of(to)) else {
+            return false;
+        };
+        let (Some(from), Some(to)) = (
+            self.grid.get(fr).and_then(|r| r.get(fc)).copied(),
+            self.grid.get(tr).and_then(|r| r.get(tc)).copied(),
+        ) else {
+            return false;
+        };
+        self.grid[fr][fc] = to;
+        self.grid[tr][tc] = from;
+        // Each panel's height share travels with it, so a swap between
+        // two rows does not silently resize either of them.
+        self.swap_row_weight(fr, tr);
+        true
+    }
+
+    fn swap_row_weight(&mut self, a: usize, b: usize) {
+        let (Some(x), Some(y)) = (
+            self.grid.get(a).and_then(|r| r.first()).copied(),
+            self.grid.get(b).and_then(|r| r.first()).copied(),
+        ) else {
+            return;
+        };
+        if x == y {
+            return;
+        }
+        let (px, py) = (self.row_flex_of(x), self.row_flex_of(y));
+        for (id, v) in [(x, py), (y, px)] {
+            if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+                zone.row_flex = v;
+            }
+        }
+    }
+
+    /// Move the border between the focused panel and its neighbour one
+    /// step towards that neighbour. `Ctrl`+`Shift`+arrow.
+    pub fn resize_focused(&mut self, dir: Dir) -> bool {
+        let from = self.focused;
+        let Some(to) = self.neighbour(from, dir) else {
+            return false;
+        };
+        match dir {
+            Dir::Up | Dir::Down => self.step_row(from, to, dir),
+            Dir::Left | Dir::Right => self.step_col(from, to, dir),
+        }
+    }
+
+    /// The key names the edge that travels, so `Right` grows the left
+    /// panel and `Left` grows the right one.
+    /// The key names the edge that travels, so `Right` grows the left
+    /// panel and `Left` grows the right one.
+    fn step_col(&mut self, from: ZoneId, to: ZoneId, dir: Dir) -> bool {
+        let (grow, shrink) = if dir == Dir::Right {
+            (from, to)
+        } else {
+            (to, from)
+        };
+        let Some((g, s)) = self.step_pair(grow, shrink, RESIZE_MIN_WIDTH, Axis::Width) else {
+            return false;
+        };
+        self.set_flex(grow, g);
+        self.set_flex(shrink, s);
+        true
+    }
+
+    fn step_row(&mut self, from: ZoneId, to: ZoneId, dir: Dir) -> bool {
+        // A row's height is one number read off its first cell, so both
+        // panels have to be addressed through the row that owns it.
+        let (Some(x), Some(y)) = (self.row_owner(from), self.row_owner(to)) else {
+            return false;
+        };
+        let (up, down) = if self.get_area(x).y <= self.get_area(y).y {
+            (x, y)
+        } else {
+            (y, x)
+        };
+        // `Down` travels the border downwards, which grows the panel above
+        // it -- the same rule `step_col` follows, where `Right` grows the
+        // panel to the left of the divider.
+        let (grow, shrink) = if dir == Dir::Down {
+            (up, down)
+        } else {
+            (down, up)
+        };
+        let Some((g, s)) = self.step_pair(grow, shrink, RESIZE_MIN_HEIGHT, Axis::Height) else {
+            return false;
+        };
+        for (id, v) in [(grow, g), (shrink, s)] {
+            if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+                zone.row_flex = v;
+            }
+        }
+        true
+    }
+
+    /// The two new shares after moving the border between two panels by
+    /// a twentieth of the space they share -- or `None`, when that would
+    /// leave either of them under `floor`.
+    ///
+    /// The step is counted in cells and only then restated in shares,
+    /// because the floor is in cells and a share is not: a fresh layout
+    /// gives every panel `1.0`, so one share is a whole panel there.
+    /// Comparing a share against a cell floor let a step overshoot from
+    /// four rows down to two.
+    fn step_pair(
+        &self,
+        grow: ZoneId,
+        shrink: ZoneId,
+        floor: u16,
+        axis: Axis,
+    ) -> Option<(f32, f32)> {
+        let (g, s) = (
+            axis.cells(self.get_area(grow)),
+            axis.cells(self.get_area(shrink)),
+        );
+        let total = f32::from(g + s);
+        if total <= 0.0 {
+            return None;
+        }
+        // Never more than a quarter of the pair, or one keypress would
+        // eat most of a narrow panel in a single go.
+        let step = RESIZE_STEP.min((g + s) / 4);
+        if step == 0 || f32::from(s) - f32::from(step) < f32::from(floor) {
+            return None;
+        }
+        let (gw, sw) = (axis.share(self.zone(grow)?), axis.share(self.zone(shrink)?));
+        let sum = gw + sw;
+        if sum <= 0.0 {
+            return None;
+        }
+        let delta = f32::from(step) * sum / total;
+        Some((gw + delta, sw - delta))
+    }
+
+    fn row_owner(&self, id: ZoneId) -> Option<ZoneId> {
+        self.visible_rows()
+            .into_iter()
+            .find(|cells| cells.contains(&id))
+            .and_then(|cells| cells.first().copied())
+    }
+
+    /// Read a layout back, refusing a file too short to name every zone:
+    /// half a layout is a layout nobody asked for.
+    pub fn restore(&mut self, saved: &SavedLayout) -> bool {
+        if saved.zones.len() != ZoneId::all().len() || saved.grid.is_empty() {
+            return false;
+        }
+        let grid: Vec<Vec<ZoneId>> = saved
+            .grid
+            .iter()
+            .map(|row| row.chars().filter_map(ZoneId::from_key).collect())
+            .filter(|row: &Vec<ZoneId>| !row.is_empty())
+            .collect();
+        if grid.is_empty() {
+            return false;
+        }
+        for (zone, s) in self.zones.iter_mut().zip(&saved.zones) {
+            zone.flex = if s.flex > 0.0 { s.flex } else { 1.0 };
+            zone.row_flex = if s.row_flex > 0.0 { s.row_flex } else { 1.0 };
+            zone.visible = s.visible;
+        }
+        self.grid = grid;
+        self.focused = ZoneId::all()
+            .iter()
+            .copied()
+            .find(|id| *id as u8 == saved.focused)
+            .unwrap_or(ZoneId::Results);
+        if !self.is_visible(self.focused) {
+            if let Some(first) = self.zones.iter().find(|z| z.visible).map(|z| z.id) {
+                self.focused = first;
+            }
+        }
+        true
+    }
+
+    /// The whole layout, ready to be written to the config file.
+    pub fn snapshot(&self) -> SavedLayout {
+        SavedLayout {
+            grid: self
+                .grid
+                .iter()
+                .map(|row| row.iter().map(|id| id.key_char()).collect())
+                .collect(),
+            zones: self
+                .zones
+                .iter()
+                .map(|z| SavedZone {
+                    flex: z.flex,
+                    row_flex: z.row_flex,
+                    visible: z.visible,
+                })
+                .collect(),
+            focused: self.focused as u8,
+        }
+    }
+
     pub fn get_area(&self, id: ZoneId) -> Rect {
         self.zones
             .iter()
@@ -566,6 +860,29 @@ fn distribute(total: u16, weights: &[f32]) -> Vec<u16> {
         }
     }
     out
+}
+
+/// The layout as the user left it: the tiling, every panel's share and
+/// which ones were on screen.
+///
+/// Saved whole rather than as a preset index, because a preset names a
+/// shape and not a size -- and once the borders can be dragged and
+/// stepped, the size is the part the user chose.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SavedLayout {
+    /// The tiling, in the same `"1,3|4"` spelling `presets` uses.
+    pub grid: Vec<String>,
+    /// One entry per zone, in [`ZoneId`] order: width share, height
+    /// share, and whether it was on screen.
+    pub zones: Vec<SavedZone>,
+    pub focused: u8,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SavedZone {
+    pub flex: f32,
+    pub row_flex: f32,
+    pub visible: bool,
 }
 
 pub fn superscript_digit(n: u8) -> &'static str {
@@ -689,11 +1006,12 @@ pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
     ]);
     match id.detail_key() {
         Some(key) => {
-            let hot = Style::default()
-                .fg(theme.on_hover_color())
-                .add_modifier(Modifier::BOLD);
+            // The detail key wears the number's colour, not the keybind
+            // accent: the two sit next to each other in the same title
+            // and name the same thing -- this panel -- so painting them
+            // differently read as two unrelated marks.
             let rest = id.label().chars().skip(1);
-            spans.push(Span::styled(key.to_string(), hot));
+            spans.push(Span::styled(key.to_string(), number));
             spans.push(Span::styled(rest.collect::<String>(), word));
         }
         None => spans.push(Span::styled(id.label(), word)),

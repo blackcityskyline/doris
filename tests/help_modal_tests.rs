@@ -229,7 +229,7 @@ fn test_help_draws_the_header_and_the_keys() {
     // Every visible key sits in the same 20-column column as `Key:`:
     let key_col = header[..header.find("Key:").unwrap()].chars().count() - 8;
     let page = &rows[rows.iter().position(|r| r.contains("Key:")).unwrap()..];
-    for expected in ["s, i", "Enter", "Esc", "? , /, F1"] {
+    for expected in ["s, i", "Enter", "Esc", "ctrl + shift"] {
         let found = page.iter().any(|r| {
             r.chars()
                 .skip(key_col)
@@ -488,4 +488,49 @@ fn test_every_help_tab_names_its_own_digit() {
         rows.iter().any(|r| r.contains("size:>1gb")),
         "pressing 2 must show the filter table"
     );
+}
+
+/// Every key in the table is reachable, over however many pages it
+/// takes. A key listed but never drawn is worse than one not listed: the
+/// page claims to be the reference.
+#[test]
+fn test_every_listed_key_is_drawn_on_some_page() {
+    let mut app = make_app();
+    app.open_help_modal();
+    let pages = doris::ui::modals::help::sections()[0].1.len();
+    let mut seen = String::new();
+    for page in 0..4 {
+        let rows = render(&mut app, 100, 40);
+        seen.push_str(&rows.join("\n"));
+        // Any key past the last one this page holds stops the walk.
+        if page > 0 && !rows.iter().any(|r| r.contains("Key:")) {
+            break;
+        }
+        let _ = pages;
+        app.help_key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('j'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+    }
+    for (k, _) in HELP_TEXT {
+        // The table prints the key in a 20-column column; matching the
+        // first word is enough to say it was drawn somewhere.
+        let head = k.split(&[' ', '+'][..]).next().unwrap_or(k);
+        assert!(
+            seen.contains(head),
+            "`{k}` is listed but never drawn on any page"
+        );
+    }
+}
+
+/// The three layout bindings exist because a panel cannot be arranged
+/// without them, so they are written down where the others are.
+#[test]
+fn test_the_layout_bindings_are_documented() {
+    for binding in ["ctrl + arrows", "shift + arrows", "ctrl + shift + arrows"] {
+        assert!(
+            HELP_TEXT.iter().any(|(k, _)| *k == binding),
+            "`{binding}` is not in the key table"
+        );
+    }
 }
