@@ -276,40 +276,55 @@ fn test_a_hotkey_letter_wears_the_colour_of_the_word_it_sits_in() {
     }
 }
 
-/// The panel title's detail key wears the number's colour, like every
-/// other letter in a label now.
+/// Every keybind in a panel title is the label's own colour.
+///
+/// The zone's digit and the panel's detail-view key are keybinds, and they
+/// used to take `secondary` while the word beside them took `primary`.
+/// That only showed on a theme which names no `secondary` -- the accent
+/// then falls back to the theme's grey-green `hi_fg` -- and the result was
+/// `¹` and `R` coming out a different colour from `Results` on the same
+/// line, with the digit and the letter looking like they belonged to
+/// something else entirely.
 #[test]
-fn test_the_panel_title_detail_key_wears_the_number() {
+fn test_a_panel_title_is_one_colour() {
     use doris::ui::layout::zone_title;
-    use doris::ui::theme::{ColorDef, Theme};
+    use ratatui::style::{Color, Modifier};
 
-    let theme = Theme {
-        primary: Some(ColorDef::new(10, 20, 30)),
-        secondary: Some(ColorDef::new(40, 50, 60)),
-        on_hover: Some(ColorDef::new(70, 80, 90)),
-        ..Theme::default_theme()
+    // The built-in theme falls `secondary` back to the same `hi_fg` it
+    // gives `primary`, so it cannot tell these two apart. Named apart
+    // here, the way a real theme that defines both does.
+    let theme = doris::ui::theme::Theme {
+        primary: Some(doris::ui::theme::ColorDef::new(10, 20, 30)),
+        secondary: Some(doris::ui::theme::ColorDef::new(90, 100, 110)),
+        ..doris::ui::theme::Theme::default_theme()
     };
-    let number = theme.secondary_color();
-    assert_ne!(
-        number,
-        theme.on_hover_color(),
-        "the accents must differ here"
-    );
-    for (id, key) in [
-        (ZoneId::Results, 'R'),
-        (ZoneId::Torrent, 'T'),
-        (ZoneId::Log, 'L'),
+
+    for id in [
+        doris::ui::layout::ZoneId::Results,
+        doris::ui::layout::ZoneId::Torrent,
+        doris::ui::layout::ZoneId::Trackers,
+        doris::ui::layout::ZoneId::Log,
     ] {
         let spans = zone_title(id, &theme, true).spans;
-        let found = spans
+        let wrong: Vec<&str> = spans
             .iter()
-            .find(|s| s.content.as_ref() == key.to_string())
-            .map(|s| s.style.fg);
-        assert_eq!(
-            found,
-            Some(Some(number)),
-            "the `{key}` of the {id:?} title is not the number's colour"
+            .filter(|s| s.style.fg != Some(Color::Rgb(10, 20, 30)))
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "the {id:?} title paints {wrong:?} in something other than the \
+             label's colour"
         );
+        // The keybinds stay marked, by weight.
+        for key in ["\u{b9}", "\u{b2}", "\u{b3}", "\u{b4}", "R", "T", "L"] {
+            if let Some(s) = spans.iter().find(|s| s.content.as_ref() == key) {
+                assert!(
+                    s.style.add_modifier.contains(Modifier::BOLD),
+                    "the `{key}` of the {id:?} title is not marked"
+                );
+            }
+        }
     }
 }
 

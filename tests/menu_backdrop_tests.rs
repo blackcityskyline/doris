@@ -210,6 +210,11 @@ fn test_the_picked_menu_item_is_drawn_with_doubled_lines() {
         '┘' => '╝',
         '├' => '╠',
         '┤' => '╣',
+        // The half strokes are half a line; doubled, they are the whole
+        // doubled line they were half of. Left as-is they were the
+        // complaint: ink that stops halfway at the end of a stroke.
+        '╶' | '╴' => '═',
+        '╷' | '╵' => '║',
         '┬' => '╦',
         '┴' => '╩',
         other => other,
@@ -231,6 +236,28 @@ fn test_the_picked_menu_item_is_drawn_with_doubled_lines() {
                 a.chars().map(doubled).collect::<String>(),
                 *b,
                 "item {idx} row {row} is not its own thin art doubled"
+            );
+        }
+    }
+}
+
+/// No half stroke survives in the heavy art.
+///
+/// The thin art uses `╶ ╷ ╵ ╴` -- half a line, which is how the letters
+/// get their shadow. Doubled, a half stroke has to become the *whole*
+/// doubled line it was half of, or the drawing stops halfway along every
+/// stroke that ends in one. That was visible as letters whose middle
+/// bars ran out before reaching the edge.
+#[test]
+fn test_the_heavy_art_has_no_half_stroke_left_in_it() {
+    use doris::ui::menu::MENU_ITEMS_BOLD;
+
+    for (idx, block) in MENU_ITEMS_BOLD.iter().enumerate() {
+        for (row, line) in block.iter().enumerate() {
+            let left: Vec<char> = line.chars().filter(|c| "╶╴╷╵".contains(*c)).collect();
+            assert!(
+                left.is_empty(),
+                "item {idx} row {row} still draws a half stroke: {left:?} in {line:?}"
             );
         }
     }

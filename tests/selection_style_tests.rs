@@ -133,9 +133,12 @@ fn test_menu_selection_is_the_accent_colour_and_no_fill() {
 
     let buf = buffer(&mut app, 120, 40);
     // The items are ASCII art, not words, and the picked one is drawn
-    // from the doubled-line table -- so `Help` is looked for by its bold
-    // glyphs, which are what distinguishes it from the two around it.
-    let (x, y) = find(&buf, "╔═╴").expect("the picked menu item is on screen");
+    // from the doubled-line table -- so `Help` is looked for by a glyph
+    // only that table has. Taken from the table itself rather than typed
+    // in, so a change to the art cannot quietly make this look for
+    // nothing and pass.
+    let bold = doris::ui::menu::MENU_ITEMS_BOLD[1][1];
+    let (x, y) = find(&buf, bold).expect("the picked menu item is on screen");
     assert_eq!(
         buf[(x, y)].fg,
         theme().primary_color(),
@@ -150,14 +153,32 @@ fn test_menu_selection_is_the_accent_colour_and_no_fill() {
         "and the menu painted nothing behind it"
     );
 
-    // The cell two to the left is a space inside the same line of art,
-    // and the row below is an unpicked item.
-    assert_eq!(buf[(x - 2, y)].symbol(), " ", "a space, not a glyph");
-    assert_eq!(
-        buf[(x - 2, y)].fg,
-        theme().menu_fg.to_color(),
-        "the unpicked colour"
+    // The gaps inside the art are left in the plain menu colour, so the
+    // picked word is not one solid accent block with holes in it. Scanned
+    // rather than indexed: the art changes, and an offset into it would
+    // quietly start pointing at a glyph.
+    let plain_menu = theme().menu_fg.to_color();
+    let gaps: Vec<(u16, u16, Option<ratatui::style::Color>)> = (0..buf.area.width)
+        .filter_map(|cx| {
+            let c = &buf[(cx, y)];
+            (c.symbol() == " ").then_some((cx, y, c.style().fg))
+        })
+        .collect();
+    let inside: Vec<_> = gaps
+        .into_iter()
+        .filter(|(cx, _, _)| *cx >= x && *cx < x + bold.chars().count() as u16)
+        .collect();
+    assert!(
+        !inside.is_empty(),
+        "the picked item's row has no gap in it to check"
     );
+    for (cx, cy, fg) in inside {
+        assert_eq!(
+            fg,
+            Some(plain_menu),
+            "the gap at {cx},{cy} inside the picked item is not the plain colour"
+        );
+    }
 }
 
 #[test]

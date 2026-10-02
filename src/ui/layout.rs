@@ -1001,30 +1001,28 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
 /// label in `primary` (`btop_draw.cpp:290` for the numbering colour, `:332` for where it is
 /// drawn).
 pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
+    // One colour for the whole title. The zone's digit and the panel's
+    // detail-view key are keybinds like any other, and they used to take
+    // `secondary` while the word beside them took `primary` -- so on a
+    // theme that names no `secondary` (the accent falls back to the
+    // theme's grey-green `hi_fg`) the `1` and the `R` of
+    // `¹ Results` came out a different colour from `Results` itself.
     let word = Style::default().fg(theme.primary_color());
-    let number = Style::default()
-        .fg(theme.secondary_color())
-        .add_modifier(Modifier::BOLD);
+    let bound = word.add_modifier(Modifier::BOLD);
     let mut spans = vec![Span::styled(
         if focused { "▸ " } else { "  " },
-        if focused {
-            word.add_modifier(Modifier::BOLD)
-        } else {
-            word
-        },
+        if focused { bound } else { word },
     )];
     spans.extend([
-        Span::styled(superscript_digit(id as u8), number),
+        Span::styled(superscript_digit(id as u8), bound),
         Span::styled(" ", word),
     ]);
     match id.detail_key() {
         Some(key) => {
-            // The detail key wears the number's colour, not the keybind
-            // accent: the two sit next to each other in the same title
-            // and name the same thing -- this panel -- so painting them
-            // differently read as two unrelated marks.
+            // Bold like the digit, and the same colour: it is one more
+            // keybind in the same label.
             let rest = id.label().chars().skip(1);
-            spans.push(Span::styled(key.to_string(), number));
+            spans.push(Span::styled(key.to_string(), bound));
             spans.push(Span::styled(rest.collect::<String>(), word));
         }
         None => spans.push(Span::styled(id.label(), word)),
