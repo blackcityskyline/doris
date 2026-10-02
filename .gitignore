@@ -8,3 +8,5 @@ cookies.txt
 
 # graphify knowledge graph (local, rebuilt by git hooks)
 graphify-out/
+# agent instructions: local only, never committed
+/AGENTS.md
