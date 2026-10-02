@@ -655,68 +655,63 @@ impl ZoneLayout {
 
     /// Move the border between the focused panel and its neighbour one
     /// step towards that neighbour. `Ctrl`+`Shift`+arrow.
+    /// Move the focused panel's own edge one step towards `dir`, taking
+    /// the space from the neighbour on that side. `Ctrl`+`Shift`+arrow.
+    ///
+    /// The arrow names the focused panel's edge, so the panel the cursor
+    /// is on is always the one that grows. It used to be the other way
+    /// round -- `Left` grew the *other* panel, which is the same as
+    /// shrinking the focused one -- so the left panel only ever grew, the
+    /// right panel only ever shrank, and the two arrows on either side of
+    /// the focus did opposite things.
+    /// Move the focused panel's own edge one step towards `dir`, taking
+    /// the space from the neighbour on that side. `Ctrl`+`Shift`+arrow.
+    ///
+    /// The arrow names the focused panel's edge, so the panel the cursor
+    /// is on is always the one that grows. It used to be decided by the
+    /// direction instead -- `Left` grew the *other* panel, which is the
+    /// same as shrinking the focused one -- so the left panel could only
+    /// grow, the right panel could only shrink, and with the focus on
+    /// either of them the two arrows did opposite things.
     pub fn resize_focused(&mut self, dir: Dir) -> bool {
         let from = self.focused;
         let Some(to) = self.neighbour(from, dir) else {
+            // Nothing that way: the edge the key names has no panel on
+            // the other side of it to take the space from.
             return false;
         };
         match dir {
-            Dir::Up | Dir::Down => self.step_row(from, to, dir),
-            Dir::Left | Dir::Right => self.step_col(from, to, dir),
+            Dir::Up | Dir::Down => self.step_row(from, to),
+            Dir::Left | Dir::Right => self.step_col(from, to),
         }
     }
 
-    /// The key names the edge that travels, so `Right` grows the left
-    /// panel and `Left` grows the right one.
-    /// The key names the edge that travels, so `Right` grows the left
-    /// panel and `Left` grows the right one.
-    fn step_col(&mut self, from: ZoneId, to: ZoneId, dir: Dir) -> bool {
-        let (grow, shrink) = if dir == Dir::Right {
-            (from, to)
-        } else {
-            (to, from)
-        };
-        let Some((g, s)) = self.step_pair(grow, shrink, RESIZE_MIN_WIDTH, Axis::Width) else {
+    fn step_col(&mut self, from: ZoneId, to: ZoneId) -> bool {
+        let Some((g, s)) = self.step_pair(from, to, RESIZE_MIN_WIDTH, Axis::Width) else {
             return false;
         };
-        self.set_flex(grow, g);
-        self.set_flex(shrink, s);
+        self.set_flex(from, g);
+        self.set_flex(to, s);
         true
     }
 
-    fn step_row(&mut self, from: ZoneId, to: ZoneId, dir: Dir) -> bool {
+    fn step_row(&mut self, from: ZoneId, to: ZoneId) -> bool {
         // A row's height is one number read off its first cell, so both
         // panels have to be addressed through the row that owns it.
-        let (Some(x), Some(y)) = (self.row_owner(from), self.row_owner(to)) else {
+        let (Some(grow), Some(shrink)) = (self.row_owner(from), self.row_owner(to)) else {
             return false;
-        };
-        let (up, down) = if self.get_area(x).y <= self.get_area(y).y {
-            (x, y)
-        } else {
-            (y, x)
-        };
-        // `Down` travels the border downwards, which grows the panel above
-        // it -- the same rule `step_col` follows, where `Right` grows the
-        // panel to the left of the divider.
-        let (grow, shrink) = if dir == Dir::Down {
-            (up, down)
-        } else {
-            (down, up)
         };
         let Some((g, s)) = self.step_pair(grow, shrink, RESIZE_MIN_HEIGHT, Axis::Height) else {
             return false;
         };
-        for (id, v) in [(grow, g), (shrink, s)] {
-            if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
-                zone.row_flex = v;
-            }
-        }
+        self.set_row_flex(grow, g);
+        self.set_row_flex(shrink, s);
         true
     }
 
     /// The two new shares after moving the border between two panels by
-    /// a twentieth of the space they share -- or `None`, when that would
-    /// leave either of them under `floor`.
+    /// `RESIZE_STEP` cells -- or `None`, when that would leave either of
+    /// them under `floor`.
     ///
     /// The step is counted in cells and only then restated in shares,
     /// because the floor is in cells and a share is not: a fresh layout
@@ -751,6 +746,12 @@ impl ZoneLayout {
         }
         let delta = f32::from(step) * sum / total;
         Some((gw + delta, sw - delta))
+    }
+
+    fn set_row_flex(&mut self, id: ZoneId, v: f32) {
+        if let Some(zone) = self.zones.iter_mut().find(|z| z.id == id) {
+            zone.row_flex = v;
+        }
     }
 
     fn row_owner(&self, id: ZoneId) -> Option<ZoneId> {

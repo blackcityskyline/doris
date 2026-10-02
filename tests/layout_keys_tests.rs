@@ -384,3 +384,155 @@ fn test_a_frame_button_marks_its_hotkey_in_hi_fg() {
     }
     assert!(seen >= 2, "no frame button marked a keybind at all: {seen}");
 }
+
+/// The arrow names the focused panel's own edge, so that panel is the one
+/// that grows -- whichever side it sits on.
+///
+/// This is the rule that was wrong: the side that grew was decided by the
+/// direction, so `Left` grew the *other* panel, which is the same as
+/// shrinking the focused one. A run showed it as: the left panel only ever
+/// growing, the right panel only ever shrinking, `Left` doing nothing from
+/// the leftmost panel, and `Right` doing nothing from the rightmost.
+///
+#[test]
+fn test_the_focused_panel_grows_towards_the_arrow() {
+    // `12` is two cells of one row (side by side); `1,2` is two rows.
+    let cases: [(ZoneId, &str, Dir); 4] = [
+        (ZoneId::Results, "12", Dir::Right),
+        (ZoneId::Torrent, "12", Dir::Left),
+        (ZoneId::Results, "1,2", Dir::Down),
+        (ZoneId::Torrent, "1,2", Dir::Up),
+    ];
+    let mut grew = 0;
+
+    for (focus, spec, dir) in cases {
+        {
+            let mut z = preset(spec);
+            z.focused = focus;
+            z.update_areas(FRAME);
+            let before = measure(z.get_area(focus), dir);
+            let had_neighbour = z.neighbour(focus, dir).is_some();
+            let moved = z.resize_focused(dir);
+            z.update_areas(FRAME);
+            let after = measure(z.get_area(focus), dir);
+
+            if had_neighbour {
+                assert!(moved, "{focus:?} could not grow towards {dir:?} on {spec}");
+                assert!(
+                    after > before,
+                    "{focus:?} towards {dir:?} on {spec}: {before} -> {after}, so the \
+                     arrow shrank the panel it names"
+                );
+                grew += 1;
+            } else {
+                assert!(!moved, "{focus:?} grew with no neighbour to take from");
+            }
+        }
+    }
+    assert_eq!(grew, cases.len(), "every case had a neighbour and moved");
+}
+
+/// The measured side: the one the arrow names.
+fn measure(r: Rect, dir: Dir) -> u32 {
+    match dir {
+        Dir::Left | Dir::Right => r.width as u32,
+        Dir::Up | Dir::Down => r.height as u32,
+    }
+}
+
+/// A panel with nothing on that side cannot grow that way, and refusing is
+/// the whole answer -- growing the panel next door instead is what made
+/// the two arrows disagree.
+#[test]
+fn test_an_edge_with_nothing_beyond_it_does_not_move() {
+    let mut z = preset("12");
+    for (focus, dir) in [(ZoneId::Results, Dir::Left), (ZoneId::Torrent, Dir::Right)] {
+        z.focused = focus;
+        z.update_areas(FRAME);
+        let before = z.get_area(focus);
+        assert!(
+            !z.resize_focused(dir),
+            "{focus:?} grew towards {dir:?} with nothing there"
+        );
+        z.update_areas(FRAME);
+        assert_eq!(z.get_area(focus), before, "{focus:?} moved anyway");
+    }
+}
+
+/// The neighbour gives up exactly what the focused panel takes.
+#[test]
+fn test_the_border_moves_and_the_pair_still_fills_the_frame() {
+    let mut z = preset("12");
+    z.focused = ZoneId::Results;
+    z.update_areas(FRAME);
+
+    assert!(z.resize_focused(Dir::Right));
+    z.update_areas(FRAME);
+    let mine = z.get_area(ZoneId::Results);
+    let theirs = z.get_area(ZoneId::Torrent);
+    assert!(
+        mine.width > FRAME.width / 2,
+        "the left panel did not grow: {mine:?}"
+    );
+    assert!(
+        theirs.width < FRAME.width / 2,
+        "the right one did not give: {theirs:?}"
+    );
+    assert_eq!(
+        mine.width + theirs.width,
+        FRAME.width,
+        "the pair still fills the frame"
+    );
+}
+
+/// Pressed only on one side, each panel grows the way its own key says.
+///
+/// Equal numbers of presses on both sides land back where they started, so
+/// each side is driven alone here. This is the whole of the report: from
+/// the right panel, `Left` used to shrink it instead of growing it.
+#[test]
+fn test_each_panel_grows_on_its_own_side() {
+    for (focus, dir, other) in [
+        (ZoneId::Results, Dir::Right, ZoneId::Torrent),
+        (ZoneId::Torrent, Dir::Left, ZoneId::Results),
+    ] {
+        let mut z = preset("12");
+        let start = z.get_area(focus).width;
+        for _ in 0..3 {
+            z.focused = focus;
+            z.update_areas(FRAME);
+            assert!(z.resize_focused(dir), "{focus:?} {dir:?}");
+            z.update_areas(FRAME);
+        }
+        assert!(
+            z.get_area(focus).width > start,
+            "{focus:?} pressed {dir:?} three times: {} -> {}",
+            start,
+            z.get_area(focus).width
+        );
+        assert!(
+            z.get_area(other).width < start,
+            "{other:?} did not give the space to {focus:?}"
+        );
+    }
+}
+
+/// The same, down the rows.
+#[test]
+fn test_each_row_panel_grows_on_its_own_side() {
+    let mut z = preset("1,2");
+    for _ in 0..3 {
+        for (focus, dir) in [(ZoneId::Results, Dir::Down), (ZoneId::Torrent, Dir::Up)] {
+            z.focused = focus;
+            z.update_areas(FRAME);
+            assert!(z.resize_focused(dir), "{focus:?} {dir:?}");
+            z.update_areas(FRAME);
+        }
+    }
+    let top = z.get_area(ZoneId::Results).height;
+    let bottom = z.get_area(ZoneId::Torrent).height;
+    assert!(
+        top > bottom,
+        "the top panel should be ahead: {top} / {bottom}"
+    );
+}
