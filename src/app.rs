@@ -446,6 +446,164 @@ impl App {
         })
     }
 
+    /// Every event that is not a key, a mouse, a tick or a resize, applied
+    /// to the state.
+    ///
+    /// One function rather than a match arm inside the draw loop, for a
+    /// reason that has nothing to do with tidiness: the CLI drives the same
+    /// one. `run` waits on the event handler and calls this;
+    /// `pump_until_idle` waits on the same handler and calls this, with no
+    /// terminal in sight. A second copy of these rules would be a second
+    /// answer to "what does a source's page do when it lands", and the
+    /// two would drift on the first bug fix.
+    pub async fn apply_event(&mut self, event: Event) -> Result<()> {
+        match event {
+            Event::SourceDone {
+                source,
+                generation,
+                items,
+                has_more,
+                next_offset,
+                error,
+                timed_out,
+            } => {
+                let count = items.len();
+                let applied = apply_source_done(
+                    &mut self.ui,
+                    generation,
+                    self.search_generation,
+                    &source,
+                    items,
+                    error.as_deref(),
+                );
+                // A superseded dispatch may not touch the
+                if applied {
+                    let status = SourceStatus::from_event(count, error.as_deref(), timed_out);
+                    self.ui.source_status.insert(source.clone(), status);
+                    self.source_has_more.insert(source.clone(), has_more);
+                    // Failures deliver no rows and no cursor,
+                    let offset = self.source_offsets.entry(source).or_insert(0);
+                    *offset = orchestrator::advance_offset(*offset, count, next_offset);
+                }
+            }
+            Event::SearchComplete { generation } => {
+                finish_search(
+                    &mut self.ui,
+                    generation,
+                    self.search_generation,
+                    &self.source_has_more,
+                );
+            }
+            Event::StreamComplete(url) => {
+                self.ui.state = AppState::Idle;
+                self.ui.add_log(&format!("Stream launched: {}", url));
+            }
+            Event::StreamError(err) => {
+                self.ui.state = AppState::Idle;
+                self.ui.add_log(&format!("Stream error: {}", err));
+            }
+            Event::StreamLog(msg) => {
+                self.ui.add_log(&msg);
+                self.ui.add_detail(&msg);
+            }
+            Event::LoginResult(success) => {
+                if success {
+                    self.ui.add_log("Login successful!");
+                    self.ui.add_detail("LOGIN: SUCCESS");
+                } else {
+                    self.ui.add_log("Login failed.");
+                    self.ui.add_detail("LOGIN: FAILED");
+                }
+            }
+            Event::ExtensionQuery(query) => {
+                self.ui.search_input = query.clone();
+                self.ui.show_menu = false;
+                self.start_search(query).await;
+            }
+            Event::TorrentListUpdate(list) => {
+                // Prefer the torrent we're actively
+                let chosen = match &self.ui.active_torrent_hash {
+                    Some(hash) => list
+                        .iter()
+                        .find(|t| &t.hash == hash)
+                        .or_else(|| list.first()),
+                    None => list.first(),
+                };
+                if let Some(t) = chosen {
+                    self.ui.torrent_status = TorrentStatus {
+                        hash: t.hash.clone(),
+                        title: if t.name.is_empty() {
+                            self.ui.torrent_status.title.clone()
+                        } else {
+                            t.name.clone()
+                        },
+                        progress: t.progress(),
+                        download_speed: t.download_speed.max(0.0) as u64,
+                        upload_speed: t.upload_speed.max(0.0) as u64,
+                        seeds: t.connected_seeders.max(0) as u32,
+                        peers: t.active_peers.max(0) as u32,
+                        downloaded: t.loaded_size.max(0) as u64,
+                        total_size: t.total_size.max(0) as u64,
+                        status: t.status_string.clone(),
+                    };
+                    // Cap history length -- a very wide terminal
+                    const MAX_HISTORY: usize = 600;
+                    self.ui
+                        .progress_history
+                        .push_back(self.ui.torrent_status.progress);
+                    while self.ui.progress_history.len() > MAX_HISTORY {
+                        self.ui.progress_history.pop_front();
+                    }
+                }
+            }
+            Event::TorrentActive(hash) => {
+                if self.ui.active_torrent_hash.as_deref() != Some(hash.as_str()) {
+                    self.ui.progress_history.clear();
+                }
+                self.ui.active_torrent_hash = Some(hash);
+            }
+            Event::DetailLoaded {
+                page_url,
+                files,
+                error,
+            } => {
+                apply_detail_loaded(&mut self.ui, &page_url, files, error.as_deref());
+            }
+            // Keys, mouse, ticks and resizes belong to `run`, the only
+            // thing with a terminal to draw them on.
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Wait until every source of the current dispatch has reported, or
+    /// `deadline` runs out.
+    ///
+    /// The CLI's "do this one thing, then print the answer" shape. The TUI
+    /// never waits for anything -- it draws whatever has arrived and
+    /// redraws -- but a one-shot command has no screen to redraw, so it has
+    /// to know when the round is over. `SearchComplete` is that signal:
+    /// every source of the generation has answered or failed.
+    pub async fn pump_until_idle(&mut self, deadline: std::time::Duration) -> Result<()> {
+        let give_up = tokio::time::Instant::now() + deadline;
+        loop {
+            if self.ui.state != AppState::Searching {
+                return Ok(());
+            }
+            let Some(remaining) = give_up.checked_duration_since(tokio::time::Instant::now())
+            else {
+                return Ok(());
+            };
+            match tokio::time::timeout(remaining, self.event_handler.next()).await {
+                // Nothing arrived before the deadline, or the handler is
+                // gone: hand back what is on screen and let the caller
+                // report the shortfall.
+                Err(_) | Ok(Err(_)) => return Ok(()),
+                Ok(Ok(event)) => self.apply_event(event).await?,
+            }
+        }
+    }
+
     pub async fn run(&mut self) -> Result<()> {
         // The keyboard protocol is what makes Shift+Enter arrive as
         let mut terminal = tui::init(!self.config.false_tty, !self.config.disable_mouse)?;
@@ -476,113 +634,7 @@ impl App {
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);
                         },
-                        Event::SourceDone {
-                            source,
-                            generation,
-                            items,
-                            has_more,
-                            next_offset,
-                            error,
-                            timed_out,
-                        } => {
-                            let count = items.len();
-                            let applied = apply_source_done(
-                                &mut self.ui,
-                                generation,
-                                self.search_generation,
-                                &source,
-                                items,
-                                error.as_deref(),
-                            );
-                            // A superseded dispatch may not touch the
-                            if applied {
-                                let status = SourceStatus::from_event(
-                                    count,
-                                    error.as_deref(),
-                                    timed_out,
-                                );
-                                self.ui.source_status.insert(source.clone(), status);
-                                self.source_has_more.insert(source.clone(), has_more);
-                                // Failures deliver no rows and no cursor,
-                                let offset = self.source_offsets.entry(source).or_insert(0);
-                                *offset = orchestrator::advance_offset(*offset, count, next_offset);
-                            }
-                        }
-                        Event::SearchComplete { generation } => {
-                            finish_search(
-                                &mut self.ui,
-                                generation,
-                                self.search_generation,
-                                &self.source_has_more,
-                            );
-                        }
-                        Event::StreamComplete(url) => {
-                            self.ui.state = AppState::Idle;
-                            self.ui.add_log(&format!("Stream launched: {}", url));
-                        }
-                        Event::StreamError(err) => {
-                            self.ui.state = AppState::Idle;
-                            self.ui.add_log(&format!("Stream error: {}", err));
-                        }
-                        Event::StreamLog(msg) => {
-                            self.ui.add_log(&msg);
-                            self.ui.add_detail(&msg);
-                        }
-                        Event::LoginResult(success) => {
-                            if success {
-                                self.ui.add_log("Login successful!");
-                                self.ui.add_detail("LOGIN: SUCCESS");
-                            } else {
-                                self.ui.add_log("Login failed.");
-                                self.ui.add_detail("LOGIN: FAILED");
-                            }
-                        }
-                        Event::ExtensionQuery(query) => {
-                            self.ui.search_input = query.clone();
-                            self.ui.show_menu = false;
-                            self.start_search(query).await;
-                        }
-                        Event::TorrentListUpdate(list) => {
-                            // Prefer the torrent we're actively
-                            let chosen = match &self.ui.active_torrent_hash {
-                                Some(hash) => list.iter().find(|t| &t.hash == hash).or_else(|| list.first()),
-                                None => list.first(),
-                            };
-                            if let Some(t) = chosen {
-                                self.ui.torrent_status = TorrentStatus {
-                                    hash: t.hash.clone(),
-                                    title: if t.name.is_empty() { self.ui.torrent_status.title.clone() } else { t.name.clone() },
-                                    progress: t.progress(),
-                                    download_speed: t.download_speed.max(0.0) as u64,
-                                    upload_speed: t.upload_speed.max(0.0) as u64,
-                                    seeds: t.connected_seeders.max(0) as u32,
-                                    peers: t.active_peers.max(0) as u32,
-                                    downloaded: t.loaded_size.max(0) as u64,
-                                    total_size: t.total_size.max(0) as u64,
-                                    status: t.status_string.clone(),
-                                };
-                                // Cap history length -- a very wide terminal
-                                const MAX_HISTORY: usize = 600;
-                                self.ui.progress_history.push_back(self.ui.torrent_status.progress);
-                                while self.ui.progress_history.len() > MAX_HISTORY {
-                                    self.ui.progress_history.pop_front();
-                                }
-                            }
-                        }
-                        Event::TorrentActive(hash) => {
-                            if self.ui.active_torrent_hash.as_deref() != Some(hash.as_str()) {
-                                self.ui.progress_history.clear();
-                            }
-                            self.ui.active_torrent_hash = Some(hash);
-                        }
-                        Event::DetailLoaded { page_url, files, error } => {
-                            apply_detail_loaded(
-                                &mut self.ui,
-                                &page_url,
-                                files,
-                                error.as_deref(),
-                            );
-                        }
+                        other => self.apply_event(other).await?,
                     }
                 }
                 query = self.search_rx.recv() => {
