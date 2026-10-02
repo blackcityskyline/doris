@@ -28,6 +28,18 @@ pub enum Dir {
     Right,
 }
 
+impl Dir {
+    /// The same axis, the other way.
+    pub fn opposite(self) -> Dir {
+        match self {
+            Dir::Up => Dir::Down,
+            Dir::Down => Dir::Up,
+            Dir::Left => Dir::Right,
+            Dir::Right => Dir::Left,
+        }
+    }
+}
+
 /// The cell of `row` whose column is closest to `want`.
 fn nearest_column(row: &[ZoneId], want: usize) -> Option<ZoneId> {
     row.iter()
@@ -653,17 +665,6 @@ impl ZoneLayout {
         }
     }
 
-    /// Move the border between the focused panel and its neighbour one
-    /// step towards that neighbour. `Ctrl`+`Shift`+arrow.
-    /// Move the focused panel's own edge one step towards `dir`, taking
-    /// the space from the neighbour on that side. `Ctrl`+`Shift`+arrow.
-    ///
-    /// The arrow names the focused panel's edge, so the panel the cursor
-    /// is on is always the one that grows. It used to be the other way
-    /// round -- `Left` grew the *other* panel, which is the same as
-    /// shrinking the focused one -- so the left panel only ever grew, the
-    /// right panel only ever shrank, and the two arrows on either side of
-    /// the focus did opposite things.
     /// Move the focused panel's own edge one step towards `dir`, taking
     /// the space from the neighbour on that side. `Ctrl`+`Shift`+arrow.
     ///
@@ -675,30 +676,44 @@ impl ZoneLayout {
     /// either of them the two arrows did opposite things.
     pub fn resize_focused(&mut self, dir: Dir) -> bool {
         let from = self.focused;
-        let Some(to) = self.neighbour(from, dir) else {
-            // Nothing that way: the edge the key names has no panel on
-            // the other side of it to take the space from.
-            return false;
+        // The arrow names the edge the panel grows along. A panel that
+        // already sits at the frame's edge on that side cannot grow
+        // there -- there is nothing on the other side of that edge to
+        // take the space from -- so it hands the space to the neighbour
+        // on its *other* side and shrinks instead.
+        //
+        // Refusing was the older answer and it read as a dead key: half
+        // the arrows on the left panel did nothing at all, which is what
+        // "the left panel only ever grows" looked like from outside. A
+        // key that resizes now resizes on every side the panel has a
+        // neighbour for, and only a panel with no neighbour at all --
+        // one alone in the frame -- has a dead arrow.
+        let (grow, shrink) = match self.neighbour(from, dir) {
+            Some(to) => (from, to),
+            None => match self.neighbour(from, dir.opposite()) {
+                Some(to) => (to, from),
+                None => return false,
+            },
         };
         match dir {
-            Dir::Up | Dir::Down => self.step_row(from, to),
-            Dir::Left | Dir::Right => self.step_col(from, to),
+            Dir::Up | Dir::Down => self.step_row(grow, shrink),
+            Dir::Left | Dir::Right => self.step_col(grow, shrink),
         }
     }
 
-    fn step_col(&mut self, from: ZoneId, to: ZoneId) -> bool {
-        let Some((g, s)) = self.step_pair(from, to, RESIZE_MIN_WIDTH, Axis::Width) else {
+    fn step_col(&mut self, grow: ZoneId, shrink: ZoneId) -> bool {
+        let Some((g, s)) = self.step_pair(grow, shrink, RESIZE_MIN_WIDTH, Axis::Width) else {
             return false;
         };
-        self.set_flex(from, g);
-        self.set_flex(to, s);
+        self.set_flex(grow, g);
+        self.set_flex(shrink, s);
         true
     }
 
-    fn step_row(&mut self, from: ZoneId, to: ZoneId) -> bool {
+    fn step_row(&mut self, grow: ZoneId, shrink: ZoneId) -> bool {
         // A row's height is one number read off its first cell, so both
         // panels have to be addressed through the row that owns it.
-        let (Some(grow), Some(shrink)) = (self.row_owner(from), self.row_owner(to)) else {
+        let (Some(grow), Some(shrink)) = (self.row_owner(grow), self.row_owner(shrink)) else {
             return false;
         };
         let Some((g, s)) = self.step_pair(grow, shrink, RESIZE_MIN_HEIGHT, Axis::Height) else {

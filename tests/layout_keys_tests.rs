@@ -425,7 +425,16 @@ fn test_the_focused_panel_grows_towards_the_arrow() {
                 );
                 grew += 1;
             } else {
-                assert!(!moved, "{focus:?} grew with no neighbour to take from");
+                // Nothing that way, but the other side has a neighbour,
+                // so the panel still moves -- the other way.
+                assert!(
+                    moved,
+                    "{focus:?} did nothing on {dir:?}, and it has a neighbour"
+                );
+                assert_ne!(
+                    after, before,
+                    "{focus:?} moved on {dir:?} without changing size"
+                );
             }
         }
     }
@@ -440,22 +449,96 @@ fn measure(r: Rect, dir: Dir) -> u32 {
     }
 }
 
-/// A panel with nothing on that side cannot grow that way, and refusing is
-/// the whole answer -- growing the panel next door instead is what made
-/// the two arrows disagree.
+/// An arrow naming the frame's own edge cannot grow the panel that way --
+/// there is nothing on the other side of it to take the space from -- so
+/// the panel shrinks towards its other neighbour instead.
+///
+/// The older answer was to refuse, and that read as a dead key: from the
+/// left panel `Left` did nothing, from the right panel `Right` did
+/// nothing, and from a full-width panel both did nothing. Every arrow a
+/// panel has a neighbour for now moves the panel.
 #[test]
-fn test_an_edge_with_nothing_beyond_it_does_not_move() {
-    let mut z = preset("12");
-    for (focus, dir) in [(ZoneId::Results, Dir::Left), (ZoneId::Torrent, Dir::Right)] {
+fn test_an_arrow_at_the_frame_edge_shrinks_the_panel() {
+    for (spec, focus, dir, other) in [
+        ("12", ZoneId::Results, Dir::Left, ZoneId::Torrent),
+        ("12", ZoneId::Torrent, Dir::Right, ZoneId::Results),
+    ] {
+        let mut z = preset(spec);
         z.focused = focus;
         z.update_areas(FRAME);
-        let before = z.get_area(focus);
+        let mine = z.get_area(focus);
+        let theirs = z.get_area(other);
         assert!(
-            !z.resize_focused(dir),
-            "{focus:?} grew towards {dir:?} with nothing there"
+            z.resize_focused(dir),
+            "{focus:?} did not move on {dir:?} with nothing beyond it"
         );
         z.update_areas(FRAME);
-        assert_eq!(z.get_area(focus), before, "{focus:?} moved anyway");
+        assert!(
+            z.get_area(focus).width < mine.width,
+            "{focus:?} towards {dir:?}: {} -> {}, so it grew into the frame edge",
+            mine.width,
+            z.get_area(focus).width
+        );
+        assert!(
+            z.get_area(other).width > theirs.width,
+            "{other:?} did not get the space"
+        );
+    }
+}
+
+/// Down the rows, the same rule.
+#[test]
+fn test_an_arrow_at_the_top_edge_shrinks_the_row() {
+    let mut z = preset("1,2");
+    z.focused = ZoneId::Results;
+    z.update_areas(FRAME);
+    let mine = z.get_area(ZoneId::Results);
+    assert!(
+        z.resize_focused(Dir::Up),
+        "the top panel did not move on Up"
+    );
+    z.update_areas(FRAME);
+    assert!(
+        z.get_area(ZoneId::Results).height < mine.height,
+        "the top panel grew upwards into the frame edge"
+    );
+}
+
+/// One panel alone in the frame has no neighbour on any side, so every
+/// arrow is dead -- and that is the only case where one is.
+#[test]
+fn test_a_panel_alone_in_the_frame_has_a_dead_arrow() {
+    let mut z = preset("1");
+    z.focused = ZoneId::Results;
+    z.update_areas(FRAME);
+    let before = z.get_area(ZoneId::Results);
+    for dir in [Dir::Left, Dir::Right, Dir::Up, Dir::Down] {
+        assert!(
+            !z.resize_focused(dir),
+            "{dir:?} moved a panel with no neighbour"
+        );
+    }
+    z.update_areas(FRAME);
+    assert_eq!(z.get_area(ZoneId::Results), before);
+}
+
+/// Every arrow on every panel of a two-cell row moves that panel.
+#[test]
+fn test_every_arrow_moves_the_focused_panel() {
+    for focus in [ZoneId::Results, ZoneId::Torrent] {
+        for dir in [Dir::Left, Dir::Right] {
+            let mut z = preset("12");
+            z.focused = focus;
+            z.update_areas(FRAME);
+            let before = z.get_area(focus).width;
+            assert!(z.resize_focused(dir), "{focus:?} {dir:?} did nothing");
+            z.update_areas(FRAME);
+            assert_ne!(
+                z.get_area(focus).width,
+                before,
+                "{focus:?} {dir:?} moved but not its own width"
+            );
+        }
     }
 }
 
