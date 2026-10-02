@@ -1,8 +1,8 @@
 //! The main menu is an overlay of glyphs, and nothing else.
 //!
 //! The reference builds the frame, prints it, and only then prints
-//! `Global::overlay` on top of it (`btop.cpp:760`). That overlay is pure
-//! text: no box, no fill, no `Clear`. btop with its menu open still shows
+//! an overlay string on top of it. That overlay is pure
+//! text: no box, no fill, no `Clear`. The menu open still shows
 //! every panel, readable, around and between the glyphs.
 //!
 //! Two earlier versions got this wrong in opposite directions and both
@@ -191,7 +191,7 @@ fn test_the_menu_fits_a_terminal_that_can_hold_it() {
 /// The picked menu item is drawn heavier, not just in another colour.
 ///
 /// This is the reference's own focus mark: `menu_normal` draws the thin
-/// strokes and `menu_selected` the doubled ones (`btop_menu.cpp:154`).
+/// strokes and the picked one the doubled ones.
 /// Shape rather than hue is the point -- on a theme whose accent sits
 /// next to its plain foreground, colour alone left nothing to see, which
 /// is how "which selector has focus?" went unanswerable on paper,

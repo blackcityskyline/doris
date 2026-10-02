@@ -268,7 +268,7 @@ pub fn sources_summary(config: &Config) -> String {
     }
 }
 
-/// Columns kept between two elements of a frame legend; btop's buttons
+/// Columns kept between two elements of a frame legend; the buttons
 /// sit a couple of columns apart on the border, not flush against each
 /// other.
 const FRAME_GAP: u16 = 2;
@@ -492,7 +492,7 @@ impl App {
     }
 
     /// Move the Trackers panel's cursor by `delta` rows, wrapping both ways
-    /// -- btop wraps its lists too, so the panel never dead-ends.
+    /// -- the list wraps too, so the panel never dead-ends.
     pub fn navigate_trackers(&mut self, delta: i64) {
         let len = source_rows().len() as i64;
         if len == 0 {
@@ -648,7 +648,7 @@ impl App {
         let info_width = out.info_text.chars().count() as u16;
 
         // The category button is built here rather than in the static
-        // table because its label names the current category: btop's
+        // table because its label names the current category: a
         // `◀ name ▶` sort header, with the two arrows as mouse targets
         // (previous / next category). The `g`/`G` keys stay the
         // keyboard way in, exactly as they were when the category was a
@@ -658,7 +658,7 @@ impl App {
         // so the arrows stay in the same columns no matter which one is
         // showing -- `◀..TV..▶` and `◀Movies▶` line up, instead of the
         // right arrow sliding four columns to the right on the longer
-        // name (extra padding lands on the right, as in btop's headers).
+        // name (extra padding lands on the right).
         if id == ZoneId::Results {
             let width = self
                 .group_tabs
@@ -711,7 +711,7 @@ impl App {
             }
         }
 
-        // Bottom left: the action row, btop's terminate/kill/signals line.
+        // Bottom left: the action row.
         let mut cx = left;
         for b in buttons.iter().filter(|b| b.slot == FrameSlot::BottomLeft) {
             if !fits(cx, b.width()) {
@@ -762,7 +762,7 @@ impl App {
     }
 
     /// Handle a left click anywhere in the main view: focuses whichever zone the click landed
-    /// in (matching btop's click-to-focus), then tries the zone's frame legend (btop's buttons
+    /// in (a click focuses), then tries the zone's frame legend (the buttons
     /// are click targets too), then the zone's own content -- a Results row, the category row,
     /// a Sources checkbox.
     pub fn click_at(&mut self, row: u16, col: u16, config: &mut Config) -> Option<UiAction> {
@@ -829,7 +829,7 @@ impl App {
                 }
             }
             ZoneId::Torrent => {
-                // Pause and remove live on the frame now (btop's
+                // Pause and remove live on the frame now (the
                 // terminate/kill row), handled by the legend test above.
             }
             ZoneId::Log => {}

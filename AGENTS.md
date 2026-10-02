@@ -86,15 +86,15 @@ src/
     │   ├── settings.rs # typed descriptor table: Options modal (pagination, keys, item builders)
     │   ├── login.rs   # login modal: resource tabs, Ctrl+S save, saved-indicator
     │   ├── health.rs  # health check modal: browser/TorrServer/credentials/cookies/sources
-    │   ├── help.rs    # help page (btop's `helpMenu`): Key:/Description: table + paging
+    │   ├── help.rs    # help page: Key:/Description: table + paging
     │   └── detail.rs  # torrent detail modal (П.7): row facts + the file list its source reads
-    ├── menu.rs      # btop-style main menu
-    ├── theme.rs     # Theme system: the four optional accents, each with a fallback
+    ├── menu.rs      # the main menu
+    ├── theme.rs     # Theme system: the three optional accents, each with a fallback
     ├── zones.rs     # Zone layout system (toggle, focus, presets, focus marker);
     │                  #   key_char/label/from_key read one ZONE_ROWS entry
     └── widgets/
         ├── mod.rs
-        └── graph.rs # btop-style history sparkline (braille/block/dot)
+        └── graph.rs # history sparkline (braille/block/dot)
 ```
 
 The single list of sources is `KNOWN_SOURCES` in `sources/source.rs` (one
@@ -102,7 +102,7 @@ entry per source: implemented flag, groups, browser need, home URL) -- add
 new sources there, not in a second hand-written list; the Options sources
 list, the tab bar and the CLI all derive from it.
 
-## UI Design (btop-inspired)
+## UI Design
 
 ### Layout
 - Search input: top bar (always visible, not a zone)
@@ -123,7 +123,7 @@ focus walks to the next zone still on screen. `5` is deliberately unused.
   - `v` logs the selected row's details, `d` downloads it to disk, `Shift+Enter`/`D` opens the detail modal
 - **Zone 2 (Torrent)**: Live status of the tracked torrent, polled from TorrServer by `torrent::Manager` (a background poller, never a static panel)
   - Hash, title, status (shows "(paused)" when client-side-paused)
-  - btop-style braille/block/dot history sparkline (`ui/widgets/graph.rs`), not a plain fill bar
+  - braille/block/dot history sparkline (`ui/widgets/graph.rs`), not a plain fill bar
   - DL/UL speed, downloaded/total, seeds, peers
   - `p`: pause/resume (TorrServer `drop`/`get`), `d`: remove -- both keyboard and click (see the frame legend below)
   - `T` takes the frame over with the detail view: every fact on its own line,
@@ -140,57 +140,76 @@ focus walks to the next zone still on screen. `5` is deliberately unused.
     keyboard (no zone digits, no search box), Esc or its own key closes it,
     and the other two jump straight across.
 
-### Frame legend (btop-style)
+### Frame legend
 
-Keybinds for a zone are written **on its border**, not inside it (btop's
-`filter`/`pause`/`kill`/`signals` row). The word is `primary` colour and the
-character that triggers it is `on_hover` + bold -- the highlight marks the
+Keybinds for a zone are written **on its border**, not inside it (the
+`filter`/`pause`/`kill`/`signals` row). The word is `title` colour and the
+character that triggers it is `hi_fg` + bold -- the highlight marks the
 hotkey, not the alphabet, so `pause` leads with `p` only because that key is
-free here. What is drawn today: `f filter` and `g group` on Results,
+free here. Both tokens are mandatory in every theme file, so a theme
+cannot name a keybind the colour of ordinary text; `hi_fg` is the whole
+reason the keybind is readable. What is drawn today: `f filter` and `g group` on Results,
 `p pause` and `d delete` on Torrent, and nothing on Log or Trackers (their
 rows *are* the controls; Log's `L` is drawn in its title instead). The bottom action row
 (`play ⏎` / `download d` / `info v`) is gone -- those three are keyboard
 and help-page actions now, and a legend that repeats them would be a
 second place documenting the same keys.
 
-- Buttons come from `zone_buttons()` (`src/ui/zones.rs`), one table per zone;
-  `zone_title()` draws the superscript number in `secondary` + bold and the
-  label in `primary`, with the zone's detail-view key (`L`/`T`/`R`, the
-  label's first letter) in `on_hover` + bold -- the same mark
-  `button_spans` puts on a frame button's hotkey. Trackers has no detail
-  view, so its label stays one plain span.
+- Buttons come from `zone_buttons()` (`src/ui/layout.rs`), one table per
+  zone, each drawn bracketed as `┌word┐` in `div_line` so it reads as a
+  control and not as more of the panel title; the brackets go away with
+  `show_boxes`, since there is no frame to bracket against then.
+  `zone_title()` draws the label in `title` and both of its keybinds -- the
+  superscript digit and the detail-view key (`L`/`T`/`R`, the label's first
+  letter) -- in `hi_fg` + bold, the same mark `button_spans` puts on a
+  frame button's hotkey. Trackers has no detail view, so its label stays
+  one plain span.
 - `App::frame_layout()` (`src/ui/app.rs`) is the single source of truth for
   where each button lands: the renderer draws into those rects and
   `click_at` tests them, so drawn == clickable. Anything that does not fit
   is dropped rather than clipped (narrow zones lose the right-hand cluster,
-  exactly like btop's `if (width > 60 + sort_len)`).
+  exactly like the width guards around them).
 - Buttons `ui::App` can act on (filter, group) happen inside
   `click_at`; the rest come back as a `UiAction` for the orchestrator.
 
 ### Colour distribution (theme tokens)
 
-One rule for every theme, implemented once in `Theme` (`src/ui/theme.rs`):
-four **optional** accents -- `primary`, `secondary`, `error`, `on_hover` --
-each falling back to the classic field it replaced when a theme file omits
-it (`title`, `hi_fg`, red, `hi_fg`), so all 43 bundled themes keep drawing
-exactly as before without a single edit. Where each one lands:
+Two layers, and the split between them is what makes a label readable.
 
-- `primary` -- frames (focused border, zone/button words, frame info),
-  modal and menu titles, section headers, the warning colour of a log line
-- `on_hover` -- every keybind glyph: the letter inside a frame word, the
-  arrows of the category button, help's key column, the paging arrows
+**Keybinds and words** come from the mandatory fields, which every theme
+file has:
+
+- `title` -- the word in a label: `Results`, `filter`, `group`, `Search`
+- `hi_fg` -- every keybind glyph, always bold: the letter inside a frame
+  word, the zone's superscript digit, the panel's full-view letter, the
+  category arrows, help's and Options' key columns, the paging arrows,
+  and a hovered button (which also underlines)
+
+Both are mandatory, so no theme can name a keybind the colour of ordinary
+text and lose it against its own word. That is the whole reason the
+keybind is readable, and it is why the `on_hover` accent that used to hold
+this role is gone rather than left unused: it was optional, so one theme
+could set it to `main_fg` and every keybind on screen would read as body
+text.
+
+**Structure** comes from three **optional** accents -- `primary`,
+`secondary`, `error` -- each falling back to the classic field it replaced
+(`hi_fg`, `hi_fg`, red), so the bundled themes keep drawing without being
+edited. Where each one lands:
+
+- `primary` -- focused frame border, frame info, modal and menu titles,
+  section headers, the ASCII banner, the warning colour of a log line
 - `secondary` -- labels that name a value (torrent facts, login fields),
-  the zone's superscript number, the seed column, a success line
+  the seed column, a success line
 - `error` -- a refused source, an `ERROR`/`✘` log line
 - `main_fg` / `graph_text` / `div_line` -- body text, informational
-  metadata (date, source badge), anything not under the cursor
+  metadata (date, source badge), the frame border, anything not under the
+  cursor
 
 No `Color::Yellow`/`Green`/`Red`/`Cyan` left in zone, table or modal
-rendering; the theme decides. The noctalia template
-(`~/.config/noctalia/user-templates/doris/noctalia-theme.toml`) writes
-`primary`/`error`/`on_hover` from its palette and leaves `secondary` to
-the fallback, which is `tertiary` there -- that keeps the seed column from
-colliding with the rose its `secondary` gives the date and badge columns.
+rendering; the theme decides. A test walks every bundled theme to say no
+`primary` of theirs may come out near-white, and two themes whose `hi_fg`
+is white (`gotham`, `orange`) name a `primary` outright.
 
 ### Menu System
 - ASCII art banner "DORIS"
@@ -270,7 +289,7 @@ words -- a token that silently matches nothing reads as a broken app.
 - `v`: with Results focused, log the selected row's details to the Log zone
 - `Esc`: close a modal; leaves input / filter mode; **in the main view it
   opens the menu** (so `m` and `Esc` are the same key there)
-- `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`, btop's `helpMenu`) --
+- `?`/`/`/`F1`: open the help page (`ui/modals/help.rs`) --
   two tables, `keys` and `filter & grouping`, picked with `←`/`→`;
   `j`/`k`/`Tab` page whichever is showing
 - Mouse: click any zone to focus it, click a frame button to

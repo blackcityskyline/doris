@@ -560,7 +560,7 @@ impl App {
             KeyCode::Char('R') => {
                 self.ui.toggle_detail_view(ZoneId::Results);
             }
-            // The help page (btop binds `F1`/`?`/`h`); `h` stays free
+            // The help page (`F1`/`?`); `h` stays free
             KeyCode::Char('?') | KeyCode::Char('/') | KeyCode::F(1) => {
                 self.ui.open_help_modal();
             }
@@ -591,7 +591,7 @@ impl App {
         self.handle_plain_key(key).await
     }
 
-    /// What Enter means on the main view (btop's `enter`/`play`): submit the typed query,
+    /// What Enter means on the main view: submit the typed query,
     /// re-search a selection that just changed, or play the highlighted row.
     pub(super) async fn handle_enter(&mut self) {
         let action = enter_action(

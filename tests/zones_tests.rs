@@ -299,9 +299,9 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
     }
 }
 
-// --- the frame legend (btop's buttons drawn on the border) ----------------
+// --- the frame legend (the buttons drawn on the border) ----------------
 
-/// btop's box title: superscript number + bold, the label plain -- ours used to be one flat
+/// The box title: superscript number + bold, the label plain -- ours used to be one flat
 /// string, so nothing distinguished the zone number from its name.
 #[test]
 fn test_zone_title_marks_the_keybinds_and_the_label() {
@@ -385,7 +385,7 @@ fn test_zone_title_width_matches_the_drawn_title() {
     }
 }
 
-/// The highlight marks the hotkey, not the alphabet: btop spells it
+/// The highlight marks the hotkey, not the alphabet: it spells it
 /// "pa**u**se" because `p` was taken, so the styled span has to land on
 /// exactly the character that triggers the button, and the three spans
 /// have to reassemble the word unchanged.
@@ -480,7 +480,7 @@ fn test_the_category_name_is_centred_in_its_slot() {
 }
 
 /// The category button's arrows are the mouse targets, so both take the keybind colour + bold
-/// treatment and the name between them stays `primary` -- btop draws its sortable column
+/// treatment and the name between them stays `primary` -- the sortable column
 /// headers the same way.
 #[test]
 fn test_the_category_button_highlights_both_arrows() {
@@ -520,7 +520,7 @@ fn test_the_category_button_highlights_both_arrows() {
     );
 }
 
-/// A pressed toggle is drawn bold, the whole word -- btop wraps `pause`
+/// A pressed toggle is drawn bold, the whole word -- `pause`
 /// in `Fx::b` while `pause_proc_list` is on.
 #[test]
 fn test_active_button_bolds_the_whole_word() {

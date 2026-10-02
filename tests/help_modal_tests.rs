@@ -1,5 +1,4 @@
-//! The help page: btop's `helpMenu`
-//! (`btop_menu.cpp:1743`) rebuilt as a modal.
+//! The help page: a modal list of keybinds and what they do.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use doris::config::Config;
@@ -35,7 +34,7 @@ fn render(app: &mut UiApp, w: u16, h: u16) -> Vec<String> {
         .collect()
 }
 
-/// btop draws `[key, description]` pairs from one table (`help_text`, `btop_menu.cpp:174`).
+/// The page draws its `[key, description]` pairs from one table.
 #[test]
 fn test_help_text_names_the_documented_keybinds() {
     let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
@@ -128,8 +127,8 @@ fn test_help_opens_at_the_top() {
     assert_eq!(state.page, 0);
 }
 
-/// btop's `helpMenu` closes on `escape`, `q`, `h`, `backspace`, `space`
-/// and `enter` (`btop_menu.cpp:1770`) -- every one of them has to work,
+/// The help modal closes on `escape`, `q`, `h`, `backspace`, `space`
+/// and `enter` -- every one of them has to work,
 /// and anything else has to leave the page open.
 #[test]
 fn test_help_closes_on_the_close_keys_only() {
@@ -185,7 +184,7 @@ fn test_help_pages_forward_and_wraps() {
 }
 
 /// Nothing to page through means nothing for the arrow keys to do --
-/// btop guards the same way (`else if (pages > 1 and...)`).
+/// The indicator is guarded the same way.
 #[test]
 fn test_help_does_not_page_when_it_all_fits() {
     let mut app = make_app();

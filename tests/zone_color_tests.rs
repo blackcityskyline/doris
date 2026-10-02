@@ -129,8 +129,8 @@ fn test_help_page_accents_the_header_and_the_keybind_column() {
 }
 
 /// The paging row is the frame rule again: the arrows are the glyphs that act, so they take
-/// `on_hover` + bold, and the `page n/m` they move is structure in `primary` -- btop draws
-/// exactly that split (`btop_menu.cpp:1655` and `:1780`), and the Settings modal already
+/// the keybind colour + bold, and the `page n/m` they move is structure in
+/// `primary` -- exactly that split, and the Settings modal already
 /// follows it.
 #[test]
 fn test_help_paging_arrows_take_the_hotkey_accent() {
@@ -174,8 +174,8 @@ fn test_modal_content_sits_on_the_theme_background() {
     assert_eq!(buf[(x, y)].bg, theme.main_bg.to_color());
 }
 
-/// The cursor row in the Options list is a selected row like any other: btop paints it
-/// `selected_bg` + `selected_fg` (`btop_menu.cpp:1687`), and Results, Trackers and the detail
+/// The cursor row in the Options list is a selected row like any other: it is
+/// painted `selected_bg` + `selected_fg`, and Results, Trackers and the detail
 /// modal's file list already use `selection_style()`.
 #[test]
 fn test_the_settings_cursor_row_uses_the_selection_colours() {
@@ -207,8 +207,8 @@ fn test_the_settings_cursor_row_uses_the_selection_colours() {
 }
 
 /// The tab row marks the key, not the word: the brackets and the digit that switches to a tab
-/// take `on_hover`, the tab's own name stays structure in `primary` -- btop's split exactly
-/// (`btop_menu.cpp:1631`) and the same rule the frame legend follows.
+/// take the keybind colour, the tab's own name stays structure in `primary` --
+/// the same split, and the same rule the frame legend follows.
 #[test]
 fn test_settings_tab_markers_carry_the_accent_and_the_names_do_not() {
     let mut app = make_app();

@@ -669,7 +669,7 @@ fn test_cycle_group_walks_the_row_and_wraps() {
     assert_eq!(app.active_group, tabs[tabs.len() - 1]);
 }
 
-/// The category moved from a row inside the panel onto the frame, as btop's `◀ name ▶` sort
+/// The category moved from a row inside the panel onto the frame, as a `◀ name ▶` sort
 /// header: the current category is named on the border next to `group`, and the two arrows are
 /// mouse targets for previous / next.
 #[test]

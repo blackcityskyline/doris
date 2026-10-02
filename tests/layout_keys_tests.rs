@@ -274,7 +274,7 @@ fn test_the_search_title_marks_its_s_in_hi_fg() {
 /// something -- `S` for the search box, the zone's digit, the panel's
 /// full-view letter, `f` and `g` on the frame, the category arrows --
 /// takes `hi_fg`, and the rest of the word takes `title`
-/// (`btop_draw.cpp:627`). Both are mandatory in every theme file, so no
+/// Both are mandatory in every theme file, so no
 /// theme can name a keybind the colour of ordinary text and lose it,
 /// which is exactly what an optional accent slot allowed: on one theme
 /// the `S` of `Search` and the `f` of `filter` came out in `main_fg`.
@@ -283,7 +283,7 @@ fn test_the_search_title_marks_its_s_in_hi_fg() {
 /// makes `title` and `hi_fg` the same colour, so a test against it cannot
 /// tell them apart and passes either way.
 fn accents() -> doris::ui::theme::Theme {
-    // The two tokens btop uses for a label, given values a screenshot
+    // The two tokens a label is drawn from, given values a screenshot
     // could tell apart: the word `title`, the keybind `hi_fg`.
     let theme = doris::ui::theme::Theme {
         title: doris::ui::theme::ColorDef::new(171, 199, 255),

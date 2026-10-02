@@ -53,7 +53,7 @@ pub struct Config {
     pub rounded_corners: bool,
     #[serde(default = "default_true")]
     pub terminal_sync: bool,
-    /// Symbol set for graph/sparkline widgets (the btop-style dot progress bar).
+    /// Symbol set for graph/sparkline widgets (the dot progress bar).
     #[serde(default = "default_graph_symbol")]
     pub graph_symbol: String,
     #[serde(default)]

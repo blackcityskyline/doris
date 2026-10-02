@@ -1,7 +1,7 @@
 # doris
 
 A terminal torrent client: search trackers, play or download what they
-return, and watch the download live. The interface follows btop — four
+return, and watch the download live. The interface is four
 panels, keybinds written on the frames they belong to, a theme system,
 no mouse required.
 

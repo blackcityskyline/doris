@@ -531,7 +531,7 @@ impl App {
                             Rect::new(left_x, y, divider_col as u16 - 1, 1),
                         );
 
-                        // btop lets the selection colours run onto the
+                        // The selection colours run onto the
                         let val_style = if is_sel {
                             selection
                         } else {

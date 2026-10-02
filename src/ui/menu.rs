@@ -24,12 +24,12 @@ const MENU_ITEM_HEIGHT: u16 = 4;
 
 pub const MENU_ITEMS: &[&[&str]] = &[
     &[
-        "┌─┐┌─┐╶┬╴╷┌─┐┌┐╷┌─┐",
+        "┌─┐┌─┐─┬─│┌─┐┌┐│┌─┐",
         "│ │├─┘ │ ││ ││└┤└─┐",
-        "└─┘╵   ╵ ╵└─┘╵ ╵└─┘",
+        "└─┘│   │ │└─┘│ │└─┘",
     ],
-    &["╷ ╷┌─╴╷  ┌─┐", "├─┤├╴ │  ├─┘", "╵ ╵└─╴└─╴╵  "],
-    &["┌─┐╷ ╷╷╶┬╴", "│┐││ ││ │ ", "└┴┘└─┘╵ ╵ "],
+    &["│ │┌──│  ┌─┐", "├─┤├─ │  ├─┘", "│ │└──└──│  "],
+    &["┌─┐│ ││─┬─", "│┐││ ││ │ ", "└┴┘└─┘│ │ "],
 ];
 
 /// The same three items with every single stroke doubled: `│` becomes
@@ -42,7 +42,7 @@ pub const MENU_ITEMS: &[&[&str]] = &[
 /// each other leaves nothing to see -- which is what the unpicked
 /// `menu_fg` and the picked accent are in several bundled themes. A
 /// heavier line is a shape, and a shape does not depend on the palette.
-/// (`btop_menu.cpp:154`, `menu_selected` beside `menu_normal`.)
+/// -- two tables, and the picked one comes from the second.
 pub const MENU_ITEMS_BOLD: &[&[&str]] = &[
     &[
         "╔═╗╔═╗═╦═║╔═╗╔╗║╔═╗",
@@ -135,7 +135,7 @@ pub fn menu_box_rect(area: Rect) -> Option<Rect> {
 /// The menu is glyphs and nothing else.
 ///
 /// The reference draws the frame, then prints `Global::overlay` on top of
-/// it (`btop.cpp:760`), and that overlay is pure text: no box, no fill, no
+/// it, and that overlay is pure text: no box, no fill, no
 /// `Clear`. Every panel stays readable around and between the glyphs, which
 /// is the whole point of a menu you can open without losing the app you
 /// were looking at.
@@ -184,7 +184,7 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
                     // Unpicked items are the theme's plain menu colour,
                     // the picked one the accent -- the reference's own
                     // split (`menu_normal` in greys, `menu_selected` in
-                    // the banner's colours, `btop_menu.cpp:1229`). The
+                    // the banner's colours). The
                     // picked item is also drawn from the doubled-line
                     // table above, so on a theme whose accent and whose
                     // plain colour sit next to each other the mark is

@@ -915,7 +915,7 @@ pub enum FrameSlot {
     /// Top border, left, immediately after the zone title.
     TopLeft,
     /// Top border, right aligned (clipped away when the zone is narrow,
-    /// exactly like btop's `if (width > 60 + sort_len)` guards).
+    /// exactly like the width guards around them).
     TopRight,
     /// Bottom border, left aligned.
     BottomLeft,
@@ -958,7 +958,7 @@ impl FrameButton {
         self.text().chars().count() as u16 + 2
     }
 
-    /// Whether this is the Results category button, which carries btop's
+    /// Whether this is the Results category button, which carries the
     /// `◀ name ▶` sort-header arrows: the two arrow cells are separate
     /// mouse targets (previous / next category) and the name between
     /// them is not a target at all.
@@ -997,13 +997,13 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
         .collect()
 }
 
-/// The zone's own title, btop `createBox` style: superscript number in `secondary` + bold,
-/// label in `primary` (`btop_draw.cpp:290` for the numbering colour, `:332` for where it is
+/// The zone's own title: the superscript number is the keybind colour + bold,
+/// the label is `title`
 /// drawn).
 pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
     // The reference's own split, which is what every theme is drawn for:
     // the word in `title`, the letter that acts in `hi_fg`
-    // (`btop_draw.cpp:627`). Both are mandatory fields in every theme
+    // Both are mandatory fields in every theme
     // file, so a theme cannot make a keybind vanish by naming it the
     // colour of ordinary text.
     //

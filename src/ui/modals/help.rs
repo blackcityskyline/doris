@@ -1,6 +1,6 @@
-//! The help page: doris' counterpart of btop's `helpMenu` (`btop_menu.cpp:1743`). btop draws it
+//! The help page: a modal list of `[key, description]` pairs. It draws it
 //! as a centred box titled `help` with the ASCII banner above it, a `Key:`/`Description:`
-//! header line, one `[key, description]` pair per row from `help_text` (`btop_menu.cpp:174`) --
+//! header line, one `[key, description]` pair per row from `HELP_TEXT` --
 //! the key in `hi_fg` + bold padded to 20 columns (`cjust(..., 20)`), the description in
 //! `main_fg` -- and, when the table is taller than the box, an `↑ page 1/2 ↓` indicator on the
 //! bottom border with `j`/`k`/`PageUp`/`Tab` flipping pages and `Esc`/`q`/`h`/`Space`/
@@ -14,11 +14,10 @@ use ratatui::widgets::*;
 use crate::config::Config;
 use crate::ui::view::{centered_rect, App, Modal};
 
-/// Columns the key column is padded to -- btop's `cjust(..., 20)`.
+/// Columns the key column is padded to.
 const KEY_WIDTH: usize = 20;
 
-/// `[key, description]` pairs, in the order they are drawn: btop's `help_text`
-/// (`btop_menu.cpp:174`).
+/// `[key, description]` pairs, in the order they are drawn.
 pub const HELP_TEXT: &[(&str, &str)] = &[
     ("Mouse 1", "Clicks zones and frame buttons; the box types."),
     ("Mouse scroll", "Scrolls what is under the cursor."),
@@ -93,7 +92,7 @@ pub fn sections() -> &'static [(&'static str, &'static [(&'static str, &'static 
     &[("keys", HELP_TEXT), ("filter & grouping", FILTER_HELP)]
 }
 
-/// A tab-stop'd key: btop's `cjust(text, 20)` centres the key in a
+/// A tab-stop'd key: the key is centred in a
 /// 20-column column, which is what makes the two columns line up.
 fn cjust(text: &str, width: usize) -> String {
     format!("{:^width$}", text, width = width)
@@ -129,7 +128,7 @@ impl App {
             return;
         }
 
-        // Anything not a page key is consumed regardless: btop's
+        // Anything not a page key is consumed regardless: this
         let Modal::Help(state) = &mut self.modal else {
             return;
         };
@@ -188,7 +187,7 @@ impl App {
     /// The help page itself: the box, the header, the visible slice of the section's table and
     /// the page indicator.
     pub fn render_help_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {
-        // btop's help box is a fixed 78 columns wide -- nearly the
+        // The help box is a fixed 78 columns wide -- nearly the
         let popup = centered_rect(90, 85, area);
         frame.render_widget(Clear, popup);
 

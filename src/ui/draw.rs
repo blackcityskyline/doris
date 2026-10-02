@@ -85,7 +85,8 @@ impl App {
         let area = frame.area();
         // The app first, the menu's glyphs over it. The reference builds
         // the frame and then prints `Global::overlay` on top of it
-        // (`btop.cpp:760`), so the panels stay readable behind the menu.
+        // -- the overlay is drawn after the frame, so the panels stay readable
+        // behind the menu.
         self.render_main_view(frame, area, config);
         if self.show_menu {
             super::menu::render_menu(frame, area, &self.menu, &self.theme);
@@ -694,7 +695,7 @@ fn results_header(theme: &Theme) -> Row<'static> {
 }
 
 impl App {
-    /// Whether a button's word is drawn bold: btop marks a toggle that
+    /// Whether a button's word is drawn bold: a toggle that is
     /// is currently on this way (`Fx::b` around `pause` while
     /// `pause_proc_list`, around `tree` while `proc_tree`,...).
     fn frame_button_active(&self, id: ZoneId, button: &FrameButton) -> bool {
@@ -721,7 +722,7 @@ impl App {
             // The bracket round the word is what makes it read as a
             // control rather than as more of the panel's title -- the
             // reference draws each one as `┌` + letter + word + `┐`
-            // (`btop_draw.cpp:627`) and leaves the plain frame line
+            // -- a bracket on each side, with the plain frame line
             // between them. With "Show boxes" off there is no frame to
             // bracket against, so they go with it.
             let bracketed = config.show_boxes;
