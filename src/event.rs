@@ -57,11 +57,24 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-    pub fn new(tick_rate: std::time::Duration) -> Self {
+    /// `read_keys` false means "there is no keyboard on the other end":
+    /// the thread then only sends ticks. The CLI drives the same handler
+    /// the TUI does, and `crossterm::event::poll` on a process with no
+    /// terminal fails instantly -- which without this would leave the
+    /// thread spinning on a failing poll, sending ticks as fast as the
+    /// CPU can manage.
+    pub fn new(tick_rate: std::time::Duration, read_keys: bool) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let event_tx = tx.clone();
 
         std::thread::spawn(move || loop {
+            if !read_keys {
+                if event_tx.send(Event::Tick).is_err() {
+                    break;
+                }
+                std::thread::sleep(tick_rate);
+                continue;
+            }
             if crossterm::event::poll(tick_rate).unwrap_or(false) {
                 match crossterm::event::read() {
                     Ok(CrosstermEvent::Key(key)) => {

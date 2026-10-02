@@ -1,12 +1,12 @@
 use anyhow::Result;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_URL: &str = "http://127.0.0.1:8090";
 
 /// One torrent's live status, as reported by TorrServer's `/torrents` endpoint (`{"action":
 /// "list"}` or `{"action": "get", "hash":...}`).
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct TorrentInfo {
     #[serde(rename = "Name", alias = "title", default)]
     pub name: String,
@@ -28,6 +28,79 @@ pub struct TorrentInfo {
     pub connected_seeders: i64,
     #[serde(rename = "TorrentStatusString", alias = "stat_string", default)]
     pub status_string: String,
+    /// TorrServer answers with no file list of its own; the names live in
+    /// this field, as a JSON document inside a JSON document:
+    /// `{"TorrServer":{"Files":[{"id":1,"path":"Movie/movie.mkv","length":N}]}}`.
+    ///
+    /// Parsed once on the way in rather than by every reader, because the
+    /// alternative is a command that has to know how TorrServer packs its
+    /// own metadata -- and a file list is exactly what "what is in this
+    /// torrent" means.
+    #[serde(default)]
+    pub files: Vec<TorrentFile>,
+    /// The blob `files` was parsed out of, kept so `list_torrents` can do
+    /// the same for every row it did not already have.
+    #[serde(rename = "data", default)]
+    pub data: String,
+}
+
+impl TorrentInfo {
+    /// The file list, read out of `data` if it was not filled in already.
+    pub fn data_as_files(&self) -> Vec<TorrentFile> {
+        parse_file_list(&self.data)
+    }
+}
+
+/// Fill in the file list of every row the server sent.
+fn unwrap(mut torrents: Vec<TorrentInfo>) -> Vec<TorrentInfo> {
+    for torrent in &mut torrents {
+        if torrent.files.is_empty() {
+            torrent.files = torrent.data_as_files();
+        }
+    }
+    torrents
+}
+
+/// One file inside a torrent, as TorrServer names it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TorrentFile {
+    #[serde(default)]
+    pub id: u64,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub length: i64,
+}
+
+/// Where `data` keeps the file list, by the two keys it is nested under.
+#[derive(Deserialize)]
+struct FileListEnvelope {
+    #[serde(rename = "TorrServer")]
+    torrserver: FileList,
+}
+
+#[derive(Deserialize)]
+struct FileList {
+    #[serde(rename = "Files", default)]
+    files: Vec<TorrentFile>,
+}
+
+/// Pull the file list out of the `data` blob, or an empty list when the
+/// server sent nothing that looks like one.
+pub fn parse_file_list(data: &str) -> Vec<TorrentFile> {
+    let Ok(outer) = serde_json::from_str::<serde_json::Value>(data) else {
+        return Vec::new();
+    };
+    outer
+        .get("TorrServer")
+        .and_then(|v| {
+            serde_json::from_value::<FileListEnvelope>(serde_json::json!({
+                "TorrServer": v
+            }))
+            .ok()
+        })
+        .map(|e| e.torrserver.files)
+        .unwrap_or_default()
 }
 
 impl TorrentInfo {
@@ -107,7 +180,7 @@ impl TorrServer {
             .await?;
         // TorrServer returns `null` (not `[]`) when there are no torrents;
         let list: Option<Vec<TorrentInfo>> = resp.json().await.unwrap_or(None);
-        Ok(list.unwrap_or_default())
+        Ok(unwrap(list.unwrap_or_default()))
     }
 
     pub async fn get_torrent(&self, hash: &str) -> Result<Option<TorrentInfo>> {
@@ -117,7 +190,87 @@ impl TorrServer {
         if !resp.status().is_success() {
             return Ok(None);
         }
-        Ok(resp.json().await.ok())
+        let mut torrent: Option<TorrentInfo> = resp.json().await.ok();
+        if let Some(t) = torrent.as_mut() {
+            if t.files.is_empty() {
+                t.files = t.data_as_files();
+            }
+        }
+        Ok(torrent)
+    }
+
+    /// Read the server's own settings, which is where its download path
+    /// and cache policy live.
+    ///
+    /// TorrServer has two generations of API and this one answers on both:
+    /// `{"action":"get"}` on `/settings` for the old one, the same body on
+    /// the new. The keys are capitalised because that is how the server
+    /// spells them, so nothing has to translate them.
+    pub async fn settings(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/settings", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({ "action": "get" }))
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?;
+        Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Write settings back, given the keys to change.
+    pub async fn set_settings(&self, sets: serde_json::Value) -> Result<()> {
+        let url = format!("{}/settings", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({ "action": "set", "sets": sets }))
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?;
+        ensure_ok(resp, "change the server settings").await
+    }
+
+    /// Where the server puts what it fetches, and whether it keeps it.
+    pub async fn storage(&self) -> Result<(String, bool)> {
+        let settings = self.settings().await?;
+        let path = settings
+            .get("TorrentsSavePath")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let use_disk = settings
+            .get("UseDisk")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        Ok((path, use_disk))
+    }
+
+    /// Read a torrent until it is finished, `stop` says otherwise, or
+    /// `deadline` runs out. Returns the last thing it reported.
+    pub async fn watch(
+        &self,
+        hash: &str,
+        deadline: std::time::Duration,
+        mut stop: impl FnMut(&TorrentInfo) -> bool,
+    ) -> Result<Option<TorrentInfo>> {
+        let give_up = tokio::time::Instant::now() + deadline;
+        let mut last: Option<TorrentInfo> = None;
+        loop {
+            let Some(info) = self.get_torrent(hash).await? else {
+                return Ok(last);
+            };
+            let finished = info.progress() >= 1.0;
+            last = Some(info);
+            if finished || stop(last.as_ref().expect("just stored")) {
+                return Ok(last);
+            }
+            let Some(remaining) = give_up.checked_duration_since(tokio::time::Instant::now())
+            else {
+                return Ok(last);
+            };
+            tokio::time::sleep(remaining.min(std::time::Duration::from_secs(2))).await;
+        }
     }
 
     /// Stop an active torrent's download/seeding without forgetting it.

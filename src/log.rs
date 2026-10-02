@@ -4,6 +4,21 @@ use std::sync::Mutex;
 
 static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 
+/// Where [`init`] opens the log, and where a reader should look.
+///
+/// The CLI has a `logs` command and the TUI has a Log zone, and the zone
+/// only ever holds the tail of this file -- so a reader needs the path
+/// from somewhere other than `init`, or it would have to guess the same
+/// three directories again.
+pub fn log_path() -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".local")
+        .join("share")
+        .join("doris")
+        .join("doris.log")
+}
+
 pub fn init() {
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     let log_dir = home.join(".local").join("share").join("doris");

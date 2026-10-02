@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
+pub mod cli_commands;
 mod input;
 mod search;
 mod session;
@@ -377,8 +378,30 @@ pub struct App {
     pub editing_welcome_text: Option<String>,
 }
 
+/// Run one CLI subcommand. See [`cli_commands`].
+pub async fn run_command(args: &Args, command: &crate::cli::Command) -> Result<i32> {
+    cli_commands::dispatch(args, command).await
+}
+
 impl App {
     pub async fn new(args: Args, config: Config) -> Result<Self> {
+        Self::build(args, config, true).await
+    }
+
+    /// The same app with no keyboard and no bridge port.
+    ///
+    /// A CLI command is the same program asked one question and then
+    /// answered, so it gets the same `App` rather than a parallel
+    /// implementation: the sources, the cache, the login walk and the
+    /// event rules are the ones the TUI uses. What it does not get is a
+    /// keyboard (see [`crate::event::EventHandler::new`]) and the
+    /// extension bridge, which would take a port that nothing is going to
+    /// answer on.
+    pub async fn headless(args: Args, config: Config) -> Result<Self> {
+        Self::build(args, config, false).await
+    }
+
+    async fn build(args: Args, config: Config, interactive: bool) -> Result<Self> {
         let torrserver_url = if args.torrserver == crate::torrserver::api::DEFAULT_URL {
             config.torrserver_url.clone()
         } else {
@@ -393,7 +416,7 @@ impl App {
 
         let (search_tx, search_rx) = mpsc::unbounded_channel();
 
-        let bridge_port = config.bridge_port;
+        let bridge_port = if interactive { config.bridge_port } else { 0 };
         if bridge_port > 0 {
             // The server task owns its own handle (listener + router with a
             let mut bridge = BridgeServer::new(search_tx.clone(), bridge_port);
@@ -402,7 +425,8 @@ impl App {
             }
         }
 
-        let event_handler = EventHandler::new(std::time::Duration::from_millis(EVENT_POLL_MS));
+        let event_handler =
+            EventHandler::new(std::time::Duration::from_millis(EVENT_POLL_MS), interactive);
         let torrserver = TorrServer::new(&torrserver_url);
         crate::torrent::Manager::spawn(
             torrserver.clone(),
@@ -496,11 +520,15 @@ impl App {
             }
             Event::StreamComplete(url) => {
                 self.ui.state = AppState::Idle;
-                self.ui.add_log(&format!("Stream launched: {}", url));
+                self.ui.last_stream_url = Some(url.clone());
+                self.ui.last_stream_error = None;
+                self.ui.add_log(&format!("Stream launched: {url}"));
             }
             Event::StreamError(err) => {
                 self.ui.state = AppState::Idle;
-                self.ui.add_log(&format!("Stream error: {}", err));
+                self.ui.last_stream_error = Some(err.clone());
+                self.ui.last_stream_url = None;
+                self.ui.add_log(&format!("Stream error: {err}"));
             }
             Event::StreamLog(msg) => {
                 self.ui.add_log(&msg);
@@ -576,18 +604,28 @@ impl App {
         Ok(())
     }
 
-    /// Wait until every source of the current dispatch has reported, or
-    /// `deadline` runs out.
+    /// Apply events until `done` says the answer is in, or `deadline`
+    /// runs out.
     ///
     /// The CLI's "do this one thing, then print the answer" shape. The TUI
     /// never waits for anything -- it draws whatever has arrived and
-    /// redraws -- but a one-shot command has no screen to redraw, so it has
-    /// to know when the round is over. `SearchComplete` is that signal:
-    /// every source of the generation has answered or failed.
-    pub async fn pump_until_idle(&mut self, deadline: std::time::Duration) -> Result<()> {
+    /// redraws -- but a one-shot command has no screen to redraw, so it
+    /// has to know when the work is finished.
+    ///
+    /// The condition is a predicate rather than a state, because "the work
+    /// is done" is not one state: a search finishes by leaving `Searching`,
+    /// a stream by leaving `Streaming`, and a file list by no longer being
+    /// pending. A version of this that only knew about `Searching` returned
+    /// immediately on the other two, and reported a stream that had not
+    /// been tried yet as one that had not answered.
+    pub async fn pump_until(
+        &mut self,
+        deadline: std::time::Duration,
+        done: impl Fn(&Self) -> bool,
+    ) -> Result<()> {
         let give_up = tokio::time::Instant::now() + deadline;
         loop {
-            if self.ui.state != AppState::Searching {
+            if done(self) {
                 return Ok(());
             }
             let Some(remaining) = give_up.checked_duration_since(tokio::time::Instant::now())

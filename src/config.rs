@@ -375,3 +375,64 @@ pub fn save(config: &Config, path: Option<&Path>) -> Result<()> {
     std::fs::write(&config_path, toml_str)?;
     Ok(())
 }
+
+impl Config {
+    /// One setting by name, as the config file spells it.
+    ///
+    /// Read through the serialized form rather than a hand-written table of
+    /// names: a table would be a second list of the settings, and it would be
+    /// wrong the first time a field was added to the struct and not to the
+    /// table. The error names what is missing either way, but here the list
+    /// cannot go stale.
+    pub fn get(&self, key: &str) -> Result<serde_json::Value> {
+        let value = serde_json::to_value(self)?;
+        value
+            .get(key)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("no setting named '{key}'"))
+    }
+
+    /// Write one setting, keeping the type the field already has.
+    ///
+    /// The value arrives as a string from a command line, so it is coerced
+    /// into whatever the field is rather than parsed per name: a boolean
+    /// takes `true`/`yes`/`1`, a number is parsed, a list is split on commas.
+    /// Then the whole document is deserialized back, which is what makes a
+    /// bad value fail here rather than silently on the next load.
+    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+        let mut root = serde_json::to_value(&*self)?;
+        let current = root
+            .get(key)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("no setting named '{key}'"))?;
+        root[key] = Self::coerce(&current, value)?;
+        *self = serde_json::from_value(root)?;
+        Ok(())
+    }
+
+    fn coerce(current: &serde_json::Value, value: &str) -> Result<serde_json::Value> {
+        let bad = |want: &str| anyhow::anyhow!("'{value}' is not {want} for that setting");
+        Ok(match current {
+            serde_json::Value::Bool(_) => match value.to_ascii_lowercase().as_str() {
+                "true" | "yes" | "on" | "1" => serde_json::Value::Bool(true),
+                "false" | "no" | "off" | "0" => serde_json::Value::Bool(false),
+                _ => return Err(bad("a boolean")),
+            },
+            serde_json::Value::Number(_) => {
+                serde_json::Value::Number(value.parse::<u64>().map_err(|_| bad("a number"))?.into())
+            }
+            serde_json::Value::Array(_) => serde_json::Value::Array(
+                value
+                    .split(',')
+                    .map(|part| serde_json::Value::String(part.trim().to_string()))
+                    .filter(|v| v.as_str() != Some(""))
+                    .collect(),
+            ),
+            serde_json::Value::Null if value.is_empty() || value == "none" => {
+                serde_json::Value::Null
+            }
+            serde_json::Value::Null => serde_json::Value::String(value.to_string()),
+            _ => serde_json::Value::String(value.to_string()),
+        })
+    }
+}

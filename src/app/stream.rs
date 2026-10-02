@@ -1,6 +1,7 @@
 //! The tracked torrent: starting a stream, pausing, removing, downloading a row.
 
 use super::*;
+use std::path::PathBuf;
 
 impl App {
     /// Pause (drop) or resume (re-get) the torrent the panel is currently showing.
@@ -55,21 +56,28 @@ impl App {
         source.download_torrent(&item.download_url).await
     }
 
-    /// Download the selected result's.torrent file to disk (Options ->
+    /// Download the selected result's .torrent file to disk (Options ->
     /// download's resolved directory), dispatching to whichever Source
     /// actually produced it -- `TorrentItem.source` matters here because
     /// the "all" Results tab can mix rows from more than one source at
     /// once, each needing a different download client.
-    pub(super) async fn download_selected_to_disk(&mut self) {
+    ///
+    /// Returns where it went. The TUI ignores that and reads the log panel
+    /// it just wrote, which is what a panel is for; a CLI command has to
+    /// print the path, and reading a formatted log line back to recover a
+    /// value the function already had is how the answer came out wrong
+    /// once already -- `add_log` prefixes a timestamp, so the prefix a
+    /// reader looks for is not at the front of the line.
+    pub(super) async fn download_selected_to_disk(&mut self) -> Option<PathBuf> {
         let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
             self.ui.add_log("No result selected to download.");
-            return;
+            return None;
         };
 
         if !self.config.download_enabled {
             self.ui
                 .add_log("Downloading is disabled in Options -> download -> Enable downloading.");
-            return;
+            return None;
         }
 
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
@@ -83,13 +91,13 @@ impl App {
             };
             if let Err(e) = resolved {
                 self.ui
-                    .add_log(&format!("Could not read the magnet link: {}", e));
-                return;
+                    .add_log(&format!("Could not read the magnet link: {e}"));
+                return None;
             }
             if item.magnet.is_none() {
                 self.ui
                     .add_log("This row carries no magnet and no .torrent link.");
-                return;
+                return None;
             }
         }
 
@@ -100,13 +108,18 @@ impl App {
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            match std::fs::write(&path, payload.as_bytes()) {
-                Ok(_) => self
-                    .ui
-                    .add_log(&format!("Saved magnet link to {}", path.display())),
-                Err(e) => self.ui.add_log(&format!("Failed to save file: {}", e)),
-            }
-            return;
+            return match std::fs::write(&path, payload.as_bytes()) {
+                Ok(_) => {
+                    self.ui
+                        .add_log(&format!("Saved magnet link to {}", path.display()));
+                    self.ui.last_download = Some(path.clone());
+                    Some(path)
+                }
+                Err(e) => {
+                    self.ui.add_log(&format!("Failed to save file: {e}"));
+                    None
+                }
+            };
         }
 
         // `get_source` launches the browser only for sources whose
@@ -124,11 +137,21 @@ impl App {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 match std::fs::write(&path, &bytes) {
-                    Ok(_) => self.ui.add_log(&format!("Saved to {}", path.display())),
-                    Err(e) => self.ui.add_log(&format!("Failed to save file: {}", e)),
+                    Ok(_) => {
+                        self.ui.add_log(&format!("Saved to {}", path.display()));
+                        self.ui.last_download = Some(path.clone());
+                        Some(path)
+                    }
+                    Err(e) => {
+                        self.ui.add_log(&format!("Failed to save file: {e}"));
+                        None
+                    }
                 }
             }
-            Err(e) => self.ui.add_log(&format!("Download failed: {}", e)),
+            Err(e) => {
+                self.ui.add_log(&format!("Download failed: {e}"));
+                None
+            }
         }
     }
 
@@ -140,13 +163,24 @@ impl App {
         let mut item = self.ui.results[self.ui.selected].clone();
         self.ui.state = AppState::Streaming;
 
-        // Only browser-backed rows require a session that's already up;
-        let source = match self.source_for_row(source_id_for(&item)).await {
-            Ok(s) => s,
-            Err(e) => {
-                self.ui.add_log(&e.to_string());
-                return;
+        // The source is here to read a magnet off the row's page, and only for a
+        // row that has none. A row that already carries a magnet -- every
+        // one of them from a JSON API source, and every one named by
+        // `doris play --magnet` -- needs nothing from a tracker, and asking
+        // for it means launching a browser to do nothing. So the source is
+        // built only when it will be used, and its absence is not an error.
+        let needs_source = item.magnet.is_none() && item.download_url.is_empty();
+        let source = if needs_source {
+            match self.source_for_row(source_id_for(&item)).await {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    self.ui.add_log(&e.to_string());
+                    self.ui.state = AppState::Idle;
+                    return;
+                }
             }
+        } else {
+            None
         };
 
         let torrserver = self.torrserver.clone();
@@ -177,8 +211,12 @@ impl App {
             }
 
             // How the torrent reaches TorrServer: a row carrying a
-            if let Err(e) = fill_missing_magnet(&mut item, source.as_ref()).await {
-                log(&format!("Reading the magnet link failed: {}", e));
+            // magnet goes in by link, a row with only a `.torrent` gets it
+            // uploaded. Neither needs the tracker once the link is in hand.
+            if let Some(source) = source.as_ref() {
+                if let Err(e) = fill_missing_magnet(&mut item, source.as_ref()).await {
+                    log(&format!("Reading the magnet link failed: {e}"));
+                }
             }
             if item.magnet.is_none() && item.download_url.is_empty() {
                 let msg = "This row carries no magnet and no .torrent link.";
@@ -218,6 +256,18 @@ impl App {
             let hash = match linked {
                 Some(hash) => hash,
                 None => {
+                    // Reached only when the magnet add failed, so the
+                    // `.torrent` has to be fetched -- and fetching it is
+                    // the one thing that needs the tracker. A row named
+                    // by `--magnet` never gets here: it had nothing to
+                    // fail, so there was no source to build.
+                    let Some(source) = source.as_ref() else {
+                        let msg = "The magnet link was refused and no tracker is known for \
+                                   this row, so the .torrent cannot be fetched.";
+                        log(msg);
+                        let _ = event_tx.send(Event::StreamError(msg.into()));
+                        return;
+                    };
                     log(&format!("Fetching .torrent file: {}", item.title));
                     let bytes = match Self::download_bytes_for(&item, source.as_ref()).await {
                         Ok(bytes) => bytes,

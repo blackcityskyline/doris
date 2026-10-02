@@ -130,6 +130,19 @@ pub struct App {
     /// Where the pointer is, when the terminal reports motion (`tui.rs` turns mode 1003 on).
     pub hover: Option<(u16, u16)>,
     pub torrent_paused: bool,
+    /// The URL the last stream answered with, and the error the last one
+    /// failed with.
+    ///
+    /// Both used to be recoverable only by reading the log panel back,
+    /// which is scraping a formatted string to get a value that was
+    /// already known: `add_log` prefixes a timestamp, so the prefix a
+    /// reader looks for is not at the front of the line. The TUI reads
+    /// the log because that is what it displays; the CLI reads these,
+    /// because it has to print an answer rather than a panel.
+    pub last_stream_url: Option<String>,
+    pub last_stream_error: Option<String>,
+    /// Where the last `.torrent` or magnet file was written, when one was.
+    pub last_download: Option<PathBuf>,
     /// Which row of the Trackers panel the cursor sits on: 0 is the `all` master switch, 1..
     pub sources_cursor: usize,
     /// Which category the Results table is showing -- the tab row under the frame; `None` is
@@ -328,6 +341,9 @@ impl App {
             remove_armed: false,
             hover: None,
             torrent_paused: false,
+            last_stream_url: None,
+            last_stream_error: None,
+            last_download: None,
             // Which row of the Trackers panel the cursor sits on: 0 is
             // the `all` switch, 1.. the registry entries.
             sources_cursor: 0,

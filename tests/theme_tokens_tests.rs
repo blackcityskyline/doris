@@ -89,24 +89,29 @@ fn test_the_focused_frame_is_primary_and_the_rest_div_line() {
     );
 }
 
-/// No theme's accent comes out near-white.
+/// No *bundled* theme's accent comes out near-white.
 ///
-/// The four accents fall back to a classic field when a theme file does
-/// not name them, and for `primary` the classic field used to be `title`
-/// -- the near-white a theme draws its headings in. So a theme that named
-/// no accent of its own got a white one: a white ASCII banner, white panel
-/// titles, and a menu whose picked item was the same colour as the two
-/// unpicked ones. Every bundled theme is such a theme; they predate the
-/// accents.
+/// The four accents fall back to a classic field when a theme file does not
+/// name them, and for `primary` the classic field used to be `title` -- the
+/// near-white a theme draws its headings in. So a theme that named no accent
+/// of its own got a white one: a white ASCII banner, white panel titles, and
+/// a menu whose picked item is the same colour as the two unpicked ones.
+/// Every bundled theme is such a theme; they predate the accents.
 ///
-/// A theme is allowed to make its accent the same colour as its heading
-/// -- that is a choice, and `noctalia` makes it deliberately -- so this
-/// asks only that the accent not be the near-white, which is the one
-/// thing that renders every `primary` on screen invisible.
+/// `load_themes_from(None)` rather than `load_themes()`, and that is the
+/// point of the test rather than a detail of it. `load_themes()` reads
+/// `~/.config/doris/themes/`, so a file somebody's own machine happens to
+/// carry decides whether the suite passes here. A gate that depends on files
+/// outside the repository is not a gate, it is a report about one
+/// developer's home directory -- and it failed exactly that way, twice, on a
+/// scratch file of mine.
+///
+/// A user's own theme may still make its accent whatever it likes; that is
+/// their file, and the near-white is their choice to make.
 #[test]
-fn no_theme_has_an_accent_that_comes_out_near_white() {
-    let themes = Theme::load_themes();
-    assert!(themes.len() >= 40, "only {} themes loaded", themes.len());
+fn no_bundled_theme_has_an_accent_that_comes_out_near_white() {
+    let themes = Theme::load_themes_from(None);
+    assert!(themes.len() >= 40, "only {} bundled themes", themes.len());
     let white: Vec<&str> = themes
         .iter()
         .filter(|t| near_white(t.primary_color()))
@@ -114,8 +119,8 @@ fn no_theme_has_an_accent_that_comes_out_near_white() {
         .collect();
     assert!(
         white.is_empty(),
-        "these themes' accent is near-white, so every `primary` on screen \
-         comes out invisible: {white:?}"
+        "these bundled themes' accent is near-white, so every `primary` on \
+         screen comes out invisible: {white:?}"
     );
 }
 

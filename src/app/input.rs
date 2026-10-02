@@ -88,7 +88,9 @@ impl App {
                                 self.remove_active_torrent().await;
                             }
                         }
-                        Some(UiAction::Download) => self.download_selected_to_disk().await,
+                        Some(UiAction::Download) => {
+                            self.download_selected_to_disk().await;
+                        }
                         Some(UiAction::Info) => self.show_selected_info(),
                         Some(UiAction::Play) => {
                             // The `play` frame button is Enter on the
@@ -436,7 +438,9 @@ impl App {
                         self.ui.modal = Modal::None;
                         self.spawn_stream().await;
                     }
-                    DetailAction::Download => self.download_selected_to_disk().await,
+                    DetailAction::Download => {
+                        self.download_selected_to_disk().await;
+                    }
                 }
             }
             return Ok(Some(()));
