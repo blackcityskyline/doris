@@ -990,3 +990,30 @@ fn test_a_border_click_arms_the_resize_but_a_legend_click_does_not() {
     );
     assert!(app.zones.resize.is_none(), "and armed nothing");
 }
+
+/// What the hit-test answers is where the word is drawn.
+#[test]
+fn every_menu_item_rect_covers_a_glyph_the_renderer_draws() {
+    use doris::ui::menu::menu_item_rects;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
+    app.show_menu = true;
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+
+    for rect in menu_item_rects(ratatui::layout::Rect::new(0, 0, 100, 30)) {
+        let glyphs = (rect.y..rect.y + rect.height)
+            .flat_map(|y| (rect.x..rect.x + rect.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| buf[(x, y)].symbol() != " ")
+            .count();
+        assert!(
+            glyphs > 0,
+            "{rect:?} is a click target with nothing drawn in it"
+        );
+    }
+}

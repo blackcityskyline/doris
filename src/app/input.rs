@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::ui::layout::Dir;
+use ratatui::layout::Position;
 
 /// Lines one notch of the mouse wheel moves.
 pub(super) const MOUSE_SCROLL_STEP: i64 = 3;
@@ -17,6 +18,23 @@ impl App {
             return;
         }
         if self.ui.show_menu {
+            // The menu swallows the rest of the mouse, so a click on an
+            // item has to be read here -- and it was not, which left the
+            // three items reachable only from the keyboard. A click on
+            // Quit that does nothing is the one thing that reads as a
+            // program that hung: the terminal is still full of it and
+            // the browser it spawned is still burning CPU.
+            if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+                let area =
+                    ratatui::layout::Rect::new(0, 0, self.terminal_size.0, self.terminal_size.1);
+                if let Some(idx) = crate::ui::menu::menu_item_rects(area)
+                    .iter()
+                    .position(|r| r.contains(Position::new(mouse.column, mouse.row)))
+                {
+                    self.ui.menu.selected = idx;
+                    self.activate_menu_item().await;
+                }
+            }
             return;
         }
 
@@ -661,32 +679,34 @@ impl App {
                 self.ui.menu.prev();
             }
             KeyCode::Enter => {
-                let item = self.ui.menu.select();
-                match item {
-                    MenuItem::Options => {
-                        // The menu item is Options; it opens the very
-                        // same Settings modal the item name says. It
-                        // used to only close the menu, which read as a
-                        // dead key.
-                        self.ui.show_menu = false;
-                        self.ui.open_settings(
-                            &self.config,
-                            self.browser_visibility == BrowserVisibility::Hidden,
-                        );
-                    }
-                    MenuItem::Help => {
-                        // The same page `?` opens -- one help modal, two
-                        self.ui.show_menu = false;
-                        self.ui.open_help_modal();
-                    }
-                    MenuItem::Quit => {
-                        self.ui.quit();
-                    }
-                }
+                self.activate_menu_item().await;
             }
             _ => {}
         }
         Ok(())
+    }
+
+    /// What the picked menu item does. Enter and a click on the item both
+    /// land here, so the two cannot disagree about what Quit means.
+    async fn activate_menu_item(&mut self) {
+        match self.ui.menu.select() {
+            MenuItem::Options => {
+                // The menu item is Options; it opens the very same
+                // Settings modal the item name says. It used to only
+                // close the menu, which read as a dead key.
+                self.ui.show_menu = false;
+                self.ui.open_settings(
+                    &self.config,
+                    self.browser_visibility == BrowserVisibility::Hidden,
+                );
+            }
+            MenuItem::Help => {
+                // The same page `?` opens -- one help modal, two ways in.
+                self.ui.show_menu = false;
+                self.ui.open_help_modal();
+            }
+            MenuItem::Quit => self.ui.quit(),
+        }
     }
 
     /// Whether `key` is an arrow carrying a layout modifier -- one of

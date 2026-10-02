@@ -1183,3 +1183,63 @@ async fn a_bare_arrow_still_moves_the_cursor() {
          so a bare arrow that falls into it would be swallowed"
     );
 }
+
+/// A click on a menu item does what Enter on it does.
+///
+/// The menu swallows every other mouse event, so before this a click on
+/// `Quit` did nothing at all: the program stayed up with the terminal
+/// still full of it and the browser it had spawned still burning CPU,
+/// which reads as a hang rather than as a dead button.
+#[tokio::test]
+async fn clicking_a_menu_item_activates_it() {
+    use crate::ui::menu::MenuItem;
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    for (idx, item) in MenuItem::all().iter().enumerate() {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.show_menu = true;
+        app.terminal_size = (100, 30);
+        let rect = crate::ui::menu::menu_item_rects(ratatui::layout::Rect::new(0, 0, 100, 30))[idx];
+
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: rect.x + rect.width / 2,
+            row: rect.y + rect.height / 2,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        })
+        .await;
+
+        match item {
+            MenuItem::Quit => assert!(
+                !app.ui.running,
+                "a click on Quit must end the run, not leave it going"
+            ),
+            MenuItem::Options | MenuItem::Help => {
+                assert!(app.ui.running, "opening {item:?} is not a quit")
+            }
+        }
+    }
+}
+
+/// A click that lands on nothing does nothing -- in particular it does
+/// not quit, which is what a stray click on the menu's empty side would
+/// do if the hit-test were a whole-frame one.
+#[tokio::test]
+async fn a_click_beside_the_menu_items_does_nothing() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.show_menu = true;
+    app.terminal_size = (100, 30);
+
+    app.handle_mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 2,
+        row: 28,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    })
+    .await;
+
+    assert!(app.ui.running, "a click on empty space must not quit");
+    assert!(app.ui.show_menu, "and must leave the menu open");
+}

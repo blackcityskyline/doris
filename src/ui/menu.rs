@@ -146,9 +146,11 @@ pub fn menu_box_rect(area: Rect) -> Option<Rect> {
 /// takes no colour argument.
 pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &Theme) {
     let banner_w = BANNER[0].width() as u16;
-    let total_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * MENU_ITEM_HEIGHT;
-    let start_y = area.y + area.height.saturating_sub(total_h) / 2;
-    let start_x = area.x + area.width.saturating_sub(banner_w) / 2;
+    let start_y = area.y
+        + area
+            .height
+            .saturating_sub(BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * MENU_ITEM_HEIGHT)
+            / 2;
 
     for (i, line) in BANNER.iter().enumerate() {
         frame.render_widget(
@@ -158,37 +160,33 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
                     .fg(theme.primary_color())
                     .add_modifier(Modifier::BOLD),
             )),
-            Rect::new(start_x, start_y + i as u16, banner_w, 1),
+            Rect::new(
+                area.x + area.width.saturating_sub(banner_w) / 2,
+                start_y + i as u16,
+                banner_w,
+                1,
+            ),
         );
     }
 
-    let menu_y = start_y + BANNER_ROWS + SPACING;
-    for (idx, normal) in MENU_ITEMS.iter().enumerate() {
+    for (idx, rect) in menu_item_rects(area).into_iter().enumerate() {
         let selected = idx == state.selected;
         // The picked item is drawn from the doubled-line table, so the
         // focus reads as a heavier line rather than only as a colour.
         let block = if selected {
             &MENU_ITEMS_BOLD[idx]
         } else {
-            normal
+            &MENU_ITEMS[idx]
         };
-        let mw = block[0].width() as u16;
-        let x = area.x + area.width.saturating_sub(mw) / 2;
-        let y = menu_y + idx as u16 * MENU_ITEM_HEIGHT;
-
         for (j, line) in block.iter().enumerate() {
-            // The picked item is marked by its glyph colour and weight.
+            // Unpicked items are the theme's plain menu colour, the
+            // picked one the accent -- and the picked one also comes
+            // from the doubled-line table, so on a theme whose accent
+            // and whose plain colour sit next to each other the mark is
+            // still a shape and not only a hue.
             let spans: Vec<Span> = line
                 .chars()
                 .map(|c| {
-                    // Unpicked items are the theme's plain menu colour,
-                    // the picked one the accent -- the reference's own
-                    // split (`menu_normal` in greys, `menu_selected` in
-                    // the banner's colours). The
-                    // picked item is also drawn from the doubled-line
-                    // table above, so on a theme whose accent and whose
-                    // plain colour sit next to each other the mark is
-                    // still a shape and not only a hue.
                     let style = if selected && c != ' ' {
                         Style::default()
                             .fg(theme.primary_color())
@@ -201,8 +199,35 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
                 .collect();
             frame.render_widget(
                 Paragraph::new(Line::from(spans)),
-                Rect::new(x, y + j as u16, mw, 1),
+                Rect::new(rect.x, rect.y + j as u16, rect.width, 1),
             );
         }
     }
+}
+
+/// Where each item is drawn, one rect per item, in the order of
+/// [`MenuItem::all`].
+///
+/// The renderer draws into these and the mouse hit-test reads them, so a
+/// click cannot land anywhere but on the word. The menu swallows every
+/// other mouse event, so without this the three items are reachable only
+/// from the keyboard -- and a click on Quit then does nothing at all,
+/// which reads as a program that hung.
+pub fn menu_item_rects(area: Rect) -> Vec<Rect> {
+    let total_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * MENU_ITEM_HEIGHT;
+    let start_y = area.y + area.height.saturating_sub(total_h) / 2;
+    let menu_y = start_y + BANNER_ROWS + SPACING;
+    MENU_ITEMS
+        .iter()
+        .enumerate()
+        .map(|(idx, block)| {
+            let mw = block[0].width() as u16;
+            Rect::new(
+                area.x + area.width.saturating_sub(mw) / 2,
+                menu_y + idx as u16 * MENU_ITEM_HEIGHT,
+                mw,
+                MENU_ITEM_HEIGHT,
+            )
+        })
+        .collect()
 }
