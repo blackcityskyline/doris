@@ -1001,14 +1001,19 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
 /// label in `primary` (`btop_draw.cpp:290` for the numbering colour, `:332` for where it is
 /// drawn).
 pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
-    // Every keybind glyph is `on_hover`; every other letter is `primary`.
+    // The reference's own split, which is what every theme is drawn for:
+    // the word in `title`, the letter that acts in `hi_fg`
+    // (`btop_draw.cpp:627`). Both are mandatory fields in every theme
+    // file, so a theme cannot make a keybind vanish by naming it the
+    // colour of ordinary text.
+    //
     // The zone's digit and the panel's detail-view key are keybinds like
     // any other -- the digit opens the zone, the letter opens its full
     // view -- so they take the same colour the `f` of `filter` and the
     // `S` of `Search` take.
-    let word = Style::default().fg(theme.primary_color());
+    let word = Style::default().fg(theme.title.to_color());
     let bound = Style::default()
-        .fg(theme.on_hover_color())
+        .fg(theme.hi_fg.to_color())
         .add_modifier(Modifier::BOLD);
     let mut spans = vec![Span::styled(
         if focused { "▸ " } else { "  " },
@@ -1040,13 +1045,14 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
     (5 + id.label().chars().count()) as u16
 }
 
-/// Spans for one button: `primary` for the word, `on_hover` + bold for the
+/// Spans for one button: `title` for the word, `hi_fg` + bold for the
 /// hotkey.
 ///
 /// The hotkey letter is a keybind glyph, and every keybind glyph on
-/// screen is `on_hover` -- the `S` of `Search`, the zone's digit, the
-/// panel's detail-view letter, and this. One rule, so the eye can pick
-/// the key out of the word without reading it.
+/// screen is `hi_fg` -- the `S` of `Search`, the zone's digit, the
+/// panel's detail-view letter, and this. One rule, taken from the
+/// reference, so the eye can pick the key out of the word without reading
+/// it.
 pub fn button_spans(
     theme: &Theme,
     button: &FrameButton,
@@ -1054,9 +1060,9 @@ pub fn button_spans(
     hovered: bool,
 ) -> Vec<Span<'static>> {
     let text = button.text();
-    let word_style = Style::default().fg(theme.primary_color());
+    let word_style = Style::default().fg(theme.title.to_color());
     let hotkey_style = Style::default()
-        .fg(theme.on_hover_color())
+        .fg(theme.hi_fg.to_color())
         .add_modifier(Modifier::BOLD);
 
     if button.is_category() {
@@ -1105,7 +1111,7 @@ pub fn button_spans(
 
 fn hover_word(theme: &Theme) -> Style {
     Style::default()
-        .fg(theme.on_hover_color())
+        .fg(theme.hi_fg.to_color())
         .add_modifier(Modifier::UNDERLINED)
 }
 

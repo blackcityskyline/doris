@@ -125,7 +125,7 @@ fn test_help_page_accents_the_header_and_the_keybind_column() {
     let theme = doris::ui::theme::Theme::dark();
 
     assert_eq!(fg_at(&buf, "Key:"), theme.primary_color());
-    assert_eq!(fg_at(&buf, "s, i"), theme.on_hover_color());
+    assert_eq!(fg_at(&buf, "s, i"), theme.hi_fg.to_color());
 }
 
 /// The paging row is the frame rule again: the arrows are the glyphs that act, so they take
@@ -141,9 +141,9 @@ fn test_help_paging_arrows_take_the_hotkey_accent() {
     let buf = buffer(&mut app, 80, 24);
     let theme = doris::ui::theme::Theme::dark();
 
-    assert_eq!(fg_at(&buf, "↑"), theme.on_hover_color());
+    assert_eq!(fg_at(&buf, "↑"), theme.hi_fg.to_color());
     assert_eq!(fg_at(&buf, "page 1/2"), theme.primary_color());
-    assert_eq!(fg_at(&buf, "↓"), theme.on_hover_color());
+    assert_eq!(fg_at(&buf, "↓"), theme.hi_fg.to_color());
 }
 
 /// The popup's content sits on the theme's own background.
@@ -218,7 +218,7 @@ fn test_settings_tab_markers_carry_the_accent_and_the_names_do_not() {
     let theme = doris::ui::theme::Theme::dark();
 
     let (x, y) = find(&buf, "[general]").expect("the selected tab is drawn");
-    assert_eq!(buf[(x, y)].fg, theme.on_hover_color(), "'[' marks the tab");
+    assert_eq!(buf[(x, y)].fg, theme.hi_fg.to_color(), "'[' marks the tab");
     assert_eq!(
         buf[(x + 1, y)].fg,
         theme.primary_color(),
@@ -226,14 +226,14 @@ fn test_settings_tab_markers_carry_the_accent_and_the_names_do_not() {
     );
     assert_eq!(
         buf[(x + 9, y)].fg,
-        theme.on_hover_color(),
+        theme.hi_fg.to_color(),
         "']' marks the tab too"
     );
 
     let (x, y) = find(&buf, "2:streaming").expect("the next tab is drawn");
     assert_eq!(
         buf[(x, y)].fg,
-        theme.on_hover_color(),
+        theme.hi_fg.to_color(),
         "'2' is the key that switches to that tab"
     );
     assert_eq!(buf[(x + 2, y)].fg, theme.primary_color());

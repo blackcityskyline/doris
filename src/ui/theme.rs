@@ -21,7 +21,6 @@ pub struct Theme {
     pub primary: Option<ColorDef>,
     pub secondary: Option<ColorDef>,
     pub error: Option<ColorDef>,
-    pub on_hover: Option<ColorDef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,7 +122,6 @@ impl Theme {
             primary: Some(ColorDef::new(79, 195, 247)),
             secondary: None,
             error: None,
-            on_hover: None,
         }
     }
 
@@ -169,12 +167,6 @@ impl Theme {
 
     /// The colour a keybind glyph is drawn in: what a hover would put on the accent, so the
     /// hotkey reads as the actionable part of the word.
-    pub fn on_hover_color(&self) -> Color {
-        self.on_hover
-            .as_ref()
-            .map_or_else(|| self.hi_fg.to_color(), ColorDef::to_color)
-    }
-
     pub fn from_config(path: &std::path::Path) -> Option<Self> {
         let content = std::fs::read_to_string(path).ok()?;
         Self::from_config_str(&content)

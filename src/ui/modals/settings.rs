@@ -389,7 +389,7 @@ impl App {
             let hi_color = self.theme.secondary_color();
             let title_color = self.theme.primary_color();
             // The glyphs that *are* keys (the paging arrows) take the
-            let key_color = self.theme.on_hover_color();
+            let key_color = self.theme.hi_fg.to_color();
             let div_color = self.theme.div_line.to_color();
             let fg_color = self.theme.main_fg.to_color();
             // The cursor row of this list is a selected row like any

@@ -56,9 +56,6 @@ primary.b = 160
 error.r = 224
 error.g = 108
 error.b = 117
-on_hover.r = 250
-on_hover.g = 200
-on_hover.b = 190
 "#;
 
 /// A fresh per-test directory under the system temp dir, emptied first so
@@ -92,7 +89,7 @@ fn test_rendered_noctalia_theme_parses() {
     assert_eq!(noctalia.main_bg.g, 21);
     assert_eq!(noctalia.main_bg.b, 19);
     assert_eq!(noctalia.main_fg.r, 222);
-    // The four optional accents are what a rendered theme is actually
+    // The optional accents are what a rendered theme is actually for.
     assert_eq!(
         noctalia.primary_color(),
         ratatui::style::Color::Rgb(228, 144, 160)
@@ -100,10 +97,6 @@ fn test_rendered_noctalia_theme_parses() {
     assert_eq!(
         noctalia.error_color(),
         ratatui::style::Color::Rgb(224, 108, 117)
-    );
-    assert_eq!(
-        noctalia.on_hover_color(),
-        ratatui::style::Color::Rgb(250, 200, 190)
     );
 }
 

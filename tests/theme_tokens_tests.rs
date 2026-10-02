@@ -1,4 +1,4 @@
-//! The palette accents -- `primary`, `secondary`, `error`, `on_hover`
+//! The palette accents -- `primary`, `secondary`, `error`
 //! -- are optional theme fields, and that is what makes the colour
 //! distribution one rule for every theme: a file that spells them out
 //! (the noctalia template does) uses its own values, a file that omits
@@ -21,12 +21,10 @@ fn test_missing_tokens_fall_back_to_the_classic_fields() {
         primary: None,
         secondary: None,
         error: None,
-        on_hover: None,
         ..Theme::dark()
     };
     assert_eq!(theme.primary_color(), theme.hi_fg.to_color());
     assert_eq!(theme.secondary_color(), theme.hi_fg.to_color());
-    assert_eq!(theme.on_hover_color(), theme.hi_fg.to_color());
     assert_eq!(theme.error_color(), Color::Red);
 }
 
@@ -37,12 +35,10 @@ fn test_tokens_in_the_theme_win_over_the_fallback() {
     theme.primary = Some(ColorDef::new(1, 2, 3));
     theme.secondary = Some(ColorDef::new(4, 5, 6));
     theme.error = Some(ColorDef::new(7, 8, 9));
-    theme.on_hover = Some(ColorDef::new(10, 11, 12));
 
     assert_eq!(theme.primary_color(), Color::Rgb(1, 2, 3));
     assert_eq!(theme.secondary_color(), Color::Rgb(4, 5, 6));
     assert_eq!(theme.error_color(), Color::Rgb(7, 8, 9));
-    assert_eq!(theme.on_hover_color(), Color::Rgb(10, 11, 12));
 }
 
 /// New fields must not make an old theme file stop parsing: a failed
@@ -63,7 +59,6 @@ fn test_every_bundled_theme_still_loads_without_the_tokens() {
         "only {} bundled themes loaded",
         themes.len()
     );
-    assert!(themes.iter().all(|t| t.on_hover.is_none()));
     assert!(
         themes.iter().all(|t| t.secondary.is_none()),
         "no bundled theme names `secondary` yet, so a file naming it is new ground"

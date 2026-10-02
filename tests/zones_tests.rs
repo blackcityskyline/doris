@@ -304,7 +304,7 @@ fn test_update_areas_with_nothing_visible_does_not_panic() {
 /// btop's box title: superscript number + bold, the label plain -- ours used to be one flat
 /// string, so nothing distinguished the zone number from its name.
 #[test]
-fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
+fn test_zone_title_marks_the_keybinds_and_the_label() {
     let theme = Theme::dark();
     let line = zone_title(ZoneId::Results, &theme, false);
     let spans = line.spans;
@@ -312,19 +312,21 @@ fn test_zone_title_marks_the_number_secondary_and_the_label_primary() {
     assert_eq!(spans.len(), 6);
     assert_eq!(spans[1].content.to_string(), "\u{00B9}");
 
+    // The zone's digit is a keybind -- it opens the zone -- so it is the
+    // keybind colour, like the `f` of `filter` and the `S` of `Search`.
     let number = spans[1].style;
-    assert_eq!(number.fg, Some(theme.secondary_color()));
+    assert_eq!(number.fg, Some(theme.hi_fg.to_color()));
     assert!(number.add_modifier.contains(Modifier::BOLD));
 
     // The detail-view key leads the word...
     assert_eq!(spans[3].content.to_string(), "R");
-    assert_eq!(spans[3].style.fg, Some(theme.on_hover_color()));
+    assert_eq!(spans[3].style.fg, Some(theme.hi_fg.to_color()));
     assert!(spans[3].style.add_modifier.contains(Modifier::BOLD));
 
-    //...and the rest of the label is still plain primary.
+    //...and the rest of the label is the word colour, `title`.
     assert_eq!(spans[4].content.to_string(), "esults");
     let label = spans[4].style;
-    assert_eq!(label.fg, Some(theme.primary_color()));
+    assert_eq!(label.fg, Some(theme.title.to_color()));
     assert!(!label.add_modifier.contains(Modifier::BOLD));
 }
 
@@ -343,8 +345,8 @@ fn test_zone_title_marks_the_detail_key_of_each_zone_that_has_one() {
         assert_eq!(spans[3].content.to_string(), key, "{:?} leads", id);
         assert_eq!(
             spans[3].style.fg,
-            Some(theme.on_hover_color()),
-            "{:?} hotkey is on_hover",
+            Some(theme.hi_fg.to_color()),
+            "{:?} hotkey is the keybind colour",
             id
         );
         assert!(spans[3].style.add_modifier.contains(Modifier::BOLD));
@@ -407,8 +409,8 @@ fn test_button_spans_put_the_hotkey_on_the_key_character() {
             );
             assert_eq!(
                 spans[1].style.fg,
-                Some(theme.on_hover_color()),
-                "{}: hotkey is on_hover",
+                Some(theme.hi_fg.to_color()),
+                "{}: hotkey is the keybind colour",
                 text
             );
         }
@@ -477,7 +479,7 @@ fn test_the_category_name_is_centred_in_its_slot() {
     );
 }
 
-/// The category button's arrows are the mouse targets, so both take the `on_hover` + bold
+/// The category button's arrows are the mouse targets, so both take the keybind colour + bold
 /// treatment and the name between them stays `primary` -- btop draws its sortable column
 /// headers the same way.
 #[test]
@@ -503,7 +505,7 @@ fn test_the_category_button_highlights_both_arrows() {
     for arrow in [&spans[0], &spans[2]] {
         assert_eq!(
             arrow.style.fg,
-            Some(theme.on_hover_color()),
+            Some(theme.hi_fg.to_color()),
             "an arrow is a mouse target, drawn like a hotkey"
         );
         assert!(
@@ -513,8 +515,8 @@ fn test_the_category_button_highlights_both_arrows() {
     }
     assert_eq!(
         spans[1].style.fg,
-        Some(theme.primary_color()),
-        "the name is display-only"
+        Some(theme.title.to_color()),
+        "the name is display-only, so it is the word colour"
     );
 }
 

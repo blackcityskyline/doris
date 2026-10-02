@@ -139,13 +139,13 @@ impl App {
             (false, false, true) => format!("filter: {}", self.zones.filter_input),
             _ => "Search".to_string(),
         };
-        // The `S` of Search is a keybind glyph like any other, so it takes
-        // `on_hover`: the same colour as the `f` of `filter`, the zone's
-        // digit and the panel's detail-view letter.
+        // The `S` of Search is a keybind glyph like any other, so it
+        // takes `hi_fg`: the same colour as the `f` of `filter`, the
+        // zone's digit and the panel's detail-view letter.
         let title_line = if title == "Search" {
-            let word = Style::default().fg(self.theme.primary_color());
+            let word = Style::default().fg(self.theme.title.to_color());
             let hot = Style::default()
-                .fg(self.theme.on_hover_color())
+                .fg(self.theme.hi_fg.to_color())
                 .add_modifier(Modifier::BOLD);
             Line::from(vec![Span::styled("S", hot), Span::styled("earch", word)])
         } else {

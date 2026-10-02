@@ -234,7 +234,7 @@ fn test_every_panel_on_the_default_preset_can_move_vertically() {
 /// The `S` of Search is a keybind like any other, so it is `on_hover`
 /// like the rest of them.
 #[test]
-fn test_the_search_title_marks_its_s_in_on_hover() {
+fn test_the_search_title_marks_its_s_in_hi_fg() {
     use doris::config::Config;
     use doris::ui::view::App as UiApp;
     use ratatui::backend::TestBackend;
@@ -259,44 +259,51 @@ fn test_the_search_title_marks_its_s_in_on_hover() {
     let at = line[..line.find('S').expect("the S is drawn")]
         .chars()
         .count() as u16;
-    assert_eq!(buf[(at, 0)].fg, Color::Rgb(200, 210, 220), "the `S`");
+    assert_eq!(buf[(at, 0)].fg, Color::Rgb(221, 188, 224), "the `S`");
     assert_eq!(
         buf[(at + 1, 0)].fg,
-        Color::Rgb(10, 20, 30),
+        Color::Rgb(171, 199, 255),
         "the rest of the word"
     );
 }
 
-/// Every keybind glyph on screen is `on_hover`, and nothing else is.
+/// Every keybind glyph on screen is `hi_fg`, and every other letter is
+/// `title`.
 ///
-/// One rule, everywhere: the letter that opens something -- `S` for the
-/// search box, the zone's digit, the panel's full-view letter, `f` and `g`
-/// on the frame, the category arrows -- is `on_hover`, and the rest of
-/// the word it sits in is `primary`. The eye picks the key out of the
-/// label without reading it.
+/// This is the reference's split, verbatim: the letter that opens
+/// something -- `S` for the search box, the zone's digit, the panel's
+/// full-view letter, `f` and `g` on the frame, the category arrows --
+/// takes `hi_fg`, and the rest of the word takes `title`
+/// (`btop_draw.cpp:627`). Both are mandatory in every theme file, so no
+/// theme can name a keybind the colour of ordinary text and lose it,
+/// which is exactly what an optional accent slot allowed: on one theme
+/// the `S` of `Search` and the `f` of `filter` came out in `main_fg`.
 ///
-/// The accents are named apart in the test theme: the built-in one falls
-/// `primary`, `secondary` and `on_hover` back to the same `hi_fg`, so a
-/// test against it cannot tell them apart and passes either way.
+/// The tokens are named apart in the test theme because the built-in one
+/// makes `title` and `hi_fg` the same colour, so a test against it cannot
+/// tell them apart and passes either way.
 fn accents() -> doris::ui::theme::Theme {
+    // The two tokens btop uses for a label, given values a screenshot
+    // could tell apart: the word `title`, the keybind `hi_fg`.
     let theme = doris::ui::theme::Theme {
+        title: doris::ui::theme::ColorDef::new(171, 199, 255),
+        hi_fg: doris::ui::theme::ColorDef::new(221, 188, 224),
         primary: Some(doris::ui::theme::ColorDef::new(10, 20, 30)),
         secondary: Some(doris::ui::theme::ColorDef::new(90, 100, 110)),
-        on_hover: Some(doris::ui::theme::ColorDef::new(200, 210, 220)),
         ..doris::ui::theme::Theme::default_theme()
     };
-    assert_ne!(theme.primary_color(), theme.on_hover_color());
+    assert_ne!(theme.title.to_color(), theme.hi_fg.to_color());
     theme
 }
 
 #[test]
-fn test_a_panel_title_marks_its_keybinds_in_on_hover() {
+fn test_a_panel_title_marks_its_keybinds_in_hi_fg() {
     use doris::ui::layout::{superscript_digit, zone_title, ZoneId};
     use ratatui::style::{Color, Modifier};
 
     let theme = accents();
-    let hot = Color::Rgb(200, 210, 220);
-    let word = Color::Rgb(10, 20, 30);
+    let hot = Color::Rgb(221, 188, 224);
+    let word = Color::Rgb(171, 199, 255);
 
     for (id, key) in [
         (ZoneId::Results, Some("R")),
@@ -336,13 +343,13 @@ fn test_a_panel_title_marks_its_keybinds_in_on_hover() {
 }
 
 #[test]
-fn test_a_frame_button_marks_its_hotkey_in_on_hover() {
+fn test_a_frame_button_marks_its_hotkey_in_hi_fg() {
     use doris::ui::layout::{button_spans, zone_buttons, ZoneId};
     use ratatui::style::Color;
 
     let theme = accents();
-    let hot = Color::Rgb(200, 210, 220);
-    let word = Color::Rgb(10, 20, 30);
+    let hot = Color::Rgb(221, 188, 224);
+    let word = Color::Rgb(171, 199, 255);
 
     let mut seen = 0;
     for id in [

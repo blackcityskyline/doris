@@ -229,7 +229,7 @@ impl App {
             .add_modifier(Modifier::BOLD);
         let inactive = Style::default().fg(self.theme.inactive_fg.to_color());
         let arrow = Style::default()
-            .fg(self.theme.on_hover_color())
+            .fg(self.theme.hi_fg.to_color())
             .add_modifier(Modifier::BOLD);
         let mut tabs: Vec<Span> = vec![Span::styled(" ◀ ", arrow)];
         for (n, (name, _)) in sections().iter().enumerate() {
@@ -261,12 +261,12 @@ impl App {
         block = block.title_bottom(Line::from(tabs));
         frame.render_widget(block, popup);
 
-        // Structure in `primary`, the keybind column in `on_hover`:
+        // Structure in `primary`, the keybind column in `hi_fg`:
         let header_style = Style::default()
             .fg(self.theme.primary_color())
             .add_modifier(Modifier::BOLD);
         let key_style = Style::default()
-            .fg(self.theme.on_hover_color())
+            .fg(self.theme.hi_fg.to_color())
             .add_modifier(Modifier::BOLD);
         let desc_style = Style::default().fg(self.theme.main_fg.to_color());
 
