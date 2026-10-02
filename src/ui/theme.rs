@@ -141,9 +141,17 @@ impl Theme {
 
     /// Structure accent: frame borders, zone/button words, modal and menu titles.
     pub fn primary_color(&self) -> Color {
+        // Falls back to `hi_fg`, not to `title`. `title` is the
+        // near-white a theme uses for its headings, so a theme without an
+        // accent of its own -- which is all 43 bundled ones -- got a
+        // white accent: a white ASCII banner, white panel titles, and a
+        // menu whose picked item was the same colour as the two unpicked
+        // ones, since those are also `title`-ish. `hi_fg` is the colour
+        // the theme already had for "this one is the interesting one",
+        // which is what an accent is for.
         self.primary
             .as_ref()
-            .map_or_else(|| self.title.to_color(), ColorDef::to_color)
+            .map_or_else(|| self.hi_fg.to_color(), ColorDef::to_color)
     }
 
     /// Secondary accent: frame furniture that must stay distinguishable from the primary --

@@ -720,12 +720,32 @@ impl App {
         for (button, rect) in &layout.buttons {
             // Hovered: whole-cell containment against the same rectangle
             let hovered = self.hovers(*rect);
-            let spans = super::layout::button_spans(
+            // The bracket round the word is what makes it read as a
+            // control rather than as more of the panel's title -- the
+            // reference draws each one as `┌` + letter + word + `┐`
+            // (`btop_draw.cpp:627`) and leaves the plain frame line
+            // between them. With "Show boxes" off there is no frame to
+            // bracket against, so they go with it.
+            let bracketed = config.show_boxes;
+            let mut spans = Vec::new();
+            if bracketed {
+                spans.push(Span::styled(
+                    "┌",
+                    Style::default().fg(self.theme.div_line.to_color()),
+                ));
+            }
+            spans.extend(super::layout::button_spans(
                 &self.theme,
                 button,
                 self.frame_button_active(id, button),
                 hovered,
-            );
+            ));
+            if bracketed {
+                spans.push(Span::styled(
+                    "┐",
+                    Style::default().fg(self.theme.div_line.to_color()),
+                ));
+            }
             frame.render_widget(Paragraph::new(Line::from(spans)), *rect);
         }
     }

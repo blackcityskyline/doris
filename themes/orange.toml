@@ -37,3 +37,11 @@ menu_selected_fg.r = 255
 menu_selected_fg.g = 204
 menu_selected_fg.b = 102
 
+
+# The accent doris draws its frame words, panel titles and ASCII banner
+# with. Both `title` and `hi_fg` are pure white here, which would leave
+# every one of them invisible, so the accent is named explicitly: the
+# orange the rest of the theme is built on.
+primary.r = 255
+primary.g = 165
+primary.b = 0

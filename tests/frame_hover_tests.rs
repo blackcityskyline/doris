@@ -136,10 +136,24 @@ fn the_drawn_frame_marks_the_hovered_button() {
 
     app.set_hover(rect.y, rect.x);
     terminal.draw(|f| app.render(f, &config)).unwrap();
-    let hovered = underlined_at(&terminal, rect);
+    let buf = terminal.backend().buffer().clone();
+    // The word is underlined, and the `┌`/`┐` round it are not: those
+    // two cells are frame furniture in `div_line`, the same line the rest
+    // of the border is drawn in, and underlining them would draw a box
+    // rather than mark a button.
     assert_eq!(
-        hovered, rect.width as usize,
-        "the whole button is marked, not one cell of it"
+        buf[(rect.x, rect.y)].symbol(),
+        "┌",
+        "the button is drawn bracketed"
+    );
+    assert_eq!(buf[(rect.x + rect.width - 1, rect.y)].symbol(), "┐");
+    let word_underlined = (rect.x + 1..rect.x + rect.width - 1)
+        .filter(|&c| buf[(c, rect.y)].modifier.contains(Modifier::UNDERLINED))
+        .count();
+    assert_eq!(
+        word_underlined,
+        (rect.width - 2) as usize,
+        "the whole word is marked, not one cell of it"
     );
 }
 

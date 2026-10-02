@@ -132,8 +132,10 @@ fn test_menu_selection_is_the_accent_colour_and_no_fill() {
     app.menu.selected = 1;
 
     let buf = buffer(&mut app, 120, 40);
-    // The items are drawn as ASCII art, not as words: `Help` is the
-    let (x, y) = find(&buf, "┌─╴").expect("the menu item is on screen");
+    // The items are ASCII art, not words, and the picked one is drawn
+    // from the doubled-line table -- so `Help` is looked for by its bold
+    // glyphs, which are what distinguishes it from the two around it.
+    let (x, y) = find(&buf, "╔═╴").expect("the picked menu item is on screen");
     assert_eq!(
         buf[(x, y)].fg,
         theme().primary_color(),

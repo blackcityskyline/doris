@@ -24,7 +24,7 @@ fn test_missing_tokens_fall_back_to_the_classic_fields() {
         on_hover: None,
         ..Theme::dark()
     };
-    assert_eq!(theme.primary_color(), theme.title.to_color());
+    assert_eq!(theme.primary_color(), theme.hi_fg.to_color());
     assert_eq!(theme.secondary_color(), theme.hi_fg.to_color());
     assert_eq!(theme.on_hover_color(), theme.hi_fg.to_color());
     assert_eq!(theme.error_color(), Color::Red);
@@ -47,7 +47,14 @@ fn test_tokens_in_the_theme_win_over_the_fallback() {
 
 /// New fields must not make an old theme file stop parsing: a failed
 /// parse drops the theme from the picker silently (`load_themes_from`
-/// keeps the error to itself), and every bundled theme is an old file.
+/// keeps the error to itself), and most bundled themes predate the
+/// accents.
+///
+/// Two themes now name a `primary` -- one whose `hi_fg` is pure white,
+/// one whose `title` and `hi_fg` both are -- so the "none of them name it"
+/// claim this test used to make is exactly the white-banner bug. What must
+/// hold is that a theme file *without* the field still parses and still
+/// resolves an accent, which is what the count and the accent tests cover.
 #[test]
 fn test_every_bundled_theme_still_loads_without_the_tokens() {
     let themes = Theme::load_themes_from(None);
@@ -56,8 +63,20 @@ fn test_every_bundled_theme_still_loads_without_the_tokens() {
         "only {} bundled themes loaded",
         themes.len()
     );
-    assert!(themes.iter().all(|t| t.primary.is_none()));
     assert!(themes.iter().all(|t| t.on_hover.is_none()));
+    assert!(
+        themes.iter().all(|t| t.secondary.is_none()),
+        "no bundled theme names `secondary` yet, so a file naming it is new ground"
+    );
+    for t in &themes {
+        if t.primary.is_none() {
+            assert_eq!(
+                t.primary_color(),
+                t.hi_fg.to_color(),
+                "a theme that names no accent falls back to its highlight colour"
+            );
+        }
+    }
 }
 
 /// The frame under the cursor takes the structure accent; every other
@@ -73,4 +92,58 @@ fn test_the_focused_frame_is_primary_and_the_rest_div_line() {
         zone_border_color(ZoneId::Log, ZoneId::Results, &theme),
         theme.div_line.to_color()
     );
+}
+
+/// No theme's accent comes out near-white.
+///
+/// The four accents fall back to a classic field when a theme file does
+/// not name them, and for `primary` the classic field used to be `title`
+/// -- the near-white a theme draws its headings in. So a theme that named
+/// no accent of its own got a white one: a white ASCII banner, white panel
+/// titles, and a menu whose picked item was the same colour as the two
+/// unpicked ones. Every bundled theme is such a theme; they predate the
+/// accents.
+///
+/// A theme is allowed to make its accent the same colour as its heading
+/// -- that is a choice, and `noctalia` makes it deliberately -- so this
+/// asks only that the accent not be the near-white, which is the one
+/// thing that renders every `primary` on screen invisible.
+#[test]
+fn no_theme_has_an_accent_that_comes_out_near_white() {
+    let themes = Theme::load_themes();
+    assert!(themes.len() >= 40, "only {} themes loaded", themes.len());
+    let white: Vec<&str> = themes
+        .iter()
+        .filter(|t| near_white(t.primary_color()))
+        .map(|t| t.name.as_str())
+        .collect();
+    assert!(
+        white.is_empty(),
+        "these themes' accent is near-white, so every `primary` on screen \
+         comes out invisible: {white:?}"
+    );
+}
+
+/// An accent that matches `main_fg` is as invisible as a white one: a
+/// frame word then reads as ordinary body text.
+#[test]
+fn no_theme_has_an_accent_that_is_its_body_colour() {
+    let themes = Theme::load_themes();
+    let flat: Vec<&str> = themes
+        .iter()
+        .filter(|t| t.primary_color() == t.main_fg.to_color())
+        .map(|t| t.name.as_str())
+        .collect();
+    assert!(
+        flat.is_empty(),
+        "these themes' accent is their own body colour, so a frame word \
+         reads as ordinary text: {flat:?}"
+    );
+}
+
+fn near_white(c: ratatui::style::Color) -> bool {
+    match c {
+        ratatui::style::Color::Rgb(r, g, b) => r > 200 && g > 200 && b > 200,
+        _ => false,
+    }
 }

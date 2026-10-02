@@ -22,7 +22,7 @@ const SPACING: u16 = 1;
 /// breathing room between items.
 const MENU_ITEM_HEIGHT: u16 = 4;
 
-const MENU_ITEMS: &[&[&str]] = &[
+pub const MENU_ITEMS: &[&[&str]] = &[
     &[
         "┌─┐┌─┐╶┬╴╷┌─┐┌┐╷┌─┐",
         "│ │├─┘ │ ││ ││└┤└─┐",
@@ -30,6 +30,27 @@ const MENU_ITEMS: &[&[&str]] = &[
     ],
     &["╷ ╷┌─╴╷  ┌─┐", "├─┤├╴ │  ├─┘", "╵ ╵└─╴└─╴╵  "],
     &["┌─┐╷ ╷╷╶┬╴", "│┐││ ││ │ ", "└┴┘└─┘╵ ╵ "],
+];
+
+/// The same three items with every single stroke doubled: `│` becomes
+/// `║`, `─` becomes `═`, and so on, so the picked one is the same word
+/// drawn in a heavier line.
+///
+/// This is how the reference marks focus in its menu, and it is the reason
+/// the mark is visible on *every* theme: colour alone cannot carry it,
+/// because a theme whose accent and whose plain foreground sit next to
+/// each other leaves nothing to see -- which is what the unpicked
+/// `menu_fg` and the picked accent are in several bundled themes. A
+/// heavier line is a shape, and a shape does not depend on the palette.
+/// (`btop_menu.cpp:154`, `menu_selected` beside `menu_normal`.)
+pub const MENU_ITEMS_BOLD: &[&[&str]] = &[
+    &[
+        "╔═╗╔═╗╶╦╴╷╔═╗╔╗╷╔═╗",
+        "║ ║╠═╝ ║ ║║ ║║╚╣╚═╗",
+        "╚═╝╵   ╵ ╵╚═╝╵ ╵╚═╝",
+    ],
+    &["╷ ╷╔═╴╷  ╔═╗", "╠═╣╠╴ ║  ╠═╝", "╵ ╵╚═╴╚═╴╵  "],
+    &["╔═╗╷ ╷╷╶╦╴", "║╗║║ ║║ ║ ", "╚╩╝╚═╝╵ ╵ "],
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,8 +163,15 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
     }
 
     let menu_y = start_y + BANNER_ROWS + SPACING;
-    for (idx, block) in MENU_ITEMS.iter().enumerate() {
+    for (idx, normal) in MENU_ITEMS.iter().enumerate() {
         let selected = idx == state.selected;
+        // The picked item is drawn from the doubled-line table, so the
+        // focus reads as a heavier line rather than only as a colour.
+        let block = if selected {
+            &MENU_ITEMS_BOLD[idx]
+        } else {
+            normal
+        };
         let mw = block[0].width() as u16;
         let x = area.x + area.width.saturating_sub(mw) / 2;
         let y = menu_y + idx as u16 * MENU_ITEM_HEIGHT;
@@ -153,6 +181,14 @@ pub fn render_menu(frame: &mut Frame, area: Rect, state: &MenuState, theme: &The
             let spans: Vec<Span> = line
                 .chars()
                 .map(|c| {
+                    // Unpicked items are the theme's plain menu colour,
+                    // the picked one the accent -- the reference's own
+                    // split (`menu_normal` in greys, `menu_selected` in
+                    // the banner's colours, `btop_menu.cpp:1229`). The
+                    // picked item is also drawn from the doubled-line
+                    // table above, so on a theme whose accent and whose
+                    // plain colour sit next to each other the mark is
+                    // still a shape and not only a hue.
                     let style = if selected && c != ' ' {
                         Style::default()
                             .fg(theme.primary_color())

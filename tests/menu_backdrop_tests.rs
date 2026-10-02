@@ -47,6 +47,11 @@ fn draw(app: &mut UiApp, cfg: &Config) -> Buffer {
     terminal.backend().buffer().clone()
 }
 
+/// A render of `app` at the size the other tests use.
+fn buffer(app: &mut UiApp) -> Buffer {
+    draw(app, &Config::default())
+}
+
 /// The cells the menu changed, with what they were before.
 fn menu_diff(app: &mut UiApp, cfg: &Config) -> Vec<(u16, u16, Cell, Cell)> {
     let with = draw(app, cfg);
@@ -181,4 +186,144 @@ fn test_the_menu_fits_a_terminal_that_can_hold_it() {
         "exactly fitting is drawn"
     );
     assert!(doris::ui::menu::menu_box_rect(Rect::new(0, 0, 10, 6)).is_none());
+}
+
+/// The picked menu item is drawn heavier, not just in another colour.
+///
+/// This is the reference's own focus mark: `menu_normal` draws the thin
+/// strokes and `menu_selected` the doubled ones (`btop_menu.cpp:154`).
+/// Shape rather than hue is the point -- on a theme whose accent sits
+/// next to its plain foreground, colour alone left nothing to see, which
+/// is how "which selector has focus?" went unanswerable on paper,
+/// phoenix-night and solarized.
+#[test]
+fn test_the_picked_menu_item_is_drawn_with_doubled_lines() {
+    use doris::ui::menu::{MENU_ITEMS, MENU_ITEMS_BOLD};
+
+    // Every stroke that can be doubled is, one for one, in the same place.
+    let doubled = |c: char| match c {
+        '┌' => '╔',
+        '─' => '═',
+        '┐' => '╗',
+        '│' => '║',
+        '└' => '╚',
+        '┘' => '╝',
+        '├' => '╠',
+        '┤' => '╣',
+        '┬' => '╦',
+        '┴' => '╩',
+        other => other,
+    };
+
+    for (idx, (thin, fat)) in MENU_ITEMS.iter().zip(MENU_ITEMS_BOLD).enumerate() {
+        assert_eq!(
+            thin.len(),
+            fat.len(),
+            "item {idx} changes its line count between the two tables"
+        );
+        for (row, (a, b)) in thin.iter().zip(fat.iter()).enumerate() {
+            assert_eq!(
+                a.chars().count(),
+                b.chars().count(),
+                "item {idx} row {row} changes width, so the menu would jump"
+            );
+            assert_eq!(
+                a.chars().map(doubled).collect::<String>(),
+                *b,
+                "item {idx} row {row} is not its own thin art doubled"
+            );
+        }
+    }
+}
+
+/// The picked item really is the one that comes out heavier, whichever
+/// of the three it is.
+///
+/// Located by the art itself rather than by a guessed row: the banner is
+/// drawn in doubled strokes too, so a row number would not say which item
+/// it landed on. The markers come from the tables, and what is asserted
+/// is that the renderer picked the right one of the pair.
+#[test]
+fn test_exactly_one_menu_item_is_heavy() {
+    use doris::ui::menu::{MENU_ITEMS, MENU_ITEMS_BOLD};
+
+    for selected in 0..3usize {
+        let mut app = make_app();
+        app.menu.selected = selected;
+        let buf = buffer(&mut app);
+        let rows: Vec<String> = (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect()
+            })
+            .collect();
+
+        for idx in 0..3usize {
+            // The middle row: the longest of the three and the one with
+            // the most strokes in it.
+            let thin = MENU_ITEMS[idx][1];
+            let fat = MENU_ITEMS_BOLD[idx][1];
+            let row = rows
+                .iter()
+                .find(|r| r.contains(thin) || r.contains(fat))
+                .unwrap_or_else(|| panic!("item {idx} is not on screen at all"));
+            if idx == selected {
+                assert!(
+                    row.contains(fat),
+                    "the picked item {idx} is drawn thin: {row}"
+                );
+            } else {
+                assert!(
+                    row.contains(thin),
+                    "item {idx} is heavy while {selected} is the picked one: {row}"
+                );
+            }
+        }
+    }
+}
+
+/// A frame button is bracketed, which is what tells it apart from the
+/// panel title it sits beside: both are `primary`, and before the
+/// brackets there was nothing else to tell them apart by.
+#[test]
+fn test_a_frame_button_is_bracketed() {
+    let mut app = make_app();
+    let buf = buffer(&mut app);
+    let line: String = (0..buf.area.width)
+        .map(|x| buf[(x, 3)].symbol().to_string())
+        .collect();
+    assert!(
+        line.contains('┌') && line.contains('┐'),
+        "the frame row should carry a bracketed button: {line}"
+    );
+    assert!(
+        line.contains("┌filter┐") && line.contains("┌group┐"),
+        "each button is bracketed: {line}"
+    );
+}
+
+/// With "Show boxes" off there is no frame to bracket against, so the
+/// brackets go with it -- otherwise the buttons would be the only thing
+/// left drawing a box-drawing character.
+#[test]
+fn test_the_brackets_follow_show_boxes() {
+    let mut app = make_app();
+    let cfg = Config {
+        show_boxes: false,
+        ..Config::default()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| app.render(frame, &cfg)).unwrap();
+    let buf = terminal.backend().buffer();
+    // Only the panel's own border row, not the whole screen: the menu's
+    // ASCII art is drawn in single strokes and has nothing to do with
+    // "Show boxes".
+    let border: String = (0..buf.area.width)
+        .map(|x| buf[(x, 3)].symbol().to_string())
+        .collect();
+    assert!(
+        !border.contains('┌') && !border.contains('┐'),
+        "a button bracket survived with the frames turned off: {border}"
+    );
 }

@@ -950,7 +950,12 @@ impl FrameButton {
     }
 
     pub fn width(&self) -> u16 {
-        self.text().chars().count() as u16
+        // Plus the `┌` and `┐` that round the word. They are what tell a
+        // button apart from the panel title it sits next to -- same
+        // colour, no other difference -- and they are counted here so
+        // that the fit check, the drawn rectangle and the step to the
+        // next button all agree.
+        self.text().chars().count() as u16 + 2
     }
 
     /// Whether this is the Results category button, which carries btop's
