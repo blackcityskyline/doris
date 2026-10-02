@@ -44,3 +44,10 @@ regex = "1"
 # object-safe on its own, this crate boxes the futures so it is. Small,
 # widely-used, proc-macro only (no extra runtime dependencies pulled in).
 async-trait = "0.1"
+
+# 71 integration-test binaries, each linked from scratch after a change to
+# anything shared (`src/lib.rs` alone invalidates every one of them). Debug
+# info is most of what those objects carry and none of what a test reads:
+# a panic prints a file and a line, and that is the whole use of it here.
+[profile.dev]
+debug = 0
