@@ -22,35 +22,49 @@ const SPACING: u16 = 1;
 /// breathing room between items.
 const MENU_ITEM_HEIGHT: u16 = 4;
 
+/// How wide each item is, one per [`MenuItem`].
+///
+/// A width of its own rather than the art's own length: the bold table's
+/// QUIT is one column longer than the thin one, and centring each on its
+/// own length moved the word sideways the moment it was picked. The
+/// reference keeps a fixed width per item for the same reason
+/// (`menu_width`, `btop_menu.cpp:171`).
+pub const MENU_ITEM_WIDTHS: [u16; 3] = [19, 12, 12];
+
+/// The three words as ASCII art, from the reference's own table
+/// (`menu_normal`, `btop_menu.cpp:136`): every stroke a single line, and
+/// the letters exactly as wide as they need to be.
 pub const MENU_ITEMS: &[&[&str]] = &[
     &[
-        "┌─┐┌─┐─┬─│┌─┐┌┐│┌─┐",
-        "│ │├─┘ │ ││ ││└┤└─┐",
-        "└─┘│   │ │└─┘│ │└─┘",
+        "┌─┐┌─┐┌┬┐┬┌─┐┌┐┌┌─┐",
+        "│ │├─┘ │ ││ ││││└─┐",
+        "└─┘┴   ┴ ┴└─┘┘└┘└─┘",
     ],
-    &["│ │┌──│  ┌─┐", "├─┤├─ │  ├─┘", "│ │└──└──│  "],
-    &["┌─┐│ ││─┬─", "│┐││ ││ │ ", "└┴┘└─┘│ │ "],
+    &["┬ ┬┌─┐┬  ┌─┐", "├─┤├┤ │  ├─┘", "┴ ┴└─┘┴─┘┴  "],
+    &["┌─┐ ┬ ┬ ┬┌┬┐", "│─┼┐│ │ │ │ ", "└─┘└└─┘ ┴ ┴ "],
 ];
 
-/// The same three items with every single stroke doubled: `│` becomes
-/// `║`, `─` becomes `═`, and so on, so the picked one is the same word
-/// drawn in a heavier line.
+/// The same three words with every stroke doubled, from the table beside
+/// it (`menu_selected`, `btop_menu.cpp:154`).
 ///
-/// This is how the reference marks focus in its menu, and it is the reason
-/// the mark is visible on *every* theme: colour alone cannot carry it,
-/// because a theme whose accent and whose plain foreground sit next to
-/// each other leaves nothing to see -- which is what the unpicked
-/// `menu_fg` and the picked accent are in several bundled themes. A
-/// heavier line is a shape, and a shape does not depend on the palette.
-/// -- two tables, and the picked one comes from the second.
+/// This is how the reference marks focus in its menu, and it is the
+/// reason the mark survives on every theme: shape, not hue. Colour alone
+/// cannot carry it, because a theme whose accent and whose plain
+/// foreground sit next to each other leaves nothing to tell apart --
+/// which is how "which one has focus" went unanswerable on several
+/// bundled themes.
+///
+/// The doubling is exact, one glyph for one glyph, so the word is the
+/// same width in both tables and only its weight changes. A test walks
+/// all nine rows to say so.
 pub const MENU_ITEMS_BOLD: &[&[&str]] = &[
     &[
-        "╔═╗╔═╗═╦═║╔═╗╔╗║╔═╗",
-        "║ ║╠═╝ ║ ║║ ║║╚╣╚═╗",
-        "╚═╝║   ║ ║╚═╝║ ║╚═╝",
+        "╔═╗╔═╗╔╦╗╦╔═╗╔╗╔╔═╗",
+        "║ ║╠═╝ ║ ║║ ║║║║╚═╗",
+        "╚═╝╩   ╩ ╩╚═╝╝╚╝╚═╝",
     ],
-    &["║ ║╔══║  ╔═╗", "╠═╣╠═ ║  ╠═╝", "║ ║╚══╚══║  "],
-    &["╔═╗║ ║║═╦═", "║╗║║ ║║ ║ ", "╚╩╝╚═╝║ ║ "],
+    &["╦ ╦╔═╗╦  ╔═╗", "╠═╣╠╣ ║  ╠═╝", "╩ ╩╚═╝╩═╝╩  "],
+    &["╔═╗ ╦ ╦ ╦╔╦╗ ", "║═╬╗║ ║ ║ ║  ", "╚═╝╚╚═╝ ╩ ╩ "],
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -217,15 +231,14 @@ pub fn menu_item_rects(area: Rect) -> Vec<Rect> {
     let total_h = BANNER_ROWS + SPACING + MENU_ITEMS.len() as u16 * MENU_ITEM_HEIGHT;
     let start_y = area.y + area.height.saturating_sub(total_h) / 2;
     let menu_y = start_y + BANNER_ROWS + SPACING;
-    MENU_ITEMS
+    MENU_ITEM_WIDTHS
         .iter()
         .enumerate()
-        .map(|(idx, block)| {
-            let mw = block[0].width() as u16;
+        .map(|(idx, mw)| {
             Rect::new(
-                area.x + area.width.saturating_sub(mw) / 2,
+                area.x + area.width.saturating_sub(*mw) / 2,
                 menu_y + idx as u16 * MENU_ITEM_HEIGHT,
-                mw,
+                *mw,
                 MENU_ITEM_HEIGHT,
             )
         })

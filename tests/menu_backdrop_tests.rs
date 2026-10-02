@@ -191,16 +191,20 @@ fn test_the_menu_fits_a_terminal_that_can_hold_it() {
 /// The picked menu item is drawn heavier, not just in another colour.
 ///
 /// This is the reference's own focus mark: `menu_normal` draws the thin
-/// strokes and the picked one the doubled ones.
+/// strokes and `menu_selected` the doubled ones (`btop_menu.cpp:154`).
 /// Shape rather than hue is the point -- on a theme whose accent sits
 /// next to its plain foreground, colour alone left nothing to see, which
 /// is how "which selector has focus?" went unanswerable on paper,
 /// phoenix-night and solarized.
+///
+/// The art is the reference's, copied out rather than retyped: its QUIT
+/// is a column wider in the bold table than in the thin one, so nothing
+/// here retypes it and nothing centres an item on its own length. That
+/// last part is the claim the length check below would get wrong.
 #[test]
 fn test_the_picked_menu_item_is_drawn_with_doubled_lines() {
-    use doris::ui::menu::{MENU_ITEMS, MENU_ITEMS_BOLD};
+    use doris::ui::menu::{MENU_ITEMS, MENU_ITEMS_BOLD, MENU_ITEM_WIDTHS};
 
-    // Every stroke that can be doubled is, one for one, in the same place.
     let doubled = |c: char| match c {
         '┌' => '╔',
         '─' => '═',
@@ -210,13 +214,9 @@ fn test_the_picked_menu_item_is_drawn_with_doubled_lines() {
         '┘' => '╝',
         '├' => '╠',
         '┤' => '╣',
-        // The half strokes are half a line; doubled, they are the whole
-        // doubled line they were half of. Left as-is they were the
-        // complaint: ink that stops halfway at the end of a stroke.
-        '╶' | '╴' => '═',
-        '╷' | '╵' => '║',
         '┬' => '╦',
         '┴' => '╩',
+        '┼' => '╬',
         other => other,
     };
 
@@ -227,17 +227,68 @@ fn test_the_picked_menu_item_is_drawn_with_doubled_lines() {
             "item {idx} changes its line count between the two tables"
         );
         for (row, (a, b)) in thin.iter().zip(fat.iter()).enumerate() {
-            assert_eq!(
-                a.chars().count(),
-                b.chars().count(),
-                "item {idx} row {row} changes width, so the menu would jump"
-            );
+            let a = a.trim_end();
+            let b = b.trim_end();
             assert_eq!(
                 a.chars().map(doubled).collect::<String>(),
-                *b,
+                b,
                 "item {idx} row {row} is not its own thin art doubled"
             );
         }
+        // The width an item is drawn and clicked in is its own, not
+        // whichever table happens to be longer this frame.
+        assert!(
+            MENU_ITEM_WIDTHS[idx] as usize
+                >= fat[0]
+                    .trim_end()
+                    .chars()
+                    .count()
+                    .max(thin[0].trim_end().chars().count()),
+            "item {idx} is drawn wider than the space it gets"
+        );
+    }
+}
+
+/// Picking an item does not move it: the word stays in the same column,
+/// only its weight changes.
+#[test]
+fn test_picking_a_menu_item_does_not_move_it() {
+    let area = Rect::new(0, 0, 100, 30);
+    let rects = doris::ui::menu::menu_item_rects(area);
+    assert_eq!(rects.len(), 3);
+    // The widths are the reference's own (`menu_width`,
+    // `btop_menu.cpp:171`), not each table's own length. The bold QUIT
+    // is a column wider than the thin one, so a length taken from the art
+    // moves the word the moment it is picked -- and every item would sit
+    // at its own column rather than on the centre.
+    let widths: Vec<u16> = rects.iter().map(|r| r.width).collect();
+    assert_eq!(
+        widths,
+        doris::ui::menu::MENU_ITEM_WIDTHS.to_vec(),
+        "an item is drawn in the width its art happens to be, not the fixed one"
+    );
+    // And the fixed width is the wider of that item's two tables, so the
+    // picked word is never clipped.
+    for (idx, rect) in rects.iter().enumerate() {
+        let widest = doris::ui::menu::MENU_ITEMS[idx]
+            .iter()
+            .chain(doris::ui::menu::MENU_ITEMS_BOLD[idx].iter())
+            .map(|row| row.trim_end().chars().count() as u16)
+            .max()
+            .expect("an item has rows");
+        assert!(
+            rect.width >= widest,
+            "item {idx} is drawn in {} columns but its bold art needs {widest}",
+            rect.width
+        );
+    }
+    // And they are centred on the frame, not on themselves.
+    for r in &rects {
+        assert_eq!(
+            r.x as i32,
+            (area.width as i32 - r.width as i32) / 2,
+            "the item is not centred on its own width: {r:?}"
+        );
     }
 }
 
