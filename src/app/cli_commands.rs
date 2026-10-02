@@ -10,7 +10,7 @@
 //!
 //! - The search family (`search`, `play`, `download`, `info`, `login`)
 //!   builds a [`App`] with no keyboard and no bridge port, then drives it
-//!   through [`App::start_search`] and [`App::pump_until`].
+//!   through `start_search` and [`App::pump_until`].
 //! - The rest (`torrent`, `config`, `sources`, `health`, `logs`) answer
 //!   from the pieces the app is made of -- [`TorrServer`], [`Config`], the
 //!   source registry -- without building an app at all. A `torrent list`
@@ -58,6 +58,10 @@ pub async fn run(args: &Args, command: &Command) -> Result<i32> {
         Command::Info(a) => info(args, a, json).await,
         Command::Login(a) => login(args, a, json).await,
         Command::Torrent(c) => torrent(args, c, json).await,
+        Command::Downloads(ask) => {
+            let config = crate::config::load(args.config.as_deref())?;
+            crate::transmission::downloads_cmd::run(args, &config, ask, json).await
+        }
         Command::Logs => logs(json),
         Command::Sources { action } => match action {
             None | Some(SourcesCommand::List) => sources(args, json),

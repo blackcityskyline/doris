@@ -332,12 +332,27 @@ pub fn apply_detail_loaded(
     }
 }
 
+/// The resource name Transmission's own login is stored under in the
+/// encrypted credential store.
+pub const TRANSMISSION_RESOURCE: &str = "transmission";
+
+/// How long startup waits for the daemon's torrent list.
+///
+/// Short on purpose. A daemon that is not running answers at once; one
+/// that is running answers in milliseconds; one that hangs must not hold
+/// the launch, because the panel showing nothing is a far smaller problem
+/// than the program not starting.
+const ADOPT_DEADLINE_MS: u64 = 1500;
+
 pub struct App {
     args: Args,
     config: Config,
     ui: UiApp,
     event_handler: EventHandler,
     torrserver: TorrServer,
+    /// The downloading daemon. Separate from `torrserver` because it is a
+    /// different job: TorrServer streams, this writes to a directory.
+    transmission: crate::transmission::Transmission,
     browser: Option<Arc<Mutex<Browser>>>,
     /// Live sources keyed by id, built once via `source::build_source` and reused across
     /// start_search/load_more/do_login (all run in spawned tasks).
@@ -428,11 +443,26 @@ impl App {
         let event_handler =
             EventHandler::new(std::time::Duration::from_millis(EVENT_POLL_MS), interactive);
         let torrserver = TorrServer::new(&torrserver_url);
+        // The daemon's credentials come out of the encrypted store rather
+        // than out of the config: a password in a TOML file is a password
+        // in a backup, in a dotfile repo and in `ps`. `doris login
+        // transmission` is what puts one there.
+        let transmission = crate::transmission::Transmission::with_auth(
+            &config.transmission_url,
+            crate::credentials::load_credential(TRANSMISSION_RESOURCE),
+        );
         crate::torrent::Manager::spawn(
             torrserver.clone(),
             config.update_ms,
             event_handler.sender(),
         );
+        if interactive {
+            crate::transmission::poller::Poller::spawn(
+                transmission.clone(),
+                config.update_ms,
+                event_handler.sender(),
+            );
+        }
 
         let mut ui = UiApp::new(torrserver_url.clone(), config.theme_name.as_deref())
             .with_group_tabs(&config);
@@ -449,11 +479,40 @@ impl App {
             }
         }
 
+        // Take over whatever the daemon is already doing, so the Torrent
+        // panel is not blank until the user presses play on something they
+        // are already downloading. Only in the TUI: a one-shot command
+        // should not wait on a daemon it may not even need, and the
+        // `torrent` commands ask it themselves.
+        if interactive {
+            // A daemon that is not running is not an error at startup, it
+            // is a daemon that is not running. The short deadline is for
+            // the same reason: a hung one must not hold the whole launch.
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(ADOPT_DEADLINE_MS),
+                crate::transmission::adopt::adopt(&transmission),
+            )
+            .await
+            {
+                Ok(Ok(rows)) => {
+                    ui.downloads = rows;
+                    ui.download_cursor = 0;
+                }
+                Ok(Err(e)) => {
+                    ui.add_log(&format!("Downloads not adopted: {e}"));
+                }
+                Err(_) => {
+                    ui.add_log("Downloads not adopted: the daemon did not answer");
+                }
+            }
+        }
+
         Ok(Self {
             ui,
             event_handler,
             torrserver,
             browser: None,
+            transmission,
             sources: HashMap::new(),
             source_has_more: HashMap::new(),
             source_offsets: HashMap::new(),
@@ -548,6 +607,23 @@ impl App {
                 self.ui.show_menu = false;
                 self.start_search(query).await;
             }
+            Event::DownloadListUpdate(rows) => {
+                // The cursor is kept on the same download across polls, by
+                // id: a daemon that reorders its list must not move the
+                // row the user is acting on.
+                let keep = self.ui.downloads.get(self.ui.download_cursor).map(|r| r.id);
+                self.ui.downloads = rows;
+                self.ui.daemon_reachable = Some(true);
+                self.ui.download_cursor = keep
+                    .and_then(|id| self.ui.downloads.iter().position(|r| r.id == id))
+                    .unwrap_or(0)
+                    .min(self.ui.downloads.len().saturating_sub(1));
+                // Free space comes from the same daemon as the same poll,
+                // so asking it here costs no extra round trip.
+                if let Ok(free) = self.transmission.free_space().await {
+                    self.ui.free_space = Some(free);
+                }
+            }
             Event::TorrentListUpdate(list) => {
                 // Prefer the torrent we're actively
                 let chosen = match &self.ui.active_torrent_hash {
@@ -573,6 +649,9 @@ impl App {
                         downloaded: t.loaded_size.max(0) as u64,
                         total_size: t.total_size.max(0) as u64,
                         status: t.status_string.clone(),
+                        ratio: None,
+                        eta: None,
+                        dir: String::new(),
                     };
                     // Cap history length -- a very wide terminal
                     const MAX_HISTORY: usize = 600;

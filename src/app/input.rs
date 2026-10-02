@@ -138,7 +138,8 @@ impl App {
             ZoneId::Log => self.ui.scroll_logs(1),
             // The Trackers panel is a list like the others, so the same
             ZoneId::Trackers => self.ui.navigate_trackers(1),
-            _ => {}
+            // And so is the Torrents panel now that it is a list.
+            ZoneId::Torrent => self.ui.navigate_downloads(1),
         }
     }
 
@@ -151,7 +152,7 @@ impl App {
             }
             ZoneId::Log => self.ui.scroll_logs(-1),
             ZoneId::Trackers => self.ui.navigate_trackers(-1),
-            _ => {}
+            ZoneId::Torrent => self.ui.navigate_downloads(-1),
         }
     }
 
@@ -536,10 +537,24 @@ impl App {
                 self.cycle_layout_preset(1);
             }
             KeyCode::Char('p') if self.ui.zones.focused == ZoneId::Torrent => {
-                self.toggle_pause_active_torrent().await;
+                // The Torrents panel is a list of what is being fetched, so
+                // `p` and `d` act on that list. `active_torrent_hash` is
+                // the streaming server's single torrent and stays where it
+                // was, reached through the detail view.
+                if self.ui.downloads.is_empty() {
+                    self.toggle_pause_active_torrent().await;
+                } else {
+                    self.toggle_pause_download().await;
+                }
             }
             KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Torrent => {
-                if self.ui.confirm_remove() {
+                if !self.ui.downloads.is_empty() {
+                    // Two presses, like the streaming panel's removal: the
+                    // second one is what deletes what was fetched.
+                    if self.ui.confirm_remove() {
+                        self.remove_download().await;
+                    }
+                } else if self.ui.confirm_remove() {
                     self.remove_active_torrent().await;
                 }
             }

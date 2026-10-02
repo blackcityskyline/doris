@@ -93,6 +93,90 @@ pub struct TorrentStatus {
     pub downloaded: u64,
     pub total_size: u64,
     pub status: String,
+    /// Uploaded over downloaded, absent before anything is downloaded.
+    pub ratio: Option<f64>,
+    /// Seconds left, absent when the daemon is not predicting one.
+    pub eta: Option<i64>,
+    /// Where the download is being written.
+    pub dir: String,
+}
+
+/// One download the backend already holds, as the Torrents panel lists it.
+///
+/// A list rather than one `TorrentStatus` because a downloader keeps more
+/// than one. The old panel could only ever describe the torrent the last
+/// search played, so everything else in the daemon was invisible until
+/// doris was told about it by the user pressing play again -- and a restart
+/// lost even that.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DownloadRow {
+    /// The backend's own id, needed to pause or remove it.
+    pub id: i64,
+    /// Lower-case hex info hash. The join key: a search row and a download
+    /// meet on it, which is how a row that is already being fetched is
+    /// recognised instead of fetched a second time.
+    pub hash: String,
+    pub name: String,
+    /// 0.0-1.0.
+    pub fraction: f64,
+    pub download_speed: i64,
+    pub upload_speed: i64,
+    pub seeds: i64,
+    pub peers: i64,
+    pub total_size: i64,
+    pub left: i64,
+    pub added: i64,
+    pub dir: String,
+    /// Transmission's status code; the word is derived from it.
+    pub status: i64,
+    pub finished: bool,
+    pub error: String,
+    pub uploaded: i64,
+    pub downloaded: i64,
+    /// Seconds; negative means no prediction.
+    pub eta: i64,
+    pub trackers: Vec<crate::transmission::TrackerStat>,
+}
+
+impl DownloadRow {
+    /// The same state word the CLI prints, from the same number.
+    pub fn state(&self) -> &'static str {
+        crate::transmission::state_of(self.status)
+    }
+
+    /// Uploaded over downloaded, absent before anything is downloaded.
+    pub fn ratio(&self) -> Option<f64> {
+        if self.downloaded <= 0 {
+            return None;
+        }
+        Some(self.uploaded as f64 / self.downloaded as f64)
+    }
+
+    /// Progress as a percentage, clamped: a file resumed from disk has
+    /// reported over one.
+    pub fn percent(&self) -> f64 {
+        (self.fraction * 100.0).clamp(0.0, 100.0)
+    }
+
+    /// A human ETA, `None` when the daemon is not predicting one -- which
+    /// is not the same as "no time left", and a column that said `done`
+    /// for a stalled download would be lying with a straight face.
+    pub fn eta_text(&self) -> Option<String> {
+        match self.eta {
+            e if e < 0 => None,
+            0 if self.left > 0 => Some(format!(
+                "{} left",
+                crate::transmission::human_bytes(self.left.max(0) as u64)
+            )),
+            0 => Some("done".to_string()),
+            secs => Some(format!("{} left", crate::transmission::eta_secs(secs))),
+        }
+    }
+
+    /// The row the panel is on, if there is one.
+    pub fn bytes_done(&self) -> i64 {
+        self.total_size.saturating_sub(self.left).max(0)
+    }
 }
 
 pub struct App {
@@ -124,6 +208,20 @@ pub struct App {
     pub torrent_status: TorrentStatus,
     /// Hash of the torrent the Torrent panel currently shows/manages.
     pub active_torrent_hash: Option<String>,
+    /// Every download the backend already holds, adopted at startup.
+    ///
+    /// Keyed by info hash, because that is the only thing a search row and
+    /// a download share. Nothing about these is stored in doris: the daemon
+    /// is the record, so a list read from it cannot go stale against itself.
+    pub downloads: Vec<DownloadRow>,
+    /// Which row of `downloads` the Torrent panel is on.
+    pub download_cursor: usize,
+    /// Whether the downloading daemon answered the last poll. `None`
+    /// until it has, so the panel does not claim a daemon is down before
+    /// it has asked one.
+    pub daemon_reachable: Option<bool>,
+    /// Free bytes on the daemon's download volume, when it has said.
+    pub free_space: Option<i64>,
     /// A `d` on the Torrent zone has been pressed once and the removal is waiting for a second
     /// one.
     pub remove_armed: bool,
@@ -338,6 +436,10 @@ impl App {
             show_menu: false,
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
+            downloads: Vec::new(),
+            download_cursor: 0,
+            daemon_reachable: None,
+            free_space: None,
             remove_armed: false,
             hover: None,
             torrent_paused: false,
@@ -516,6 +618,17 @@ impl App {
         }
         let next = (self.sources_cursor as i64 + delta).rem_euclid(len);
         self.sources_cursor = next as usize;
+    }
+
+    /// The Torrents panel's cursor, wrapping like the other lists' so that
+    /// `j` at the end lands on the first row rather than sticking.
+    pub fn navigate_downloads(&mut self, delta: i64) {
+        let len = self.downloads.len() as i64;
+        if len == 0 {
+            return;
+        }
+        let next = (self.download_cursor as i64 + delta).rem_euclid(len);
+        self.download_cursor = next as usize;
     }
 
     /// The row of the Trackers panel under `(row, col)`, given that zone's current area: the

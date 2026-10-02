@@ -978,6 +978,9 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
         peers: 3,
         downloaded: 2048,
         total_size: 4096,
+        ratio: Some(0.25),
+        eta: Some(30),
+        dir: "/home/u/Downloads".into(),
         status: "working".into(),
     };
     app.torrent_paused = true;

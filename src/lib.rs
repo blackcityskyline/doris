@@ -12,6 +12,7 @@ pub mod results;
 pub mod sources;
 pub mod torrent;
 pub mod torrserver;
+pub mod transmission;
 pub mod tui;
 pub mod ui;
 pub mod welcome;

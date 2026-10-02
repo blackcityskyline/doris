@@ -40,6 +40,10 @@ pub enum Event {
     /// anything changed -- the receiver decides what (if anything) to
     /// update.
     TorrentListUpdate(Vec<crate::torrserver::api::TorrentInfo>),
+    /// The downloading daemon's torrent list, polled. The Torrents panel's
+    /// contents, as opposed to `TorrentListUpdate`, which is the
+    /// streaming server's and feeds the streaming status.
+    DownloadListUpdate(Vec<crate::ui::view::DownloadRow>),
     /// A torrent just became the "active" one to show/manage in the Torrent panel (e.g.
     TorrentActive(String),
     /// The answer to a detail modal's `Source::details` request: the file list for the page it

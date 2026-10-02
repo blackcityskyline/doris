@@ -57,6 +57,11 @@ pub struct Args {
     #[arg(long)]
     pub config: Option<PathBuf>,
 
+    /// The downloading daemon's RPC address, overriding the config. Not
+    /// the streaming one: that is `--torrserver`.
+    #[arg(long)]
+    pub transmission_url: Option<String>,
+
     /// Search and print, the way `--cli` always did. Kept because scripts
     /// exist: `doris --cli "query"` is the same as `doris search "query"`.
     #[arg(long, hide = true)]
@@ -106,6 +111,11 @@ pub enum Command {
     /// The cookie jar the trackers are logged in with.
     #[command(subcommand)]
     Cookies(CookieCommand),
+
+    /// What the downloading daemon holds -- the Torrents panel's list, on
+    /// a terminal. This is the one command a script wants that is about
+    /// downloads rather than streaming: `torrent` is about TorrServer.
+    Downloads(crate::transmission::downloads_cmd::Ask),
 
     /// The encrypted credential store.
     #[command(subcommand)]

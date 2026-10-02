@@ -97,6 +97,16 @@ pub struct Config {
     pub enabled_sources: Vec<String>,
 
     // --- Options / "download" category ----------------
+    /// The downloading daemon's RPC address.
+    ///
+    /// TorrServer streams and this downloads, because neither does the
+    /// other's job: TorrServer fetches only what a reader asks for, caches
+    /// it under `<hash>/<chunk>` and drops the torrent thirty seconds after
+    /// the last reader goes away, so it is not somewhere to keep a library.
+    /// A daemon that downloads to a directory you chose is.
+    #[serde(default = "default_transmission_url")]
+    pub transmission_url: String,
+
     #[serde(default = "default_true")]
     pub download_enabled: bool,
     /// "default" (OS Downloads folder) or "custom1"/"custom2"/"custom3"
@@ -150,6 +160,7 @@ impl Default for Config {
             save_cookies: true,
             save_credentials: true,
             enabled_sources: Vec::new(),
+            transmission_url: default_transmission_url(),
             download_enabled: true,
             download_dir_mode: default_download_dir_mode(),
             download_dir_custom_1: String::new(),
@@ -210,6 +221,10 @@ fn default_presets() -> Vec<String> {
         "1,3".to_string(),
         "1,2".to_string(),
     ]
+}
+
+fn default_transmission_url() -> String {
+    crate::transmission::DEFAULT_URL.to_string()
 }
 
 fn default_welcome_template() -> String {

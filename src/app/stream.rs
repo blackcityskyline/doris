@@ -5,6 +5,61 @@ use std::path::PathBuf;
 
 impl App {
     /// Pause (drop) or resume (re-get) the torrent the panel is currently showing.
+    /// Pause or resume the download under the Torrents panel's cursor.
+    ///
+    /// The panel is a list of what the daemon is fetching, so this acts on
+    /// that list and not on `active_torrent_hash` -- which is the streaming
+    /// server's one torrent, a different machine state on a different service.
+    /// Before the panel was a list these were the same thing, and now they
+    /// are not.
+    pub(super) async fn toggle_pause_download(&mut self) {
+        let Some(row) = self.ui.downloads.get(self.ui.download_cursor).cloned() else {
+            self.ui.add_log("No download selected.");
+            return;
+        };
+        let paused = row.status == 0;
+        let outcome = if paused {
+            self.transmission.resume(row.id).await
+        } else {
+            self.transmission.pause(row.id).await
+        };
+        match outcome {
+            Ok(()) => self.ui.add_log(&format!(
+                "{} {}",
+                if paused { "resumed" } else { "paused" },
+                row.name
+            )),
+            Err(e) => self
+                .ui
+                .add_log(&format!("Could not pause {}: {e}", row.name)),
+        }
+    }
+
+    /// Remove the download under the cursor, asking the daemon whether to
+    /// delete what it has fetched.
+    pub(super) async fn remove_download(&mut self) {
+        let Some(row) = self.ui.downloads.get(self.ui.download_cursor).cloned() else {
+            self.ui.add_log("No download selected.");
+            return;
+        };
+        match self.transmission.remove(row.id, true).await {
+            Ok(()) => {
+                self.ui
+                    .add_log(&format!("Removed {} and its data", row.name));
+                // Take the row off the list here rather than waiting for the
+                // next poll: the key should feel like it did something.
+                self.ui.downloads.retain(|r| r.id != row.id);
+                self.ui.download_cursor = self
+                    .ui
+                    .download_cursor
+                    .min(self.ui.downloads.len().saturating_sub(1));
+            }
+            Err(e) => self
+                .ui
+                .add_log(&format!("Could not remove {}: {e}", row.name)),
+        }
+    }
+
     pub(super) async fn toggle_pause_active_torrent(&mut self) {
         let Some(hash) = self.ui.active_torrent_hash.clone() else {
             self.ui.add_log("No active torrent to pause/resume.");
@@ -161,6 +216,13 @@ impl App {
             return;
         }
         let mut item = self.ui.results[self.ui.selected].clone();
+        // Enter streams; it does not fetch. TorrServer keeps its own list
+        // and knows nothing of what Transmission holds, so a torrent that is
+        // being downloaded still has to be handed to TorrServer before it
+        // can be streamed -- which is exactly what the path below does.
+        // Stopping to check the download list here would be wrong twice
+        // over: it would skip the hand-over, and it would answer a
+        // question this key does not ask.
         self.ui.state = AppState::Streaming;
 
         // The source is here to read a magnet off the row's page, and only for a

@@ -294,6 +294,13 @@ impl App {
     }
 
     fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+        // A list of what is being fetched, not a readout of one torrent.
+        // The single-status panel this replaces could only ever describe
+        // the torrent the last search played, so everything else in the
+        // daemon was invisible and a restart lost even that.
+        if !self.downloads.is_empty() || self.daemon_reachable == Some(false) {
+            return self.render_downloads(frame, area, id, config);
+        }
         let s = &self.torrent_status;
 
         let progress_pct = (s.progress * 100.0) as u32;
@@ -379,6 +386,91 @@ impl App {
         frame.render_widget(paragraph, area);
 
         // "p: pause/resume d: remove" is gone from the body: those two
+        self.render_frame(frame, id, area, config);
+    }
+
+    /// The Torrents panel: a one-line summary over a table of downloads,
+    /// both borrowed from qbittorrent-tui's arrangement -- three summary
+    /// sections squashed into the one row a zone usually has room for, and
+    /// a table whose columns are dropped from the tail when the panel is
+    /// narrow so that the name always survives.
+    fn render_downloads(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+        use super::torrents_panel as panel;
+
+        let inner_width = area.width.saturating_sub(2) as usize;
+        let block = self.zone_block(id, config);
+
+        let mut lines: Vec<Line> = Vec::new();
+        let label = Style::default().fg(self.theme.secondary_color());
+
+        // The summary goes first and is never dropped: "3 torrents,
+        // nothing moving" is the answer to the question the panel is asked
+        // most often, and it is one line.
+        lines.push(Line::from(Span::styled(
+            panel::stats(
+                &self.downloads,
+                self.free_space,
+                self.daemon_reachable == Some(true),
+            ),
+            Style::default().fg(self.theme.main_fg.to_color()),
+        )));
+
+        let Some(plan) = panel::plan(inner_width) else {
+            let mut lines = lines;
+            lines.push(Line::from(Span::styled(
+                format!("{} torrents (panel too narrow)", self.downloads.len()),
+                label,
+            )));
+            frame.render_widget(Paragraph::new(lines).block(block), area);
+            self.render_frame(frame, id, area, config);
+            return;
+        };
+
+        // One header, then as many rows as the remaining height allows. The
+        // cursor is kept in view rather than scrolled: the list is short,
+        // and a panel that scrolls a handful of rows to show a cursor is
+        // noisier than one that does not.
+        let visible = (area.height as usize).saturating_sub(4).max(1);
+        let first = self
+            .download_cursor
+            .saturating_sub(visible.saturating_sub(1))
+            .min(self.downloads.len().saturating_sub(1));
+
+        lines.push(Line::from(Span::styled(
+            panel::header(&plan),
+            Style::default().fg(self.theme.div_line.to_color()),
+        )));
+        for (offset, row) in self.downloads[first..].iter().take(visible).enumerate() {
+            let idx = first + offset;
+            let selected = idx == self.download_cursor;
+            lines.push(Line::from(Span::styled(
+                panel::row(row, &plan),
+                if selected {
+                    Style::default()
+                        .fg(self.theme.hi_fg.to_color())
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(self.theme.main_fg.to_color())
+                },
+            )));
+        }
+        if self.downloads.len() > first + visible {
+            lines.push(Line::from(Span::styled(
+                format!("... {} more", self.downloads.len() - first - visible),
+                label,
+            )));
+        }
+
+        if let Some(prompt) = self.remove_prompt() {
+            lines.push(Line::from(Span::styled(
+                prompt,
+                Style::default()
+                    .fg(self.theme.error_color())
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+
+        frame.render_widget(Paragraph::new(lines).block(block), area);
         self.render_frame(frame, id, area, config);
     }
 
