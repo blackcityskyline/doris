@@ -18,3 +18,17 @@ bridge_port = 14141
 # absolute on the next load, so it stays the same file whichever directory
 # doris is started from.
 # cookie_file = "/home/you/.config/doris/cookies.txt"
+
+# --- Welcome animation -------------------------------------------------
+# Played on stdout before the UI takes the terminal. Never in --cli mode,
+# never when stdout is not a terminal, and never with false_tty = true.
+
+# welcome_enabled = true
+# Built-in name, or the stem of a .anim file in ~/.config/doris/welcome/.
+# welcome_template = "doris"
+# Milliseconds between frames: the speed.
+# welcome_frame_ms = 90
+# Total milliseconds to play for. 0 plays the animation once through.
+# welcome_duration_ms = 1600
+# The greeting, put wherever the template wrote {text}.
+# welcome_text = "Welcome to Doris"

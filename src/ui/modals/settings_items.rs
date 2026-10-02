@@ -2,7 +2,8 @@
 //! data, not logic, and it was 290 of the 940 lines of `settings.rs`.
 
 use super::settings::{
-    bool_str, streaming_settings_items, SettingsAction, SettingsCategory, SettingsItem,
+    bool_str, streaming_settings_items, welcome_settings_items, SettingsAction, SettingsCategory,
+    SettingsItem,
 };
 use crate::config::Config;
 
@@ -298,6 +299,10 @@ pub(super) fn settings_categories(
                     action: SettingsAction::OpenLog,
                 },
             ],
+        },
+        SettingsCategory {
+            name: "welcome".into(),
+            items: welcome_settings_items(config),
         },
     ]
 }

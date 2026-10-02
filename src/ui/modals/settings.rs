@@ -88,6 +88,11 @@ pub enum SettingsAction {
     ToggleTerminalSync,
     CycleGraphSymbol,
     ToggleSaveOnExit,
+    ToggleWelcome,
+    CycleWelcomeTemplate,
+    CycleWelcomeFrameMs,
+    CycleWelcomeDurationMs,
+    EditWelcomeText,
     Close,
 }
 
@@ -242,6 +247,89 @@ pub fn streaming_settings_items(
         },
     ];
     items
+}
+
+/// The Options "welcome" category's items.
+///
+/// The values shown here are what the *next* launch will use: the
+/// greeting plays before the UI exists, so there is nothing on screen to
+/// preview it in and a setting that only takes effect on the next start
+/// has to say so rather than look broken.
+pub fn welcome_settings_items(config: &Config) -> Vec<SettingsItem> {
+    vec![
+        SettingsItem {
+            label: "Welcome animation".into(),
+            value: bool_str(config.welcome_enabled),
+            description: vec![
+                "Play an ASCII greeting".into(),
+                "before the UI comes up.".into(),
+                "".into(),
+                "Applies on the next launch:".into(),
+                "the greeting plays before".into(),
+                "there is a UI to change it".into(),
+                "from.".into(),
+            ],
+            action: SettingsAction::ToggleWelcome,
+        },
+        SettingsItem {
+            label: "Welcome template".into(),
+            value: config.welcome_template.clone(),
+            description: vec![
+                "Which animation to play.".into(),
+                "".into(),
+                "\"doris\" ships with the app.".into(),
+                "Any .anim file in".into(),
+                "\"~/.config/doris/welcome\" is".into(),
+                "yours to add; one named".into(),
+                "after a built-in replaces".into(),
+                "it.".into(),
+            ],
+            action: SettingsAction::CycleWelcomeTemplate,
+        },
+        SettingsItem {
+            label: "Welcome speed".into(),
+            value: format!("{} ms/frame", config.welcome_frame_ms),
+            description: vec![
+                "Milliseconds between frames.".into(),
+                "".into(),
+                "Lower is faster. Duration".into(),
+                "rounds up to a whole run,".into(),
+                "so the last frame is never".into(),
+                "cut off short.".into(),
+            ],
+            action: SettingsAction::CycleWelcomeFrameMs,
+        },
+        SettingsItem {
+            label: "Welcome duration".into(),
+            value: format!("{} ms", config.welcome_duration_ms),
+            description: vec![
+                "How long the animation plays.".into(),
+                "".into(),
+                "The frames repeat to fill it.".into(),
+                "Zero plays it once through,".into(),
+                "however long that takes.".into(),
+            ],
+            action: SettingsAction::CycleWelcomeDurationMs,
+        },
+        SettingsItem {
+            label: "Welcome text".into(),
+            value: if config.welcome_text.is_empty() {
+                "(empty)".to_string()
+            } else {
+                config.welcome_text.clone()
+            },
+            description: vec![
+                "The greeting itself.".into(),
+                "".into(),
+                "It appears wherever the".into(),
+                "template wrote {text}.".into(),
+                "".into(),
+                "press Enter to edit, Esc to".into(),
+                "leave it as it was.".into(),
+            ],
+            action: SettingsAction::EditWelcomeText,
+        },
+    ]
 }
 
 fn center_str(s: &str, width: usize) -> String {

@@ -12,6 +12,10 @@ async fn main() -> Result<()> {
     if args.cli {
         run_cli(args, config).await
     } else {
+        // Before the terminal is taken over, and only on the way into the
+        // UI: `--cli` prints results a pipe is waiting for, so a greeting
+        // in front of them would be the first thing in the pipe.
+        doris::welcome::player::play(&config);
         let mut app = doris::app::App::new(args, config).await?;
         app.run().await
     }

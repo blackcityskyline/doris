@@ -14,3 +14,4 @@ pub mod torrent;
 pub mod torrserver;
 pub mod tui;
 pub mod ui;
+pub mod welcome;

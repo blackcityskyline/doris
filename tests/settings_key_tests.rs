@@ -13,7 +13,7 @@ fn make_app_in_settings() -> UiApp {
 }
 
 #[test]
-fn test_settings_has_three_categories_general_streaming_download() {
+fn test_settings_lists_its_categories_welcome_last() {
     let app = make_app_in_settings();
     let names: Vec<&str> = match &app.modal {
         doris::ui::view::Modal::Settings(state) => {
@@ -21,7 +21,10 @@ fn test_settings_has_three_categories_general_streaming_download() {
         }
         _ => panic!("expected Settings modal"),
     };
-    assert_eq!(names, vec!["general", "streaming", "download"]);
+    // `welcome` is last on purpose: the digit keys pick a category by
+    // position, so inserting it anywhere earlier would silently repoint
+    // `2` and `3` at a category nobody had learned those digits for.
+    assert_eq!(names, vec!["general", "streaming", "download", "welcome"]);
 }
 
 #[test]
@@ -95,7 +98,7 @@ fn test_enter_sets_forward_direction() {
 }
 
 #[test]
-fn test_tab_and_backtab_cycle_all_three_categories() {
+fn test_tab_and_backtab_cycle_every_category() {
     let mut app = make_app_in_settings();
     let get_cat = |app: &UiApp| match &app.modal {
         doris::ui::view::Modal::Settings(state) => state.selected_category,
@@ -108,10 +111,12 @@ fn test_tab_and_backtab_cycle_all_three_categories() {
     app.settings_key(key(KeyCode::Tab));
     assert_eq!(get_cat(&app), 2);
     app.settings_key(key(KeyCode::Tab));
+    assert_eq!(get_cat(&app), 3);
+    app.settings_key(key(KeyCode::Tab));
     assert_eq!(get_cat(&app), 0); // wraps
 
     app.settings_key(key(KeyCode::BackTab));
-    assert_eq!(get_cat(&app), 2); // wraps the other way
+    assert_eq!(get_cat(&app), 3); // wraps the other way
 }
 
 /// The `n/m` in the Color theme row is supposed to be the *theme's* position (`settings.rs:267`

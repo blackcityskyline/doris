@@ -58,6 +58,26 @@ pub struct Config {
     pub graph_symbol: String,
     #[serde(default)]
     pub save_config_on_exit: bool,
+    // --- Options / "welcome" category ------------------
+    /// Play the greeting animation before the UI comes up.
+    #[serde(default = "default_true")]
+    pub welcome_enabled: bool,
+    /// Name of the animation: a built-in, or a file in
+    /// `~/.config/doris/welcome/`. An unknown name falls back to the
+    /// first animation there is, so a typo cannot turn the greeting off.
+    #[serde(default = "default_welcome_template")]
+    pub welcome_template: String,
+    /// Milliseconds between frames -- the speed.
+    #[serde(default = "default_welcome_frame_ms")]
+    pub welcome_frame_ms: u64,
+    /// How long the animation plays in total, in milliseconds. Zero
+    /// plays it once through, however long that takes.
+    #[serde(default = "default_welcome_duration_ms")]
+    pub welcome_duration_ms: u64,
+    /// The greeting, put wherever the template wrote `{text}`.
+    #[serde(default = "default_welcome_text")]
+    pub welcome_text: String,
+
     /// Every source id this config has been shown to know -- the key that lets
     /// `sources::source::migrate_config` tell "new to this build" apart from "the user turned
     /// it off".
@@ -119,6 +139,11 @@ impl Default for Config {
             terminal_sync: true,
             graph_symbol: default_graph_symbol(),
             save_config_on_exit: false,
+            welcome_enabled: default_true(),
+            welcome_template: default_welcome_template(),
+            welcome_frame_ms: default_welcome_frame_ms(),
+            welcome_duration_ms: default_welcome_duration_ms(),
+            welcome_text: default_welcome_text(),
             // Filled by `sources::source::migrate_config`, which knows the
             known_sources: Vec::new(),
             close_browser_on_exit: true,
@@ -185,6 +210,22 @@ fn default_presets() -> Vec<String> {
         "1,3".to_string(),
         "1,2".to_string(),
     ]
+}
+
+fn default_welcome_template() -> String {
+    "doris".to_string()
+}
+
+fn default_welcome_frame_ms() -> u64 {
+    90
+}
+
+fn default_welcome_duration_ms() -> u64 {
+    1600
+}
+
+fn default_welcome_text() -> String {
+    "Welcome to Doris".to_string()
 }
 
 fn default_download_dir_mode() -> String {

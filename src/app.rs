@@ -67,6 +67,15 @@ pub fn cycle_str(current: &str, choices: &[&str], direction: i8) -> String {
     next.to_string()
 }
 
+/// The same walk as [`cycle_str`], for the numeric settings that pick from
+/// a fixed set of steps rather than from a list of names.
+pub fn cycle_u64(current: u64, choices: &[u64], direction: i8) -> u64 {
+    match choices.iter().position(|&c| c == current) {
+        Some(i) => choices[cycle_index(i, choices.len(), direction)],
+        None => choices.first().copied().unwrap_or_default(),
+    }
+}
+
 /// Step `pos` by `direction` (+1/-1) within `0..len`, wrapping around --
 /// shared by every Options cycle-type action so Left and Right actually
 /// go opposite ways instead of both always stepping forward.
@@ -358,6 +367,14 @@ pub struct App {
     /// instead of dropping the process mid-flight and leaving the browser
     /// stack behind.
     exit_signal: Arc<AtomicBool>,
+    /// The greeting being typed into the Options modal, `Some` while the
+    /// editor is open.
+    ///
+    /// It lives here rather than in the modal because the modal cannot
+    /// reach `config`: committing a value is the orchestrator's job, the
+    /// same split every other setting has. `Esc` drops the buffer without
+    /// committing, so a half-typed greeting costs nothing.
+    pub editing_welcome_text: Option<String>,
 }
 
 impl App {
@@ -425,6 +442,7 @@ impl App {
             terminal_size: (0, 0),
             search_generation: 0,
             exit_signal: Arc::new(AtomicBool::new(false)),
+            editing_welcome_text: None,
         })
     }
 

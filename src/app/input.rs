@@ -306,6 +306,40 @@ impl App {
                         self.ui.last_cycle_direction,
                     );
                 }
+                SettingsAction::ToggleWelcome => {
+                    self.config.welcome_enabled = !self.config.welcome_enabled;
+                }
+                SettingsAction::CycleWelcomeTemplate => {
+                    let names: Vec<String> = crate::welcome::load_templates()
+                        .into_iter()
+                        .map(|t| t.name)
+                        .collect();
+                    if !names.is_empty() {
+                        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                        self.config.welcome_template = cycle_str(
+                            &self.config.welcome_template,
+                            &refs,
+                            self.ui.last_cycle_direction,
+                        );
+                    }
+                }
+                SettingsAction::CycleWelcomeFrameMs => {
+                    self.config.welcome_frame_ms = cycle_u64(
+                        self.config.welcome_frame_ms,
+                        &[20, 40, 60, 90, 120, 200, 400],
+                        self.ui.last_cycle_direction,
+                    );
+                }
+                SettingsAction::CycleWelcomeDurationMs => {
+                    self.config.welcome_duration_ms = cycle_u64(
+                        self.config.welcome_duration_ms,
+                        &[0, 500, 1000, 1600, 3000, 6000, 15000],
+                        self.ui.last_cycle_direction,
+                    );
+                }
+                SettingsAction::EditWelcomeText => {
+                    self.editing_welcome_text = Some(self.config.welcome_text.clone());
+                }
                 SettingsAction::Close => {}
                 // The bool toggles are handled above by the
                 _ => {}
@@ -342,6 +376,14 @@ impl App {
     /// Every mode that takes the keyboard away from the plain view, in the order they are asked
     /// about.
     async fn mode_owns_the_key(&mut self, key: KeyEvent) -> Result<Option<()>> {
+        // Before the modal it was opened from: while a value is being
+        // typed every other key means a character, including the ones the
+        // Options modal would otherwise read as navigation.
+        if self.editing_welcome_text.is_some() {
+            self.welcome_text_key(key);
+            return Ok(Some(()));
+        }
+
         if self.ui.show_menu {
             self.handle_menu_key(key).await?;
             return Ok(Some(()));
@@ -607,6 +649,46 @@ impl App {
         }
 
         self.handle_plain_key(key).await
+    }
+
+    /// The greeting editor: Enter commits, Esc abandons, Backspace
+    /// deletes, and anything else with a character is typed.
+    ///
+    /// Committing writes straight to the config and reopens the modal, so
+    /// the row shows the new text without a restart -- though the
+    /// animation itself still plays on the next launch, since it plays
+    /// before this UI exists.
+    fn welcome_text_key(&mut self, key: KeyEvent) {
+        let Some(mut buf) = self.editing_welcome_text.take() else {
+            return;
+        };
+        match key.code {
+            KeyCode::Esc => {}
+            KeyCode::Enter => {
+                self.config.welcome_text = buf;
+                self.persist_config();
+            }
+            KeyCode::Backspace => {
+                buf.pop();
+                self.editing_welcome_text = Some(buf);
+            }
+            // Ctrl/Alt chords are commands elsewhere in the app, not text.
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                buf.push(c);
+                self.editing_welcome_text = Some(buf);
+            }
+            _ => self.editing_welcome_text = Some(buf),
+        }
+        if self.editing_welcome_text.is_none() && matches!(self.ui.modal, Modal::Settings(_)) {
+            self.ui.open_settings(
+                &self.config,
+                self.browser_visibility == BrowserVisibility::Hidden,
+            );
+        }
     }
 
     /// What Enter means on the main view: submit the typed query,
