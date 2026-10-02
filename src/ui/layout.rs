@@ -1001,17 +1001,22 @@ pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
 /// label in `primary` (`btop_draw.cpp:290` for the numbering colour, `:332` for where it is
 /// drawn).
 pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
-    // One colour for the whole title. The zone's digit and the panel's
-    // detail-view key are keybinds like any other, and they used to take
-    // `secondary` while the word beside them took `primary` -- so on a
-    // theme that names no `secondary` (the accent falls back to the
-    // theme's grey-green `hi_fg`) the `1` and the `R` of
-    // `¹ Results` came out a different colour from `Results` itself.
+    // Every keybind glyph is `on_hover`; every other letter is `primary`.
+    // The zone's digit and the panel's detail-view key are keybinds like
+    // any other -- the digit opens the zone, the letter opens its full
+    // view -- so they take the same colour the `f` of `filter` and the
+    // `S` of `Search` take.
     let word = Style::default().fg(theme.primary_color());
-    let bound = word.add_modifier(Modifier::BOLD);
+    let bound = Style::default()
+        .fg(theme.on_hover_color())
+        .add_modifier(Modifier::BOLD);
     let mut spans = vec![Span::styled(
         if focused { "▸ " } else { "  " },
-        if focused { bound } else { word },
+        if focused {
+            word.add_modifier(Modifier::BOLD)
+        } else {
+            word
+        },
     )];
     spans.extend([
         Span::styled(superscript_digit(id as u8), bound),
@@ -1019,8 +1024,6 @@ pub fn zone_title(id: ZoneId, theme: &Theme, focused: bool) -> Line<'static> {
     ]);
     match id.detail_key() {
         Some(key) => {
-            // Bold like the digit, and the same colour: it is one more
-            // keybind in the same label.
             let rest = id.label().chars().skip(1);
             spans.push(Span::styled(key.to_string(), bound));
             spans.push(Span::styled(rest.collect::<String>(), word));
@@ -1037,14 +1040,13 @@ pub fn zone_title_width(id: ZoneId) -> u16 {
     (5 + id.label().chars().count()) as u16
 }
 
-/// Spans for one button: `primary` for the word, bold for the hotkey.
+/// Spans for one button: `primary` for the word, `on_hover` + bold for the
+/// hotkey.
 ///
-/// The hotkey letter wears the word's own colour. It used to take
-/// `on_hover` instead, which made `f filter` and `g group` the only two
-/// labels on screen with a letter in a foreign colour -- and incoherent
-/// with the panel titles, where the detail key had already been given
-/// the number's colour. One rule now: a letter inside a word is marked
-/// by weight, never by hue.
+/// The hotkey letter is a keybind glyph, and every keybind glyph on
+/// screen is `on_hover` -- the `S` of `Search`, the zone's digit, the
+/// panel's detail-view letter, and this. One rule, so the eye can pick
+/// the key out of the word without reading it.
 pub fn button_spans(
     theme: &Theme,
     button: &FrameButton,
@@ -1053,7 +1055,9 @@ pub fn button_spans(
 ) -> Vec<Span<'static>> {
     let text = button.text();
     let word_style = Style::default().fg(theme.primary_color());
-    let hotkey_style = word_style.add_modifier(Modifier::BOLD);
+    let hotkey_style = Style::default()
+        .fg(theme.on_hover_color())
+        .add_modifier(Modifier::BOLD);
 
     if button.is_category() {
         // `◀ name ▶`: the arrows are the targets, the name is not. The

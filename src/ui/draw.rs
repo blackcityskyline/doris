@@ -139,17 +139,15 @@ impl App {
             (false, false, true) => format!("filter: {}", self.zones.filter_input),
             _ => "Search".to_string(),
         };
-        // The `S` of Search opens this box, so it is marked -- by weight, the
-        // way every other keybind letter in a word is. Its colour is the
-        // word's own: a letter inside a label that is a different hue
-        // from the rest of the label reads as part of another word, and
-        // this is the rule the panel titles and the frame buttons follow.
+        // The `S` of Search is a keybind glyph like any other, so it takes
+        // `on_hover`: the same colour as the `f` of `filter`, the zone's
+        // digit and the panel's detail-view letter.
         let title_line = if title == "Search" {
             let word = Style::default().fg(self.theme.primary_color());
-            Line::from(vec![
-                Span::styled("S", word.add_modifier(Modifier::BOLD)),
-                Span::styled("earch", word),
-            ])
+            let hot = Style::default()
+                .fg(self.theme.on_hover_color())
+                .add_modifier(Modifier::BOLD);
+            Line::from(vec![Span::styled("S", hot), Span::styled("earch", word)])
         } else {
             Line::from(Span::styled(
                 title.clone(),

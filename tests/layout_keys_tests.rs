@@ -231,30 +231,120 @@ fn test_every_panel_on_the_default_preset_can_move_vertically() {
     assert!(!z.focus_neighbour(Dir::Up), "nothing above the first row");
 }
 
-/// A keybind letter inside a label wears the label's own colour.
-///
-/// It used to take `on_hover`, which made `f filter` and `g group` the
-/// only labels on screen with a letter in a foreign colour, and
-/// disagreed with the panel titles where the detail key had already been
-/// given the number's colour. One rule everywhere: a letter inside a word
-/// is marked by weight, never by hue.
+/// The `S` of Search is a keybind like any other, so it is `on_hover`
+/// like the rest of them.
 #[test]
-fn test_a_hotkey_letter_wears_the_colour_of_the_word_it_sits_in() {
-    use doris::ui::layout::{button_spans, zone_buttons, ZoneId};
-    use doris::ui::theme::{ColorDef, Theme};
+fn test_the_search_title_marks_its_s_in_on_hover() {
+    use doris::config::Config;
+    use doris::ui::view::App as UiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::style::Color;
+    use ratatui::Terminal;
 
-    // The accents are named explicitly because the built-in theme falls
-    // all three of them back to the same `hi_fg`: a test run against it
-    // cannot tell the word's colour from the keybind accent, and passes
-    // either way.
-    let theme = Theme {
-        primary: Some(ColorDef::new(10, 20, 30)),
-        secondary: Some(ColorDef::new(40, 50, 60)),
-        on_hover: Some(ColorDef::new(70, 80, 90)),
-        ..Theme::default_theme()
+    let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
+    app.theme = accents();
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| app.render(frame, &Config::default()))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+
+    let line: String = (0..buf.area.width)
+        .map(|x| buf[(x, 0)].symbol().to_string())
+        .collect();
+    assert!(line.contains("Search"), "the bar is titled Search: {line}");
+    // Character index, not byte index: the border glyph before it is
+    // three bytes wide, and using the byte offset points at the second
+    // letter of the word instead.
+    let at = line[..line.find('S').expect("the S is drawn")]
+        .chars()
+        .count() as u16;
+    assert_eq!(buf[(at, 0)].fg, Color::Rgb(200, 210, 220), "the `S`");
+    assert_eq!(
+        buf[(at + 1, 0)].fg,
+        Color::Rgb(10, 20, 30),
+        "the rest of the word"
+    );
+}
+
+/// Every keybind glyph on screen is `on_hover`, and nothing else is.
+///
+/// One rule, everywhere: the letter that opens something -- `S` for the
+/// search box, the zone's digit, the panel's full-view letter, `f` and `g`
+/// on the frame, the category arrows -- is `on_hover`, and the rest of
+/// the word it sits in is `primary`. The eye picks the key out of the
+/// label without reading it.
+///
+/// The accents are named apart in the test theme: the built-in one falls
+/// `primary`, `secondary` and `on_hover` back to the same `hi_fg`, so a
+/// test against it cannot tell them apart and passes either way.
+fn accents() -> doris::ui::theme::Theme {
+    let theme = doris::ui::theme::Theme {
+        primary: Some(doris::ui::theme::ColorDef::new(10, 20, 30)),
+        secondary: Some(doris::ui::theme::ColorDef::new(90, 100, 110)),
+        on_hover: Some(doris::ui::theme::ColorDef::new(200, 210, 220)),
+        ..doris::ui::theme::Theme::default_theme()
     };
-    let word = theme.primary_color();
-    assert_ne!(word, theme.on_hover_color(), "the accents must differ here");
+    assert_ne!(theme.primary_color(), theme.on_hover_color());
+    theme
+}
+
+#[test]
+fn test_a_panel_title_marks_its_keybinds_in_on_hover() {
+    use doris::ui::layout::{superscript_digit, zone_title, ZoneId};
+    use ratatui::style::{Color, Modifier};
+
+    let theme = accents();
+    let hot = Color::Rgb(200, 210, 220);
+    let word = Color::Rgb(10, 20, 30);
+
+    for (id, key) in [
+        (ZoneId::Results, Some("R")),
+        (ZoneId::Torrent, Some("T")),
+        (ZoneId::Log, Some("L")),
+        (ZoneId::Trackers, None),
+    ] {
+        let spans = zone_title(id, &theme, true).spans;
+        let digit = superscript_digit(id as u8);
+        let d = spans
+            .iter()
+            .find(|s| s.content.as_ref() == digit)
+            .expect("the zone digit is drawn");
+        assert_eq!(d.style.fg, Some(hot), "the zone digit of {id:?}");
+        assert!(d.style.add_modifier.contains(Modifier::BOLD));
+
+        if let Some(key) = key {
+            let k = spans
+                .iter()
+                .find(|s| s.content.as_ref() == key)
+                .expect("the detail key is drawn");
+            assert_eq!(k.style.fg, Some(hot), "the `{key}` of {id:?}");
+            assert!(k.style.add_modifier.contains(Modifier::BOLD));
+        }
+        for s in &spans {
+            let bound = s.content.as_ref() == digit || Some(s.content.as_ref()) == key;
+            if !bound {
+                assert_eq!(
+                    s.style.fg,
+                    Some(word),
+                    "{:?} in the {id:?} title is neither the word's colour nor a keybind",
+                    s.content
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_a_frame_button_marks_its_hotkey_in_on_hover() {
+    use doris::ui::layout::{button_spans, zone_buttons, ZoneId};
+    use ratatui::style::Color;
+
+    let theme = accents();
+    let hot = Color::Rgb(200, 210, 220);
+    let word = Color::Rgb(10, 20, 30);
+
+    let mut seen = 0;
     for id in [
         ZoneId::Results,
         ZoneId::Torrent,
@@ -264,116 +354,26 @@ fn test_a_hotkey_letter_wears_the_colour_of_the_word_it_sits_in() {
         for button in zone_buttons(id) {
             let spans = button_spans(&theme, &button, false, false);
             for span in &spans {
+                let is_key = span.content.as_ref() == button.key.to_string()
+                    || span.content.as_ref() == "◀"
+                    || span.content.as_ref() == "▶";
                 assert_eq!(
                     span.style.fg,
-                    Some(word),
-                    "{:?} on the {id:?} frame paints {:?}, not the word's own colour",
+                    Some(if is_key { hot } else { word }),
+                    "{:?} on the {id:?} frame: {:?} should be {}",
                     button.text(),
-                    span.style.fg
+                    span.content,
+                    if is_key {
+                        "the keybind accent"
+                    } else {
+                        "the word colour"
+                    }
                 );
+            }
+            if spans.iter().any(|s| s.style.fg == Some(hot)) {
+                seen += 1;
             }
         }
     }
-}
-
-/// Every keybind in a panel title is the label's own colour.
-///
-/// The zone's digit and the panel's detail-view key are keybinds, and they
-/// used to take `secondary` while the word beside them took `primary`.
-/// That only showed on a theme which names no `secondary` -- the accent
-/// then falls back to the theme's grey-green `hi_fg` -- and the result was
-/// `¹` and `R` coming out a different colour from `Results` on the same
-/// line, with the digit and the letter looking like they belonged to
-/// something else entirely.
-#[test]
-fn test_a_panel_title_is_one_colour() {
-    use doris::ui::layout::zone_title;
-    use ratatui::style::{Color, Modifier};
-
-    // The built-in theme falls `secondary` back to the same `hi_fg` it
-    // gives `primary`, so it cannot tell these two apart. Named apart
-    // here, the way a real theme that defines both does.
-    let theme = doris::ui::theme::Theme {
-        primary: Some(doris::ui::theme::ColorDef::new(10, 20, 30)),
-        secondary: Some(doris::ui::theme::ColorDef::new(90, 100, 110)),
-        ..doris::ui::theme::Theme::default_theme()
-    };
-
-    for id in [
-        doris::ui::layout::ZoneId::Results,
-        doris::ui::layout::ZoneId::Torrent,
-        doris::ui::layout::ZoneId::Trackers,
-        doris::ui::layout::ZoneId::Log,
-    ] {
-        let spans = zone_title(id, &theme, true).spans;
-        let wrong: Vec<&str> = spans
-            .iter()
-            .filter(|s| s.style.fg != Some(Color::Rgb(10, 20, 30)))
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(
-            wrong.is_empty(),
-            "the {id:?} title paints {wrong:?} in something other than the \
-             label's colour"
-        );
-        // The keybinds stay marked, by weight.
-        for key in ["\u{b9}", "\u{b2}", "\u{b3}", "\u{b4}", "R", "T", "L"] {
-            if let Some(s) = spans.iter().find(|s| s.content.as_ref() == key) {
-                assert!(
-                    s.style.add_modifier.contains(Modifier::BOLD),
-                    "the `{key}` of the {id:?} title is not marked"
-                );
-            }
-        }
-    }
-}
-
-/// The `S` of Search wears the label's own colour.
-///
-/// It was the last holdout: it took the keybind accent while every other
-/// letter in a label took the word's colour, so the search bar was the
-/// one title on screen that read as two colours.
-#[test]
-fn test_the_search_title_is_one_colour() {
-    use doris::config::Config;
-    use doris::ui::view::App as UiApp;
-    use ratatui::backend::TestBackend;
-    use ratatui::Terminal;
-
-    let mut app = UiApp::new("http://127.0.0.1:8090".into(), None);
-    // The built-in theme falls `primary` and `on_hover` back to the same
-    // `hi_fg`, so a test run against it cannot tell the label's colour
-    // from the keybind accent and passes either way. Named apart here.
-    app.theme.primary = Some(doris::ui::theme::ColorDef::new(10, 20, 30));
-    app.theme.on_hover = Some(doris::ui::theme::ColorDef::new(70, 80, 90));
-    assert_ne!(app.theme.primary_color(), app.theme.on_hover_color());
-
-    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
-    terminal
-        .draw(|frame| app.render(frame, &Config::default()))
-        .unwrap();
-    let buf = terminal.backend().buffer();
-
-    let label: Vec<String> = (0..buf.area.width)
-        .map(|x| buf[(x, 0)].symbol().to_string())
-        .collect();
-    let line: String = label.concat();
-    assert!(
-        line.contains("Search"),
-        "the search bar is titled Search; got {line:?}"
-    );
-
-    // The border row carries the title; the glyphs spell it out.
-    let fgs: Vec<_> = (0..buf.area.width)
-        .map(|x| &buf[(x, 0)])
-        .filter(|c| c.symbol() != " " && c.symbol() != "╭" && c.symbol() != "╮")
-        .filter(|c| !matches!(c.symbol(), "─" | "│"))
-        .map(|c| (c.symbol().to_string(), c.fg))
-        .collect();
-    let first = fgs.first().expect("the title has glyphs").1;
-    let odd: Vec<_> = fgs.iter().filter(|(_, fg)| *fg != first).collect();
-    assert!(
-        odd.is_empty(),
-        "every glyph of the title should share one colour; {odd:?} differ from {first:?}"
-    );
+    assert!(seen >= 2, "no frame button marked a keybind at all: {seen}");
 }
