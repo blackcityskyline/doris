@@ -195,7 +195,7 @@ pub fn truncate(text: &str, width: usize) -> String {
 /// The one-line summary above the table: qbittorrent-tui draws this across
 /// three framed sections, which is six rows a doris zone often does not
 /// have. The numbers are the same, in one row.
-pub fn stats(rows: &[DownloadRow], free: Option<i64>, daemon: bool) -> String {
+pub fn stats(rows: &[DownloadRow], free: Option<i64>, daemon: Option<bool>) -> String {
     let mut down = 0i64;
     let mut up = 0i64;
     let mut uploaded = 0i64;
@@ -226,8 +226,14 @@ pub fn stats(rows: &[DownloadRow], free: Option<i64>, daemon: bool) -> String {
             crate::transmission::human_bytes(free.max(0) as u64)
         ));
     }
-    if !daemon {
-        line.push_str("   [daemon unreachable]");
+    // Both forms, because the question is "is the daemon there", and the
+    // answer being absent is not the same as the answer being yes. Before
+    // the first poll `None` says nothing: an unknown daemon is not a
+    // daemon that failed to answer.
+    match daemon {
+        Some(true) => line.push_str("   connected"),
+        Some(false) => line.push_str("   [daemon unreachable]"),
+        None => {}
     }
     line
 }

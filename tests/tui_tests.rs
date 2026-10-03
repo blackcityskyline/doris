@@ -1048,7 +1048,12 @@ fn test_the_torrent_detail_view_describes_the_selected_download() {
         doris::ui::view::DownloadRow {
             id: 2,
             name: "Second.Download".into(),
-            hash: "aa".into(),
+            hash: "bb".into(),
+            // The facts block is what has to belong to the cursor's row.
+            // The other row is on screen too, and deliberately so: the
+            // detail view is the table at full width, which is the whole
+            // reason it exists.
+            dir: "/home/u/Second".into(),
             ..Default::default()
         },
     ];
@@ -1061,14 +1066,67 @@ fn test_the_torrent_detail_view_describes_the_selected_download() {
         text.contains("Second.Download"),
         "the row under the cursor is the subject"
     );
+    // The streaming server's torrent is not the subject. Its *line* is
+    // still on the panel and therefore in this view -- that is where the
+    // panel says what it is streaming -- but no fact line of it is written
+    // out, because the facts are the selected download's.
     assert!(
-        !text.contains("Streamed.Something"),
-        "the streaming server's torrent is not: it is a different service, \
-         and the panel does not list it"
+        !text.contains("Hash: streaminghash01"),
+        "the streaming server's torrent is not the subject: it is a \
+         different service, and the panel does not list it"
     );
     assert!(
-        !text.contains("Downloaded.Thing.2024"),
-        "nor is any download the cursor is not on"
+        text.contains("Downloaded.Thing.2024"),
+        "and the table itself, at the full frame width, is still there -- \
+         dropping columns is what `T` exists to stop"
+    );
+    assert!(
+        text.contains("Directory: /home/u/Second"),
+        "the facts belong to the row under the cursor, not to the first one"
+    );
+    assert!(
+        !text.contains("Directory: /home/u/Downloads"),
+        "and not to the row it is not on"
+    );
+}
+
+/// `T` exists because the *zone* has to drop columns: at zone width the
+/// table cannot carry all of them, and the ones it drops are the numbers.
+/// At the full frame width it carries every column, which is the whole
+/// difference between the key and doing nothing.
+#[test]
+fn test_the_torrent_detail_view_keeps_every_column_the_zone_had_to_drop() {
+    let mut app = make_test_app();
+    app.downloads = vec![doris::ui::view::DownloadRow {
+        id: 1,
+        hash: "045e85f2ebc24a875a64fe2e9ac9b61f7aad0499".into(),
+        name: "A.Very.Long.Torrent.Name.That.Needs.Room.2024.1080p".into(),
+        fraction: 0.42,
+        download_speed: 4_200_000,
+        upload_speed: 890_000,
+        seeds: 3,
+        peers: 12,
+        total_size: 1_990_000_000,
+        left: 1_150_000_000,
+        dir: "/home/u/Downloads".into(),
+        status: 4,
+        ..Default::default()
+    }];
+
+    // The same app at a zone's width, and at the frame's.
+    let narrow = all_text(&render_detail(&mut app, ZoneId::Torrent, 46, 20));
+    let wide = all_text(&render_detail(&mut app, ZoneId::Torrent, 120, 30));
+
+    // Everything the plan can offer, at 120 columns.
+    for column in ["state", "down", "up", "eta", "size", "ratio"] {
+        assert!(
+            wide.contains(column),
+            "`{column}` is dropped by the zone and kept by `T`"
+        );
+    }
+    assert!(
+        !narrow.contains("ratio"),
+        "which is the point: at zone width there is no room for it"
     );
 }
 

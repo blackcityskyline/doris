@@ -460,47 +460,55 @@ impl App {
     /// a table whose columns are dropped from the tail when the panel is
     /// narrow so that the name always survives.
     fn render_downloads(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+        let inner_width = area.width.saturating_sub(2) as usize;
+        let visible = (area.height as usize).saturating_sub(4).max(1);
+        let mut lines = self.downloads_lines(inner_width, visible);
+        lines.extend(self.remove_prompt_line());
+        frame.render_widget(
+            Paragraph::new(lines).block(self.zone_block(id, config)),
+            area,
+        );
+        self.render_frame(frame, id, area, config);
+    }
+
+    /// The panel's own lines: summary, the stream, the table, the armed
+    /// removal.
+    ///
+    /// Shared with the `T` detail view rather than written twice, because
+    /// the detail view *is* this panel at full width -- the whole point of
+    /// `T` is that the panel drops columns when the zone is narrow, and a
+    /// second implementation would be free to drop a different set.
+    fn downloads_lines(&self, inner_width: usize, visible: usize) -> Vec<Line<'_>> {
         use super::torrents_panel as panel;
 
-        let inner_width = area.width.saturating_sub(2) as usize;
-        let block = self.zone_block(id, config);
-
-        let mut lines: Vec<Line> = Vec::new();
         let label = Style::default().fg(self.theme.secondary_color());
+        let mut lines: Vec<Line> = Vec::new();
 
         // The summary goes first and is never dropped: "3 torrents,
         // nothing moving" is the answer to the question the panel is asked
         // most often, and it is one line.
         lines.push(Line::from(Span::styled(
-            panel::stats(
-                &self.downloads,
-                self.free_space,
-                self.daemon_reachable == Some(true),
-            ),
+            panel::stats(&self.downloads, self.free_space, self.daemon_reachable),
             Style::default().fg(self.theme.main_fg.to_color()),
         )));
-        // Then whatever is being streamed, when something is. One line,
+        // Then whatever is being streamed, when there is. One line,
         // because the streaming server's state has nowhere else to go --
         // and the panel this replaced showed it and nothing else, which is
         // how everything else in the daemon became invisible.
         lines.extend(self.render_stream_line(inner_width));
 
         let Some(plan) = panel::plan(inner_width) else {
-            let mut lines = lines;
             lines.push(Line::from(Span::styled(
                 format!("{} torrents (panel too narrow)", self.downloads.len()),
                 label,
             )));
-            frame.render_widget(Paragraph::new(lines).block(block), area);
-            self.render_frame(frame, id, area, config);
-            return;
+            return lines;
         };
 
         // One header, then as many rows as the remaining height allows. The
         // cursor is kept in view rather than scrolled: the list is short,
         // and a panel that scrolls a handful of rows to show a cursor is
         // noisier than one that does not.
-        let visible = (area.height as usize).saturating_sub(4).max(1);
         let first = self
             .download_cursor
             .saturating_sub(visible.saturating_sub(1))
@@ -530,18 +538,19 @@ impl App {
                 label,
             )));
         }
+        lines
+    }
 
-        if let Some(prompt) = self.remove_prompt() {
-            lines.push(Line::from(Span::styled(
+    /// The armed removal question, when there is one.
+    fn remove_prompt_line(&self) -> Option<Line<'static>> {
+        self.remove_prompt().map(|prompt| {
+            Line::from(Span::styled(
                 prompt,
                 Style::default()
                     .fg(self.theme.error_color())
                     .add_modifier(Modifier::BOLD),
-            )));
-        }
-
-        frame.render_widget(Paragraph::new(lines).block(block), area);
-        self.render_frame(frame, id, area, config);
+            ))
+        })
     }
 
     fn render_log_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
@@ -608,10 +617,28 @@ impl App {
         // Some fields are words, some numbers, and one of them is absent
         // for a torrent that has not started -- so a row is rendered by
         // asking the row, not by formatting a struct into existence.
-        let lines = match self.downloads.get(self.download_cursor) {
+        let facts: Vec<Line> = match self.downloads.get(self.download_cursor) {
             Some(row) => self.download_detail_lines(row, config),
             None => self.stream_detail_lines(config),
         };
+
+        // The table is the panel's own, at the full frame width: the zone
+        // drops columns when it is narrow, and dropping them is what `T`
+        // exists to stop. Nine lines of `Label: value` in an otherwise
+        // empty frame is the same information at a tenth of the density,
+        // and the row it describes was on screen anyway.
+        //
+        // The table gives up rows, never the facts: those are the reason
+        // for pressing the key, and a list that scrolled them off the
+        // bottom would be the empty frame again with more noise in it.
+        let inner_width = area.width.saturating_sub(2) as usize;
+        let visible = (area.height as usize)
+            .saturating_sub(facts.len() + 4)
+            .max(1);
+        let mut lines = self.downloads_lines(inner_width, visible);
+        lines.push(Line::default());
+        lines.extend(facts);
+        lines.extend(self.remove_prompt_line());
 
         let title = Span::styled(
             " Torrent detail [T/Esc] close ",

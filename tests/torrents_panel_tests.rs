@@ -145,7 +145,7 @@ fn test_the_summary_totals_the_list_and_stays_one_line() {
             ..row("two")
         },
     ];
-    let line = torrents_panel::stats(&rows, Some(128_000_000_000), true);
+    let line = torrents_panel::stats(&rows, Some(128_000_000_000), Some(true));
     assert!(!line.contains('\n'), "the summary is one row: {line:?}");
     assert!(line.contains("2 torrents"), "{line}");
     assert!(line.contains("5.0 MB/s"), "dl is totalled: {line}");
@@ -154,13 +154,27 @@ fn test_the_summary_totals_the_list_and_stays_one_line() {
         !line.contains("unreachable"),
         "a daemon that answered is not announced as down"
     );
+    assert!(
+        line.contains("connected"),
+        "and it is said to be there: {line}"
+    );
+}
+
+/// Before the first poll the daemon has not been asked yet, which is not
+/// the same as having failed to answer. Saying "unreachable" then is the
+/// panel claiming something it does not know.
+#[test]
+fn test_an_unasked_daemon_is_not_called_unreachable() {
+    let line = torrents_panel::stats(&[], None, None);
+    assert!(!line.contains("unreachable"), "{line}");
+    assert!(!line.contains("connected"), "{line}");
 }
 
 /// A daemon that is not running is said so on the panel. The alternative is
 /// a row of zeros and no way to tell it from a stalled download.
 #[test]
 fn test_an_unreachable_daemon_says_so() {
-    let line = torrents_panel::stats(&[], None, false);
+    let line = torrents_panel::stats(&[], None, Some(false));
     assert!(line.contains("[daemon unreachable]"), "{line}");
     assert!(line.contains("0 torrents"), "{line}");
 }
