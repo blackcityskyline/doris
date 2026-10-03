@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "doris search bridge",
+  "version": "1.0.0",
+  "description": "Send a title to doris, the torrent search TUI, from the page you are reading it on.",
+  "author": "doris",
+  "homepage_url": "https://github.com/blackcityskyline/doris",
+
+  "permissions": ["storage"],
+
+  "host_permissions": [
+    "https://www.imdb.com/*",
+    "https://imdb.com/*",
+    "https://trakt.tv/*",
+    "https://www.trakt.tv/*",
+    "https://kinopoisk.ru/*",
+    "https://www.kinopoisk.ru/*",
+    "https://lampa.mx/*",
+    "https://www.lampa.mx/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+
+  "background": {
+    "scripts": ["title.js", "background.js"]
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.imdb.com/*",
+        "https://imdb.com/*",
+        "https://trakt.tv/*",
+        "https://www.trakt.tv/*",
+        "https://kinopoisk.ru/*",
+        "https://www.kinopoisk.ru/*",
+        "https://lampa.mx/*",
+        "https://www.lampa.mx/*"
+      ],
+      "js": ["title.js", "content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+
+  "action": {
+    "default_title": "doris",
+    "default_icon": "icons/doris.svg"
+  },
+
+  "icons": {
+    "48": "icons/doris.svg",
+    "96": "icons/doris.svg"
+  }
+}

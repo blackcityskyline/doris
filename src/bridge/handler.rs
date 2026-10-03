@@ -18,7 +18,10 @@ use tokio::sync::mpsc;
 /// manifest, so adding a site here and there is the same edit twice.
 /// Subdomains are not matched: `www.imdb.com` and `imdb.com` are listed
 /// separately rather than by suffix, because `evil-imdb.com` is not imdb.
-const ALLOWED_ORIGINS: &[&str] = &[
+/// Public because it is a contract with something outside this crate: the
+/// add-on's `host_permissions` are the same list, and a test compares the two
+/// so they cannot drift apart in silence.
+pub const ALLOWED_ORIGINS: &[&str] = &[
     "https://www.imdb.com",
     "https://imdb.com",
     "https://trakt.tv",

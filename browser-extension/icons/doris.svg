@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- The menu's own banner, reduced to two letters and a disc: a search
+       box and a magnet, which is what the app is. -->
+  <rect width="64" height="64" rx="10" fill="#0f1116" />
+  <circle cx="26" cy="26" r="13" fill="none" stroke="#7fd1b9" stroke-width="5" />
+  <path d="M36 36 L48 48" stroke="#7fd1b9" stroke-width="5" stroke-linecap="round" />
+  <rect x="44" y="8" width="6" height="20" rx="3" fill="#e2603a" />
+  <rect x="54" y="8" width="6" height="20" rx="3" fill="#e2603a" />
+</svg>

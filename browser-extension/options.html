@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>doris search bridge — options</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font: message-box;
+        font-size: 13px;
+        max-width: 46em;
+        margin: 2em auto;
+        padding: 0 1em;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.2em;
+        margin-bottom: 0.2em;
+      }
+      p.lede {
+        margin-top: 0;
+        opacity: 0.75;
+      }
+      label {
+        display: block;
+        margin: 1.2em 0 0.3em;
+        font-weight: 600;
+      }
+      input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        padding: 0.4em;
+      }
+      .hint {
+        font-size: 0.9em;
+        opacity: 0.75;
+      }
+      #status {
+        margin-top: 0.8em;
+        min-height: 1.4em;
+        font-weight: 600;
+      }
+      .ok {
+        color: #2e7d32;
+      }
+      .bad {
+        color: #b3261e;
+      }
+      table {
+        border-collapse: collapse;
+        margin-top: 1.5em;
+        width: 100%;
+      }
+      td {
+        padding: 0.2em 0.6em 0.2em 0;
+        vertical-align: top;
+      }
+      td:first-child {
+        white-space: nowrap;
+        opacity: 0.75;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>doris search bridge</h1>
+    <p class="lede">
+      Sends a title to doris, the torrent search TUI. The search runs in
+      doris's own window; this add-on only hands it the title.
+    </p>
+
+    <label for="bridge">doris bridge address</label>
+    <input
+      type="text"
+      id="bridge"
+      spellcheck="false"
+      placeholder="http://127.0.0.1:14141"
+    />
+    <p class="hint">
+      The port is <code>bridge_port</code> in <code>~/.config/doris/config.toml</code>.
+      Leave it empty for the default. <code>127.0.0.1</code> rather than
+      <code>localhost</code>: where one resolves to <code>::1</code> and the
+      daemon listens on <code>127.0.0.1</code> only, the other address
+      reaches nothing.
+    </p>
+    <div id="status"></div>
+
+    <table>
+      <tbody>
+        <tr>
+          <td>Button on a page</td>
+          <td>
+            IMDb, Trakt, Kinopoisk and Lampa. Appears next to the title and
+            says <code>sent</code>, <code>refused</code> or
+            <code>doris is not listening</code>.
+          </td>
+        </tr>
+        <tr>
+          <td>Toolbar button</td>
+          <td>
+            Searches the tab's title from any site, including ones with no
+            button on the page.
+          </td>
+        </tr>
+        <tr>
+          <td>Refused searches</td>
+          <td>
+            A page doris does not recognise is answered
+            <code>403 origin not allowed</code> and no search runs. That is
+            deliberate: the bridge acts, so it answers an allow list rather
+            than <code>*</code>.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -51,6 +51,17 @@ In the Torrents view `T` takes over the frame: `j`/`k` move the cursor,
 what to fetch and what not), `o` opens the folder in a file manager, and
 `+`/`-`/`0` walk the download-rate limit.
 
+## Browser add-on
+
+`browser-extension/` is a Firefox add-on that sends a title to doris from the
+page you are reading it on: a `doris` button next to the title on IMDb, Trakt,
+Kinopoisk and Lampa, and a toolbar button for anywhere else. The bridge it
+talks to is doris's own (`bridge_port` in `~/.config/doris/config.toml`).
+
+Load it from `about:debugging` → *Load Temporary Add-on…* → pick
+`manifest.json`. See `browser-extension/README.md` for the rest, and
+`make test-ext` for its tests.
+
 ## Layout
 
 ```

@@ -1,0 +1,45 @@
+/* The button, styled so it reads as part of the heading rather than as a
+   page of its own. No colours of its own: the site's own text colour and the
+   browser's default button, so it does not look broken in a dark theme. */
+
+.doris-search-button {
+  margin-inline-start: 0.5em;
+  padding: 0.15em 0.6em;
+  font: inherit;
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  vertical-align: middle;
+  cursor: pointer;
+  opacity: 0.55;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  transition: opacity 120ms ease-in-out;
+}
+
+.doris-search-button:hover,
+.doris-search-button:focus-visible {
+  opacity: 1;
+}
+
+/* The three states are in `data-doris-state`, set in content.js. Colour is
+   not the only signal: the word changes too, so it reads without colour. */
+.doris-search-button[data-doris-state="busy"] {
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.doris-search-button[data-doris-state="ok"] {
+  opacity: 0.9;
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+.doris-search-button[data-doris-state="error"] {
+  opacity: 1;
+  border-color: #b3261e;
+  color: #b3261e;
+}
