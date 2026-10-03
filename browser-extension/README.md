@@ -57,9 +57,15 @@ it is right it can be `East of Eden (TV Mini Series 2026) - IMDb`, which no
 tracker has. `Esc` cancels, which matters because in this mode the mouse
 belongs to you.
 
-A small `doris` button also appears next to the title on the four sites, for
-the case where the page is obviously about one film and there is nothing to
-select.
+This works on **any site**. The content script runs everywhere, because
+selecting has to work everywhere and selecting needs something listening for
+the click. The fetch is made by the background script, not by the page, so it
+carries no site origin -- which is how a bridge with a four-entry allow list
+can still answer a click on any domain.
+
+The small `doris` button next to the title stays on the four sites: a page
+with no rule for what its title means has no business being offered one. On
+everything else you select.
 
 The toolbar button falls back to the tab's title on a page with no add-on in
 it, which is every site outside the four: there is no content script to tell,
@@ -159,8 +165,7 @@ timer, a title queued and then delivered forty seconds later never was.
 
 | permission | why |
 |---|---|
-| IMDb, Trakt, Kinopoisk, Lampa | where the button goes. These are the same origins doris's bridge allows — `tests/extension_manifest_tests.rs` compares the two lists, so they cannot drift apart |
-| `http://127.0.0.1/*`, `http://localhost/*` | reaching doris. Per-host, not per-port: `bridge_port` is a setting, and a permission naming one would break every user who moved it |
+| `<all_urls>` | one permission covering both: the content script on any page, and the fetch to doris. Nothing else is asked for -- every request goes to the bridge or nowhere |
 | `storage` | the bridge address, and the queue of titles waiting for doris |
 | `alarms` | the 30-second poll. Without the permission `browser.alarms` is undefined, and the scheduler throws inside the message handler — which leaves the button on `sending…` for ever |
 
@@ -168,6 +173,11 @@ The bridge answers an allow list, not `*`. It listens on loopback and it
 *acts* — a request starts a search — so any page a browser happens to be on
 must not be able to drive this machine. A page doris does not recognise is
 answered `403 origin not allowed` and no search runs.
+
+That does not contradict the add-on working anywhere, and the difference is
+who makes the request: the add-on's background script, which is not a page
+and sends no `Origin`. A page's own `fetch` to the bridge is refused, and
+that is the case the allow list is for.
 
 ## Tests
 

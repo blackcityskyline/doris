@@ -206,7 +206,20 @@ function awaitDelivery(title) {
  * heading without loading the page, so a button inserted once points at the
  * previous title.
  */
+/**
+ * Put the button next to the title -- on the four sites only.
+ *
+ * The content script runs on every page now, because selecting has to work
+ * everywhere and selecting needs something listening for the click. That is
+ * not a reason to put a button next to a heading on every page in the
+ * world: a page whose site has no table entry has no rule for what its title
+ * means, so the button would be guessing. Selecting is the answer there, and
+ * it is one click away.
+ */
 function install() {
+  const known = doris.SITES.some((site) => site.hosts.includes(document.location.hostname));
+  if (!known) return;
+
   const action = doris.actionFor(document);
   // Refused on sight, so the button says so before it is pressed rather
   // than after.

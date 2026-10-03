@@ -46,27 +46,29 @@ fn host_permissions(manifest: &str) -> Vec<String> {
 
 /// The same for the content scripts' `matches`, which are the sites the
 /// button is injected into.
-fn content_matches(manifest: &str) -> Vec<String> {
-    let start = manifest
-        .find("\"content_scripts\"")
-        .expect("content_scripts");
-    let rest = &manifest[start..];
-    let close = rest.find("]").expect("a closed matches array");
-    rest[..close]
-        .split('"')
+/// The sites the *button* appears on, which is the sites table and not the
+/// manifest: the script runs everywhere so that selecting works everywhere,
+/// and a wildcard in this list would make the allow-list tests compare
+/// nothing at all.
+fn button_sites() -> Vec<String> {
+    let source =
+        std::fs::read_to_string(repo_root().join("browser-extension/title.js")).expect("title.js");
+    source
+        .split("hosts: [")
         .skip(1)
-        .step_by(2)
-        .filter(|s| s.contains("://"))
-        .map(str::to_string)
+        // Every host in the entry, not the first: the table lists both
+        // `imdb.com` and `www.imdb.com`, and taking one of them makes the
+        // bridge look like it allows a site with no button.
+        .filter_map(|chunk| chunk.split(']').next())
+        .flat_map(|chunk| {
+            chunk
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(|host| format!("https://{host}"))
+                .collect::<Vec<_>>()
+        })
         .collect()
-}
-
-/// `https://www.imdb.com/*` -> `https://www.imdb.com`
-fn strip_pattern(pattern: &str) -> String {
-    pattern
-        .trim_end_matches('*')
-        .trim_end_matches('/')
-        .to_string()
 }
 
 fn manifest() -> String {
@@ -80,16 +82,70 @@ fn manifest() -> String {
 }
 
 #[test]
-fn every_site_the_add_on_runs_on_is_allowed_by_the_bridge() {
-    let manifest = manifest();
-    for pattern in content_matches(&manifest) {
-        let origin = strip_pattern(&pattern);
+fn every_site_the_button_appears_on_is_allowed_by_the_bridge() {
+    // The four, from the table the button is driven by -- not from
+    // `content_scripts`, which is `<all_urls>` now and would compare nothing.
+    for origin in button_sites() {
         assert!(
             doris::bridge::handler::origin_allowed(&origin),
-            "{origin} has a content script but the bridge refuses it: \
-             the button would answer 403"
+            "{origin} has a button and the bridge refuses it: the button \
+             would answer 403"
         );
     }
+}
+
+/// Selecting has to work on any site, which means the script runs on any
+/// site, which means the bridge has to accept a request that carries no page
+/// origin -- and it does, because the fetch is made by the background script.
+/// That is the whole reason "any domain" can work with an allow list four
+/// entries long.
+#[test]
+fn selection_works_on_any_site_because_the_fetch_carries_no_page_origin() {
+    let manifest = manifest();
+    assert!(
+        manifest.contains("\"<all_urls>\""),
+        "the content script is limited to four sites, so selecting cannot \
+         work anywhere else"
+    );
+
+    let content = std::fs::read_to_string(repo_root().join("browser-extension/content.js"))
+        .expect("content.js");
+    assert!(
+        !content.contains("fetch("),
+        "the content script fetches: it would carry the page's origin and be \
+         answered 403 on every site outside the allow list"
+    );
+    assert!(
+        content.contains(r#"sendMessage({ type: "search""#),
+        "so the search has to go through the background"
+    );
+
+    // And an origin nobody listed is still refused: running the script
+    // everywhere must not open the bridge to the internet.
+    assert!(!doris::bridge::handler::origin_allowed(
+        "https://example.org"
+    ));
+    assert!(doris::bridge::handler::origin_allowed(""));
+}
+
+/// The button, unlike the picker, stays on the four sites: a page with no
+/// rule for what its title means has no business being offered one.
+#[test]
+fn the_button_is_not_offered_on_a_site_with_no_table_entry() {
+    let content = std::fs::read_to_string(repo_root().join("browser-extension/content.js"))
+        .expect("content.js");
+    let install = content
+        .split("function install()")
+        .nth(1)
+        .expect("an install function");
+    assert!(
+        install.contains("SITES.some(") && install.contains("return;"),
+        "the button is injected on any page the script reaches"
+    );
+    assert!(
+        button_sites().len() >= 4,
+        "and the table it is gated on has gone missing"
+    );
 }
 
 #[test]
@@ -97,20 +153,18 @@ fn every_origin_the_bridge_allows_is_a_site_the_add_on_runs_on() {
     // The reverse: an allowed origin with no content script is a hole in the
     // allow list, and a hole is what a second extension on the same machine
     // would use.
-    let manifest = manifest();
-    let injected: Vec<String> = content_matches(&manifest)
-        .iter()
-        .map(|p| strip_pattern(p))
-        .collect();
+    // The table, not `content_scripts`: the script runs on every page now,
+    // so the manifest's matches say nothing about which origins are used.
+    let sites = button_sites();
 
     for origin in doris::bridge::handler::ALLOWED_ORIGINS {
         // The local ones are for a page served off the developer's own
-        // machine, not for the add-on's buttons.
+        // machine, not for the add-on's button.
         if origin.starts_with("http://") {
             continue;
         }
         assert!(
-            injected.iter().any(|i| i == origin),
+            sites.iter().any(|i| i == origin),
             "{origin} is allowed by the bridge but no add-on button runs there"
         );
     }
@@ -118,34 +172,34 @@ fn every_origin_the_bridge_allows_is_a_site_the_add_on_runs_on() {
 
 #[test]
 fn the_add_on_may_reach_the_bridge_on_any_port() {
-    // `bridge_port` is a setting, so a manifest pinned to 14141 would break
-    // every user who moved it. The permission is per-host, and the options
-    // page is where the port comes from.
+    // `bridge_port` is a setting, so a permission naming 14141 would break
+    // every user who moved it. A match pattern cannot name a port at all --
+    // ports are not part of a match pattern -- so what matters is the host,
+    // which `<all_urls>` covers along with every other host the content
+    // script now has to run on.
     let manifest = manifest();
     let permissions = host_permissions(&manifest);
-    for wanted in ["http://127.0.0.1/*", "http://localhost/*"] {
-        assert!(
-            permissions.iter().any(|p| p == wanted),
-            "{wanted} is not in host_permissions: the bridge runs on a \
-             configurable port, so the permission cannot name one -- {permissions:?}"
-        );
-    }
+    assert!(
+        permissions.iter().any(|p| p == "<all_urls>"),
+        "no wildcard permission, so the bridge is reachable only on whatever \
+         hosts happen to be listed: {permissions:?}"
+    );
 }
 
 #[test]
-fn the_add_on_asks_for_no_permission_the_bridge_does_not_need() {
-    // Every `https://` permission is a site. A permission that is not a site
-    // -- an API, a CDN -- would be a request the bridge has no route for, and
-    // it would be asked for on every page load.
+fn the_add_on_asks_for_nothing_beyond_the_wildcard() {
+    // `<all_urls>` is the price of selecting on any site, and it is the whole
+    // price: the fetch goes to the bridge or to nowhere, so no third-party
+    // host is named anywhere -- which is also what makes the bridge's
+    // four-entry allow list still mean something.
     let manifest = manifest();
-    for pattern in host_permissions(&manifest) {
-        assert!(
-            pattern.starts_with("https://")
-                || pattern.starts_with("http://127.0.0.1")
-                || pattern.starts_with("http://localhost"),
-            "{pattern} is neither a site nor the bridge"
-        );
-    }
+    let permissions = host_permissions(&manifest);
+    assert_eq!(
+        permissions,
+        vec!["<all_urls>".to_string()],
+        "some other host is named, and every one of them is a request the \\
+         add-on has no reason to make: {permissions:?}"
+    );
 }
 
 /// `browser.alarms` is undefined without the permission, and the queue's

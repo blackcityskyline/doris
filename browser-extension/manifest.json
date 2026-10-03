@@ -5,63 +5,52 @@
   "description": "Send a title to doris, the torrent search TUI, from the page you are reading it on.",
   "author": "doris",
   "homepage_url": "https://github.com/blackcityskyline/doris",
-
-  "permissions": ["storage", "alarms"],
-
-  "host_permissions": [
-    "https://www.imdb.com/*",
-    "https://imdb.com/*",
-    "https://trakt.tv/*",
-    "https://www.trakt.tv/*",
-    "https://kinopoisk.ru/*",
-    "https://www.kinopoisk.ru/*",
-    "https://lampa.mx/*",
-    "https://www.lampa.mx/*",
-    "http://127.0.0.1/*",
-    "http://localhost/*"
+  "permissions": [
+    "storage",
+    "alarms"
   ],
-
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
-    "scripts": ["title.js", "queue.js", "background.js"]
+    "scripts": [
+      "title.js",
+      "queue.js",
+      "background.js"
+    ]
   },
-
   "content_scripts": [
     {
       "matches": [
-        "https://www.imdb.com/*",
-        "https://imdb.com/*",
-        "https://trakt.tv/*",
-        "https://www.trakt.tv/*",
-        "https://kinopoisk.ru/*",
-        "https://www.kinopoisk.ru/*",
-        "https://lampa.mx/*",
-        "https://www.lampa.mx/*",
-        "http://127.0.0.1/*",
-        "http://localhost/*"
+        "<all_urls>"
       ],
-      "js": ["title.js", "queue.js", "content.js"],
-      "css": ["content.css"],
+      "js": [
+        "title.js",
+        "queue.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
   },
-
   "commands": {
     "pick-title": {
-      "suggested_key": { "default": "Ctrl+Shift+D" },
+      "suggested_key": {
+        "default": "Ctrl+Shift+D"
+      },
       "description": "Select a title on the page and search it in doris"
     }
   },
-
   "action": {
     "default_title": "doris",
     "default_icon": "icons/doris.svg"
   },
-
   "icons": {
     "48": "icons/doris.svg",
     "96": "icons/doris.svg"
