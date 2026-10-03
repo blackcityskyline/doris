@@ -1,6 +1,7 @@
-.PHONY: all build release test lint fmt fmt-check doc clean install uninstall run test-ext
+.PHONY: all build release test lint fmt fmt-check doc clean install uninstall run test-ext xpi
 
 CARGO ?= cargo
+PYTHON ?= python3
 BINDIR ?= $(HOME)/.local/bin
 PREFIX ?= /usr/local
 
@@ -19,6 +20,12 @@ test:
 # selector on which site), and it is not Rust, so `cargo test` cannot see it.
 # Skipped with a note rather than failing when there is no node -- a gate
 # that cannot run on a machine is a gate that gets skipped everywhere.
+# The installable file: one zip, written by the same packer the live check
+# loads, so the file the user installs and the file that was tested are one
+# file and not two that happen to agree today.
+xpi:
+	$(PYTHON) browser-extension/pack.py
+
 test-ext:
 	@if command -v node >/dev/null 2>&1; then \
 		node browser-extension/test/title_test.mjs; \

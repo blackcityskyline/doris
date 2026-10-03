@@ -31,17 +31,20 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
-import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXTENSION = os.path.abspath(os.path.join(HERE, ".."))
 FIXTURE = os.path.join(HERE, "fixtures")
 BROWSER = sys.argv[1] if len(sys.argv) > 1 else "/opt/zen-browser-bin/zen"
+
+# The same packer the user installs with, so the file the check loads and the
+# file on disk are one file and not two that happen to agree today.
+sys.path.insert(0, os.path.dirname(HERE))
+from pack import pack  # noqa: E402
 
 
 def free_port():
@@ -140,28 +143,6 @@ def serve_fixture():
     return server
 
 
-# --- the add-on -------------------------------------------------------------
-
-
-def pack():
-    """A zip of the add-on, because that is what Firefox installs.
-
-    geckodriver installs what Firefox would install, and Firefox installs a
-    zip. Handing it the directory answers `500` and says nothing about why --
-    which is an hour of wondering whether the add-on was broken.
-    """
-    archive = os.path.join(tempfile.mkdtemp(prefix="doris-addon-"), "addon.xpi")
-    with zipfile.ZipFile(archive, "w") as out:
-        for root, dirs, files in os.walk(EXTENSION):
-            dirs[:] = [d for d in dirs if d not in ("test", "node_modules")]
-            for name in files:
-                if name.endswith((".md", ".mjs", ".py")) or name == ".DS_Store":
-                    continue
-                path = os.path.join(root, name)
-                out.write(path, os.path.relpath(path, EXTENSION))
-    return archive
-
-
 # --- WebDriver --------------------------------------------------------------
 
 
@@ -223,7 +204,7 @@ def start_session():
 def main():
     serve_fixture()
     driver = start_driver()
-    archive = pack()
+    archive = pack()[0]
     session = None
     try:
         session = start_session()

@@ -8,15 +8,36 @@ whether the handoff happened — it does not search anything itself.
 
 ## Install
 
-Firefox will not run an unsigned add-on permanently; two ways to try it:
+```sh
+make xpi      # → browser-extension/dist/doris-search-bridge-1.0.0.xpi
+```
 
-**Temporarily** — `about:debugging#/runtime/this-firefox` → *Load Temporary
-Add-on…* → pick `manifest.json`. It is gone when Firefox closes.
+That file is not in the repository: it is a build product, and one packer
+writes both the copy you install and the copy `test/live.py` loads.
 
-**Signed** — zip the directory and upload it through
-[addons.mozilla.org](https://addons.mozilla.org/developers/). A signed add-on
-installs permanently and updates on its own. Nothing here needs a build step:
-it is five files and no bundler.
+**Now, without a signature** — Firefox and Zen will not install an unsigned
+add-on permanently, and they do not say so nicely: measured here, the same
+`.xpi` installs as *temporary* and is refused as *permanent* with
+`ERROR_CORRUPT_FILE: The file appears to be corrupt`, which is a lie about a
+perfectly good zip. A signed add-on from addons.mozilla.org installs
+permanently through the same path in the same browser, which is how the two
+were told apart.
+
+So, in order of what works today:
+
+**`about:debugging`** — `about:debugging#/runtime/this-firefox` → *Load
+Temporary Add-on…* → pick `browser-extension/manifest.json`. Works
+immediately, needs no signature, and is gone when the browser closes.
+
+**Sign it, then install it permanently** — upload the `.xpi` at
+[addons.mozilla.org](https://addons.mozilla.org/developers/) as an unlisted
+add-on. Signing needs an AMO account and a click-through; after that the file
+installs permanently and updates on its own through *Install Add-on From
+File…* in `about:addons`.
+
+There is no third way on a release build. `xpinstall.signatures.required =
+false` is honoured only by Nightly, Developer Edition and ESR, and an
+enterprise policy with `install_path` installs a *signed* extension too.
 
 Then start doris with the bridge on:
 

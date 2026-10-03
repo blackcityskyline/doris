@@ -13,3 +13,7 @@ graphify-out/
 # The add-on's live check drives a real browser through `geckodriver`,
 # which npm installs here (`npm install --no-save geckodriver`).
 /node_modules/
+# The packed add-on. A build product: `make xpi` writes it.
+/browser-extension/dist/
+# Python bytecode from the add-on's packer and its live check.
+__pycache__/
