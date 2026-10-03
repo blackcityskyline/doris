@@ -213,9 +213,12 @@ impl App {
             // Captured before the loop flips it: turning TorrServer
             let torrserver_was_on = self.config.enable_torrserver;
             let toggled = apply_bool_toggle(&mut self.config, action);
-            if toggled && self.config.enable_torrserver && !torrserver_was_on {
-                // Turning TorrServer *on* is the one toggle that owes
-                self.check_torrserver_on_enable().await;
+            if toggled && self.config.enable_torrserver != torrserver_was_on {
+                // The one toggle that acts on a process rather than on a
+                // field: on starts it if nothing is answering and leaves it
+                // up afterwards, off stops the one doris started.
+                self.apply_torrserver_switch(self.config.enable_torrserver)
+                    .await;
             }
             match action {
                 SettingsAction::ToggleBrowserVisibility => {

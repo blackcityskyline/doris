@@ -788,6 +788,15 @@ impl App {
 
         Self::spawn_termination_watch(Arc::clone(&self.exit_signal));
 
+        // The TorrServer this setting is about: started here when the setting
+        // is on and nothing is answering, and deliberately left running when
+        // doris exits. Only in an interactive run -- a CLI command that
+        // quietly left a server behind would be the kind of surprise nobody
+        // asked for.
+        if self.config.enable_torrserver {
+            self.ensure_torrserver().await;
+        }
+
         self.report_bridge_taken();
 
         if let Some(query) = self.args.query.clone() {

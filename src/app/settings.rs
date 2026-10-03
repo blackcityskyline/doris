@@ -33,6 +33,76 @@ impl App {
         }
     }
 
+    /// Start TorrServer if the setting is on and nothing is answering.
+    ///
+    /// Separate from [`Self::apply_torrserver_switch`] because startup must
+    /// not *stop* anything: a doris that starts while a TorrServer is already
+    /// running has no business shutting it down on its way past.
+    pub(super) async fn ensure_torrserver(&mut self) {
+        use crate::torrserver::service;
+
+        if self.torrserver.is_reachable().await {
+            return;
+        }
+        match service::start(
+            &self.config.torrserver_path,
+            &self.config.torrserver_data_dir,
+            false,
+        ) {
+            Ok(what) => {
+                self.ui.add_log(&format!("TorrServer: {what}"));
+                // The port needs a moment; without the wait the first search
+                // of the session says "unreachable" about a server that is
+                // one second from answering.
+                for _ in 0..20 {
+                    if self.torrserver.is_reachable().await {
+                        self.ui.add_log("TorrServer is up.");
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                // Measured, not guessed: TorrServer takes no port argument.
+                // The one it listens on is compiled in, so a `torrserver_url`
+                // pointing anywhere else makes doris start a process that
+                // cannot bind -- and the honest message is the one that
+                // names the reason rather than leaving a corpse in the log.
+                self.ui.add_log(&format!(
+                    "TorrServer was started but {} is not answering. It takes \
+                     no port argument -- the port is compiled in -- so \
+                     `torrserver_url` has to be where it actually listens.",
+                    self.torrserver.base_url()
+                ));
+            }
+            Err(e) => self.ui.add_log(&format!("TorrServer did not start: {e}")),
+        }
+    }
+
+    /// What the TorrServer switch does to the process, as opposed to the
+    /// config field.
+    ///
+    /// One function so the two callers -- the Options modal and startup --
+    /// cannot disagree about what "on" means.
+    pub(super) async fn apply_torrserver_switch(&mut self, wanted: bool) {
+        use crate::torrserver::service;
+
+        if wanted {
+            let reachable = self.torrserver.is_reachable().await;
+            match service::start(
+                &self.config.torrserver_path,
+                &self.config.torrserver_data_dir,
+                reachable,
+            ) {
+                Ok(what) => self.ui.add_log(&format!("TorrServer: {what}")),
+                Err(e) => self.ui.add_log(&format!("TorrServer did not start: {e}")),
+            }
+            self.check_torrserver_on_enable().await;
+        } else {
+            let what = service::stop();
+            self.ui.add_log(&format!("TorrServer: {what}"));
+            self.ui.state = AppState::Idle;
+        }
+    }
+
     /// A line the user must not miss: the Log zone, the full log `L` opens, and the file on
     /// disk.
     pub(super) fn report(&mut self, module: &str, msg: &str) {

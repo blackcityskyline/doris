@@ -11,17 +11,25 @@ static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 /// from somewhere other than `init`, or it would have to guess the same
 /// three directories again.
 pub fn log_path() -> std::path::PathBuf {
+    state_dir().join("doris.log")
+}
+
+/// Where doris keeps things that outlive a run: the log, a pid it wrote, a
+/// cache it told another program to keep.
+///
+/// One function, because three callers each spelling the path out is three
+/// places to change when it moves.
+pub fn state_dir() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".local")
         .join("share")
         .join("doris")
-        .join("doris.log")
 }
 
 pub fn init() {
-    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let log_dir = home.join(".local").join("share").join("doris");
+    let _home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let log_dir = state_dir();
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join("doris.log");
 

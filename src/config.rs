@@ -14,9 +14,24 @@ pub struct Config {
     pub browser_priority: Vec<String>,
     #[serde(default = "default_torrserver_url")]
     pub torrserver_url: String,
-    /// Whether streaming goes through TorrServer at all.
+    /// Whether streaming goes through TorrServer at all -- and, read with
+    /// the two settings below it, whether doris is the one running it.
+    ///
+    /// `true` starts the server when nothing is answering and leaves it up
+    /// when doris exits: a streaming server that dies with the client is a
+    /// library. `false` stops the one doris started, and touches nothing
+    /// else -- a TorrServer that systemd brought up is not doris's to kill.
     #[serde(default = "default_true")]
     pub enable_torrserver: bool,
+    /// The TorrServer binary. Empty means `torrserver` from `PATH`.
+    #[serde(default)]
+    pub torrserver_path: String,
+    /// Where TorrServer keeps its cache. Empty means beside doris's own
+    /// state, because its own default is `./settings` relative to wherever
+    /// the process happened to start -- which for a detached process is not
+    /// a directory anybody chose.
+    #[serde(default)]
+    pub torrserver_data_dir: String,
     #[serde(default = "default_bridge_port")]
     pub bridge_port: u16,
     #[serde(default = "default_cookie_file")]
@@ -142,6 +157,8 @@ impl Default for Config {
             browser_priority: default_browser_priority(),
             torrserver_url: default_torrserver_url(),
             enable_torrserver: default_true(),
+            torrserver_path: String::new(),
+            torrserver_data_dir: String::new(),
             bridge_port: default_bridge_port(),
             cookie_file: default_cookie_file(),
             theme_name: None,
