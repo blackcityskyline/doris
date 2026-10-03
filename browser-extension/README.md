@@ -70,23 +70,43 @@ answered `403 origin not allowed` and no search runs.
 
 ## Tests
 
-```sh
-node browser-extension/test/title_test.mjs    # or: make test-ext
-```
+Three layers, because three different things can be wrong.
 
-18 checks over the title extraction, against a stub document. It is the part
-with a bug in it: the button has to know the title, and every site spells that
-differently. `title.js` is a plain function taking anything with
+**The title** — `node browser-extension/test/title_test.mjs`, or `make
+test-ext`, or the gate. 18 checks against a stub document: the four site
+tables, the `og:title` fallback, and the cleaning. It is the part with a bug
+in it: the button has to know the title, and every site spells that
+differently. `title.js` is a plain function over anything with
 `querySelector` and a `location`, so it runs in a content script against the
 real page and under node against a stub.
 
-The Rust side has the other half in `tests/extension_manifest_tests.rs`:
-every site the add-on runs on is allowed by the bridge, every origin the
-bridge allows has a button, the permission covers any port, every file the
-manifest lists exists, and the route the add-on calls is the route the bridge
-serves.
+**The contract** — `cargo test --test extension_manifest_tests`. Every site
+the add-on runs on is allowed by the bridge, every origin the bridge allows
+has a button, the permission covers any port, every file the manifest lists
+exists, and the route the add-on calls is the route the bridge serves.
 
-`make gate` runs both.
+**The browser** — `python3 browser-extension/test/live.py [browser]`. This
+one needs three things the repository does not carry:
+
+```sh
+npm install --no-save geckodriver          # from the repository root
+python3 browser-extension/test/live.py /usr/bin/firefox
+```
+
+with doris running and the bridge on. It installs the add-on temporarily
+through WebDriver, serves `test/fixtures/page.html` — a page shaped like the
+four sites, on `127.0.0.1`, which the bridge already allows for exactly this
+— finds the button, clicks it, and waits for it to stop saying `sending…`.
+It prints what it saw at every step and the last line is only reached when
+they all passed.
+
+This is the only layer that can catch the button not appearing, the click not
+reaching the background script, or the fetch dying on CORS. It is also the
+only one that found anything when it was written: `dataset.dorisTitle` was
+read by nothing and set by nothing, and the harness asked for it and found it
+missing.
+
+`make gate` runs the first two. The third needs a browser and is not in it.
 
 ## Layout
 

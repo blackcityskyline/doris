@@ -35,7 +35,9 @@
         "https://kinopoisk.ru/*",
         "https://www.kinopoisk.ru/*",
         "https://lampa.mx/*",
-        "https://www.lampa.mx/*"
+        "https://www.lampa.mx/*",
+        "http://127.0.0.1/*",
+        "http://localhost/*"
       ],
       "js": ["title.js", "content.js"],
       "css": ["content.css"],

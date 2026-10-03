@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- The page the live check opens: shaped like the four sites the add-on has
+     a button on, served off this machine.
+
+     The bridge allows a localhost origin for exactly this, and it is what
+     makes the add-on testable without asking imdb.com to serve a test. The
+     content script matches on the host, and the title comes off the same
+     `og:title` the real sites use -- so the page the check drives and the
+     page a user drives differ in the address bar and nothing else. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dune: Part Two (2024)</title>
+    <meta property="og:title" content="Dune: Part Two (2024)" />
+    <style>
+      body {
+        font: 16px/1.5 system-ui, sans-serif;
+        margin: 3rem auto;
+        max-width: 40rem;
+        background: #14161c;
+        color: #e8e8ea;
+      }
+      h1 {
+        font-size: 2.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Dune: Part Two (2024)</h1>
+    <p>Waiting for the add-on…</p>
+  </body>
+</html>

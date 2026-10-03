@@ -25,7 +25,11 @@ function place(titleElement) {
   button.className = MARK;
   button.type = "button";
   button.textContent = "doris";
-  button.title = "Search this title in doris";
+  // The title the button was built for, on the button itself: it is what a
+  // devtools inspector shows, and what a test reads to find out whether the
+  // button agrees with the page.
+  button.dataset.dorisTitle = doris.titleFor(document);
+  button.title = `Search "${button.dataset.dorisTitle}" in doris`;
   // The page has its own click handlers on the heading, and some of them
   // navigate. This is not their click.
   button.addEventListener("click", (event) => {

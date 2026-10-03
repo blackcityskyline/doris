@@ -10,3 +10,6 @@ cookies.txt
 graphify-out/
 # agent instructions: local only, never committed
 /AGENTS.md
+# The add-on's live check drives a real browser through `geckodriver`,
+# which npm installs here (`npm install --no-save geckodriver`).
+/node_modules/
