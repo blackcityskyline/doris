@@ -41,11 +41,29 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXTENSION = os.path.abspath(os.path.join(HERE, ".."))
 FIXTURE = os.path.join(HERE, "fixtures")
-PORT = 8899
-PAGE = f"http://127.0.0.1:{PORT}/page.html"
-DRIVER_PORT = 4444
-DRIVER = f"http://127.0.0.1:{DRIVER_PORT}"
 BROWSER = sys.argv[1] if len(sys.argv) > 1 else "/opt/zen-browser-bin/zen"
+
+
+def free_port():
+    """A port nothing is listening on.
+
+    Both ports, because a fixed one is how this check talks to somebody
+    else's geckodriver instead of its own: the connection works, the steps
+    pass, and the driver that was already running -- with a different
+    profile, a different browser, whatever it had going -- is the one that
+    answered. Ask the kernel for a port instead of claiming one.
+    """
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+PORT = free_port()
+PAGE = f"http://127.0.0.1:{PORT}/page.html"
+DRIVER_PORT = free_port()
+DRIVER = f"http://127.0.0.1:{DRIVER_PORT}"
 
 # What the fixture page says, and therefore what the button must report.
 # Written here rather than parsed out of the fixture so that editing the
