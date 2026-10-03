@@ -466,20 +466,74 @@ impl App {
     /// a table whose columns are dropped from the tail when the panel is
     /// narrow so that the name always survives.
     fn render_downloads(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
-        let inner_width = area.width.saturating_sub(2) as usize;
-        let visible = (area.height as usize).saturating_sub(4).max(1);
+        let block = self.zone_block(id, config);
+        let inner = block.inner(area);
+        let inner_width = inner.width as usize;
+        let prompt = self.remove_prompt_line();
+
+        // The same three boxes the `T` view draws, by the same call, with the
+        // same fallback to a single line when there is no room for them.
+        //
+        // The panel had the numbers flat on one line while the full view boxed
+        // the identical numbers in three frames: one set of numbers drawn two
+        // ways, and the panel was the one that read as a wall of text. The
+        // table stays unframed here -- the zone's own frame is the frame
+        // around it, and a zone is too small to be framed twice.
+        //
+        // "Room for them" means room for the table too: the boxes are only
+        // drawn when what is left still holds the header, the streaming line,
+        // at least one download and the armed question. A panel whose boxes
+        // push the question off the screen is worse than a panel with its
+        // numbers on one line.
+        let overhead = 2 + usize::from(prompt.is_some()); // header + stream line
+        let widths = super::torrents_panel::section_widths(inner_width);
+        let framed =
+            widths.is_some() && (inner.height as usize) > SECTION_HEIGHT as usize + overhead;
+        let sections_height = if framed { SECTION_HEIGHT } else { 0 };
+
+        // Rows the table does not get: the boxes, its own header, the
+        // streaming line above it and the question. Everything else is a
+        // download, and downloads are what the panel is for.
+        let visible = (inner.height as usize)
+            .saturating_sub(sections_height as usize + overhead)
+            .max(1);
         let parts = self.downloads_parts(inner_width, visible, false);
 
         let body = Style::default().fg(self.theme.main_fg.to_color());
-        let mut lines = vec![Line::from(Span::styled(parts.summary.one_line(), body))];
+        let mut lines = Vec::new();
+        if !framed {
+            lines.push(Line::from(Span::styled(parts.summary.one_line(), body)));
+        }
         lines.extend(parts.stream);
         lines.extend(parts.table);
-        lines.extend(self.remove_prompt_line());
+        lines.extend(prompt);
 
+        // The frame on the whole zone, the content in what is left under the
+        // boxes: padding the paragraph with blank lines instead would make
+        // the height of the boxes a guess about where the table starts.
+        frame.render_widget(block, area);
         frame.render_widget(
-            Paragraph::new(lines).block(self.zone_block(id, config)),
-            area,
+            Paragraph::new(lines),
+            Rect {
+                y: inner.y + sections_height,
+                height: inner.height.saturating_sub(sections_height),
+                ..inner
+            },
         );
+        if let Some(widths) = widths.filter(|_| framed) {
+            self.render_sections(
+                frame,
+                Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: inner.width,
+                    height: SECTION_HEIGHT,
+                },
+                &parts.summary,
+                &widths,
+                config,
+            );
+        }
         self.render_frame(frame, id, area, config);
     }
 
@@ -747,14 +801,19 @@ impl App {
             );
         }
 
-        // The keys, on this view's own bottom border.
-        //
-        // On the frame, not inside it: the frame is where doris writes what a
-        // key does -- `f filter` on Results, `p pause` on Torrent -- and the
-        // whole-frame view had its keys in a box of their own instead, which
-        // made them look like content. The row costs no height, so nothing
-        // else had to be spent to make room for it.
-        self.render_detail_buttons(frame, inner, area, config);
+        // The keys, on the bottom border of the downloads box: the box whose
+        // rows they act on.
+        self.render_buttons_on_bottom_border(
+            frame,
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: table_height,
+            },
+            &super::layout::detail_buttons(),
+            config,
+        );
     }
 
     /// The three summary boxes, side by side.
@@ -1347,25 +1406,35 @@ impl App {
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
 
-    /// The full-frame views' keys, along the bottom border of the frame the
-    /// view itself is drawn in.
+    /// Keys along the **bottom border of a box**, left aligned, dropping
+    /// whole buttons that do not fit.
     ///
-    /// Left aligned like the zone frames' bottom row, and dropping whole
-    /// buttons that do not fit: a `┌unlim…` cut off by the frame is a key
-    /// that reads as a typo.
-    fn render_detail_buttons(&self, frame: &mut Frame, inner: Rect, area: Rect, config: &Config) {
-        if area.height < 2 {
+    /// The keys belong to the downloads box -- the box whose contents they
+    /// act on -- so they are written on *its* frame, not on the outer one
+    /// that holds the whole view. A keybind row on the view's own frame
+    /// says "this is what this view is"; on the box it says "this is what
+    /// these rows do", which is the difference between a caption and a set
+    /// of controls. And a `┌unlim…` cut off by the frame is a key that
+    /// reads as a typo.
+    fn render_buttons_on_bottom_border(
+        &self,
+        frame: &mut Frame,
+        box_area: Rect,
+        buttons: &[super::layout::FrameButton],
+        config: &Config,
+    ) {
+        if box_area.height < 2 || box_area.width < 2 {
             return; // no border row to write on
         }
-        let bottom = area.y + area.height - 1;
-        let mut x = inner.x;
-        for button in super::layout::detail_buttons() {
-            if x + button.width() > inner.x + inner.width {
+        let bottom = box_area.y + box_area.height - 1;
+        let mut x = box_area.x;
+        for button in buttons {
+            if x + button.width() > box_area.x + box_area.width {
                 break;
             }
             self.draw_frame_button(
                 frame,
-                &button,
+                button,
                 Rect::new(x, bottom, button.width(), 1),
                 config,
                 |_| false,

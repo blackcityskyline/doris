@@ -1026,16 +1026,90 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
     assert!(text.contains("50%"), "the progress percentage is printed");
 }
 
-/// The keybind words are written **on** the frame's bottom border, the way
-/// every other keybind in doris is written.
+/// The Torrent panel draws its numbers the way the `T` view draws them.
 ///
-/// Twice they were not: first the last line inside the downloads box, then a
-/// box of their own. Both put them *inside* something, and the frame is where
-/// doris says what a key does -- `f filter` on Results, `p pause` on Torrent.
-/// So the words share a row with the border glyphs, in the brackets
-/// (`┌pause p┐`) the panels' own buttons wear.
+/// The panel had them flat on one line while the full view boxed the same
+/// three sets of numbers in three frames -- one set of numbers, two designs,
+/// and the panel was the one that read as a wall of text. Both now call
+/// `render_sections`, so the boxes are the same drawing and not a copy of it.
+///
+/// A panel too narrow or too short for three boxes keeps the one line, which
+/// is what the full view does in the same situation: the fallback is the
+/// shared behaviour too, not a second one.
 #[test]
-fn test_the_torrent_keybinds_are_written_on_the_bottom_border() {
+fn test_the_torrent_panel_frames_its_numbers_like_the_detail_view() {
+    let mut app = make_test_app();
+    app.downloads = vec![doris::ui::view::DownloadRow {
+        id: 1,
+        hash: "045e85f2ebc24a875a64fe2e9ac9b61f7aad0499".into(),
+        name: "Downloaded.Thing.2024".into(),
+        fraction: 0.5,
+        ..Default::default()
+    }];
+    let config = Config {
+        show_boxes: true,
+        ..Config::default()
+    };
+    // Results over Torrent, so the panel is tall enough for three boxes: a
+    // panel too short for them falls back to the one line, which is a
+    // different claim and has its own check below.
+    app.zones.apply_preset("1,2");
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| app.render(frame, &config)).unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let rows: Vec<String> = (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+
+    for expected in ["╭ status", "╭ active", "╭ free space"] {
+        assert!(
+            rows.iter().any(|r| r.contains(expected)),
+            "the Torrent panel does not box its numbers: `{expected}` is missing"
+        );
+    }
+    // And the table starts below the boxes, not across them: until the
+    // paragraph was padded, the table's header was drawn through the inside
+    // of `status`.
+    let top = rows
+        .iter()
+        .position(|r| r.contains("╭ status"))
+        .expect("the status box is not drawn");
+    assert!(
+        rows[top + 3].contains("╰"),
+        "the three boxes do not close together: `{}`",
+        rows[top + 3]
+    );
+    // The invariant that carries the padding: the table starts *below* the
+    // boxes. Without the gap the paragraph put the table's header on the same
+    // rows, where it showed through the one column between two boxes.
+    let header = rows
+        .iter()
+        .position(|r| r.contains("state"))
+        .expect("the table header is not drawn at all");
+    assert!(
+        header > top + 3,
+        "the table header is drawn across the boxes, on row {header} of {}: \
+         `{}`",
+        top,
+        rows[header]
+    );
+}
+
+/// The keybind words are written on the **downloads box's** bottom border,
+/// the way every other keybind in doris is written.
+///
+/// Three times they were not: the last line inside the downloads box, then a
+/// box of their own, then the view's outer bottom border. Only the box's own
+/// frame is right -- the words act on the rows in that box, so they belong to
+/// its frame, and a caption pinned to the bottom of the whole view says
+/// something else ("this is what this view is") rather than "these are the
+/// keys of these rows".
+#[test]
+fn test_the_torrent_keybinds_are_written_on_the_downloads_box_border() {
     let mut app = make_test_app();
     let buf = render_detail_framed(&mut app, ZoneId::Torrent, 100, 30);
 
@@ -1044,43 +1118,48 @@ fn test_the_torrent_keybinds_are_written_on_the_bottom_border() {
             .map(|x| buf[(x, y)].symbol())
             .collect::<String>()
     };
-    let last = buf.area.height - 1;
-    let words = row_text(last);
+    let row = (0..buf.area.height)
+        .find(|y| row_text(*y).contains("unlimited"))
+        .expect("the keybinds are not drawn");
+    let words = row_text(row);
 
-    // On the border: the frame's own corner is on the same row as the words,
-    // which is only true if they were drawn over it rather than inside it.
-    assert!(
-        words.contains("unlimited"),
-        "the keybinds are not on the bottom row: `{}`",
-        words
-    );
-    assert!(
-        words.starts_with('╰') || words.starts_with('└'),
-        "the bottom row is not the frame's border: `{words}`"
-    );
-    // Bracketed like the panels' buttons, so it reads as a control.
+    // On a frame, bracketed like the panels' buttons: `┌pause┐──┌delete┐`.
     assert!(
         words.contains('┌') && words.contains('┐'),
         "the keybinds are not bracketed: `{words}`"
     );
+    // On a box *inside* the view: the row closes that box one column before the
+    // view's own border, so the row cannot be the view's bottom edge.
+    let mut from_the_right = words.chars().rev();
+    let last = from_the_right.next().unwrap_or(' ');
+    let before_last = from_the_right.next().unwrap_or(' ');
+    assert!(
+        (before_last == '╯' || before_last == '└') && (last == '│' || last == '|'),
+        "the keybinds are on the view's own frame, not on the downloads box's: \
+         `{words}`"
+    );
+    // And the downloads box is not the last thing drawn: the facts box is
+    // under it, so the keys are not in the lowest row of the view.
+    assert!(
+        row + 1 < buf.area.height - 1,
+        "the keybinds are in the very bottom row, row {row} of {}",
+        buf.area.height - 1
+    );
+    assert!(
+        row_text(row + 1).contains('╭'),
+        "no box under the keybinds: `{}`",
+        row_text(row + 1)
+    );
 
     // The key itself, in the colour that marks a key everywhere else.
     let x = (0..buf.area.width)
-        .find(|x| buf[(*x, last)].symbol() == "0")
+        .find(|x| buf[(*x, row)].symbol() == "0")
         .expect("the `0` of `unlimited 0` is not on that row");
-    let cell = &buf[(x, last)];
+    let cell = &buf[(x, row)];
     assert_eq!(cell.fg, app.theme.hi_fg.to_color(), "the key is not hi_fg");
     assert!(
         cell.modifier.contains(Modifier::BOLD),
         "the key is not bold"
-    );
-
-    // And they cost no height: the row above the border is the facts box, not
-    // a row of keybinds.
-    assert!(
-        !row_text(last - 1).contains("unlimited"),
-        "the keybinds are a row of their own again: `{}`",
-        row_text(last - 1)
     );
 }
 
