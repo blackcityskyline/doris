@@ -634,7 +634,9 @@ impl App {
         };
 
         let title = Span::styled(
-            " Torrent detail [T/Esc] close ",
+            // `T` and not `T/Esc`: Esc opens the menu over this view, so
+            // promising to close it here would be a lie about the key.
+            " Torrent detail [T close, Esc menu] ",
             Style::default().fg(self.theme.primary_color()),
         );
         let block = self

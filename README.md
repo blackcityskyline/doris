@@ -39,10 +39,17 @@ repository is the annotated example.
 
 ## Keys
 
-`?` opens the help page, which is the full list. The short version:
+`?` opens the help page, which is the full list, in four pages split by
+what a key is for: `1:keys`, `2:search`, `3:filter`, `4:torrents` — switch
+with `←`/`→` or the digit. The short version:
 `s` searches, `Enter` plays, `d` downloads, `1`–`4` focus a panel, `L`
 `T` `R` take a panel over the frame, `f` filters, `g` changes category,
-`m` opens the menu, `q` quits.
+`m` or `Esc` opens the menu, `q` quits.
+
+In the Torrents view `T` takes over the frame: `j`/`k` move the cursor,
+`p` pauses, `d` removes, `v` verifies, `f` opens the file list (per file,
+what to fetch and what not), `o` opens the folder in a file manager, and
+`+`/`-`/`0` walk the download-rate limit.
 
 ## Layout
 

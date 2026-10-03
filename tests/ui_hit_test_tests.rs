@@ -2,7 +2,7 @@ use doris::config::Config;
 use doris::sources::models::TorrentItem;
 use doris::sources::source::Group;
 use doris::ui::layout::ZoneId;
-use doris::ui::modals::help::HELP_TEXT;
+use doris::ui::modals::help::sections;
 use doris::ui::view::{App as UiApp, UiAction};
 use ratatui::layout::Rect;
 
@@ -949,10 +949,16 @@ fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
 /// on a key every terminal sends distinctly.
 #[test]
 fn test_the_help_page_documents_d_as_the_detail_fallback() {
-    let keys: Vec<&str> = HELP_TEXT.iter().map(|(k, _)| *k).collect();
+    // Every page, not one: the split moved this row onto `2:search`, and a
+    // test still reading the first table would have passed only because the
+    // first table happened to name some other D.
+    let keys: Vec<&str> = sections()
+        .iter()
+        .flat_map(|(_, table)| table.iter().map(|(k, _)| *k))
+        .collect();
     assert!(
         keys.iter().any(|k| k.contains('D')),
-        "HELP_TEXT should name 'D' as the detail fallback: {:?}",
+        "a help page should name 'D' as the detail fallback: {:?}",
         keys
     );
 }

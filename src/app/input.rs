@@ -478,7 +478,13 @@ impl App {
                 _ => None,
             };
             match key.code {
-                KeyCode::Esc => self.ui.detail_view = None,
+                // Esc opens the menu instead of closing the view. A
+                // detail view has its own key (`T`) and jumps to the other
+                // two, so Esc closing it was a third way out that also threw
+                // away the place you were -- and Esc means "step back", and
+                // the step back from a full-frame takeover is the menu, the
+                // same key the plain view uses.
+                KeyCode::Esc => self.ui.show_menu = true,
                 _ if target == Some(view) => self.ui.detail_view = None,
                 _ if target.is_some() => self.ui.detail_view = target,
                 // Only the Log view scrolls; the other two takeovers have

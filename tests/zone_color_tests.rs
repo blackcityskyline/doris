@@ -129,7 +129,10 @@ fn test_help_page_accents_the_header_and_the_keybind_column() {
     let theme = doris::ui::theme::Theme::dark();
 
     assert_eq!(fg_at(&buf, "Key:"), theme.primary_color());
-    assert_eq!(fg_at(&buf, "s, i"), theme.hi_fg.to_color());
+    // A key that is on page 1. The pages are split by subject now, and
+    // `s, i, S` is on `2:search` -- a test reading it off page one was
+    // pinning the old heap.
+    assert_eq!(fg_at(&buf, "1, 2, 3"), theme.hi_fg.to_color());
 }
 
 /// The paging row is the frame rule again: the arrows are the glyphs that act, so they take

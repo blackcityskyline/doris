@@ -611,12 +611,19 @@ async fn l_t_and_r_open_and_close_their_detail_views() {
         );
 
         app.handle_key(press(code)).await.expect("reopen");
+        // Esc opens the menu from a detail view rather than closing it: the
+        // view has its own key, and Esc meaning "step back" from a takeover
+        // means the menu, not the plain view with the takeover forgotten.
         app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+        assert!(app.ui.show_menu, "Esc opens the menu over {:?}", view);
         assert_eq!(
-            app.ui.detail_view, None,
-            "Esc closes {:?}'s detail view",
+            app.ui.detail_view,
+            Some(view),
+            "and leaves {:?}'s detail view standing",
             view
         );
+        app.handle_key(press(KeyCode::Char('m'))).await.expect("m");
+        assert!(!app.ui.show_menu, "m closes the menu again");
     }
 }
 
@@ -1326,4 +1333,46 @@ async fn a_modal_over_a_detail_view_gets_the_keyboard_first() {
         app.ui.detail_view.is_some(),
         "and left the view behind it standing"
     );
+}
+
+/// Esc in a full-frame view opens the menu and leaves the view standing.
+///
+/// It used to close the view, which was a third way out of a takeover that
+/// already had its own key and could jump to the other two -- and it threw
+/// away the place you were to do it. Esc means "step back", and from a
+/// full-frame view the step back is the menu, the same key the plain view
+/// uses.
+#[tokio::test]
+async fn escape_in_a_detail_view_opens_the_menu_and_keeps_the_view() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.toggle_detail_view(ZoneId::Torrent);
+
+    app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+
+    assert!(app.ui.show_menu, "the menu is what Esc opens here");
+    assert_eq!(
+        app.ui.detail_view,
+        Some(ZoneId::Torrent),
+        "and the view is still there behind it"
+    );
+
+    // Esc again closes the menu, and only the menu.
+    app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+    assert!(!app.ui.show_menu);
+    assert_eq!(
+        app.ui.detail_view,
+        Some(ZoneId::Torrent),
+        "the view was never what Esc was closing"
+    );
+}
+
+/// The view's own key still closes it, and its own key is still `T`.
+#[tokio::test]
+async fn the_detail_views_own_key_still_closes_it() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.toggle_detail_view(ZoneId::Torrent);
+
+    app.handle_key(press(KeyCode::Char('T'))).await.expect("T");
+
+    assert_eq!(app.ui.detail_view, None, "T is still the way out");
 }
