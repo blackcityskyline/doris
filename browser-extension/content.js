@@ -52,24 +52,26 @@ function said(text, kind) {
 
 /** Send the title this page is about. */
 async function send() {
-  if (!doris.isTitlePage(document)) {
-    // Said rather than searched: this page is a section, a dashboard or a
-    // front page, and its heading is not a release any tracker has. The
-    // bridge would accept it and answer 200, so the button would say
-    // `sent` and nothing would come back -- a search that looks like it ran.
-    said("not a title", "error");
+  // The decision is `doris.actionFor`, not a rule written twice here: it is
+  // about the page, not about the click, and a second copy of it is a second
+  // copy to get wrong.
+  const action = doris.actionFor(document);
+  if (action !== "send") {
+    said(action === "not-a-title" ? "not a title" : "no title", "error");
     return;
   }
   const title = doris.titleFor(document);
-  if (!title) {
-    said("no title", "error");
-    return;
-  }
   said("sending…", "busy");
   const answer = await browser.runtime.sendMessage({ type: "search", title });
   if (answer && answer.ok) {
     said("sent", "ok");
-    browser.storage.local.set({ lastTitle: title, lastSentAt: Date.now() });
+  } else if (answer && answer.queued) {
+    // Not an error. The bridge is a server inside the app, so a title
+    // pressed with doris closed has nowhere to go *yet*; it is kept and sent
+    // when doris comes back, which is what the user meant by pressing it.
+    // Saying `waiting for doris` and stopping there would be true and would
+    // read as a failure.
+    said("queued", "queued");
   } else {
     said((answer && answer.error) || "refused", "error");
   }

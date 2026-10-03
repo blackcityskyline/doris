@@ -8,6 +8,32 @@
 /** Where the bridge lives, unless the options page says otherwise. */
 const DEFAULT_BRIDGE = "http://127.0.0.1:14141";
 
+/** Where the queue lives between runs. */
+const STORE = "pending";
+
+async function bridge() {
+  const { bridge: saved } = await browser.storage.local.get(["bridge"]);
+  return (typeof saved === "string" && saved) || DEFAULT_BRIDGE;
+}
+
+/**
+ * Ask whether doris is there. It does nothing when it answers -- it exists
+ * so that finding out does not start a search.
+ */
+async function alive() {
+  try {
+    const response = await fetch(`${(await bridge()).replace(/\/+$/, "")}/ping`, {
+      method: "GET",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+      headers: { Accept: "application/json" },
+    });
+    return response.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * Send a title to doris.
  *
@@ -15,17 +41,18 @@ const DEFAULT_BRIDGE = "http://127.0.0.1:14141";
  * and the daemon listens on 127.0.0.1 only, the request goes to an address
  * nothing is listening on, and the browser reports a connection failure for
  * a daemon that is right there.
+ *
+ * A refused connection is not the end of it. The bridge is a server inside
+ * the app, so with doris closed there is nobody to receive anything; the
+ * title is queued and sent when doris comes back. `queued: true` says so to
+ * the caller rather than letting it say `sent` for a search that has not
+ * happened yet.
  */
 async function search(title) {
-  const { bridge } = await browser.storage.local.get(["bridge"]);
-  const base = (typeof bridge === "string" && bridge) || DEFAULT_BRIDGE;
-  const url = `${base.replace(/\/+$/, "")}/search?q=${encodeURIComponent(title)}`;
-
+  const base = (await bridge()).replace(/\/+$/, "");
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${base}/search?q=${encodeURIComponent(title)}`, {
       method: "GET",
-      // No credentials and no referrer: the request carries the title and
-      // nothing about the page it came from.
       credentials: "omit",
       referrerPolicy: "no-referrer",
       headers: { Accept: "application/json" },
@@ -36,16 +63,111 @@ async function search(title) {
     }
     return { ok: true, query: body.query };
   } catch (e) {
-    // A refused connection is the common case and it means one thing: doris
-    // is not running. Saying so beats reporting a network error to someone
-    // who cannot act on it.
-    return { ok: false, error: "doris is not listening" };
+    await queueNow(title);
+    return { ok: false, queued: true, error: "waiting for doris" };
   }
 }
+
+/** Put a title in the queue and start the poll that will empty it. */
+async function queueNow(title) {
+  const { [STORE]: stored } = await browser.storage.local.get([STORE]);
+  const queue = dorisQueue.add(dorisQueue.read(stored), title);
+  await browser.storage.local.set({ [STORE]: queue });
+  schedule();
+  return queue;
+}
+
+/**
+ * Send one waiting title, if doris is there.
+ *
+ * The ping comes first because it is the free question: without it the only
+ * way to find out whether a send will land is to send, and a send that lands
+ * starts a search -- so "retry" would be a search every two seconds.
+ */
+async function drain() {
+  const { [STORE]: stored } = await browser.storage.local.get([STORE]);
+  const queue = dorisQueue.read(stored);
+  if (!queue.length) {
+    schedule();
+    return null;
+  }
+  if (!(await alive())) {
+    schedule();
+    return null;
+  }
+  const next = dorisQueue.take(queue);
+  const answer = await search(next.title);
+  if (answer.ok) {
+    await browser.storage.local.set({ [STORE]: next.queue });
+    // Written because the store is the channel that works: a message from
+    // here to a content script does not arrive (measured -- a title
+    // delivered with the button still saying `queued` beside a finished
+    // search), so the page reads this rather than being told.
+    await browser.storage.local.set({
+      lastTitle: next.title,
+      lastSentAt: Date.now(),
+    });
+    await badge();
+    // More may be waiting: the next one goes now rather than on the next
+    // alarm, because doris has just proved it is there.
+    if (next.queue.length) await drain();
+    else schedule();
+    return answer;
+  }
+  await browser.storage.local.set({ [STORE]: next.queue.concat(next.title) });
+  schedule();
+  return answer;
+}
+
+/** The toolbar badge: how many titles are waiting for doris. */
+async function badge() {
+  const { [STORE]: stored } = await browser.storage.local.get([STORE]);
+  const waiting = dorisQueue.read(stored).length;
+  await browser.action.setBadgeText({ text: waiting ? String(waiting) : "" });
+}
+
+/**
+ * The poll: an alarm, not a timer.
+ *
+ * A `setTimeout` here worked exactly once and then never again -- an MV3
+ * background is an event page, Firefox suspends it after about thirty
+ * seconds of quiet, and a suspended page runs no timers. So the title was
+ * queued, doris came back thirty seconds later, and nothing happened until
+ * something else woke the page. `alarms` is the one clock that keeps going
+ * while suspended.
+ *
+ * No alarm at all when nothing is waiting: an installed add-on that wakes
+ * every thirty seconds for an app that is not running is an add-on nobody
+ * leaves installed.
+ */
+const ALARM = "doris-queue";
+
+function schedule() {
+  browser.storage.local.get([STORE]).then(({ [STORE]: stored }) => {
+    if (dorisQueue.read(stored).length) {
+      browser.alarms.create(ALARM, { periodInMinutes: dorisQueue.POLL_MINUTES });
+    } else {
+      browser.alarms.clear(ALARM);
+    }
+  });
+}
+
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM) drain();
+});
 
 browser.runtime.onMessage.addListener((message) => {
   if (!message || message.type !== "search") return undefined;
   return search(message.title);
+});
+
+// A title left over from a browser that was closed with doris closed is
+// still a title the user pressed.
+browser.runtime.onStartup.addListener(() => {
+  schedule();
+});
+browser.runtime.onInstalled.addListener(() => {
+  schedule();
 });
 
 /**
@@ -60,18 +182,11 @@ browser.action.onClicked.addListener(async (tab) => {
   const title = (tab.title || "").trim();
   if (!title) return;
   const answer = await search(title);
-  await browser.action.setTitle({
-    title: answer.ok ? `sent to doris: ${title}` : `doris: ${answer.error}`,
-    tabId: tab.id,
-  });
-  if (browser.action.setBadgeText) {
-    await browser.action.setBadgeText({
-      text: answer.ok ? "✓" : "!",
-      tabId: tab.id,
-    });
-    await browser.action.setBadgeBackgroundColor({
-      color: answer.ok ? "#2e7d32" : "#b3261e",
-      tabId: tab.id,
-    });
-  }
+  const text = answer.ok
+    ? `sent to doris: ${title}`
+    : answer.queued
+      ? `queued for doris: ${title}`
+      : `doris: ${answer.error}`;
+  await browser.action.setTitle({ title: text, tabId: tab.id });
+  if (answer.queued) await badge();
 });

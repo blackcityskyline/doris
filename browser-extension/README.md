@@ -57,8 +57,19 @@ reports on the button itself:
 | the button says | it means |
 |---|---|
 | `sent` | doris took the title and is searching |
+| `queued` | doris was not running; the title is kept and sent when it starts |
 | `refused` | doris is running but does not answer this page |
-| `doris is not listening` | nothing is on the bridge port |
+| `not a title` | this page is a section or a dashboard, not about one film |
+
+`queued` is the one to know about: the bridge is a server **inside** the app,
+so with doris closed there is nobody listening and a title pressed then has
+nowhere to go. It is kept -- in the add-on's own storage, oldest first, twenty
+deep, duplicates collapsed -- and sent as soon as a `/ping` says doris is
+there. So closing doris, clicking on a film, and starting doris afterwards
+does search for that film. The button keeps saying `queued` after the search
+has run: telling the page that it happened needs a message from the
+background page to the content script, and that message does not arrive
+(measured). The search is in doris; the button is behind.
 
 The toolbar button searches the current tab's title, which is the way in from
 any site without a button on it.
@@ -76,13 +87,26 @@ the browser reports a connection failure for a daemon that is right there.
 one route and that route acts, so there is nothing to ask that does not start a
 search — the probe is `doris-extension-check`, which matches no tracker.
 
+## How the queue finds out doris is back
+
+`GET /ping`, answered without starting a search. It has to be free: the
+add-on asks it every 30 seconds for as long as a title is waiting, so if the
+only way to ask were `/search`, "send it when doris comes back" would be a
+search every 30 seconds.
+
+Thirty seconds, not two, and through `alarms` rather than `setTimeout`: an
+MV3 background is an *event page* which Firefox suspends after about half a
+minute of quiet, and a suspended page runs no timers. Measured — with a plain
+timer, a title queued and then delivered forty seconds later never was.
+
 ## Permissions, and why each is there
 
 | permission | why |
 |---|---|
 | IMDb, Trakt, Kinopoisk, Lampa | where the button goes. These are the same origins doris's bridge allows — `tests/extension_manifest_tests.rs` compares the two lists, so they cannot drift apart |
 | `http://127.0.0.1/*`, `http://localhost/*` | reaching doris. Per-host, not per-port: `bridge_port` is a setting, and a permission naming one would break every user who moved it |
-| `storage` | the bridge address |
+| `storage` | the bridge address, and the queue of titles waiting for doris |
+| `alarms` | the 30-second poll. Without the permission `browser.alarms` is undefined, and the scheduler throws inside the message handler — which leaves the button on `sending…` for ever |
 
 The bridge answers an allow list, not `*`. It listens on loopback and it
 *acts* — a request starts a search — so any page a browser happens to be on

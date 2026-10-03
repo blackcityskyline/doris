@@ -148,6 +148,24 @@ fn the_add_on_asks_for_no_permission_the_bridge_does_not_need() {
     }
 }
 
+/// `browser.alarms` is undefined without the permission, and the queue's
+/// scheduler calls it on every send -- so a missing entry here does not
+/// degrade, it throws inside the message handler and leaves the page's
+/// button saying `sending…` for ever. Measured, and invisible without a
+/// browser: the node tests never touch the API.
+#[test]
+fn the_add_on_asks_for_the_permissions_its_code_calls() {
+    let manifest = std::fs::read_to_string(repo_root().join("browser-extension/manifest.json"))
+        .expect("the manifest");
+    for needed in ["storage", "alarms"] {
+        assert!(
+            manifest.contains(&format!("\"{needed}\"")),
+            "`{needed}` is not in permissions.json's `permissions`, and the \
+             code calls `browser.{needed}` without it"
+        );
+    }
+}
+
 #[test]
 fn the_add_on_has_the_files_it_lists() {
     // A manifest naming a file that is not there installs and then does
@@ -156,6 +174,7 @@ fn the_add_on_has_the_files_it_lists() {
     let manifest = manifest();
     for name in [
         "title.js",
+        "queue.js",
         "background.js",
         "content.js",
         "content.css",
@@ -203,6 +222,60 @@ fn the_bridge_serves_the_path_the_add_on_calls() {
         options.contains("/search?q="),
         "the options page's check no longer calls /search?q="
     );
+}
+
+/// The add-on polls `/ping` to find out whether doris is back, and it polls
+/// it *instead of* sending -- so the route has to exist and, more to the
+/// point, has to be one that does nothing.
+///
+/// If the only way to ask were `/search`, "retry when doris comes back" would
+/// be a search every two seconds for as long as a title waited.
+#[test]
+fn the_add_on_asks_whether_doris_is_there_without_starting_a_search() {
+    let source =
+        std::fs::read_to_string(repo_root().join("src/bridge/handler.rs")).expect("the bridge");
+    assert!(
+        source.contains(r#".route("/ping""#),
+        "the bridge does not serve /ping, so a queued title can never be sent"
+    );
+
+    let background = std::fs::read_to_string(repo_root().join("browser-extension/background.js"))
+        .expect("background.js");
+    assert!(background.contains("/ping"), "the add-on never asks");
+    // And it asks before it sends, rather than sending to find out.
+    let drain = background
+        .split("async function drain()")
+        .nth(1)
+        .expect("a drain function");
+    let ping = drain.find("await alive()").expect("drain asks first");
+    let search = drain.find("await search(").expect("drain sends");
+    assert!(
+        ping < search,
+        "the ping comes before the send: a send is the thing that costs"
+    );
+}
+
+/// The queue is the answer to a title pressed while doris was closed, so the
+/// file that holds it has to be loaded by both the background script and the
+/// content script -- and neither of them may inline its own copy.
+#[test]
+fn both_extension_scripts_load_the_queue_and_neither_reimplements_it() {
+    let manifest = std::fs::read_to_string(repo_root().join("browser-extension/manifest.json"))
+        .expect("the manifest");
+    assert_eq!(
+        manifest.matches("queue.js").count(),
+        2,
+        "the background scripts and the content scripts both load it"
+    );
+
+    for name in ["background.js", "content.js"] {
+        let source =
+            std::fs::read_to_string(repo_root().join("browser-extension").join(name)).expect(name);
+        assert!(
+            !source.contains("function add(queue"),
+            "{name} has its own copy of the queue's rules"
+        );
+    }
 }
 
 /// The default address in the add-on is the one doris listens on.

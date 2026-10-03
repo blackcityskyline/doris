@@ -29,6 +29,7 @@ xpi:
 test-ext:
 	@if command -v node >/dev/null 2>&1; then \
 		node browser-extension/test/title_test.mjs; \
+		node browser-extension/test/queue_test.mjs; \
 	else \
 		echo "note: no node, skipping the add-on's tests"; \
 	fi

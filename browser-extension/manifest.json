@@ -6,7 +6,7 @@
   "author": "doris",
   "homepage_url": "https://github.com/blackcityskyline/doris",
 
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
 
   "host_permissions": [
     "https://www.imdb.com/*",
@@ -22,7 +22,7 @@
   ],
 
   "background": {
-    "scripts": ["title.js", "background.js"]
+    "scripts": ["title.js", "queue.js", "background.js"]
   },
 
   "content_scripts": [
@@ -39,7 +39,7 @@
         "http://127.0.0.1/*",
         "http://localhost/*"
       ],
-      "js": ["title.js", "content.js"],
+      "js": ["title.js", "queue.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }

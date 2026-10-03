@@ -113,6 +113,13 @@ impl BridgeServer {
         let tx = self.tx.clone();
         let app = Router::new()
             .route("/search", get(search_handler).options(preflight_handler))
+            // "Are you there", and it does nothing. The add-on asks this
+            // while it holds a title the user pressed with doris closed:
+            // the bridge lives inside the app, so a title sent to a machine
+            // with no app on it has nowhere to go, and the only way to find
+            // out whether the app is back is to ask something that does not
+            // start a search.
+            .route("/ping", get(ping_handler).options(preflight_handler))
             .with_state(tx);
 
         let addr = format!("127.0.0.1:{}", self.port);
@@ -149,6 +156,29 @@ async fn preflight_handler(
         StatusCode::FORBIDDEN
     };
     (status, out)
+}
+
+/// Answered without touching the search, and without a question in it.
+///
+/// The add-on polls this while it has something queued, so the cost of it
+/// being free matters: it is asked every couple of seconds for as long as a
+/// title is waiting, and a route that started a search would turn "the app
+/// came back" into a search per poll.
+async fn ping_handler(
+    headers: HeaderMap,
+    axum::extract::State(_tx): axum::extract::State<mpsc::UnboundedSender<String>>,
+) -> (StatusCode, axum::http::HeaderMap, Json<serde_json::Value>) {
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let mut out = axum::http::HeaderMap::new();
+    cors_headers(origin.as_deref(), &mut out);
+    (
+        StatusCode::OK,
+        out,
+        Json(serde_json::json!({"success": true, "doris": true})),
+    )
 }
 
 async fn search_handler(
