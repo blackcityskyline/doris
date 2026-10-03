@@ -668,10 +668,20 @@ impl App {
         let wanted_facts = (facts.len() as u16).saturating_add(2);
         let framed = sections.is_some() && inner.height >= wanted_facts + SECTION_HEIGHT + 7;
         let sections_height = if framed { SECTION_HEIGHT } else { 0 };
+        // Budgeted from the bottom up, and the keybind row is spent first:
+        // it is the one row here that names no fact about the torrent. The
+        // facts box comes next, and the table keeps whatever is left -- it
+        // is the list the user came to this view for.
+        let room = inner.height.saturating_sub(sections_height);
+        let legend_height = if room >= wanted_facts + LEGEND_ROWS + 3 {
+            LEGEND_ROWS
+        } else {
+            0
+        };
         // The facts box whole or not at all: a frame too short to hold one
         // fact line is a caption over nothing, and the rows it ate are rows
         // of the table the user came to this view for.
-        let room = inner.height.saturating_sub(sections_height);
+        let room = room.saturating_sub(legend_height);
         let facts_height = if room >= wanted_facts + 3 {
             wanted_facts
         } else {
@@ -681,10 +691,10 @@ impl App {
 
         let mut y = inner.y;
         let mut table_lines: Vec<Line> = Vec::new();
-        // Four for the box and the header, two for the legend underneath it:
-        // a control row that gets pushed out of the frame is a control the
-        // user cannot see, which is where this all started.
-        let visible = (table_height as usize).saturating_sub(6).max(1);
+        // Four for the box, the header and the remove prompt, one spare: a control
+        // row that gets pushed out of the frame is a control the user cannot
+        // see, which is where this all started.
+        let visible = (table_height as usize).saturating_sub(5).max(1);
         let parts = self.downloads_parts(inner_width, visible, true);
         table_lines.extend(parts.stream);
 
@@ -716,7 +726,6 @@ impl App {
         }
 
         table_lines.extend(parts.table);
-        table_lines.push(self.torrent_detail_legend());
         if let Some(prompt) = prompt {
             table_lines.push(prompt);
         }
@@ -744,6 +753,28 @@ impl App {
                 },
                 self.detail_box_title(),
                 facts,
+                config,
+            );
+        }
+
+        // The keys, in a frame of their own at the bottom.
+        //
+        // They were the last line inside the downloads box, which read as
+        // one more row of the table -- a table whose rows are names and
+        // percentages does not have a row that says `pause p`. The frame is
+        // what says these words are controls, and the key character is in
+        // the one colour doris gives a key everywhere else, so the row is
+        // found without reading it.
+        if legend_height > 0 {
+            self.render_untitled_box(
+                frame,
+                Rect {
+                    x: inner.x,
+                    y: y + table_height + facts_height,
+                    width: inner.width,
+                    height: legend_height,
+                },
+                vec![self.torrent_detail_legend(inner.width.saturating_sub(2) as usize)],
                 config,
             );
         }
@@ -833,12 +864,13 @@ impl App {
     /// `hi_fg` and bold -- because a control you cannot see is the control
     /// that does not exist. Written on the frame rather than inside the
     /// panel, so they are not one more row of table.
-    fn torrent_detail_legend(&self) -> Line<'static> {
+    fn torrent_detail_legend(&self, width: usize) -> Line<'static> {
         let word = Style::default().fg(self.theme.title.to_color());
         let hot = Style::default()
             .fg(self.theme.hi_fg.to_color())
             .add_modifier(Modifier::BOLD);
-        let mut spans = Vec::new();
+        let mut spans: Vec<Span> = Vec::new();
+        let mut used = 0usize;
         for (key, label) in [
             ("p", "pause"),
             ("d", "delete"),
@@ -849,11 +881,18 @@ impl App {
             ("-", "slower"),
             ("0", "unlimited"),
         ] {
-            if !spans.is_empty() {
+            let pair = label.chars().count() + 1 + key.chars().count();
+            let gap = usize::from(!spans.is_empty()) * 2;
+            if used + gap + pair > width {
+                break;
+            }
+            if gap > 0 {
                 spans.push(Span::styled("  ", word));
+                used += gap;
             }
             spans.push(Span::styled(label.to_string(), word));
             spans.push(Span::styled(format!(" {key}"), hot));
+            used += pair;
         }
         Line::from(spans)
     }
@@ -874,6 +913,20 @@ impl App {
         let block = self
             .themed_block(self.theme.div_line.to_color(), config)
             .title(title);
+        frame.render_widget(Paragraph::new(lines).block(block), area);
+    }
+
+    /// One framed box with no title, for a strip whose content is the whole
+    /// story: the keybind row has words in it and adding a heading over them
+    /// buys nothing but the two rows it would cost.
+    fn render_untitled_box<'a>(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        lines: Vec<Line<'a>>,
+        config: &Config,
+    ) {
+        let block = self.themed_block(self.theme.div_line.to_color(), config);
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
@@ -1236,6 +1289,11 @@ impl App {
 /// Three boxes of two rows each: a top border, the section's two lines,
 /// and a bottom border.
 const SECTION_HEIGHT: u16 = 4;
+
+/// The keybind row's own frame: a top border, the words, a bottom border.
+/// It is the only row in this view that names no fact about the torrent, so
+/// it is also the first thing dropped when the terminal is short.
+const LEGEND_ROWS: u16 = 3;
 
 /// The Torrents panel's content, split the way its two renderers want it.
 struct Downloads<'a> {

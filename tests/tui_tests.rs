@@ -1026,6 +1026,57 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
     assert!(text.contains("50%"), "the progress percentage is printed");
 }
 
+/// The keybind words sit in a frame of their own at the bottom.
+///
+/// They used to be the last line inside the downloads box, which is the one
+/// place they could not be read as controls: a table row above them is a
+/// torrent name, so a row that says `pause p` reads as a torrent called
+/// pause. The frame is what separates them, and the key character keeps the
+/// `hi_fg` + bold that every other keybind in the app is drawn in.
+#[test]
+fn test_the_torrent_keybinds_are_framed_at_the_bottom() {
+    let mut app = make_test_app();
+    let buf = render_detail_framed(&mut app, ZoneId::Torrent, 100, 30);
+
+    let row_text = |y: u16| -> String {
+        (0..buf.area.width)
+            .map(|x| buf[(x, y)].symbol())
+            .collect::<String>()
+    };
+    let words = (0..buf.area.height)
+        .find(|y| row_text(*y).contains("unlimited"))
+        .expect("the keybinds are not drawn");
+
+    // A border above and below: that is the whole claim.
+    assert!(
+        row_text(words - 1).contains('─'),
+        "no top border over the keybinds: `{}`",
+        row_text(words - 1)
+    );
+    assert!(
+        row_text(words + 1).contains('─'),
+        "no bottom border under the keybinds: `{}`",
+        row_text(words + 1)
+    );
+    // And at the bottom: the frame's lower border is the view's last row.
+    assert!(
+        row_text(buf.area.height - 1).contains('─'),
+        "the keybind frame is not at the bottom: `{}`",
+        row_text(buf.area.height - 1)
+    );
+
+    // The key itself, in the colour that marks a key everywhere else.
+    let x = (0..buf.area.width)
+        .find(|x| buf[(*x, words)].symbol() == "0")
+        .expect("the `0` of `unlimited 0` is not on that row");
+    let cell = &buf[(x, words)];
+    assert_eq!(cell.fg, app.theme.hi_fg.to_color(), "the key is not hi_fg");
+    assert!(
+        cell.modifier.contains(Modifier::BOLD),
+        "the key is not bold"
+    );
+}
+
 /// The Torrent detail view describes the row under the downloads cursor,
 /// because that is what the panel shows.
 ///
