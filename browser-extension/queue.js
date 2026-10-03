@@ -66,8 +66,15 @@ function read(value) {
  */
 const POLL_MINUTES = 0.5;
 
+/**
+ * The fast clock, for while the event page is awake: 15 seconds, against
+ * the alarm's 30-second floor. Exported because it is a promise about how
+ * long somebody waits, and a promise like that wants a test.
+ */
+const AWAKE_MS = 15000;
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { CAP, POLL_MINUTES, add, has, take, read };
+  module.exports = { CAP, POLL_MINUTES, AWAKE_MS, add, has, take, read };
 } else {
-  globalThis.dorisQueue = { CAP, POLL_MINUTES, add, has, take, read };
+  globalThis.dorisQueue = { CAP, POLL_MINUTES, AWAKE_MS, add, has, take, read };
 }

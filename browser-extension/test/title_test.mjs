@@ -64,6 +64,36 @@ it("keeps a year that is part of the name", () => {
   assert.equal(clean("Blade Runner 2049"), "Blade Runner 2049");
 });
 
+// The exact string a real IMDb page handed the add-on, which searched for
+// all of it and found nothing:
+//
+//   East of Eden (TV Mini Series 2026) - IMDb
+//
+// Three separate things wrong with it: the site's own name, a bracketed
+// qualifier that is IMDb's description of the entry rather than part of the
+// name, and the year inside that qualifier.
+it("takes a real IMDb title back to the name a tracker has", () => {
+  assert.equal(clean("East of Eden (TV Mini Series 2026) - IMDb"), "East of Eden");
+  assert.equal(clean("Marvels Daredevil (TV Series 2015) - IMDb"), "Marvels Daredevil");
+  assert.equal(clean("Dune: Part Two (2024) - IMDb"), "Dune: Part Two");
+});
+
+it("takes the other sites' own names off too", () => {
+  assert.equal(clean("Severance (2022) - Trakt"), "Severance");
+  assert.equal(clean("Довод (2019) - Кинопоиск"), "Довод");
+  assert.equal(clean("The Bear (2018) - Lampa"), "The Bear");
+});
+
+it("strips a rating only with the year it hangs on", () => {
+  assert.equal(clean("Dune (2024) 8.5"), "Dune");
+  // A number that is part of the name stays: there is no telling "Dune 8.5"
+  // from a rating except the year next to it, and removing it on its own
+  // turns "Ocean's 8" into "Ocean's".
+  assert.equal(clean("Ocean's 8"), "Ocean's 8");
+  assert.equal(clean("Fahrenheit 451"), "Fahrenheit 451");
+  assert.equal(clean("1917 (2019)"), "1917");
+});
+
 it("keeps a release group's punctuation", () => {
   assert.equal(
     clean("Some.Show.S01E01.1080p.WEB-DL.DDP5.1.H.264-NTb"),

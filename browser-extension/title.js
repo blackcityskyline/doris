@@ -58,11 +58,22 @@ const SITES = [
 function clean(raw) {
   if (!raw) return "";
   let title = String(raw)
-    // "Dune: Part Two (2024)" -> "Dune: Part Two"
-    .replace(/\s*\(\s*(?:19|20)\d{2}\s*\)\s*$/, "")
-    // "Dune (2024) 8.5" -> "Dune"
+    // The site's own name at the end of its title, which no tracker has.
+    // Measured on a real page: og:title on IMDb came back as
+    // "East of Eden (TV Mini Series 2026) - IMDb", and searching for that
+    // finds nothing at all.
+    .replace(/\s+-\s+(?:IMDb|Trakt|Kinopoisk|Кинопоиск|Lampa|Лампа)\s*$/i, "")
+    // A rating that IMDb put after the year: "Dune (2024) 8.5". It has to
+    // come off together with the year it hangs on, because a rating on its
+    // own cannot be told from a title that ends in a number -- "Ocean's 8"
+    // is not a film called "Ocean's".
     .replace(/\s*\(\s*(?:19|20)\d{2}\s*\)\s+[\d.]+\s*$/, "")
-    // IMDb puts the type in the heading on some layouts: "Movie Dune (2024)".
+    // A trailing bracketed qualifier carrying a year, whatever else is in
+    // it: "(2024)" and "(TV Mini Series 2026)" both go, because both are
+    // the site's description of the entry rather than part of the name. A
+    // bracket with no year stays -- "(Director's Cut)" is in the title.
+    .replace(/\s*\([^)]*\b(?:19|20)\d{2}[^)]*\)\s*$/, "")
+    // IMDb puts the type in the heading on some layouts: "Movie Dune".
     .replace(/^(?:Movie|Series|Episode|Video Game)\s+/i, "")
     // Collapse whitespace, including the non-breaking spaces a site uses to
     // stop a title from wrapping.

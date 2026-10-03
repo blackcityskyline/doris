@@ -73,12 +73,44 @@ The toolbar badge carries the number waiting, because the button belongs to
 one page and a click that is waiting on nothing looks exactly like a click
 that did nothing.
 
-Two seconds, not thirty: the page asks the background every two seconds, and
-asking is what makes the answer quick -- a message from a page wakes a
-suspended event page. Telling the page instead does not work at all
-(measured), which is why the direction is the way it is. The 30-second alarm
-is the backstop for when every page is closed, which is the one case nothing
-else can cover.
+There are two clocks, because one of them cannot go fast. The alarm is
+Firefox's floor: 30 seconds is the smallest period it accepts and it clamps
+anything smaller. The fast one is a 15-second timeout chain, which a page's
+messages keep alive and which is gone the moment the browser suspends the
+event page. So a queued title goes out in about fifteen seconds with a page
+open and thirty with every tab closed -- and the second case is the one the
+alarm exists for.
+
+The page also asks the background every two seconds while a title waits,
+which is a third path to the same answer and the fastest one, because a
+message from a page wakes a suspended event page. Telling the page instead
+does not work at all (measured), which is why the direction is the way it is.
+
+## Titles the sites actually give
+
+Measured on a real IMDb title page, the add-on sent:
+
+```
+East of Eden (TV Mini Series 2026) - IMDb
+```
+
+and searched for all of it, which finds nothing. Three separate things wrong
+with one string: the site's own name, a bracketed qualifier that is IMDb's
+description of the entry rather than part of the name, and the year inside
+that qualifier. All three go now, and a number that is part of a name stays --
+"Ocean's 8" is not a film called "Ocean's".
+
+`h1` is preferred over `og:title` on a title page for the same reason: the
+heading is the film and the metadata carries the decoration. Which is only
+safe because the address already established that the page is about one film
+-- on IMDb's front page `h1` is a section, and that page is refused before a
+title is ever read.
+
+I could not verify IMDb's current markup: an automated browser gets
+`Human Verification` from imdb.com, so the selectors are the documented ones
+with a bare `h1` behind them rather than the ones a real page was measured
+to have. If a site changes its heading, the bare `h1` is what saves it, and
+the fallback still gets the name -- cleaned.
 
 The toolbar button searches the current tab's title, which is the way in from
 any site without a button on it.

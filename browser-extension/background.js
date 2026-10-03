@@ -170,18 +170,43 @@ async function badge() {
  */
 const ALARM = "doris-queue";
 
+/**
+ * Two clocks, because one of them cannot go fast.
+ *
+ * The alarm is the floor of what a suspended event page will honour -- 30
+ * seconds is the smallest period Firefox accepts, and asked for anything
+ * less it clamps. The timeout is what makes it quick while the page is
+ * awake: asked in a page's `setInterval`, this wakes it, and that chain runs
+ * every 15. Between the two, a queued title goes out in about fifteen
+ * seconds with the page open and thirty with every tab closed, and the
+ * second case is the one the alarm exists for.
+ */
+let ticker = null;
+
 function schedule() {
+  if (ticker) {
+    clearTimeout(ticker);
+    ticker = null;
+  }
   browser.storage.local.get([STORE]).then(({ [STORE]: stored }) => {
     if (dorisQueue.read(stored).length) {
       browser.alarms.create(ALARM, { periodInMinutes: dorisQueue.POLL_MINUTES });
+      ticker = setTimeout(beat, dorisQueue.AWAKE_MS);
     } else {
       browser.alarms.clear(ALARM);
     }
   });
 }
 
+/** The fast half: re-arm, and look once while doing it. */
+async function beat() {
+  ticker = null;
+  await drain();
+  schedule();
+}
+
 browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) drain();
+  if (alarm.name === ALARM) beat();
 });
 
 browser.runtime.onMessage.addListener((message) => {

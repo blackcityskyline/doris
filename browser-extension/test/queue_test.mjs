@@ -91,6 +91,18 @@ it("reads only a list of strings out of storage", () => {
   assert.deepEqual(queue.read([{ title: "Dune" }]), []);
 });
 
+it("keeps a fast clock for when the page is awake", () => {
+  // The alarm cannot go below Firefox's 30-second floor, so the fifteen
+  // seconds the user asked for is a timeout chain -- which a page's messages
+  // keep alive and which is gone when the browser suspends the event page.
+  // The alarm stays for exactly that case.
+  assert.equal(queue.AWAKE_MS, 15000, "asked for ten to fifteen seconds");
+  assert.ok(
+    queue.AWAKE_MS < queue.POLL_MINUTES * 60000,
+    "and the fast clock is actually faster than the alarm",
+  );
+});
+
 it("asks at least as often as an event page may be suspended", () => {
   // Firefox suspends an MV3 background after about thirty seconds of quiet,
   // and a suspended page runs no `setTimeout`. An alarm is the one clock
