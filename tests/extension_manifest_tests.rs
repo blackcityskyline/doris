@@ -166,6 +166,57 @@ fn the_add_on_asks_for_the_permissions_its_code_calls() {
     }
 }
 
+/// The page asks the background, and the background does not tell the page.
+///
+/// Both halves were tried the other way round and the other way round does
+/// not work: `tabs.sendMessage` from the background to a content script
+/// never arrived, and a button on `queued` beside a finished search is worse
+/// than no button. A message from a page wakes a suspended event page, so
+/// asking is also what makes the answer come promptly between two alarms.
+#[test]
+fn the_page_asks_the_background_and_nothing_tells_the_page() {
+    let content = std::fs::read_to_string(repo_root().join("browser-extension/content.js"))
+        .expect("content.js");
+    assert!(
+        content.contains(r#"sendMessage({ type: "status" })"#),
+        "the page does not ask, so a queued title never updates the button"
+    );
+
+    let background = std::fs::read_to_string(repo_root().join("browser-extension/background.js"))
+        .expect("background.js");
+    assert!(
+        !background.contains("tabs.sendMessage"),
+        "the background tells the page again -- measured as not arriving"
+    );
+    assert!(
+        background.contains(r#"message.type === "status""#),
+        "and nothing answers the page's question"
+    );
+}
+
+/// The queue has to be visible somewhere other than the button, or a click
+/// that did nothing looks exactly like a click that did nothing.
+#[test]
+fn a_queued_title_shows_up_in_the_toolbar_badge() {
+    let background = std::fs::read_to_string(repo_root().join("browser-extension/background.js"))
+        .expect("background.js");
+    // Split on a closing brace at the start of a line: the destructuring
+    // pattern on the first line has a `}` in it too, and splitting on every
+    // `}` checks a third of the function.
+    let queueing = background
+        .split("async function queueNow(")
+        .nth(1)
+        .expect("a queueNow")
+        .split("\n}")
+        .next()
+        .expect("a body");
+    assert!(
+        queueing.contains("badge()"),
+        "queueing does not set the badge: the only sign a title is waiting is \
+         the button on a page that may not be open"
+    );
+}
+
 #[test]
 fn the_add_on_has_the_files_it_lists() {
     // A manifest naming a file that is not there installs and then does

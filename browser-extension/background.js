@@ -73,8 +73,36 @@ async function queueNow(title) {
   const { [STORE]: stored } = await browser.storage.local.get([STORE]);
   const queue = dorisQueue.add(dorisQueue.read(stored), title);
   await browser.storage.local.set({ [STORE]: queue });
+  await badge();
   schedule();
   return queue;
+}
+
+/**
+ * What a page asks while it waits: is doris up yet, and how much is left.
+ *
+ * The page asks *us*, every couple of seconds, while a title is queued. The
+ * other direction -- us telling the page -- does not arrive: measured, a
+ * title delivered with the button still saying `queued` beside a finished
+ * search. A message sent from a page wakes this event page even when Firefox
+ * has suspended it, so asking is also what makes the answer possible between
+ * two alarms. The 30-second alarm stays for the case where every page is
+ * closed, which is the case nothing else can cover.
+ */
+async function status() {
+  const { [STORE]: stored } = await browser.storage.local.get([STORE]);
+  const before = dorisQueue.read(stored).length;
+  const answer = before ? await drain() : null;
+  const { [STORE]: after } = await browser.storage.local.get([STORE]);
+  const left = dorisQueue.read(after).length;
+  return {
+    delivered: answer && answer.ok ? answer.query : null,
+    queued: left,
+    // Something was waiting, now nothing is, and no send says it went: the
+    // queue emptied where the page could not see it. Said, rather than left
+    // as "still waiting", which would blame a queue that is empty.
+    vanished: before > 0 && left === 0 && !(answer && answer.ok),
+  };
 }
 
 /**
@@ -157,8 +185,10 @@ browser.alarms.onAlarm.addListener((alarm) => {
 });
 
 browser.runtime.onMessage.addListener((message) => {
-  if (!message || message.type !== "search") return undefined;
-  return search(message.title);
+  if (!message) return undefined;
+  if (message.type === "search") return search(message.title);
+  if (message.type === "status") return status();
+  return undefined;
 });
 
 // A title left over from a browser that was closed with doris closed is

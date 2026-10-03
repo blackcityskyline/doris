@@ -72,9 +72,53 @@ async function send() {
     // Saying `waiting for doris` and stopping there would be true and would
     // read as a failure.
     said("queued", "queued");
+    awaitDelivery(title);
   } else {
     said((answer && answer.error) || "refused", "error");
   }
+}
+
+/**
+ * Watch a queued title, by asking.
+ *
+ * The page asks the background every two seconds rather than being told:
+ * measured, a message *from* the background page never arrived, and the
+ * button sat on `queued` beside a search that had run and come back with
+ * results. Asking also wakes the background event page when Firefox has
+ * suspended it, so this is not just a readout -- it is what makes the answer
+ * come promptly at all.
+ *
+ * The count comes back too, so a second film queued in another tab shows
+ * here. And when the queue empties without this page's title going with it --
+ * a tab that sent it was closed, so another tab's drain took it -- the
+ * button says so instead of waiting for ever.
+ */
+function awaitDelivery(title) {
+  const until = Date.now() + 300000;
+  const watch = setInterval(async () => {
+    let answer;
+    try {
+      answer = await browser.runtime.sendMessage({ type: "status" });
+    } catch (e) {
+      return; // the browser is going away; the next click will say again
+    }
+    if (!answer) return;
+    if (answer.delivered === title) {
+      said("sent", "ok");
+      clearInterval(watch);
+      return;
+    }
+    if (answer.vanished) {
+      said("sent from another tab", "ok");
+      clearInterval(watch);
+      return;
+    }
+    if (answer.queued > 1) said(`queued (${answer.queued})`, "queued");
+    if (Date.now() > until) {
+      said("still queued", "queued");
+      clearInterval(watch);
+    }
+  }, 2000);
 }
 
 /**

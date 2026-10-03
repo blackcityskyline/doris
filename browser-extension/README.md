@@ -66,10 +66,19 @@ so with doris closed there is nobody listening and a title pressed then has
 nowhere to go. It is kept -- in the add-on's own storage, oldest first, twenty
 deep, duplicates collapsed -- and sent as soon as a `/ping` says doris is
 there. So closing doris, clicking on a film, and starting doris afterwards
-does search for that film. The button keeps saying `queued` after the search
-has run: telling the page that it happened needs a message from the
-background page to the content script, and that message does not arrive
-(measured). The search is in doris; the button is behind.
+does search for that film, and the button turns itself to `sent` about two
+seconds after doris answers.
+
+The toolbar badge carries the number waiting, because the button belongs to
+one page and a click that is waiting on nothing looks exactly like a click
+that did nothing.
+
+Two seconds, not thirty: the page asks the background every two seconds, and
+asking is what makes the answer quick -- a message from a page wakes a
+suspended event page. Telling the page instead does not work at all
+(measured), which is why the direction is the way it is. The 30-second alarm
+is the backstop for when every page is closed, which is the one case nothing
+else can cover.
 
 The toolbar button searches the current tab's title, which is the way in from
 any site without a button on it.
