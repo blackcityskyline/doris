@@ -12,6 +12,14 @@ use std::path::PathBuf;
 /// An `App` with the Trackers panel focused, no bridge listener, and
 /// no sources checked, so a key that submits a search starts no
 /// network task and the routing decision is all there is to observe.
+///
+/// `config_path` is always passed on as `--config`, even when the caller
+/// has no opinion. `None` used to mean "the user's own
+/// `~/.config/doris/config.toml`", and switching a source row persists the
+/// config -- so running the test suite rewrote the file the user runs with,
+/// turning their Transmission URL and checked sources back into defaults.
+/// A test has no business writing there, and there is no caller that wants
+/// it to.
 async fn app_focused_on_sources(config_path: Option<PathBuf>) -> App {
     let config = Config {
         bridge_port: 0,
@@ -19,11 +27,16 @@ async fn app_focused_on_sources(config_path: Option<PathBuf>) -> App {
         vim_keys: true,
         ..Config::default()
     };
-    let mut argv = vec!["doris"];
-    if let Some(path) = &config_path {
-        argv.push("--config");
-        argv.push(path.to_str().expect("utf-8 test path"));
-    }
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let path = config_path.unwrap_or_else(|| {
+        std::env::temp_dir().join(format!(
+            "doris-test-cfg-{}-{}.toml",
+            std::process::id(),
+            SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    });
+    let mut argv = vec!["doris", "--config"];
+    argv.push(path.to_str().expect("utf-8 test path"));
     let mut app = App::new(Args::parse_from(argv), config)
         .await
         .expect("an App for a key-routing test");
