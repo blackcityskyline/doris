@@ -50,6 +50,21 @@ and press `o` on a download, or click the button on a page.
 
 ## What it does
 
+**Click the toolbar button (or press `Ctrl+Shift+D`) and select a title.**
+Whatever you circle is what gets searched -- the page's own title is right
+when the page is about one film and useless when it is not, and even when
+it is right it can be `East of Eden (TV Mini Series 2026) - IMDb`, which no
+tracker has. `Esc` cancels, which matters because in this mode the mouse
+belongs to you.
+
+A small `doris` button also appears next to the title on the four sites, for
+the case where the page is obviously about one film and there is nothing to
+select.
+
+The toolbar button falls back to the tab's title on a page with no add-on in
+it, which is every site outside the four: there is no content script to tell,
+and the tab's title beats sending nothing.
+
 On IMDb, Trakt, Kinopoisk and Lampa a small `doris` button appears next to the
 title. It reads the title, sends it to `http://127.0.0.1:14141/search?q=`, and
 reports on the button itself:

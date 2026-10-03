@@ -43,3 +43,30 @@
   border-color: #b3261e;
   color: #b3261e;
 }
+
+/* Selection mode. A fixed line at the top, so it does not move when the
+   page scrolls under the user's hand, and styled to be read rather than
+   missed. It is the only thing telling the user what the next mouseup
+   will do. */
+.doris-pick-hint {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  padding: 0.4rem 0.9rem;
+  font: 600 13px/1.2 system-ui, sans-serif;
+  color: #e8e8ea;
+  background: #14161c;
+  border: 1px solid #7fd1b9;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+/* While picking, the cursor is a crosshair: the page is not being read,
+   it is being pointed at. */
+.doris-picking,
+.doris-picking * {
+  cursor: crosshair !important;
+}

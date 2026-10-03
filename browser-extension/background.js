@@ -233,7 +233,42 @@ browser.runtime.onInstalled.addListener(() => {
  * a background page has no page to read, and the tab title is the title the
  * user is looking at anyway.
  */
+/**
+ * The toolbar button, and `Ctrl+Shift+D`: put the page into selection mode.
+ *
+ * Selecting beats reading. A page's own title is right when the page is
+ * about one film and useless when it is not -- and even when it is right it
+ * can be "East of Eden (TV Mini Series 2026) - IMDb", which no tracker has.
+ * What the user circles is what they meant.
+ *
+ * The tab title stays as the fallback for a page with no add-on in it, which
+ * is every site outside the four in the table: there is no content script to
+ * tell, and sending the tab's title is better than sending nothing.
+ */
+async function pickOn(tab) {
+  try {
+    await browser.tabs.sendMessage(tab.id, { type: "pick" });
+    return true;
+  } catch (e) {
+    return false; // no content script on this page
+  }
+}
+
+browser.commands.onCommand.addListener(async (command) => {
+  if (command !== "pick-title") return;
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (tab && !(await pickOn(tab))) await searchFromTab(tab);
+});
+
 browser.action.onClicked.addListener(async (tab) => {
+  if (await pickOn(tab)) {
+    await browser.action.setTitle({ title: "select a title · Esc to cancel", tabId: tab.id });
+    return;
+  }
+  await searchFromTab(tab);
+});
+
+async function searchFromTab(tab) {
   const title = (tab.title || "").trim();
   if (!title) return;
   const answer = await search(title);
@@ -244,4 +279,4 @@ browser.action.onClicked.addListener(async (tab) => {
       : `doris: ${answer.error}`;
   await browser.action.setTitle({ title: text, tabId: tab.id });
   if (answer.queued) await badge();
-});
+}

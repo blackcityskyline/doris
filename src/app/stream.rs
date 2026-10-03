@@ -422,6 +422,9 @@ impl App {
         };
 
         let torrserver = self.torrserver.clone();
+        // For the message when it is not answering: naming the default port
+        // to someone who moved theirs is a wrong answer about their machine.
+        let torrserver_url = self.config.torrserver_url.clone();
         let event_tx = self.event_handler.sender();
         let torrserver_enabled = self.config.enable_torrserver;
 
@@ -440,11 +443,17 @@ impl App {
             }
 
             if !torrserver.is_reachable().await {
+                // The URL the user configured, not the default: telling
+                // someone to start TorrServer on 8090 when theirs is on
+                // 8091 is a message about their machine that is wrong.
                 log(&format!(
-                    "TorrServer is not reachable! Start TorrServer on {}",
-                    crate::torrserver::api::DEFAULT_URL
+                    "Nothing is listening on {}. Start it, or point \
+                     `torrserver_url` in config.toml at where it is.",
+                    torrserver_url
                 ));
-                let _ = event_tx.send(Event::StreamError("TorrServer unreachable".into()));
+                let _ = event_tx.send(Event::StreamError(format!(
+                    "TorrServer unreachable at {torrserver_url}"
+                )));
                 return;
             }
 

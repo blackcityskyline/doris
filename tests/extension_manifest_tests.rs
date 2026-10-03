@@ -184,9 +184,13 @@ fn the_page_asks_the_background_and_nothing_tells_the_page() {
 
     let background = std::fs::read_to_string(repo_root().join("browser-extension/background.js"))
         .expect("background.js");
+    // Not "the background never writes to a tab": the toolbar click has to,
+    // and it is a different message on a live event page. The one that does
+    // not work is announcing that a queued title went -- unsolicited, from
+    // inside an alarm, with no gesture behind it, and it never arrived.
     assert!(
-        !background.contains("tabs.sendMessage"),
-        "the background tells the page again -- measured as not arriving"
+        !background.contains(r#"{ type: "delivered" }"#),
+        "announcing a delivery to the page again -- measured as not arriving"
     );
     assert!(
         background.contains(r#"message.type === "status""#),
@@ -214,6 +218,71 @@ fn a_queued_title_shows_up_in_the_toolbar_badge() {
         queueing.contains("badge()"),
         "queueing does not set the badge: the only sign a title is waiting is \
          the button on a page that may not be open"
+    );
+}
+
+/// The toolbar click puts the page into selection mode, and so does the key
+/// the manifest declares. Both are the same message, because a second way in
+/// is the thing that drifts.
+///
+/// The key is also the only path a test can drive: WebDriver sends key input
+/// to a page, never to browser chrome, so the toolbar button itself cannot be
+/// clicked from a test -- but `Ctrl+Shift+D` can, and it runs the same
+/// content script.
+#[test]
+fn the_extension_button_and_the_declared_key_both_open_selection_mode() {
+    let manifest = std::fs::read_to_string(repo_root().join("browser-extension/manifest.json"))
+        .expect("the manifest");
+    assert!(
+        manifest.contains(r#""pick-title""#),
+        "no keyboard command for selection mode, so the toolbar button is \
+         the only way in and nothing can reach it without a mouse"
+    );
+    assert!(
+        manifest.contains("Ctrl+Shift+D"),
+        "the key the content script listens for and the one the manifest \
+         declares have drifted apart"
+    );
+
+    let background = std::fs::read_to_string(repo_root().join("browser-extension/background.js"))
+        .expect("background.js");
+    for entry in ["browser.commands.onCommand", "browser.action.onClicked"] {
+        assert!(
+            background.contains(entry),
+            "{entry} is gone, so one of the two ways in stopped working"
+        );
+    }
+    assert!(
+        background.contains(r#"sendMessage(tab.id, { type: "pick" })"#),
+        "neither of them tells the page to start selecting"
+    );
+}
+
+/// The listener that starts selection mode has to exist before the mode.
+///
+/// It used to be registered inside `startPicking`, which means the shortcut
+/// that starts the mode had nothing listening -- a circle you cannot get
+/// into. Found by pressing the key for real and watching nothing happen,
+/// which no test over the file's text would have said.
+#[test]
+fn the_key_that_starts_selection_mode_is_listened_for_before_it_starts() {
+    let content = std::fs::read_to_string(repo_root().join("browser-extension/content.js"))
+        .expect("content.js");
+    let defined = content
+        .find("function onPickingKey")
+        .expect("the handler exists");
+    let attached = content
+        .find(r#"document.addEventListener("keydown", onPickingKey"#)
+        .expect("the handler is attached");
+    let inside = content.find("fn startPicking").unwrap_or(usize::MAX);
+    assert!(
+        attached < inside,
+        "the keydown listener is registered inside startPicking, so the key \
+         that starts the mode is the one thing nothing is listening for"
+    );
+    assert!(
+        defined < attached,
+        "and it is attached before it is defined"
     );
 }
 

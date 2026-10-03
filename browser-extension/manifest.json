@@ -50,6 +50,13 @@
     "open_in_tab": true
   },
 
+  "commands": {
+    "pick-title": {
+      "suggested_key": { "default": "Ctrl+Shift+D" },
+      "description": "Select a title on the page and search it in doris"
+    }
+  },
+
   "action": {
     "default_title": "doris",
     "default_icon": "icons/doris.svg"

@@ -42,6 +42,84 @@ function place(titleElement) {
   return button;
 }
 
+/**
+ * Selection mode: the user picks the text and that is what gets searched.
+ *
+ * The button next to the title reads the title, which is right when the page
+ * is about one film and useless when it is not -- a tracker page, a
+ * discussion, a list of twenty. Selecting is the answer that always works:
+ * whatever the user circled is what they meant, including a transliterated
+ * name, the Russian title, or one film out of twenty on a page.
+ *
+ * Entered from the toolbar button, from `Ctrl+Shift+D`, and left with
+ * Escape. In a mode where the mouse belongs to the user, Escape is the only
+ * way out that is not a click.
+ */
+let picking = false;
+
+function startPicking() {
+  if (picking) return;
+  picking = true;
+  document.body.classList.add("doris-picking");
+  document.body.appendChild(pickHint());
+  document.addEventListener("mouseup", onPicked, true);
+}
+
+function stopPicking() {
+  if (!picking) return;
+  picking = false;
+  document.body.classList.remove("doris-picking");
+  const left = document.querySelector(".doris-pick-hint");
+  if (left) left.remove();
+  document.removeEventListener("mouseup", onPicked, true);
+}
+
+/** One line of instruction: a mode with no explanation is a mode the user
+ * has to guess their way out of. */
+function pickHint() {
+  const box = document.createElement("div");
+  box.className = "doris-pick-hint";
+  box.textContent = "doris · select a title · Esc to cancel";
+  return box;
+}
+
+async function onPicked() {
+  // A tick later, not inside the event: some engines finish the selection
+  // after mouseup, and reading it there gets the text before it settles.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (!picking) return;
+  const text = doris.clean(String(window.getSelection()));
+  // An empty selection is a stray click, not a cancel and not a search.
+  if (!text) return;
+  stopPicking();
+  send(text);
+}
+
+/**
+ * The keyboard half, attached from the start and not on entering the mode:
+ * registering it inside `startPicking` means the shortcut that starts the
+ * mode has nothing listening, which is a circle you cannot get into. Found
+ * by pressing the shortcut for real and watching nothing happen.
+ */
+function onPickingKey(event) {
+  if (event.key === "Escape") {
+    stopPicking();
+    return;
+  }
+  if (event.key === "D" && event.ctrlKey && event.shiftKey) {
+    event.preventDefault();
+    if (picking) stopPicking();
+    else startPicking();
+  }
+}
+document.addEventListener("keydown", onPickingKey, true);
+
+browser.runtime.onMessage.addListener((message) => {
+  if (!message || message.type !== "pick") return undefined;
+  startPicking();
+  return Promise.resolve({ picking: true });
+});
+
 /** Say what happened, in the button itself. */
 function said(text, kind) {
   const button = document.querySelector(`.${MARK}`);
@@ -51,16 +129,16 @@ function said(text, kind) {
 }
 
 /** Send the title this page is about. */
-async function send() {
-  // The decision is `doris.actionFor`, not a rule written twice here: it is
-  // about the page, not about the click, and a second copy of it is a second
-  // copy to get wrong.
-  const action = doris.actionFor(document);
+async function send(chosen) {
+  // A chosen title skips the page's own rules: the user selected it, so
+  // "this page is not about one film" is their decision to overrule and not
+  // ours to make again.
+  const action = chosen ? "send" : doris.actionFor(document);
   if (action !== "send") {
     said(action === "not-a-title" ? "not a title" : "no title", "error");
     return;
   }
-  const title = doris.titleFor(document);
+  const title = chosen || doris.titleFor(document);
   said("sending…", "busy");
   const answer = await browser.runtime.sendMessage({ type: "search", title });
   if (answer && answer.ok) {
