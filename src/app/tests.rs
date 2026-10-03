@@ -1376,3 +1376,44 @@ async fn the_detail_views_own_key_still_closes_it() {
 
     assert_eq!(app.ui.detail_view, None, "T is still the way out");
 }
+
+/// A bridge that lost its port has to say so where the user is looking.
+///
+/// The file log is where nobody looks, and the symptom of a lost bridge is a
+/// search the add-on says it sent and this window never ran -- which reads
+/// as the add-on lying. Two doris instances and one port is how it happens:
+/// the first one keeps the port, and every click goes there.
+#[tokio::test]
+async fn a_taken_bridge_port_is_said_in_the_log_zone_not_only_in_the_file() {
+    let mut app = app_focused_on_sources(None).await;
+    app.bridge_taken = Some(
+        "Bridge port 14141 is taken -- another doris has it, so searches \
+         from the browser extension go there, not here"
+            .into(),
+    );
+
+    app.report_bridge_taken();
+    let said = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+    assert!(
+        said.contains("another doris has it"),
+        "the Log zone has to say it: {said}"
+    );
+    assert!(
+        said.contains("14141"),
+        "and which port, since that is what the user can change: {said}"
+    );
+}
+
+/// With the bridge, nothing is said: a line about a port nobody lost is noise
+/// on every ordinary run.
+#[tokio::test]
+async fn an_ordinary_start_says_nothing_about_the_bridge() {
+    let mut app = app_focused_on_sources(None).await;
+    assert!(app.bridge_taken.is_none());
+    app.report_bridge_taken();
+    assert!(
+        !app.ui.logs.iter().any(|l| l.contains("Bridge port")),
+        "no complaint when there is nothing to complain about: {:?}",
+        app.ui.logs
+    );
+}

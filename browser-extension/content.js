@@ -52,6 +52,14 @@ function said(text, kind) {
 
 /** Send the title this page is about. */
 async function send() {
+  if (!doris.isTitlePage(document)) {
+    // Said rather than searched: this page is a section, a dashboard or a
+    // front page, and its heading is not a release any tracker has. The
+    // bridge would accept it and answer 200, so the button would say
+    // `sent` and nothing would come back -- a search that looks like it ran.
+    said("not a title", "error");
+    return;
+  }
   const title = doris.titleFor(document);
   if (!title) {
     said("no title", "error");
@@ -75,7 +83,22 @@ async function send() {
  * previous title.
  */
 function install() {
-  if (!doris.titleFor(document)) return;
+  const action = doris.actionFor(document);
+  // Refused on sight, so the button says so before it is pressed rather
+  // than after.
+  const refuse = {
+    "not-a-title": ["not a title", "This page is not about one film or show"],
+    "no-title": ["no title", "No title on this page"],
+  }[action];
+  if (refuse) {
+    const button = place(document.querySelector("h1"));
+    if (button) {
+      button.textContent = refuse[0];
+      button.dataset.dorisState = "error";
+      button.title = refuse[1];
+    }
+    return;
+  }
   const site = doris.SITES.find((s) => s.hosts.includes(document.location.hostname));
   const selectors = site ? site.selectors : ["h1"];
   const anchor = selectors.map((s) => document.querySelector(s)).find(Boolean);

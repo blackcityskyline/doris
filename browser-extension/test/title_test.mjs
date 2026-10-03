@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { clean, titleFor, SITES } = require(join(here, "..", "title.js"));
+const { clean, titleFor, isTitlePage, actionFor, SITES } = require(join(here, "..", "title.js"));
 
 /**
  * The smallest document that answers the question: `querySelector` over a
@@ -143,6 +143,90 @@ it("does not let a selector from another site answer", () => {
     "Right (2020)",
   );
   assert.equal(titleFor(page), "Right");
+});
+
+// --- is this page about one film at all ----------------------------------
+
+/**
+ * The same stub, plus a path -- the address is what decides, not the title.
+ */
+function at(hostname, pathname) {
+  return {
+    location: { hostname, pathname },
+    querySelector: () => null,
+  };
+}
+
+// IMDb's front page is called "Most Anticipated This Month", Trakt's is a
+// dashboard. Clicking the button there used to send that heading to the
+// bridge, which answered 200, so the button said `sent` and the search found
+// nothing: a failure that looked like the bridge's and was the button's.
+it("knows an IMDb title page from the front page", () => {
+  assert.equal(isTitlePage(at("www.imdb.com", "/title/tt1160419/")), true);
+  assert.equal(isTitlePage(at("www.imdb.com", "/")), false);
+  assert.equal(isTitlePage(at("www.imdb.com", "/chart/")), false);
+  assert.equal(isTitlePage(at("www.imdb.com", "/search/title/?title=Dune")), false);
+});
+
+it("knows Trakt's show and movie pages from its dashboard", () => {
+  assert.equal(isTitlePage(at("trakt.tv", "/shows/the-office")), true);
+  assert.equal(isTitlePage(at("trakt.tv", "/movies/dune-part-two")), true);
+  assert.equal(isTitlePage(at("trakt.tv", "/dashboard")), false);
+});
+
+it("knows the other two", () => {
+  assert.equal(isTitlePage(at("kinopoisk.ru", "/film/12345")), true);
+  assert.equal(isTitlePage(at("kinopoisk.ru", "/")), false);
+  assert.equal(isTitlePage(at("www.lampa.mx", "/film/abc")), true);
+  assert.equal(isTitlePage(at("www.lampa.mx", "/catalog")), false);
+});
+
+it("lets an unknown site through rather than guessing", () => {
+  // Refusing a page we have no rule for would be deciding that somebody's
+  // own site has no films on it.
+  assert.equal(isTitlePage(at("example.org", "/whatever")), true);
+  assert.equal(isTitlePage(at("example.org", "/")), true);
+});
+
+it("gives every site a rule or says why it has none", () => {
+  for (const site of SITES) {
+    assert.ok(
+      Array.isArray(site.paths) && site.paths.length > 0,
+      `${site.hosts[0]} has no path rule, so its section pages would be searched`,
+    );
+  }
+});
+
+// --- what the button does -------------------------------------------------
+
+/**
+ * A page with a title, at an address. Both matter: the address says whether
+ * the page is about one film, the title says what to send.
+ */
+function page(hostname, pathname, heading) {
+  const d = doc(hostname, [{ selector: "h1", text: heading }], heading);
+  d.location.pathname = pathname;
+  return d;
+}
+
+// The decision lives in title.js and not in content.js precisely so this can
+// be asked without a DOM. A rule that decides whether to search is the rule
+// worth checking, and content.js is not checked at all.
+it("sends on a title page", () => {
+  assert.equal(actionFor(page("www.imdb.com", "/title/tt1160419/", "Dune: Part Two")), "send");
+  assert.equal(actionFor(page("trakt.tv", "/shows/x", "Severance (2022)")), "send");
+});
+
+it("refuses a section page, and says which kind of refusal it is", () => {
+  // The two are different messages because they are different problems: one
+  // page is not about a film, the other has no name to send.
+  assert.equal(actionFor(page("www.imdb.com", "/", "Most Anticipated")), "not-a-title");
+  assert.equal(actionFor(page("trakt.tv", "/dashboard", "Trending")), "not-a-title");
+  assert.equal(actionFor(page("www.imdb.com", "/title/tt1/", "")), "no-title");
+});
+
+it("lets an unknown site through", () => {
+  assert.equal(actionFor(page("example.org", "/anything", "Something (2020)")), "send");
 });
 
 // --- the table itself ----------------------------------------------------

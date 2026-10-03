@@ -393,6 +393,11 @@ pub struct App {
     /// same split every other setting has. `Esc` drops the buffer without
     /// committing, so a half-typed greeting costs nothing.
     pub editing_welcome_text: Option<String>,
+    /// Set when the bridge port was already taken, and what that means for
+    /// the browser add-on. Kept because the file log is not where the user
+    /// is looking, and a click that goes to another doris is a search they
+    /// started and cannot find.
+    pub bridge_taken: Option<String>,
 }
 
 /// Run one CLI subcommand. See [`cli_commands`].
@@ -432,13 +437,29 @@ impl App {
         let browser_visibility: BrowserVisibility = browser_visibility_str.parse()?;
 
         let (search_tx, search_rx) = mpsc::unbounded_channel();
+        // Said once the UI exists, when the bridge was already lost above.
+        let mut bridge_taken: Option<String> = None;
 
         let bridge_port = if interactive { config.bridge_port } else { 0 };
         if bridge_port > 0 {
             // The server task owns its own handle (listener + router with a
             let mut bridge = BridgeServer::new(search_tx.clone(), bridge_port);
             if let Err(e) = bridge.start().await {
-                crate::log::log("bridge", &format!("bridge server failed to start: {}", e));
+                // Said in the UI as well as the file, because the file is
+                // where nobody looks. Another doris already holds this port,
+                // so every click from the browser add-on goes *there* --
+                // into a window this one knows nothing about, which is a
+                // search the user started and cannot find. Continuing is
+                // still right: the rest of the app works, and a doris that
+                // refuses to start over a bridge would be a worse answer
+                // than a doris that says which bridge it lost.
+                let said = format!(
+                    "Bridge port {bridge_port} is taken -- another doris has it, \
+                     so searches from the browser extension go there, not here"
+                );
+                crate::log::log("bridge", &format!("bridge server failed to start: {e}"));
+                bridge_taken = Some(said.clone());
+                crate::log::log("bridge", &said);
             }
         }
 
@@ -528,7 +549,22 @@ impl App {
             search_generation: 0,
             exit_signal: Arc::new(AtomicBool::new(false)),
             editing_welcome_text: None,
+            bridge_taken,
         })
+    }
+
+    /// Say the bridge was lost, once, in the Log zone and in the file.
+    ///
+    /// In the Log zone because the file is where nobody looks, and the
+    /// symptom of a lost bridge is a search the add-on says it sent and this
+    /// window never ran -- which reads as the add-on lying. Cleared after
+    /// saying it, because a line about a port that was lost once belongs
+    /// once and not on every redraw.
+    pub(crate) fn report_bridge_taken(&mut self) {
+        if let Some(taken) = self.bridge_taken.take() {
+            self.ui.add_log(&taken);
+            self.ui.add_detail(&taken);
+        }
     }
 
     /// Every event that is not a key, a mouse, a tick or a resize, applied
@@ -751,6 +787,8 @@ impl App {
             .unwrap_or((80, 24));
 
         Self::spawn_termination_watch(Arc::clone(&self.exit_signal));
+
+        self.report_bridge_taken();
 
         if let Some(query) = self.args.query.clone() {
             self.ui.search_input = query.clone();

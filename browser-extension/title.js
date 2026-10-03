@@ -20,6 +20,7 @@ const SITES = [
     // The hero heading is the title as the page presents it; `og:title` on
     // IMDb appends the year and the rating in some locales.
     hosts: ["imdb.com", "www.imdb.com"],
+    paths: ["/title/"],
     selectors: [
       "[data-testid='hero-heading-pageTitle']",
       "h1 .title_line",
@@ -29,13 +30,19 @@ const SITES = [
   {
     hosts: ["trakt.tv", "www.trakt.tv"],
     selectors: ["h1[data-testid='show-title']", "h1.show-title", "h1"],
+    // A page whose address is one of these is about one film or show. Every
+    // other page on the site is a section -- "Most Anticipated This Month",
+    // "Coming Soon" -- and its title is not a title anybody can search for.
+    paths: ["/shows/", "/movies/"],
   },
   {
     hosts: ["kinopoisk.ru", "www.kinopoisk.ru"],
+    paths: ["/film/", "/series/", "/tv/", "/anime/"],
     selectors: ["h1[itemprop='name']", "h1.[itemprop='name']", "h1"],
   },
   {
     hosts: ["lampa.mx", "www.lampa.mx"],
+    paths: ["/film", "/series", "/tv-series", "/anime"],
     selectors: [".details h1", "h1"],
   },
 ];
@@ -87,6 +94,41 @@ function titleFor(doc) {
   return clean(fallback);
 }
 
+/**
+ * Whether this page is about one thing that can be searched for.
+ *
+ * The button appears on every page of a site, and most of them are not about
+ * one film: IMDb's front page is "Most Anticipated This Month", Trakt's is a
+ * dashboard. Searching for those finds nothing, and the button says `sent`,
+ * so the failure looks like the bridge's.
+ *
+ * The address is the test, not the title. A site with no `paths` here counts
+ * as a title page: an unknown site is somebody's own page, and refusing it
+ * would be guessing.
+ */
+function isTitlePage(doc) {
+  const host = (doc.location && doc.location.hostname) || "";
+  const site = SITES.find((s) => s.hosts.includes(host));
+  if (!site || !site.paths) return true;
+  const path = (doc.location && doc.location.pathname) || "";
+  return site.paths.some((prefix) => path.startsWith(prefix));
+}
+
+/**
+ * What the button should do on this page: `"send"`, `"not-a-title"` or
+ * `"no-title"`.
+ *
+ * The decision is here rather than in `content.js` because it is a decision
+ * about the *page* -- its address and its title -- and about nothing that
+ * happens afterwards. Putting it here makes it testable without a DOM, which
+ * is the only way it gets tested at all: `content.js` needs a browser, and a
+ * rule that decides whether to search is exactly the rule worth checking.
+ */
+function actionFor(doc) {
+  if (!isTitlePage(doc)) return "not-a-title";
+  return titleFor(doc) ? "send" : "no-title";
+}
+
 /** A human name for the site, for the button's tooltip and the log. */
 function siteName(doc) {
   const host = (doc.location && doc.location.hostname) || "this page";
@@ -96,7 +138,7 @@ function siteName(doc) {
 
 // Both callers are browsers with a global; node wants a module.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { SITES, clean, titleFor, siteName };
+  module.exports = { SITES, clean, titleFor, isTitlePage, actionFor, siteName };
 } else {
-  globalThis.doris = { SITES, clean, titleFor, siteName };
+  globalThis.doris = { SITES, clean, titleFor, isTitlePage, actionFor, siteName };
 }
