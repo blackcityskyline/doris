@@ -51,6 +51,7 @@ pub fn to_row(d: &Download) -> DownloadRow {
         downloaded: d.downloaded,
         eta: d.eta,
         trackers: d.trackers.clone(),
+        limit_bytes: d.limit_bytes(),
     }
 }
 

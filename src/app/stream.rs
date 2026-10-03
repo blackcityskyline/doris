@@ -60,6 +60,171 @@ impl App {
         }
     }
 
+    /// The Torrents detail view's keys, on the row under its cursor.
+    ///
+    /// The zone version of `p` and `d` already existed; the rest are what a
+    /// full-frame list of downloads is missing to be a client rather than a
+    /// readout: check the data, open what was fetched, cap the rate.
+    pub(super) async fn torrent_detail_key(&mut self, code: KeyCode) -> Result<()> {
+        /// The keys that act on a row, and so need a row.
+        const ROW_KEYS: &[char] = &['p', 'd', 'v', 'o', 'f', '+', '=', '-', '0'];
+
+        let Some(row) = self.ui.downloads.get(self.ui.download_cursor).cloned() else {
+            if matches!(code, KeyCode::Char(c) if ROW_KEYS.contains(&c)) {
+                self.ui.add_log("No download to act on.");
+            }
+            return Ok(());
+        };
+        match code {
+            KeyCode::Char('p') => self.toggle_pause_download().await,
+            KeyCode::Char('d') => {
+                self.ui.confirm_remove();
+            }
+            KeyCode::Char('v') => match self.transmission.verify(row.id).await {
+                Ok(()) => self.ui.add_log(&format!("Verifying {}", row.name)),
+                Err(e) => self
+                    .ui
+                    .add_log(&format!("Could not verify {}: {e}", row.name)),
+            },
+            KeyCode::Char('o') => self.open_download_dir(&row),
+            KeyCode::Char('f') => {
+                // Opened before the daemon answers, so the key has an
+                // immediate effect: a modal that appears a second later is
+                // a key that looks like it did nothing.
+                self.ui.open_files_modal(row.id, row.name.clone());
+                self.spawn_files_fetch(row.id);
+            }
+            KeyCode::Char('+') | KeyCode::Char('=') => self.step_download_limit(&row, 1).await,
+            KeyCode::Char('-') => self.step_download_limit(&row, -1).await,
+            KeyCode::Char('0') => self.set_download_limit(&row, None).await,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Open what a download wrote, in whatever file manager this machine
+    /// has.
+    ///
+    /// The daemon is asked where it put the files rather than the config
+    /// being consulted, because a torrent added from the CLI or by another
+    /// client can be anywhere.
+    fn open_download_dir(&mut self, row: &crate::ui::view::DownloadRow) {
+        let dir = row.dir.trim();
+        if dir.is_empty() {
+            self.ui.add_log(&format!("No directory for {}", row.name));
+            return;
+        }
+        if !std::path::Path::new(dir).exists() {
+            self.ui.add_log(&format!("{dir} is not there any more"));
+            return;
+        }
+        let Some(program) = crate::app::files::pick(dir) else {
+            self.ui.add_log(&format!("Nothing here can open {dir}"));
+            return;
+        };
+        self.ui.add_log(&format!("Opening {} in {}", dir, program));
+        let _ = self.event_handler.sender().send(Event::OpenPath {
+            program: program.to_string(),
+            path: dir.to_string(),
+        });
+    }
+
+    async fn set_download_limit(&mut self, row: &crate::ui::view::DownloadRow, limit: Option<i64>) {
+        let said = match self.transmission.set_download_limit(row.id, limit).await {
+            Ok(()) => match limit {
+                Some(bytes) => format!(
+                    "{} limited to {}",
+                    row.name,
+                    crate::transmission::human_speed(bytes)
+                ),
+                None => format!("{} unlimited", row.name),
+            },
+            Err(e) => format!("Could not set the limit on {}: {e}", row.name),
+        };
+        self.ui.add_log(&said);
+    }
+
+    /// Move the download rate one notch along the steps a person picks from.
+    ///
+    /// Unlimited is the top rung rather than a separate state above it: a
+    /// ramp with a step off the end of it is a ramp `+` walks up and never
+    /// comes back down, which is what a limit that cannot be lifted looks
+    /// like. So `0` is a shortcut for the same place, not a third thing.
+    async fn step_download_limit(&mut self, row: &crate::ui::view::DownloadRow, dir: i64) {
+        let steps = crate::app::files::SPEED_STEPS;
+        let top = steps.len() as i64;
+        let current = match row.limit_bytes {
+            Some(bytes) => steps
+                .iter()
+                .position(|s| *s >= bytes)
+                .map(|i| i as i64)
+                .unwrap_or(0),
+            None => top,
+        };
+        let next = (current + dir).clamp(0, top);
+        let limit = (next < top).then(|| steps[next as usize]);
+        self.set_download_limit(row, limit).await;
+    }
+
+    /// Ask the daemon for one download's files, off the key path.
+    ///
+    /// A spawn rather than an await because the key that opened the modal
+    /// must not wait on a network round trip: the modal appears at once
+    /// with a placeholder and the answer arrives as an event.
+    pub(super) fn spawn_files_fetch(&mut self, id: i64) {
+        let tx = self.event_handler.sender();
+        let client = self.transmission.clone();
+        tokio::spawn(async move {
+            let event = match client.files(id).await {
+                Ok(files) => Event::DownloadFiles {
+                    id,
+                    files,
+                    error: None,
+                },
+                Err(e) => Event::DownloadFiles {
+                    id,
+                    files: Vec::new(),
+                    error: Some(e.to_string()),
+                },
+            };
+            let _ = tx.send(event);
+        });
+    }
+
+    /// Send the file switches the modal made, and forget them.
+    ///
+    /// Drained here because this is the layer that can reach Transmission;
+    /// the modal only records what the user asked for. Each file is its own
+    /// call because Transmission's `torrent-set` takes the wanted list as
+    /// indices, and a torrent of a hundred files is a hundred entries to
+    /// turn on -- batched, it is one call with the list of the ones that
+    /// changed, which is what the daemon reads.
+    pub(super) async fn send_pending_file_wants(&mut self) {
+        let pending = std::mem::take(&mut self.ui.pending_files);
+        if pending.is_empty() {
+            return;
+        }
+        let Modal::Files(state) = &self.ui.modal else {
+            return;
+        };
+        let id = state.id;
+        let name = state.name.clone();
+        let mut failed = Vec::new();
+        for (index, wanted) in pending {
+            if let Err(e) = self.transmission.set_file_wanted(id, index, wanted).await {
+                failed.push(format!("{index}: {e}"));
+            }
+        }
+        if failed.is_empty() {
+            self.ui.add_log(&format!("Files of {name} updated"));
+        } else {
+            self.ui.add_log(&format!(
+                "Could not set files of {name}: {}",
+                failed.join(", ")
+            ));
+        }
+    }
+
     pub(super) async fn toggle_pause_active_torrent(&mut self) {
         let Some(hash) = self.ui.active_torrent_hash.clone() else {
             self.ui.add_log("No active torrent to pause/resume.");

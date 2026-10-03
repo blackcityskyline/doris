@@ -54,6 +54,22 @@ pub enum Event {
     DownloadDaemonDown,
     /// A torrent just became the "active" one to show/manage in the Torrent panel (e.g.
     TorrentActive(String),
+    /// One download's file list, or why there is not one.
+    DownloadFiles {
+        id: i64,
+        files: Vec<crate::transmission::FileEntry>,
+        error: Option<String>,
+    },
+    /// Hand the terminal to a file manager and take it back afterwards.
+    ///
+    /// An event rather than a call from the key handler because only the
+    /// event loop holds the terminal: the key handler cannot restore what it
+    /// did not set up, and a file manager that starts inside the alternate
+    /// screen is a file manager nobody can see.
+    OpenPath {
+        program: String,
+        path: String,
+    },
     /// The answer to a detail modal's `Source::details` request: the file list for the page it
     /// was asked about, or the error.
     DetailLoaded {

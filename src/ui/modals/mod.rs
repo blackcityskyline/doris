@@ -1,4 +1,5 @@
 pub mod detail;
+pub mod files;
 pub mod health;
 pub mod help;
 pub mod login;

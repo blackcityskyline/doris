@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::sources::models::{FileEntry, TorrentItem};
 use crate::sources::orchestrator::SourceStatus;
 use crate::sources::source::{Group, KNOWN_SOURCES};
+use crate::ui::modals::files::FilesState;
 use crate::ui::modals::help::HelpState;
 use crate::ui::modals::login::LoginState;
 use crate::ui::modals::settings::{group_tabs, SettingsState};
@@ -48,6 +49,8 @@ pub enum Modal {
     /// The selected row's details: the row itself, the file list its source is still fetching
     /// (or has fetched), and the cursor into that list.
     TorrentDetail(Box<TorrentDetailState>),
+    /// One download's files, and which of them are being fetched.
+    Files(Box<FilesState>),
 }
 
 /// What a key in the detail modal asks the orchestrator for.
@@ -136,6 +139,10 @@ pub struct DownloadRow {
     /// Seconds; negative means no prediction.
     pub eta: i64,
     pub trackers: Vec<crate::transmission::TrackerStat>,
+    /// Bytes per second this torrent may use, and whether it may use them.
+    /// `None` is "no limit of its own", which is not the same as a limit of
+    /// zero: one is a speed, the other is a stop.
+    pub limit_bytes: Option<i64>,
 }
 
 impl DownloadRow {
@@ -185,6 +192,10 @@ pub struct App {
     pub selected: usize,
     pub logs: VecDeque<String>,
     pub log_scroll: usize,
+    /// File switches the modal has made that the daemon has not been told
+    /// about yet. Drained by the orchestrator, which is the layer that can
+    /// reach Transmission; the modal only knows what the user asked for.
+    pub pending_files: Vec<(usize, bool)>,
     pub detail_logs: Vec<String>,
     pub detail_view: Option<ZoneId>,
     pub detail_log_scroll: usize,
@@ -417,6 +428,7 @@ impl App {
             selected: 0,
             logs: VecDeque::new(),
             log_scroll: 0,
+            pending_files: Vec::new(),
             detail_logs: Vec::new(),
             detail_view: None,
             detail_log_scroll: 0,

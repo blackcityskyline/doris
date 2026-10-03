@@ -6,7 +6,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 pub mod cli_commands;
+pub mod files;
 mod input;
+pub mod open;
 mod search;
 mod session;
 mod settings;
@@ -607,6 +609,19 @@ impl App {
                 self.ui.show_menu = false;
                 self.start_search(query).await;
             }
+            Event::DownloadFiles { id, files, error } => {
+                // Only the modal that asked: a poll landing while the user
+                // is looking at another torrent's files must not replace
+                // them.
+                if let Modal::Files(state) = &mut self.ui.modal {
+                    if state.id == id {
+                        state.files = files;
+                        state.error = error;
+                        state.pending = false;
+                        state.cursor = state.cursor.min(state.files.len().saturating_sub(1));
+                    }
+                }
+            }
             Event::DownloadDaemonDown => {
                 // The rows are left alone: the daemon not answering is not
                 // evidence that the downloads stopped existing.
@@ -757,6 +772,14 @@ impl App {
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);
                         },
+                        // See `Event::OpenPath`: only this loop has the
+                        // terminal to hand over and take back.
+                        Event::OpenPath { program, path } => {
+                            open::open_path(&mut terminal, &self.config, &program, &path)?;
+                            self.terminal_size = terminal.size()
+                                .map(|s| (s.width, s.height))
+                                .unwrap_or(self.terminal_size);
+                        }
                         other => self.apply_event(other).await?,
                     }
                 }

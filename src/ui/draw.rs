@@ -31,7 +31,7 @@ impl App {
 
     /// Border+background styling for the four main zone panels, respecting the "Rounded
     /// corners", "Theme background" and "Show boxes" Options toggles.
-    fn themed_block(&self, border_color: Color, config: &Config) -> Block<'static> {
+    pub(crate) fn themed_block(&self, border_color: Color, config: &Config) -> Block<'static> {
         self.themed_block_with_borders(
             border_color,
             config,
@@ -462,7 +462,7 @@ impl App {
     fn render_downloads(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let inner_width = area.width.saturating_sub(2) as usize;
         let visible = (area.height as usize).saturating_sub(4).max(1);
-        let parts = self.downloads_parts(inner_width, visible);
+        let parts = self.downloads_parts(inner_width, visible, false);
 
         let body = Style::default().fg(self.theme.main_fg.to_color());
         let mut lines = vec![Line::from(Span::styled(parts.summary.one_line(), body))];
@@ -486,11 +486,17 @@ impl App {
     /// table as a fourth. Sharing them is what keeps the two from drifting
     /// into showing different things -- which is how the detail view came
     /// to be a list of `Label: value` lines beside a table.
-    fn downloads_parts(&self, inner_width: usize, visible: usize) -> Downloads<'_> {
+    fn downloads_parts(&self, inner_width: usize, visible: usize, marker: bool) -> Downloads<'_> {
         use super::torrents_panel as panel;
 
         let label = Style::default().fg(self.theme.secondary_color());
         let summary = panel::summary(&self.downloads, self.free_space, self.daemon_reachable);
+        // A marker column, two columns wide. Bold and a highlight colour are
+        // what the cursor row is drawn with everywhere else, and on a table
+        // of fourteen near-identical rows that is not enough to see where
+        // you are -- which is the same thing as not having a cursor.
+        let marked = if marker { 2 } else { 0 };
+        let inner_width = inner_width.saturating_sub(marked);
         let stream = self.render_stream_line(inner_width);
         let mut table: Vec<Line> = Vec::new();
 
@@ -519,18 +525,21 @@ impl App {
             panel::header(&plan),
             Style::default().fg(self.theme.div_line.to_color()),
         )));
+        let hot = Style::default()
+            .fg(self.theme.hi_fg.to_color())
+            .add_modifier(Modifier::BOLD);
+        let body = Style::default().fg(self.theme.main_fg.to_color());
         for (offset, row) in self.downloads[first..].iter().take(visible).enumerate() {
             let idx = first + offset;
             let selected = idx == self.download_cursor;
+            let text = match marker {
+                true if selected => format!("▸ {}", panel::row(row, &plan)),
+                true => format!("  {}", panel::row(row, &plan)),
+                false => panel::row(row, &plan),
+            };
             table.push(Line::from(Span::styled(
-                panel::row(row, &plan),
-                if selected {
-                    Style::default()
-                        .fg(self.theme.hi_fg.to_color())
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(self.theme.main_fg.to_color())
-                },
+                text,
+                if selected { hot } else { body },
             )));
         }
         if self.downloads.len() > first + visible {
@@ -664,8 +673,11 @@ impl App {
 
         let mut y = inner.y;
         let mut table_lines: Vec<Line> = Vec::new();
-        let visible = (table_height as usize).saturating_sub(4).max(1);
-        let parts = self.downloads_parts(inner_width, visible);
+        // Four for the box and the header, two for the legend underneath it:
+        // a control row that gets pushed out of the frame is a control the
+        // user cannot see, which is where this all started.
+        let visible = (table_height as usize).saturating_sub(6).max(1);
+        let parts = self.downloads_parts(inner_width, visible, true);
         table_lines.extend(parts.stream);
 
         match sections {
@@ -696,6 +708,7 @@ impl App {
         }
 
         table_lines.extend(parts.table);
+        table_lines.push(self.torrent_detail_legend());
         if let Some(prompt) = prompt {
             table_lines.push(prompt);
         }
@@ -805,6 +818,38 @@ impl App {
         }
     }
 
+    /// The Torrents detail view's controls, on its own line.
+    ///
+    /// The same words the zone writes on its frame border, in the same two
+    /// styles -- the word in `title`, the character that triggers it in
+    /// `hi_fg` and bold -- because a control you cannot see is the control
+    /// that does not exist. Written on the frame rather than inside the
+    /// panel, so they are not one more row of table.
+    fn torrent_detail_legend(&self) -> Line<'static> {
+        let word = Style::default().fg(self.theme.title.to_color());
+        let hot = Style::default()
+            .fg(self.theme.hi_fg.to_color())
+            .add_modifier(Modifier::BOLD);
+        let mut spans = Vec::new();
+        for (key, label) in [
+            ("p", "pause"),
+            ("d", "delete"),
+            ("v", "verify"),
+            ("f", "files"),
+            ("o", "open"),
+            ("+", "faster"),
+            ("-", "slower"),
+            ("0", "unlimited"),
+        ] {
+            if !spans.is_empty() {
+                spans.push(Span::styled("  ", word));
+            }
+            spans.push(Span::styled(label.to_string(), word));
+            spans.push(Span::styled(format!(" {key}"), hot));
+        }
+        Line::from(spans)
+    }
+
     /// One framed box: a title and its lines.
     fn render_box<'a>(
         &self,
@@ -893,6 +938,20 @@ impl App {
                 Span::styled(row.seeds.to_string(), value),
                 Span::styled("  Peers: ", label),
                 Span::styled(row.peers.to_string(), value),
+            ]),
+            // The limit is here because `+` and `-` change it and nothing
+            // else on screen would: a control with no readout is a control
+            // that cannot be set to anything.
+            Line::from(vec![
+                Span::styled("Limit: ", label),
+                Span::styled(
+                    match row.limit_bytes {
+                        Some(bytes) => crate::transmission::human_speed(bytes),
+                        None => "unlimited".to_string(),
+                    },
+                    value,
+                ),
+                Span::styled("   (+ faster, - slower, 0 unlimited)", label),
             ]),
             field("Directory: ", &row.dir, &label, &value),
             field("Added: ", &added(row.added), &label, &value),
@@ -1152,6 +1211,8 @@ impl App {
             self.render_settings_modal(frame, area, config);
         } else if let Modal::HealthCheck(_) = self.modal {
             self.render_health_modal(frame, area, config);
+        } else if matches!(self.modal, Modal::Files(_)) {
+            self.render_files_modal(frame, area, config);
         } else if matches!(self.modal, Modal::Help(_)) {
             // `&mut self`: the page publishes its own page count for
             self.render_help_modal(frame, area, config);

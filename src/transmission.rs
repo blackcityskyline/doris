@@ -79,8 +79,20 @@ pub struct Download {
     pub eta: i64,
     #[serde(rename = "trackerStats", default)]
     pub trackers: Vec<TrackerStat>,
-    #[serde(default)]
-    pub files: Vec<FileEntry>,
+    /// Bytes per second this torrent may use, and whether it may use them.
+    /// Zero with the flag off is "no limit of its own", which is not the
+    /// same as a limit of zero: one is a speed, the other is a stop.
+    ///
+    /// Read from Transmission 4's `downloadLimit`, which is in kilobytes
+    /// per second, and kept in bytes because that is what every other
+    /// number in this file is in and a panel that has to divide by 1024 to
+    /// compare two of its own fields is a panel nobody edits. The older
+    /// `speedLimitDown` pair is *accepted* by Transmission 4 and silently
+    /// ignored -- no error, no effect -- so it is not used.
+    #[serde(rename = "downloadLimit", default)]
+    pub download_limit_kbps: i64,
+    #[serde(rename = "downloadLimited", default)]
+    pub limited: bool,
 }
 
 /// What one tracker reports about a torrent.
@@ -101,14 +113,63 @@ pub struct TrackerStat {
     pub announced: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileEntry {
+    /// `name` is the path within the torrent, not a basename: a torrent of
+    /// a season has directories in here.
     #[serde(default)]
     pub name: String,
     #[serde(rename = "length", default)]
     pub size: i64,
     #[serde(rename = "bytesCompleted", default)]
     pub done: f64,
+    /// Whether this file is being fetched. Transmission reports it per
+    /// file, which is the only way to ask for part of a torrent -- the unit
+    /// of choice is the file, not the torrent.
+    #[serde(default = "default_true")]
+    pub wanted: bool,
+}
+
+/// Hand-written, because `#[derive(Default)]` and `#[serde(default)]` would
+/// disagree: serde's default for `wanted` is true (a file is fetched unless
+/// someone says otherwise) while the derive's is false. A `FileEntry` built
+/// in a test or by hand would then be a file nobody wants, which is the
+/// opposite of what an absent answer means.
+impl Default for FileEntry {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            size: 0,
+            done: 0.0,
+            wanted: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Copy `fileStats`' `wanted` flags onto the file list.
+///
+/// Separate from [`Transmission::files`] so the rule can be checked without
+/// a daemon: the two arrays are parallel and both indexed by position, and
+/// a `fileStats` shorter than `files` leaves the rest wanted rather than
+/// marking them unwanted -- a file the daemon did not mention is a file it
+/// has no opinion about, not one the user turned off.
+pub fn merge_wanted(files: &mut [FileEntry], file_stats: Option<&serde_json::Value>) {
+    let Some(stats) = file_stats.and_then(|s| s.as_array()) else {
+        return;
+    };
+    for (index, file) in files.iter_mut().enumerate() {
+        if let Some(wanted) = stats
+            .get(index)
+            .and_then(|s| s.get("wanted"))
+            .and_then(|w| w.as_bool())
+        {
+            file.wanted = wanted;
+        }
+    }
 }
 
 impl Download {
@@ -138,6 +199,12 @@ impl Download {
     }
 
     /// The word for what this torrent is doing, from its status code.
+    /// The limit in bytes per second, which is what the panel and the
+    /// `+`/`-` steps speak.
+    pub fn limit_bytes(&self) -> Option<i64> {
+        self.limited.then(|| self.download_limit_kbps.max(0) * 1024)
+    }
+
     pub fn state(&self) -> &'static str {
         state_of(self.status)
     }
@@ -407,7 +474,11 @@ impl Transmission {
             "downloadEver",
             "eta",
             "trackerStats",
-            "files",
+            "downloadLimit",
+            "downloadLimited",
+            // Not `files`: a list of every file of every torrent is a lot
+            // of JSON for a panel that shows one row's worth, and
+            // `files()` asks for that torrent alone.
         ];
         let out = self
             .call("torrent-get", serde_json::json!({ "fields": fields }))
@@ -518,24 +589,82 @@ impl Transmission {
         .map(|_| ())
     }
 
+    /// Check the local data against the torrent's hashes.
+    pub async fn verify(&self, id: i64) -> Result<()> {
+        self.call("torrent-verify", serde_json::json!({ "ids": [id] }))
+            .await
+            .map(|_| ())
+    }
+
+    /// Cap one torrent's download rate. `None` is "no limit of its own",
+    /// which is the flag off rather than a limit of zero -- zero would be a
+    /// stop, and the two are one field apart.
+    pub async fn set_download_limit(&self, id: i64, bytes_per_second: Option<i64>) -> Result<()> {
+        self.call(
+            "torrent-set",
+            serde_json::json!({
+                "ids": [id],
+                // Kilobytes per second, because that is what Transmission 4
+                // calls this field. Sending bytes here is accepted and
+                // ignored, which is worse than an error: the key looks like
+                // it worked.
+                "downloadLimit": bytes_per_second.unwrap_or(0).max(0) / 1024,
+                "downloadLimited": bytes_per_second.is_some(),
+            }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Fetch, or stop fetching, one file of a torrent.
+    pub async fn set_file_wanted(&self, id: i64, index: usize, wanted: bool) -> Result<()> {
+        let key = if wanted {
+            "files-wanted"
+        } else {
+            "files-unwanted"
+        };
+        self.call(
+            "torrent-set",
+            serde_json::json!({ "ids": [id], key: [index] }),
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// The file list, asked for directly rather than read off `list`.
     ///
     /// `list` carries files for every torrent, which is a lot of JSON for
     /// a panel that shows one row's worth.
+    ///
+    /// Asked as `files` *and* `fileStats`, because Transmission 4 will not
+    /// say whether a file is being fetched in `files` -- that array carries
+    /// the name, the length and two piece numbers, and nothing about the
+    /// choice. `fileStats` is where `wanted` lives, one entry per file, in
+    /// the same order. Asking for only `files` gives a list where every
+    /// entry looks wanted, which is a list that cannot show what the user
+    /// just turned off.
     pub async fn files(&self, id: i64) -> Result<Vec<FileEntry>> {
         let out = self
             .call(
                 "torrent-get",
-                serde_json::json!({ "ids": [id], "fields": ["files"] }),
+                serde_json::json!({
+                    "ids": [id],
+                    "fields": ["files", "fileStats"],
+                }),
             )
             .await?;
-        Ok(out
+        let torrent = out
             .get("arguments")
             .and_then(|a| a.get("torrents"))
             .and_then(|t| t.get(0))
-            .and_then(|t| t.get("files"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let mut files: Vec<FileEntry> = torrent
+            .get("files")
             .and_then(|f| serde_json::from_value(f.clone()).ok())
-            .unwrap_or_default())
+            .unwrap_or_default();
+        merge_wanted(&mut files, torrent.get("fileStats"));
+        Ok(files)
     }
 
     /// Wait until a download is finished, `stop` says otherwise, or the

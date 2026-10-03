@@ -376,6 +376,25 @@ impl App {
         Some(step)
     }
 
+    /// How far a Torrents detail key should move the cursor.
+    ///
+    /// A distance, not a destination, so `Home` and `End` are not here:
+    /// they name a place, and adding one to a cursor that wraps does not
+    /// land on it. `j`/`k` wrap like every other list in this app; `Home`
+    /// and `End` are the two keys that go where they say.
+    fn download_step(&self, code: KeyCode) -> Option<i64> {
+        let page = (self.terminal_size.1 / 2).max(1) as i64;
+        match code {
+            KeyCode::Down => Some(1),
+            KeyCode::Up => Some(-1),
+            KeyCode::PageDown => Some(page),
+            KeyCode::PageUp => Some(-page),
+            KeyCode::Char('j') if self.config.vim_keys => Some(1),
+            KeyCode::Char('k') if self.config.vim_keys => Some(-1),
+            _ => None,
+        }
+    }
+
     /// Every mode that takes the keyboard away from the plain view, in the order they are asked
     /// about.
     async fn mode_owns_the_key(&mut self, key: KeyEvent) -> Result<Option<()>> {
@@ -392,31 +411,6 @@ impl App {
             return Ok(Some(()));
         }
 
-        // A detail view owns the keyboard until it is dismissed: no
-        if let Some(view) = self.ui.detail_view {
-            // The zone's own key closes it, any other detail key jumps
-            let target = match key.code {
-                KeyCode::Char(c) => ZoneId::all()
-                    .iter()
-                    .copied()
-                    .find(|id| id.detail_key() == Some(c)),
-                _ => None,
-            };
-            match key.code {
-                KeyCode::Esc => self.ui.detail_view = None,
-                _ if target == Some(view) => self.ui.detail_view = None,
-                _ if target.is_some() => self.ui.detail_view = target,
-                // Only the Log view scrolls; the other two takeovers have
-                _ if view == ZoneId::Log => {
-                    if let Some(step) = self.log_scroll_step(key.code) {
-                        self.ui.scroll_detail_log(step);
-                    }
-                }
-                _ => {}
-            }
-            return Ok(Some(()));
-        }
-
         if let Modal::HealthCheck(_) = self.ui.modal {
             if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
                 self.ui.modal = Modal::None;
@@ -427,6 +421,14 @@ impl App {
         if let Modal::Help(_) = self.ui.modal {
             // The help page owns the keyboard while it is up, exactly
             self.ui.help_key(key);
+            return Ok(Some(()));
+        }
+
+        if let Modal::Files(_) = self.ui.modal {
+            // The file list owns the keyboard: it is the only place a
+            // download can be cut down to the files actually wanted.
+            self.ui.files_key(key, self.config.vim_keys);
+            self.send_pending_file_wants().await;
             return Ok(Some(()));
         }
 
@@ -456,6 +458,53 @@ impl App {
         if self.ui.modal != Modal::None {
             if let Some((resource, username, password)) = self.ui.login_modal_key(key) {
                 self.do_login(resource, &username, &password).await;
+            }
+            return Ok(Some(()));
+        }
+
+        // A detail view owns the keyboard until it is dismissed -- but only
+        // once no modal is up. Asked before the modals, Esc closed the
+        // detail view *behind* an open modal and left the modal holding a
+        // keyboard nothing reached it with: the file list opened over the
+        // downloads, and Esc took the view away instead of the dialog.
+        // A dialog is above everything; this one is a takeover, not one.
+        if let Some(view) = self.ui.detail_view {
+            // The zone's own key closes it, any other detail key jumps
+            let target = match key.code {
+                KeyCode::Char(c) => ZoneId::all()
+                    .iter()
+                    .copied()
+                    .find(|id| id.detail_key() == Some(c)),
+                _ => None,
+            };
+            match key.code {
+                KeyCode::Esc => self.ui.detail_view = None,
+                _ if target == Some(view) => self.ui.detail_view = None,
+                _ if target.is_some() => self.ui.detail_view = target,
+                // Only the Log view scrolls; the other two takeovers have
+                _ if view == ZoneId::Log => {
+                    if let Some(step) = self.log_scroll_step(key.code) {
+                        self.ui.scroll_detail_log(step);
+                    }
+                }
+                // The Torrents view is a list, so it moves a cursor and acts
+                // on the row under it. It used to take the keyboard and do
+                // nothing with it but close: a full-frame list of downloads
+                // with no way to choose one of them.
+                _ if view == ZoneId::Torrent => {
+                    let last = self.ui.downloads.len().saturating_sub(1);
+                    match key.code {
+                        KeyCode::Home => self.ui.download_cursor = 0,
+                        KeyCode::End => self.ui.download_cursor = last,
+                        _ if self.download_step(key.code).is_some() => {
+                            if let Some(step) = self.download_step(key.code) {
+                                self.ui.navigate_downloads(step);
+                            }
+                        }
+                        _ => self.torrent_detail_key(key.code).await?,
+                    }
+                }
+                _ => {}
             }
             return Ok(Some(()));
         }

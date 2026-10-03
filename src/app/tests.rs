@@ -4,7 +4,7 @@
 
 use super::input::MOUSE_SCROLL_STEP;
 use super::*;
-use crate::ui::view::source_rows;
+use crate::ui::view::{source_rows, Modal};
 use clap::Parser;
 
 use std::path::PathBuf;
@@ -1255,4 +1255,75 @@ async fn a_click_beside_the_menu_items_does_nothing() {
 
     assert!(app.ui.running, "a click on empty space must not quit");
     assert!(app.ui.show_menu, "and must leave the menu open");
+}
+
+/// The Torrents detail view is a list, so it moves a cursor. It used to take
+/// the keyboard and do nothing with it but close: a full-frame table of
+/// every download in the daemon, with no way to pick one of them.
+#[tokio::test]
+async fn the_torrent_detail_view_moves_its_cursor() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.downloads = vec![
+        crate::ui::view::DownloadRow {
+            id: 1,
+            name: "one".into(),
+            ..Default::default()
+        },
+        crate::ui::view::DownloadRow {
+            id: 2,
+            name: "two".into(),
+            ..Default::default()
+        },
+        crate::ui::view::DownloadRow {
+            id: 3,
+            name: "three".into(),
+            ..Default::default()
+        },
+    ];
+    app.ui
+        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+
+    app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
+    assert_eq!(app.ui.download_cursor, 1, "j moves down");
+
+    app.handle_key(press(KeyCode::Down)).await.expect("Down");
+    assert_eq!(app.ui.download_cursor, 2, "and so does Down, always");
+
+    app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
+    assert_eq!(app.ui.download_cursor, 1);
+
+    // Wrapping, like every other list here: a cursor that stops at the end
+    // of a list you read top to bottom loses its place.
+    app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
+    app.handle_key(press(KeyCode::Char('k'))).await.expect("k");
+    assert_eq!(app.ui.download_cursor, 2, "and wraps to the end");
+
+    app.handle_key(press(KeyCode::End)).await.expect("End");
+    assert_eq!(app.ui.download_cursor, 2);
+    app.handle_key(press(KeyCode::Home)).await.expect("Home");
+    assert_eq!(app.ui.download_cursor, 0);
+}
+
+/// A modal is above a detail view. Asked the other way round, Esc closed the
+/// view *behind* the file list and left the dialog holding a keyboard
+/// nothing reached it with -- the one dialog that cannot be closed.
+#[tokio::test]
+async fn a_modal_over_a_detail_view_gets_the_keyboard_first() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.downloads = vec![crate::ui::view::DownloadRow {
+        id: 1,
+        name: "one".into(),
+        ..Default::default()
+    }];
+    app.ui
+        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+    app.ui.open_files_modal(1, "one".into());
+
+    app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+
+    assert_eq!(app.ui.modal, Modal::None, "Esc closed the dialog");
+    assert!(
+        app.ui.detail_view.is_some(),
+        "and left the view behind it standing"
+    );
 }
