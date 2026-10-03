@@ -151,8 +151,11 @@ fn test_delete_word() {
     for c in "hello world".chars() {
         app.type_char(c);
     }
+    // The separating space goes with the word: leaving it behind means the
+    // next `ctrl+w` has nothing but a space in front of the caret and does
+    // nothing, which reads as a dead key.
     app.delete_word();
-    assert_eq!(app.search_input, "hello ");
+    assert_eq!(app.search_input, "hello");
 }
 
 #[test]

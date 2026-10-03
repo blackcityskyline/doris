@@ -187,7 +187,13 @@ impl App {
             && self.modal == Modal::None
             && !self.show_menu
         {
-            let col = editing.chars().count() as u16;
+            // The caret's own column, which is not the end of the text once
+            // the arrows move it.
+            let col = if self.input_mode {
+                self.cursor_column()
+            } else {
+                editing.chars().count()
+            } as u16;
             frame.set_cursor_position((inner.x + col.min(inner.width.saturating_sub(1)), inner.y));
         }
     }

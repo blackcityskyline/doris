@@ -641,7 +641,7 @@ impl App {
                 }
             }
             Event::ExtensionQuery(query) => {
-                self.ui.search_input = query.clone();
+                self.ui.set_input(query.clone());
                 self.ui.show_menu = false;
                 self.start_search(query).await;
             }
@@ -800,7 +800,7 @@ impl App {
         self.report_bridge_taken();
 
         if let Some(query) = self.args.query.clone() {
-            self.ui.search_input = query.clone();
+            self.ui.set_input(query.clone());
             self.ui.show_menu = false;
             self.start_search(query).await;
         } else {
@@ -832,7 +832,7 @@ impl App {
                 }
                 query = self.search_rx.recv() => {
                     if let Some(query) = query {
-                        self.ui.search_input = query.clone();
+                        self.ui.set_input(query.clone());
                         self.ui.show_menu = false;
                         self.start_search(query).await;
                     }

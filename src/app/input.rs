@@ -812,6 +812,16 @@ impl App {
             KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.delete_word();
             }
+            // Arrows are the caret's while the box is being typed into. They
+            // are the panel-movers everywhere else, which is why a typo in
+            // the middle of a query used to be unfixable: `ctrl + arrows`
+            // still moves panels, so plain arrows had to be free to be
+            // useful here.
+            KeyCode::Left => self.ui.move_cursor(-1),
+            KeyCode::Right => self.ui.move_cursor(1),
+            KeyCode::Home => self.ui.cursor_home(),
+            KeyCode::End => self.ui.cursor_end(),
+            KeyCode::Delete => self.ui.delete_under_cursor(),
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.ui.type_char(c);
             }

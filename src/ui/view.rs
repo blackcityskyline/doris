@@ -188,6 +188,9 @@ impl DownloadRow {
 
 pub struct App {
     pub search_input: String,
+    /// Where in `search_input` the caret is, in characters -- not bytes, so
+    /// a Cyrillic query and an emoji count as one position each.
+    pub search_cursor: usize,
     pub results: Vec<TorrentItem>,
     pub selected: usize,
     pub logs: VecDeque<String>,
@@ -424,6 +427,7 @@ impl App {
 
         Self {
             search_input: String::new(),
+            search_cursor: 0,
             results: Vec::new(),
             selected: 0,
             logs: VecDeque::new(),
@@ -992,28 +996,149 @@ impl App {
         self.input_mode = false;
     }
 
+    /// Replace the whole query, caret at the end.
+    ///
+    /// One way in, because assigning `search_input` directly leaves the
+    /// caret wherever it was -- and a caret at 0 in a query that arrived
+    /// whole from a search or from the browser add-on is a query the next
+    /// letter is typed into the middle of.
+    pub fn set_input(&mut self, text: impl Into<String>) {
+        self.search_input = text.into();
+        self.search_cursor = self.char_count();
+    }
+
     pub fn type_char(&mut self, c: char) {
         if self.input_mode {
-            self.search_input.push(c);
+            self.insert_at_cursor(c);
         }
     }
 
     pub fn backspace(&mut self) {
-        if self.input_mode {
-            self.search_input.pop();
+        if !self.input_mode {
+            return;
+        }
+        let Some(index) = self.byte_before_cursor() else {
+            return;
+        };
+        self.search_input.remove(index);
+        self.search_cursor -= 1;
+    }
+
+    /// Delete the character under the cursor, which is what `Del` does and
+    /// what `Backspace` does not.
+    pub fn delete_under_cursor(&mut self) {
+        if !self.input_mode {
+            return;
+        }
+        let index = self.cursor_char();
+        if index < self.search_input.chars().count() {
+            self.search_input.remove(index);
         }
     }
 
     pub fn clear_input(&mut self) {
         self.search_input.clear();
+        self.search_cursor = 0;
     }
 
+    /// Delete the word before the cursor, and the space that separated it.
+    ///
+    /// Cursor-relative, because the append-only version could only ever mean
+    /// "the last word" and that is a different key once the caret can be
+    /// anywhere. `ctrl+w` with the caret in the middle of a query is a
+    /// question about the middle.
     pub fn delete_word(&mut self) {
-        let words: Vec<&str> = self.search_input.split_whitespace().collect();
-        if let Some(last) = words.last() {
-            let cut_pos = self.search_input.len() - last.len();
-            self.search_input.truncate(cut_pos);
+        // Up to the caret: `ctrl+w` is backwards, so what the caret is inside
+        // of is only the half that goes.
+        let cut = self.byte_at_cursor();
+        let word_start = self.search_input[..cut]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| c.is_whitespace())
+            .map(|(i, _)| i + 1)
+            .unwrap_or(0);
+        if word_start == cut {
+            return; // only a space before the caret: nothing to take
         }
+        // And the space in front of it, so the next word does not run into
+        // this one, and so pressing the key again still has a word to take.
+        let start = self.search_input[..word_start]
+            .trim_end_matches(char::is_whitespace)
+            .len();
+        let keep = self.search_input[..start].chars().count();
+        self.search_input.replace_range(start..cut, "");
+        self.search_cursor = keep;
+    }
+
+    /// One place that knows where the cursor is, in characters.
+    fn cursor_char(&self) -> usize {
+        self.search_cursor.min(self.char_count())
+    }
+
+    fn char_count(&self) -> usize {
+        self.search_input.chars().count()
+    }
+
+    /// The byte index of the character *at* the cursor -- which is where a
+    /// character typed now belongs.
+    ///
+    /// The character before it, for a backspace. They are different indexes
+    /// and getting them the wrong way round inserts after the character the
+    /// caret is in front of, which reads as the caret jumping one to the
+    /// left: "Довоъд" instead of "Доводъ".
+    fn byte_at_cursor(&self) -> usize {
+        let at = self.cursor_char();
+        self.search_input
+            .char_indices()
+            .nth(at)
+            .map(|(i, _)| i)
+            .unwrap_or(self.search_input.len())
+    }
+
+    /// The byte index of the character before the cursor, `None` at the start.
+    fn byte_before_cursor(&self) -> Option<usize> {
+        let at = self.cursor_char();
+        if at == 0 {
+            return None;
+        }
+        self.search_input.char_indices().nth(at - 1).map(|(i, _)| i)
+    }
+
+    /// Insert at the cursor rather than at the end.
+    ///
+    /// This is the whole change: the box was append-only, so a typo in the
+    /// middle of a query could not be fixed. Deleting the last word and
+    /// retyping it is not editing, it is starting again with a worse query
+    /// in between.
+    fn insert_at_cursor(&mut self, c: char) {
+        self.search_input.insert(self.byte_at_cursor(), c);
+        self.search_cursor += 1;
+    }
+
+    /// Move the cursor by `delta` characters, stopping at the ends.
+    ///
+    /// Not wrapping. Wrapping is right for a list you read top to bottom,
+    /// and wrong for a caret: an arrow that teleports from the start of a
+    /// query to its end is a key that changes what the next letter does, and
+    /// the only way to find that out is to type a letter.
+    pub fn move_cursor(&mut self, delta: i64) {
+        let len = self.char_count() as i64;
+        let next = (self.cursor_char() as i64 + delta).clamp(0, len);
+        self.search_cursor = next as usize;
+    }
+
+    pub fn cursor_home(&mut self) {
+        self.search_cursor = 0;
+    }
+
+    pub fn cursor_end(&mut self) {
+        self.search_cursor = self.char_count();
+    }
+
+    /// What the caret's column is, counted in characters like everything
+    /// else the renderer measures.
+    pub fn cursor_column(&self) -> usize {
+        self.cursor_char()
     }
 
     pub fn navigate_down(&mut self) -> bool {

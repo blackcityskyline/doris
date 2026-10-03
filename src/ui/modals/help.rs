@@ -71,7 +71,10 @@ pub const NAV_KEYS: &[(&str, &str)] = &[
 /// Searching and what to do with a row that came back.
 pub const SEARCH_KEYS: &[(&str, &str)] = &[
     ("s, i, S", "Enters search input mode."),
-    ("ctrl + u, ctrl + w", "Clears the input / deletes a word."),
+    ("←, →, Home, End", "Moves the caret inside the query."),
+    ("Del", "Deletes the character under the caret."),
+    ("ctrl + u, ctrl + w", "Clears the query / deletes the word"),
+    ("", "before the caret."),
     ("Enter", "Searches, or plays the selected row."),
     ("Esc", "Leaves input mode, keeping the query."),
     ("b", "Browse: freshest rows from every source."),
