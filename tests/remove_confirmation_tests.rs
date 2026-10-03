@@ -11,6 +11,17 @@ fn app() -> App {
     app.torrent_status.hash = "abc123".into();
     app.torrent_status.title = "some torrent".into();
     app.active_torrent_hash = Some("abc123".into());
+    // The panel is a list of downloads, so its facts are rows and not the
+    // streaming server's one torrent.
+    app.downloads = vec![doris::ui::view::DownloadRow {
+        id: 7,
+        hash: "abc123".into(),
+        name: "downloading thing".into(),
+        fraction: 0.25,
+        total_size: 4_000,
+        left: 3_000,
+        ..Default::default()
+    }];
     app
 }
 
@@ -88,9 +99,12 @@ fn the_panel_shows_the_question_while_armed() {
         !plain.contains("d again to confirm"),
         "a cancelled question must not stay on screen"
     );
+    // The panel is ~50 columns wide in this layout, so the name is
+    // truncated; the row's progress is not, and it is on screen only
+    // because a row was drawn.
     assert!(
-        plain.contains("abc123"),
-        "the panel keeps its facts while the question is up"
+        plain.contains("25%"),
+        "the panel keeps its rows while the question is up: {plain}"
     );
 }
 

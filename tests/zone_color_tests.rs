@@ -104,6 +104,10 @@ fn test_torrent_labels_are_accented_and_values_are_body_text() {
     app.state = AppState::Streaming;
     app.torrent_status.hash = "abcdef0123456789".to_string();
     app.torrent_status.status = "Downloading".to_string();
+    // The panel is a table of downloads, so it names no values -- the
+    // labels this is about live in the detail view, which is where a
+    // torrent's facts are written out.
+    app.detail_view = Some(doris::ui::layout::ZoneId::Torrent);
 
     let buf = buffer(&mut app, 120, 40);
     let theme = doris::ui::theme::Theme::dark();

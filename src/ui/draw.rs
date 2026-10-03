@@ -294,13 +294,78 @@ impl App {
     }
 
     fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
-        // A list of what is being fetched, not a readout of one torrent.
-        // The single-status panel this replaces could only ever describe
-        // the torrent the last search played, so everything else in the
-        // daemon was invisible and a restart lost even that.
-        if !self.downloads.is_empty() || self.daemon_reachable == Some(false) {
-            return self.render_downloads(frame, area, id, config);
+        // The panel is the list, always. It used to fall back to a
+        // single-torrent readout when the daemon held nothing, so the
+        // panel's identity depended on whether a download happened to
+        // exist: the same key meant two different things on two launches,
+        // and a daemon that simply is not running looked like the old
+        // panel rather than like a daemon that is not running.
+        self.render_downloads(frame, area, id, config);
+    }
+
+    /// The streaming torrent's live line, shown above the list while one
+    /// is active.
+    ///
+    /// The old panel showed exactly this and nothing else, which is why
+    /// anything else in the daemon was invisible. It stays, as one line:
+    /// the streaming server is a different service from the downloading
+    /// daemon and its state has nowhere else to go.
+    ///
+    /// The hash is on this line and not only in the detail view because
+    /// the detail view is about a download now: the streamed torrent's
+    /// hash -- the one thing that identifies it -- was reachable nowhere
+    /// once the daemon held anything at all.
+    fn render_stream_line(&self, width: usize) -> Option<Line<'_>> {
+        let s = &self.torrent_status;
+        // Not gated on the hash alone. Between pressing Enter and TorrServer
+        // answering there is a window with a state and no hash, and that is
+        // the window in which the panel must say something -- a launch that
+        // shows nothing looks like an app that ignored the key.
+        if s.hash.is_empty() && self.state != AppState::Streaming {
+            return None;
         }
+        let label = Style::default().fg(self.theme.secondary_color());
+        let value = Style::default().fg(self.theme.main_fg.to_color());
+        // "starting" means the hash has not come back yet, not that the
+        // app state happens to be Streaming: a launch that TorrServer has
+        // already answered for is running, and calling it starting again
+        // is the same mistake as drawing it as empty.
+        let state: &str = if self.state == AppState::Streaming && s.hash.is_empty() {
+            "starting"
+        } else {
+            &s.status
+        };
+        let mut spans = vec![
+            Span::styled("stream ", label),
+            Span::styled(format!("{:>3.0}%", s.progress * 100.0), value),
+            Span::styled("  ", value),
+            Span::styled(state, value),
+            Span::styled("  ", value),
+            Span::styled(&s.title, label),
+        ];
+        // What is left over goes to the hash, and what it leaves over is
+        // dropped rather than wrapped: a second line would look like a
+        // second torrent.
+        let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+        let room = width.saturating_sub(used + 2);
+        if !s.hash.is_empty() && room >= 12 {
+            spans.push(Span::styled("  ", value));
+            spans.push(Span::styled(
+                super::torrents_panel::truncate(&s.hash, room),
+                value,
+            ));
+        }
+        Some(Line::from(spans))
+    }
+
+    #[allow(dead_code)]
+    fn render_torrent_status_legacy(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        id: ZoneId,
+        config: &Config,
+    ) {
         let s = &self.torrent_status;
 
         let progress_pct = (s.progress * 100.0) as u32;
@@ -414,6 +479,11 @@ impl App {
             ),
             Style::default().fg(self.theme.main_fg.to_color()),
         )));
+        // Then whatever is being streamed, when something is. One line,
+        // because the streaming server's state has nowhere else to go --
+        // and the panel this replaced showed it and nothing else, which is
+        // how everything else in the daemon became invisible.
+        lines.extend(self.render_stream_line(inner_width));
 
         let Some(plan) = panel::plan(inner_width) else {
             let mut lines = lines;
@@ -523,75 +593,25 @@ impl App {
         frame.render_widget(log_panel, area);
     }
 
-    /// The Torrent detail view (`T`): the same facts the panel draws in
-    /// four tight lines, given the whole frame -- so the name gets a
-    /// line of its own and the bar is as wide as the terminal instead
-    /// of the panel's 50-column cap.
+    /// The Torrent detail view (`T`): every fact about one download,
+    /// given the whole frame.
+    ///
+    /// It describes the row under the Torrents panel's cursor, because that
+    /// is what the panel shows. It used to describe `torrent_status`, which
+    /// is the *streaming* server's one torrent -- so the panel became a
+    /// list and `T` kept opening a different service's view of something
+    /// else entirely, under the same key. The streaming state still has
+    /// its place: it is the `stream` line on the panel, and this view falls
+    /// back to it when nothing is being downloaded, which is the only case
+    /// where it is the subject rather than a footnote.
     fn render_detail_torrent(&self, frame: &mut Frame, area: Rect, config: &Config) {
-        let s = &self.torrent_status;
-        let progress_pct = (s.progress * 100.0) as u32;
-        // `Progress: NN% ` leads, so the sparkline gets what is left
-        let prefix = format!("Progress: {}% ", progress_pct).len() as u16;
-        let bar_width = area.width.saturating_sub(prefix + 2) as usize;
-
-        let history: Vec<f64> = self.progress_history.iter().copied().collect();
-        let sparkline =
-            super::widgets::graph::render_sparkline(&history, bar_width, &config.graph_symbol);
-
-        let status_display = if self.torrent_paused && !s.hash.is_empty() {
-            format!("{} (paused)", s.status)
-        } else {
-            s.status.clone()
+        // Some fields are words, some numbers, and one of them is absent
+        // for a torrent that has not started -- so a row is rendered by
+        // asking the row, not by formatting a struct into existence.
+        let lines = match self.downloads.get(self.download_cursor) {
+            Some(row) => self.download_detail_lines(row, config),
+            None => self.stream_detail_lines(config),
         };
-
-        // Same split as the panel: labels in the secondary accent, the
-        let label = Style::default().fg(self.theme.secondary_color());
-        let value = Style::default().fg(self.theme.main_fg.to_color());
-
-        let mut lines = vec![
-            Line::from(vec![
-                Span::styled("Name: ", label),
-                Span::styled(s.title.clone(), value),
-            ]),
-            Line::from(vec![
-                Span::styled("Hash: ", label),
-                Span::styled(s.hash.clone(), value),
-            ]),
-            Line::from(vec![
-                Span::styled("Status: ", label),
-                Span::styled(status_display, value),
-            ]),
-        ];
-        lines.push(Line::from(vec![
-            Span::styled("Progress: ", label),
-            Span::styled(
-                format!("{}%", progress_pct),
-                if progress_pct >= 100 {
-                    Style::default().fg(self.theme.primary_color())
-                } else {
-                    value
-                },
-            ),
-            Span::styled(" ", value),
-            Span::styled(sparkline, value),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled("DL: ", label),
-            Span::styled(format_bytes(s.download_speed), value),
-            Span::styled("  ", value),
-            Span::styled("UL: ", label),
-            Span::styled(format_bytes(s.upload_speed), value),
-            Span::styled("  Downloaded: ", label),
-            Span::styled(format_bytes(s.downloaded), value),
-            Span::styled(" / ", value),
-            Span::styled(format_bytes(s.total_size), value),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled("Seeds: ", label),
-            Span::styled(s.seeds.to_string(), value),
-            Span::styled("  Peers: ", label),
-            Span::styled(s.peers.to_string(), value),
-        ]));
 
         let title = Span::styled(
             " Torrent detail [T/Esc] close ",
@@ -602,6 +622,167 @@ impl App {
                 .title(title),
         );
         frame.render_widget(paragraph, area);
+    }
+
+    /// One download, every fact the daemon reported about it.
+    ///
+    /// Six facts the table cannot show: where it is being written, when it
+    /// was added, the ratio, the ETA, and the per-tracker seeder counts. The
+    /// tracker's own name and its seed count are the only way to tell "no
+    /// peers" from "one tracker answered and three did not".
+    fn download_detail_lines(
+        &self,
+        row: &crate::ui::view::DownloadRow,
+        config: &Config,
+    ) -> Vec<Line<'_>> {
+        let label = Style::default().fg(self.theme.secondary_color());
+        let value = Style::default().fg(self.theme.main_fg.to_color());
+        let percent = row.percent();
+        let progress_style = if percent >= 100.0 {
+            Style::default().fg(self.theme.primary_color())
+        } else {
+            value
+        };
+
+        let mut lines = vec![
+            field("Name: ", &row.name, &label, &value),
+            field("Hash: ", &row.hash, &label, &value),
+            field("State: ", row.state(), &label, &value),
+            Line::from(vec![
+                Span::styled("Progress: ", label),
+                Span::styled(format!("{percent:.0}%"), progress_style),
+                Span::styled(
+                    format!(
+                        "   {} of {}",
+                        bytes(row.bytes_done().max(0) as u64),
+                        bytes(row.total_size.max(0) as u64)
+                    ),
+                    value,
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("DL: ", label),
+                Span::styled(speed(row.download_speed), value),
+                Span::styled("  ", value),
+                Span::styled("UL: ", label),
+                Span::styled(speed(row.upload_speed), value),
+                Span::styled("  ETA: ", label),
+                Span::styled(row.eta_text().unwrap_or_else(|| "--".into()), value),
+            ]),
+            Line::from(vec![
+                Span::styled("Ratio: ", label),
+                Span::styled(
+                    row.ratio()
+                        .map(|r| format!("{r:.2}"))
+                        .unwrap_or_else(|| "--".into()),
+                    value,
+                ),
+                Span::styled("  Seeds: ", label),
+                Span::styled(row.seeds.to_string(), value),
+                Span::styled("  Peers: ", label),
+                Span::styled(row.peers.to_string(), value),
+            ]),
+            field("Directory: ", &row.dir, &label, &value),
+            field("Added: ", &added(row.added), &label, &value),
+        ];
+
+        // The error, when the daemon reported one. It is the only line here
+        // that can be a blank space over a working download, and hiding it
+        // is how a failed download looks like a stalled one.
+        if !row.error.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("Error: {}", row.error),
+                Style::default()
+                    .fg(self.theme.error_color())
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+
+        if !row.trackers.is_empty() {
+            lines.push(Line::from(Span::styled("Trackers: ", label)));
+            for tracker in &row.trackers {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {} ", tracker.host), value),
+                    Span::styled(format!("seeds {}", tracker.seeders), label),
+                    Span::styled(format!("  leechers {}", tracker.leechers), label),
+                    Span::styled(
+                        if tracker.announced {
+                            ""
+                        } else {
+                            "  (no answer)"
+                        },
+                        label,
+                    ),
+                ]));
+            }
+        }
+
+        let _ = config;
+        lines
+    }
+
+    /// The streaming server's one torrent, for when nothing is being
+    /// downloaded. Same shape as above so the two views do not feel like
+    /// different programs.
+    fn stream_detail_lines(&self, config: &Config) -> Vec<Line<'_>> {
+        let s = &self.torrent_status;
+        let label = Style::default().fg(self.theme.secondary_color());
+        let value = Style::default().fg(self.theme.main_fg.to_color());
+        let percent = s.progress * 100.0;
+        let state = if self.torrent_paused && !s.hash.is_empty() {
+            format!("{} (paused)", s.status)
+        } else {
+            s.status.clone()
+        };
+        let history: Vec<f64> = self.progress_history.iter().copied().collect();
+        let sparkline = super::widgets::graph::render_sparkline(&history, 40, &config.graph_symbol);
+        vec![
+            field("Name: ", &s.title, &label, &value),
+            field("Hash: ", &s.hash, &label, &value),
+            field("State: ", &state, &label, &value),
+            Line::from(vec![
+                Span::styled("Progress: ", label),
+                Span::styled(format!("{percent:.0}%"), value),
+                Span::styled("  ", value),
+                Span::styled(sparkline, value),
+            ]),
+            Line::from(vec![
+                Span::styled("DL: ", label),
+                Span::styled(bytes(s.download_speed), value),
+                Span::styled("  ", value),
+                Span::styled("UL: ", label),
+                Span::styled(bytes(s.upload_speed), value),
+            ]),
+            field(
+                "Downloaded: ",
+                &format!("{} / {}", bytes(s.downloaded), bytes(s.total_size)),
+                &label,
+                &value,
+            ),
+            field(
+                "Ratio: ",
+                &s.ratio
+                    .map(|r| format!("{r:.2}"))
+                    .unwrap_or_else(|| "--".into()),
+                &label,
+                &value,
+            ),
+            Line::from(vec![
+                Span::styled("Seeds: ", label),
+                Span::styled(s.seeds.to_string(), value),
+                Span::styled("  Peers: ", label),
+                Span::styled(s.peers.to_string(), value),
+            ]),
+            field("Directory: ", &s.dir, &label, &value),
+            field(
+                "ETA: ",
+                &s.eta
+                    .map(|e| format!("{e}s"))
+                    .unwrap_or_else(|| "--".into()),
+                &label,
+                &value,
+            ),
+        ]
     }
 
     /// The results table's rows: every filtered row that still has an index to land on.
@@ -771,6 +952,47 @@ impl App {
 /// `Src` sits between the metadata and the title: on the `all` tab a
 /// single page mixes trackers, and the row is the only place that says
 /// who returned it.
+/// One `label: value` line, the shape every detail view uses.
+fn field<'a>(label: &'a str, value: &str, label_style: &Style, value_style: &Style) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(label, *label_style),
+        Span::styled(value.to_string(), *value_style),
+    ])
+}
+
+/// A byte count as a person reads it. Shared with the panel so the two
+/// never say `1.9 GB` and `1.9 GB ` about the same number.
+fn bytes(n: u64) -> String {
+    format_bytes(n)
+}
+
+/// A speed, with its unit spelled out.
+///
+/// The table's `speed()` deliberately drops units so a narrow column fits
+/// three of them; here there is room, and a bare `0` reads as a value the
+/// daemon failed to report rather than as an idle connection.
+fn speed(n: i64) -> String {
+    if n <= 0 {
+        format_bytes(0)
+    } else {
+        crate::transmission::human_speed(n)
+    }
+}
+
+/// When a torrent was added, from the daemon's epoch seconds.
+fn added(epoch: i64) -> String {
+    if epoch <= 0 {
+        return "--".to_string();
+    }
+    chrono::DateTime::from_timestamp(epoch, 0)
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| "--".to_string())
+}
+
 fn results_header(theme: &Theme) -> Row<'static> {
     Row::new(vec![
         Cell::from("Seeds"),

@@ -63,7 +63,17 @@ impl Poller {
                             break;
                         }
                     }
-                    Err(_) => failures = failures.saturating_add(1),
+                    Err(_) => {
+                        // Said once, on the first failure: a daemon that is
+                        // down should not put a line in the log every
+                        // second, but the panel should still stop claiming
+                        // it knows what is happening.
+                        let first = failures == 0;
+                        failures = failures.saturating_add(1);
+                        if first && event_tx.send(Event::DownloadDaemonDown).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         })

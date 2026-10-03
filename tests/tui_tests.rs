@@ -1007,6 +1007,90 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
     assert!(text.contains("50%"), "the progress percentage is printed");
 }
 
+/// The Torrent detail view describes the row under the downloads cursor,
+/// because that is what the panel shows.
+///
+/// It used to describe `torrent_status` unconditionally -- the *streaming*
+/// server's one torrent -- so `T` opened a different service's view of
+/// something else while the panel listed the daemon's downloads, and both
+/// were called "the torrent". The streaming state stays the fallback for
+/// when there is nothing being downloaded, which is the case where it is
+/// the subject rather than a footnote.
+#[test]
+fn test_the_torrent_detail_view_describes_the_selected_download() {
+    let mut app = make_test_app();
+    // The streaming server still has its own torrent, and it is *not* what
+    // this view is about while a download is listed.
+    app.torrent_status = doris::ui::view::TorrentStatus {
+        hash: "streaminghash01".into(),
+        title: "Streamed.Something".into(),
+        progress: 0.9,
+        status: "working".into(),
+        ..Default::default()
+    };
+    app.downloads = vec![
+        doris::ui::view::DownloadRow {
+            id: 1,
+            hash: "045e85f2ebc24a875a64fe2e9ac9b61f7aad0499".into(),
+            name: "Downloaded.Thing.2024".into(),
+            fraction: 0.42,
+            download_speed: 4_200_000,
+            seeds: 3,
+            peers: 12,
+            total_size: 1_990_000_000,
+            left: 1_150_000_000,
+            dir: "/home/u/Downloads".into(),
+            status: 4,
+            downloaded: 840_000_000,
+            uploaded: 340_000_000,
+            ..Default::default()
+        },
+        doris::ui::view::DownloadRow {
+            id: 2,
+            name: "Second.Download".into(),
+            hash: "aa".into(),
+            ..Default::default()
+        },
+    ];
+    app.download_cursor = 1;
+
+    let buf = render_detail(&mut app, ZoneId::Torrent, 100, 30);
+    let text = all_text(&buf);
+
+    assert!(
+        text.contains("Second.Download"),
+        "the row under the cursor is the subject"
+    );
+    assert!(
+        !text.contains("Streamed.Something"),
+        "the streaming server's torrent is not: it is a different service, \
+         and the panel does not list it"
+    );
+    assert!(
+        !text.contains("Downloaded.Thing.2024"),
+        "nor is any download the cursor is not on"
+    );
+}
+
+/// ...and with nothing being downloaded it falls back to the streaming
+/// server's torrent, which is the case where that is what there is to say.
+#[test]
+fn test_the_torrent_detail_view_falls_back_to_the_stream_when_nothing_downloads() {
+    let mut app = make_test_app();
+    app.torrent_status = doris::ui::view::TorrentStatus {
+        hash: "streaminghash01".into(),
+        title: "Streamed.Something".into(),
+        progress: 0.9,
+        status: "working".into(),
+        ..Default::default()
+    };
+
+    let buf = render_detail(&mut app, ZoneId::Torrent, 100, 30);
+    let text = all_text(&buf);
+
+    assert!(text.contains("Streamed.Something"));
+}
+
 /// The Results detail view is the table again, but full-frame, with a
 /// preview line under it naming the row under the cursor -- the facts
 /// the detail modal shows, without opening a modal.

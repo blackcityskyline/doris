@@ -44,6 +44,14 @@ pub enum Event {
     /// contents, as opposed to `TorrentListUpdate`, which is the
     /// streaming server's and feeds the streaming status.
     DownloadListUpdate(Vec<crate::ui::view::DownloadRow>),
+    /// The downloading daemon did not answer.
+    ///
+    /// A separate event rather than an empty `DownloadListUpdate` because
+    /// an empty list is also what "nothing is downloading" looks like, and
+    /// replacing the table with nothing on one failed poll would throw away
+    /// every row for a blip. What is being reported is a fact about the
+    /// daemon, not about the list.
+    DownloadDaemonDown,
     /// A torrent just became the "active" one to show/manage in the Torrent panel (e.g.
     TorrentActive(String),
     /// The answer to a detail modal's `Source::details` request: the file list for the page it

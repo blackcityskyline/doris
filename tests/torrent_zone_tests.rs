@@ -38,7 +38,7 @@ fn test_a_stream_in_progress_says_it_is_starting() {
     app.state = AppState::Streaming;
     let text = render(&mut app, 120, 40);
     assert!(
-        text.contains("Starting stream"),
+        text.contains("starting"),
         "the launch window must not look idle:\n{text}"
     );
 }
@@ -49,10 +49,10 @@ fn test_an_idle_panel_does_not_claim_a_stream() {
     app.state = AppState::Idle;
     let text = render(&mut app, 120, 40);
     assert!(
-        !text.contains("Starting stream"),
+        !text.contains("stream "),
         "nothing is being launched:\n{text}"
     );
-    assert!(text.contains("Status"), "the panel still labels itself");
+    assert!(text.contains("Torrent"), "the panel still labels itself");
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn test_a_live_torrent_reports_its_own_hash() {
         "once TorrServer answered, the hash is the real state:\n{text}"
     );
     assert!(
-        !text.contains("Starting stream"),
+        !text.contains("starting"),
         "and the launch wording steps aside:\n{text}"
     );
 }

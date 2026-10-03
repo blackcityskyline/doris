@@ -607,6 +607,12 @@ impl App {
                 self.ui.show_menu = false;
                 self.start_search(query).await;
             }
+            Event::DownloadDaemonDown => {
+                // The rows are left alone: the daemon not answering is not
+                // evidence that the downloads stopped existing.
+                self.ui.daemon_reachable = Some(false);
+                self.ui.free_space = None;
+            }
             Event::DownloadListUpdate(rows) => {
                 // The cursor is kept on the same download across polls, by
                 // id: a daemon that reorders its list must not move the
