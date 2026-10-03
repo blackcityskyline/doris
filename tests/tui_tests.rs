@@ -1026,15 +1026,16 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
     assert!(text.contains("50%"), "the progress percentage is printed");
 }
 
-/// The keybind words sit in a frame of their own at the bottom.
+/// The keybind words are written **on** the frame's bottom border, the way
+/// every other keybind in doris is written.
 ///
-/// They used to be the last line inside the downloads box, which is the one
-/// place they could not be read as controls: a table row above them is a
-/// torrent name, so a row that says `pause p` reads as a torrent called
-/// pause. The frame is what separates them, and the key character keeps the
-/// `hi_fg` + bold that every other keybind in the app is drawn in.
+/// Twice they were not: first the last line inside the downloads box, then a
+/// box of their own. Both put them *inside* something, and the frame is where
+/// doris says what a key does -- `f filter` on Results, `p pause` on Torrent.
+/// So the words share a row with the border glyphs, in the brackets
+/// (`┌pause p┐`) the panels' own buttons wear.
 #[test]
-fn test_the_torrent_keybinds_are_framed_at_the_bottom() {
+fn test_the_torrent_keybinds_are_written_on_the_bottom_border() {
     let mut app = make_test_app();
     let buf = render_detail_framed(&mut app, ZoneId::Torrent, 100, 30);
 
@@ -1043,37 +1044,43 @@ fn test_the_torrent_keybinds_are_framed_at_the_bottom() {
             .map(|x| buf[(x, y)].symbol())
             .collect::<String>()
     };
-    let words = (0..buf.area.height)
-        .find(|y| row_text(*y).contains("unlimited"))
-        .expect("the keybinds are not drawn");
+    let last = buf.area.height - 1;
+    let words = row_text(last);
 
-    // A border above and below: that is the whole claim.
+    // On the border: the frame's own corner is on the same row as the words,
+    // which is only true if they were drawn over it rather than inside it.
     assert!(
-        row_text(words - 1).contains('─'),
-        "no top border over the keybinds: `{}`",
-        row_text(words - 1)
+        words.contains("unlimited"),
+        "the keybinds are not on the bottom row: `{}`",
+        words
     );
     assert!(
-        row_text(words + 1).contains('─'),
-        "no bottom border under the keybinds: `{}`",
-        row_text(words + 1)
+        words.starts_with('╰') || words.starts_with('└'),
+        "the bottom row is not the frame's border: `{words}`"
     );
-    // And at the bottom: the frame's lower border is the view's last row.
+    // Bracketed like the panels' buttons, so it reads as a control.
     assert!(
-        row_text(buf.area.height - 1).contains('─'),
-        "the keybind frame is not at the bottom: `{}`",
-        row_text(buf.area.height - 1)
+        words.contains('┌') && words.contains('┐'),
+        "the keybinds are not bracketed: `{words}`"
     );
 
     // The key itself, in the colour that marks a key everywhere else.
     let x = (0..buf.area.width)
-        .find(|x| buf[(*x, words)].symbol() == "0")
+        .find(|x| buf[(*x, last)].symbol() == "0")
         .expect("the `0` of `unlimited 0` is not on that row");
-    let cell = &buf[(x, words)];
+    let cell = &buf[(x, last)];
     assert_eq!(cell.fg, app.theme.hi_fg.to_color(), "the key is not hi_fg");
     assert!(
         cell.modifier.contains(Modifier::BOLD),
         "the key is not bold"
+    );
+
+    // And they cost no height: the row above the border is the facts box, not
+    // a row of keybinds.
+    assert!(
+        !row_text(last - 1).contains("unlimited"),
+        "the keybinds are a row of their own again: `{}`",
+        row_text(last - 1)
     );
 }
 

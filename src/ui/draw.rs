@@ -668,20 +668,10 @@ impl App {
         let wanted_facts = (facts.len() as u16).saturating_add(2);
         let framed = sections.is_some() && inner.height >= wanted_facts + SECTION_HEIGHT + 7;
         let sections_height = if framed { SECTION_HEIGHT } else { 0 };
-        // Budgeted from the bottom up, and the keybind row is spent first:
-        // it is the one row here that names no fact about the torrent. The
-        // facts box comes next, and the table keeps whatever is left -- it
-        // is the list the user came to this view for.
-        let room = inner.height.saturating_sub(sections_height);
-        let legend_height = if room >= wanted_facts + LEGEND_ROWS + 3 {
-            LEGEND_ROWS
-        } else {
-            0
-        };
         // The facts box whole or not at all: a frame too short to hold one
         // fact line is a caption over nothing, and the rows it ate are rows
         // of the table the user came to this view for.
-        let room = room.saturating_sub(legend_height);
+        let room = inner.height.saturating_sub(sections_height);
         let facts_height = if room >= wanted_facts + 3 {
             wanted_facts
         } else {
@@ -757,27 +747,14 @@ impl App {
             );
         }
 
-        // The keys, in a frame of their own at the bottom.
+        // The keys, on this view's own bottom border.
         //
-        // They were the last line inside the downloads box, which read as
-        // one more row of the table -- a table whose rows are names and
-        // percentages does not have a row that says `pause p`. The frame is
-        // what says these words are controls, and the key character is in
-        // the one colour doris gives a key everywhere else, so the row is
-        // found without reading it.
-        if legend_height > 0 {
-            self.render_untitled_box(
-                frame,
-                Rect {
-                    x: inner.x,
-                    y: y + table_height + facts_height,
-                    width: inner.width,
-                    height: legend_height,
-                },
-                vec![self.torrent_detail_legend(inner.width.saturating_sub(2) as usize)],
-                config,
-            );
-        }
+        // On the frame, not inside it: the frame is where doris writes what a
+        // key does -- `f filter` on Results, `p pause` on Torrent -- and the
+        // whole-frame view had its keys in a box of their own instead, which
+        // made them look like content. The row costs no height, so nothing
+        // else had to be spent to make room for it.
+        self.render_detail_buttons(frame, inner, area, config);
     }
 
     /// The three summary boxes, side by side.
@@ -857,46 +834,6 @@ impl App {
         }
     }
 
-    /// The Torrents detail view's controls, on its own line.
-    ///
-    /// The same words the zone writes on its frame border, in the same two
-    /// styles -- the word in `title`, the character that triggers it in
-    /// `hi_fg` and bold -- because a control you cannot see is the control
-    /// that does not exist. Written on the frame rather than inside the
-    /// panel, so they are not one more row of table.
-    fn torrent_detail_legend(&self, width: usize) -> Line<'static> {
-        let word = Style::default().fg(self.theme.title.to_color());
-        let hot = Style::default()
-            .fg(self.theme.hi_fg.to_color())
-            .add_modifier(Modifier::BOLD);
-        let mut spans: Vec<Span> = Vec::new();
-        let mut used = 0usize;
-        for (key, label) in [
-            ("p", "pause"),
-            ("d", "delete"),
-            ("v", "verify"),
-            ("f", "files"),
-            ("o", "open"),
-            ("+", "faster"),
-            ("-", "slower"),
-            ("0", "unlimited"),
-        ] {
-            let pair = label.chars().count() + 1 + key.chars().count();
-            let gap = usize::from(!spans.is_empty()) * 2;
-            if used + gap + pair > width {
-                break;
-            }
-            if gap > 0 {
-                spans.push(Span::styled("  ", word));
-                used += gap;
-            }
-            spans.push(Span::styled(label.to_string(), word));
-            spans.push(Span::styled(format!(" {key}"), hot));
-            used += pair;
-        }
-        Line::from(spans)
-    }
-
     /// One framed box: a title and its lines.
     fn render_box<'a>(
         &self,
@@ -913,20 +850,6 @@ impl App {
         let block = self
             .themed_block(self.theme.div_line.to_color(), config)
             .title(title);
-        frame.render_widget(Paragraph::new(lines).block(block), area);
-    }
-
-    /// One framed box with no title, for a strip whose content is the whole
-    /// story: the keybind row has words in it and adding a heading over them
-    /// buys nothing but the two rows it would cost.
-    fn render_untitled_box<'a>(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        lines: Vec<Line<'a>>,
-        config: &Config,
-    ) {
-        let block = self.themed_block(self.theme.div_line.to_color(), config);
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
@@ -1290,11 +1213,6 @@ impl App {
 /// and a bottom border.
 const SECTION_HEIGHT: u16 = 4;
 
-/// The keybind row's own frame: a top border, the words, a bottom border.
-/// It is the only row in this view that names no fact about the torrent, so
-/// it is also the first thing dropped when the terminal is short.
-const LEGEND_ROWS: u16 = 3;
-
 /// The Torrents panel's content, split the way its two renderers want it.
 struct Downloads<'a> {
     summary: super::torrents_panel::Summary,
@@ -1381,35 +1299,78 @@ impl App {
             frame.render_widget(Paragraph::new(Line::from(info)), layout.info);
         }
         for (button, rect) in &layout.buttons {
-            // Hovered: whole-cell containment against the same rectangle
-            let hovered = self.hovers(*rect);
-            // The bracket round the word is what makes it read as a
-            // control rather than as more of the panel's title -- the
-            // reference draws each one as `┌` + letter + word + `┐`
-            // -- a bracket on each side, with the plain frame line
-            // between them. With "Show boxes" off there is no frame to
-            // bracket against, so they go with it.
-            let bracketed = config.show_boxes;
-            let mut spans = Vec::new();
-            if bracketed {
-                spans.push(Span::styled(
-                    "┌",
-                    Style::default().fg(self.theme.div_line.to_color()),
-                ));
-            }
-            spans.extend(super::layout::button_spans(
-                &self.theme,
-                button,
-                self.frame_button_active(id, button),
-                hovered,
+            self.draw_frame_button(frame, button, *rect, config, |b| {
+                self.frame_button_active(id, b)
+            });
+        }
+    }
+
+    /// One frame button: `┌word key┐` drawn over the border row it sits on.
+    ///
+    /// Shared with the zone frames so a key written on the panel and the same
+    /// key written on the full view are drawn by one piece of code -- the
+    /// alternative is two renderings of one convention, and they drift.
+    fn draw_frame_button(
+        &self,
+        frame: &mut Frame,
+        button: &super::layout::FrameButton,
+        rect: Rect,
+        config: &Config,
+        active: impl Fn(&super::layout::FrameButton) -> bool,
+    ) {
+        // The bracket round the word is what makes it read as a
+        // control rather than as more of the panel's title -- the
+        // reference draws each one as `┌` + letter + word + `┐`
+        // -- a bracket on each side, with the plain frame line
+        // between them. With "Show boxes" off there is no frame to
+        // bracket against, so they go with it.
+        let bracketed = config.show_boxes;
+        let mut spans = Vec::new();
+        if bracketed {
+            spans.push(Span::styled(
+                "┌",
+                Style::default().fg(self.theme.div_line.to_color()),
             ));
-            if bracketed {
-                spans.push(Span::styled(
-                    "┐",
-                    Style::default().fg(self.theme.div_line.to_color()),
-                ));
+        }
+        spans.extend(super::layout::button_spans(
+            &self.theme,
+            button,
+            active(button),
+            self.hovers(rect),
+        ));
+        if bracketed {
+            spans.push(Span::styled(
+                "┐",
+                Style::default().fg(self.theme.div_line.to_color()),
+            ));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+    }
+
+    /// The full-frame views' keys, along the bottom border of the frame the
+    /// view itself is drawn in.
+    ///
+    /// Left aligned like the zone frames' bottom row, and dropping whole
+    /// buttons that do not fit: a `┌unlim…` cut off by the frame is a key
+    /// that reads as a typo.
+    fn render_detail_buttons(&self, frame: &mut Frame, inner: Rect, area: Rect, config: &Config) {
+        if area.height < 2 {
+            return; // no border row to write on
+        }
+        let bottom = area.y + area.height - 1;
+        let mut x = inner.x;
+        for button in super::layout::detail_buttons() {
+            if x + button.width() > inner.x + inner.width {
+                break;
             }
-            frame.render_widget(Paragraph::new(Line::from(spans)), *rect);
+            self.draw_frame_button(
+                frame,
+                &button,
+                Rect::new(x, bottom, button.width(), 1),
+                config,
+                |_| false,
+            );
+            x += button.width() + super::view::FRAME_GAP;
         }
     }
 }

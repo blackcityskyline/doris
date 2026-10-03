@@ -396,7 +396,12 @@ pub fn sources_summary(config: &Config) -> String {
 /// Columns kept between two elements of a frame legend; the buttons
 /// sit a couple of columns apart on the border, not flush against each
 /// other.
-const FRAME_GAP: u16 = 2;
+/// Columns between two frame buttons.
+///
+/// Public because the full-frame views write buttons on their own bottom
+/// border too, and a gap only the panels knew about would be a gap the two
+/// renderers disagreed about.
+pub const FRAME_GAP: u16 = 2;
 
 /// The rects [`App::frame_layout`] hands out: every frame button with
 /// the screen rectangle it is drawn into, plus the panel's info text.

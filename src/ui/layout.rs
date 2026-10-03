@@ -996,6 +996,34 @@ const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::BottomLeft, 'd', "delete"),
 ];
 
+/// The keys of the Torrent full-frame view (`T`), along its bottom border.
+///
+/// A table like the zone ones, and for the same reason: these are keys, and
+/// a key that is not written where every other key is written is a key the
+/// user has to learn twice. `p` and `d` are here as well as on the panel's
+/// frame -- the panel shows two of the eight, the full frame shows all.
+const DETAIL_BUTTONS: &[(FrameSlot, char, &str)] = &[
+    (FrameSlot::BottomLeft, 'p', "pause"),
+    (FrameSlot::BottomLeft, 'd', "delete"),
+    (FrameSlot::BottomLeft, 'v', "verify"),
+    (FrameSlot::BottomLeft, 'f', "files"),
+    (FrameSlot::BottomLeft, 'o', "open"),
+    (FrameSlot::BottomLeft, '+', "faster"),
+    (FrameSlot::BottomLeft, '-', "slower"),
+    (FrameSlot::BottomLeft, '0', "unlimited"),
+];
+
+pub fn detail_buttons() -> Vec<FrameButton> {
+    DETAIL_BUTTONS
+        .iter()
+        .map(|&(slot, key, label)| FrameButton {
+            slot,
+            key,
+            label: label.to_string(),
+        })
+        .collect()
+}
+
 pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
     let table: &[(FrameSlot, char, &str)] = match id {
         ZoneId::Results => RESULTS_BUTTONS,
