@@ -462,8 +462,14 @@ impl App {
     fn render_downloads(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         let inner_width = area.width.saturating_sub(2) as usize;
         let visible = (area.height as usize).saturating_sub(4).max(1);
-        let mut lines = self.downloads_lines(inner_width, visible);
+        let parts = self.downloads_parts(inner_width, visible);
+
+        let body = Style::default().fg(self.theme.main_fg.to_color());
+        let mut lines = vec![Line::from(Span::styled(parts.summary.one_line(), body))];
+        lines.extend(parts.stream);
+        lines.extend(parts.table);
         lines.extend(self.remove_prompt_line());
+
         frame.render_widget(
             Paragraph::new(lines).block(self.zone_block(id, config)),
             area,
@@ -471,38 +477,33 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    /// The panel's own lines: summary, the stream, the table, the armed
-    /// removal.
+    /// The panel's own content, in its three parts: the numbers, whatever
+    /// is being streamed, and the table.
     ///
-    /// Shared with the `T` detail view rather than written twice, because
-    /// the detail view *is* this panel at full width -- the whole point of
-    /// `T` is that the panel drops columns when the zone is narrow, and a
-    /// second implementation would be free to drop a different set.
-    fn downloads_lines(&self, inner_width: usize, visible: usize) -> Vec<Line<'_>> {
+    /// One function, two renderers. The zone has one line for the numbers
+    /// and no room for frames inside its own; the `T` view has the whole
+    /// terminal and draws the same numbers as three boxes and the same
+    /// table as a fourth. Sharing them is what keeps the two from drifting
+    /// into showing different things -- which is how the detail view came
+    /// to be a list of `Label: value` lines beside a table.
+    fn downloads_parts(&self, inner_width: usize, visible: usize) -> Downloads<'_> {
         use super::torrents_panel as panel;
 
         let label = Style::default().fg(self.theme.secondary_color());
-        let mut lines: Vec<Line> = Vec::new();
-
-        // The summary goes first and is never dropped: "3 torrents,
-        // nothing moving" is the answer to the question the panel is asked
-        // most often, and it is one line.
-        lines.push(Line::from(Span::styled(
-            panel::stats(&self.downloads, self.free_space, self.daemon_reachable),
-            Style::default().fg(self.theme.main_fg.to_color()),
-        )));
-        // Then whatever is being streamed, when there is. One line,
-        // because the streaming server's state has nowhere else to go --
-        // and the panel this replaced showed it and nothing else, which is
-        // how everything else in the daemon became invisible.
-        lines.extend(self.render_stream_line(inner_width));
+        let summary = panel::summary(&self.downloads, self.free_space, self.daemon_reachable);
+        let stream = self.render_stream_line(inner_width);
+        let mut table: Vec<Line> = Vec::new();
 
         let Some(plan) = panel::plan(inner_width) else {
-            lines.push(Line::from(Span::styled(
+            table.push(Line::from(Span::styled(
                 format!("{} torrents (panel too narrow)", self.downloads.len()),
                 label,
             )));
-            return lines;
+            return Downloads {
+                summary,
+                stream,
+                table,
+            };
         };
 
         // One header, then as many rows as the remaining height allows. The
@@ -514,14 +515,14 @@ impl App {
             .saturating_sub(visible.saturating_sub(1))
             .min(self.downloads.len().saturating_sub(1));
 
-        lines.push(Line::from(Span::styled(
+        table.push(Line::from(Span::styled(
             panel::header(&plan),
             Style::default().fg(self.theme.div_line.to_color()),
         )));
         for (offset, row) in self.downloads[first..].iter().take(visible).enumerate() {
             let idx = first + offset;
             let selected = idx == self.download_cursor;
-            lines.push(Line::from(Span::styled(
+            table.push(Line::from(Span::styled(
                 panel::row(row, &plan),
                 if selected {
                     Style::default()
@@ -533,12 +534,16 @@ impl App {
             )));
         }
         if self.downloads.len() > first + visible {
-            lines.push(Line::from(Span::styled(
+            table.push(Line::from(Span::styled(
                 format!("... {} more", self.downloads.len() - first - visible),
                 label,
             )));
         }
-        lines
+        Downloads {
+            summary,
+            stream,
+            table,
+        }
     }
 
     /// The armed removal question, when there is one.
@@ -614,41 +619,221 @@ impl App {
     /// back to it when nothing is being downloaded, which is the only case
     /// where it is the subject rather than a footnote.
     fn render_detail_torrent(&self, frame: &mut Frame, area: Rect, config: &Config) {
-        // Some fields are words, some numbers, and one of them is absent
-        // for a torrent that has not started -- so a row is rendered by
-        // asking the row, not by formatting a struct into existence.
         let facts: Vec<Line> = match self.downloads.get(self.download_cursor) {
             Some(row) => self.download_detail_lines(row, config),
             None => self.stream_detail_lines(config),
         };
 
-        // The table is the panel's own, at the full frame width: the zone
-        // drops columns when it is narrow, and dropping them is what `T`
-        // exists to stop. Nine lines of `Label: value` in an otherwise
-        // empty frame is the same information at a tenth of the density,
-        // and the row it describes was on screen anyway.
-        //
-        // The table gives up rows, never the facts: those are the reason
-        // for pressing the key, and a list that scrolled them off the
-        // bottom would be the empty frame again with more noise in it.
-        let inner_width = area.width.saturating_sub(2) as usize;
-        let visible = (area.height as usize)
-            .saturating_sub(facts.len() + 4)
-            .max(1);
-        let mut lines = self.downloads_lines(inner_width, visible);
-        lines.push(Line::default());
-        lines.extend(facts);
-        lines.extend(self.remove_prompt_line());
-
         let title = Span::styled(
             " Torrent detail [T/Esc] close ",
             Style::default().fg(self.theme.primary_color()),
         );
-        let paragraph = Paragraph::new(lines).block(
-            self.themed_block(self.theme.primary_color(), config)
-                .title(title),
+        let block = self
+            .themed_block(self.theme.primary_color(), config)
+            .title(title);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        // Four boxes, because one undifferentiated block of text is what
+        // this view was: three questions asked together on one row, then a
+        // table, then a list of facts, with nothing saying which is which.
+        // The boxes are the whole difference -- qbittorrent-tui draws the
+        // same four and its numbers are the same numbers.
+        let inner_width = inner.width as usize;
+        let sections = super::torrents_panel::section_widths(inner_width);
+        let prompt = self.remove_prompt_line();
+
+        // Budgeted from the inside out, every part derived from the one
+        // below it rather than from the frame: a rect that reaches past
+        // `inner` is a panic in the buffer, not a frame drawn slightly
+        // wrong. The table is the part that loses rows -- it is a list, and
+        // a list with fewer rows is still a list.
+        let wanted_facts = (facts.len() as u16).saturating_add(2);
+        let framed = sections.is_some() && inner.height >= wanted_facts + SECTION_HEIGHT + 7;
+        let sections_height = if framed { SECTION_HEIGHT } else { 0 };
+        // The facts box whole or not at all: a frame too short to hold one
+        // fact line is a caption over nothing, and the rows it ate are rows
+        // of the table the user came to this view for.
+        let room = inner.height.saturating_sub(sections_height);
+        let facts_height = if room >= wanted_facts + 3 {
+            wanted_facts
+        } else {
+            0
+        };
+        let table_height = room.saturating_sub(facts_height).max(1);
+
+        let mut y = inner.y;
+        let mut table_lines: Vec<Line> = Vec::new();
+        let visible = (table_height as usize).saturating_sub(4).max(1);
+        let parts = self.downloads_parts(inner_width, visible);
+        table_lines.extend(parts.stream);
+
+        match sections {
+            Some(widths) if framed => {
+                self.render_sections(
+                    frame,
+                    Rect {
+                        x: inner.x,
+                        y,
+                        width: inner.width,
+                        height: SECTION_HEIGHT,
+                    },
+                    &parts.summary,
+                    &widths,
+                    config,
+                );
+                y += SECTION_HEIGHT;
+            }
+            _ => {
+                // Truncated rather than clipped: a line cut at the border
+                // ends mid-word with nothing saying anything was lost.
+                let body = Style::default().fg(self.theme.main_fg.to_color());
+                table_lines.push(Line::from(Span::styled(
+                    super::torrents_panel::truncate(&parts.summary.one_line(), inner_width),
+                    body,
+                )));
+            }
+        }
+
+        table_lines.extend(parts.table);
+        if let Some(prompt) = prompt {
+            table_lines.push(prompt);
+        }
+        self.render_box(
+            frame,
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: table_height,
+            },
+            " downloads ",
+            table_lines,
+            config,
         );
-        frame.render_widget(paragraph, area);
+
+        if facts_height >= 3 {
+            self.render_box(
+                frame,
+                Rect {
+                    x: inner.x,
+                    y: y + table_height,
+                    width: inner.width,
+                    height: facts_height,
+                },
+                self.detail_box_title(),
+                facts,
+                config,
+            );
+        }
+    }
+
+    /// The three summary boxes, side by side.
+    fn render_sections(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        summary: &super::torrents_panel::Summary,
+        widths: &[usize; 3],
+        config: &Config,
+    ) {
+        let body = Style::default().fg(self.theme.main_fg.to_color());
+        let sections: [(&str, Vec<Line>, usize); 3] = [
+            (
+                " status ",
+                vec![
+                    Line::from(Span::styled(summary.status.clone(), body)),
+                    Line::from(Span::styled(summary.speeds.clone(), body)),
+                ],
+                widths[0],
+            ),
+            (
+                " active ",
+                vec![
+                    Line::from(Span::styled(summary.active.clone(), body)),
+                    Line::from(Span::styled(summary.session.clone(), body)),
+                ],
+                widths[1],
+            ),
+            (
+                " free space ",
+                // One line, like the reference: a second would be a second
+                // thing to read for no more information.
+                vec![Line::from(Span::styled(summary.free.clone(), body))],
+                widths[2],
+            ),
+        ];
+        let mut x = area.x;
+        for (title, lines, width) in sections {
+            let left = (x - area.x) as usize;
+            let w = width.min((area.width as usize).saturating_sub(left)) as u16;
+            if w < 4 {
+                break;
+            }
+            // Clipped at the border otherwise, which cuts a word in half
+            // with no mark that anything was lost.
+            let lines: Vec<Line> = lines
+                .into_iter()
+                .map(|line| {
+                    let spans: Vec<Span> = line
+                        .spans
+                        .into_iter()
+                        .map(|span| {
+                            let style = span.style;
+                            Span::styled(
+                                super::torrents_panel::truncate(&span.content, w as usize - 2),
+                                style,
+                            )
+                        })
+                        .collect();
+                    Line::from(spans)
+                })
+                .collect();
+            self.render_box(
+                frame,
+                Rect {
+                    x,
+                    y: area.y,
+                    width: w,
+                    height: area.height,
+                },
+                title,
+                lines,
+                config,
+            );
+            x += w + 1;
+        }
+    }
+
+    /// One framed box: a title and its lines.
+    fn render_box<'a>(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        title: impl Into<String>,
+        lines: Vec<Line<'a>>,
+        config: &Config,
+    ) {
+        let title = Span::styled(
+            title.into(),
+            Style::default().fg(self.theme.primary_color()),
+        );
+        let block = self
+            .themed_block(self.theme.div_line.to_color(), config)
+            .title(title);
+        frame.render_widget(Paragraph::new(lines).block(block), area);
+    }
+
+    /// The facts box is named after the torrent it describes.
+    fn detail_box_title(&self) -> String {
+        // Padded like every other title, or the name starts on the corner
+        // glyph and reads as part of the border.
+        let name = self
+            .downloads
+            .get(self.download_cursor)
+            .map(|row| row.name.as_str())
+            .unwrap_or("stream");
+        format!(" {name} ")
     }
 
     /// One download, every fact the daemon reported about it.
@@ -979,6 +1164,17 @@ impl App {
 /// `Src` sits between the metadata and the title: on the `all` tab a
 /// single page mixes trackers, and the row is the only place that says
 /// who returned it.
+/// Three boxes of two rows each: a top border, the section's two lines,
+/// and a bottom border.
+const SECTION_HEIGHT: u16 = 4;
+
+/// The Torrents panel's content, split the way its two renderers want it.
+struct Downloads<'a> {
+    summary: super::torrents_panel::Summary,
+    stream: Option<Line<'a>>,
+    table: Vec<Line<'a>>,
+}
+
 /// One `label: value` line, the shape every detail view uses.
 fn field<'a>(label: &'a str, value: &str, label_style: &Style, value_style: &Style) -> Line<'a> {
     Line::from(vec![

@@ -719,6 +719,22 @@ fn render_detail(app: &mut UiApp, id: ZoneId, w: u16, h: u16) -> ratatui::buffer
     terminal.backend().buffer().clone()
 }
 
+/// The detail view with frames on.
+///
+/// `Config::default()` has `show_boxes` off, and every other test here
+/// draws borders without needing them; a test about how the view is
+/// *divided* needs the division to exist.
+fn render_detail_framed(app: &mut UiApp, id: ZoneId, w: u16, h: u16) -> ratatui::buffer::Buffer {
+    app.detail_view = Some(id);
+    let config = Config {
+        show_boxes: true,
+        ..Config::default()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+    terminal.draw(|frame| app.render(frame, &config)).unwrap();
+    terminal.backend().buffer().clone()
+}
+
 fn all_text(buf: &ratatui::buffer::Buffer) -> String {
     (0..buf.area.height)
         .map(|y| {
@@ -1128,6 +1144,79 @@ fn test_the_torrent_detail_view_keeps_every_column_the_zone_had_to_drop() {
         !narrow.contains("ratio"),
         "which is the point: at zone width there is no room for it"
     );
+}
+
+/// The full-frame view is four boxes, not one heap.
+///
+/// This was the complaint that produced the boxes: summary, table and
+/// facts ran together as undifferentiated lines, so nothing said which
+/// question a row was answering. The borders are the fix, and a border
+/// drawn in the wrong place would still read as one heap.
+#[test]
+fn test_the_torrent_detail_view_divides_itself_into_boxes() {
+    let mut app = make_test_app();
+    app.downloads = vec![doris::ui::view::DownloadRow {
+        id: 1,
+        hash: "045e85f2ebc24a875a64fe2e9ac9b61f7aad0499".into(),
+        name: "A.Very.Long.Torrent.Name.That.Needs.Room.2024.1080p".into(),
+        fraction: 0.42,
+        total_size: 1_990_000_000,
+        left: 1_150_000_000,
+        dir: "/home/u/Downloads".into(),
+        ..Default::default()
+    }];
+
+    let text = all_text(&render_detail_framed(&mut app, ZoneId::Torrent, 120, 30));
+
+    // Four titled boxes: the three summary questions, the table, the facts.
+    for title in [" status ", " active ", " free space ", " downloads "] {
+        assert!(text.contains(title), "a box titled `{title}` is missing");
+    }
+    // The facts box is named after the torrent, which is also how the
+    // viewer knows which row the facts under it belong to.
+    assert!(
+        text.contains(" A.Very.Long.Torrent.Name.That.Needs.Room.2024.1080p "),
+        "the facts box is named after its row"
+    );
+    // Each box draws its own top corner: the outer frame, the three summary
+    // sections, the table and the facts -- six of them. `all_text` runs the
+    // rows together, so they are counted rather than searched for per row.
+    let corners = text.matches('╭').count();
+    assert!(
+        corners >= 6,
+        "six framed boxes, six top corners; found {corners}\n{text}"
+    );
+}
+
+/// Too short for four boxes: it draws what fits rather than boxes that
+/// overlap, and a rect past the frame is a panic, not a clipped drawing.
+#[test]
+fn test_a_short_detail_view_draws_what_fits_without_boxes_it_cannot_hold() {
+    let mut app = make_test_app();
+    app.downloads = vec![doris::ui::view::DownloadRow {
+        id: 1,
+        name: "Short.Frame".into(),
+        dir: "/home/u/Downloads".into(),
+        ..Default::default()
+    }];
+
+    // Six rows is a summary and a header and nothing else, and that is the
+    // honest answer at six rows -- but it must still be a frame, drawn
+    // whole, rather than a rect that ran past the bottom.
+    for (w, h) in [(120u16, 6u16), (30, 5), (30, 8)] {
+        let text = all_text(&render_detail_framed(&mut app, ZoneId::Torrent, w, h));
+        assert!(text.starts_with('╭'), "{w}x{h} lost its own frame");
+        assert!(text.contains("torrents"), "{w}x{h} drew no summary\n{text}");
+    }
+
+    // With room for a row, the view says which torrent it is about -- in
+    // the facts or in the table. A frame that could name nothing would be
+    // drawing numbers with no way to tell whose they are.
+    for (w, h) in [(40u16, 10u16), (46, 20), (52, 12)] {
+        let text = all_text(&render_detail_framed(&mut app, ZoneId::Torrent, w, h));
+        assert!(text.contains("Short."), "{w}x{h} named no torrent\n{text}");
+        assert!(text.starts_with('╭'), "{w}x{h} lost its own frame");
+    }
 }
 
 /// ...and with nothing being downloaded it falls back to the streaming

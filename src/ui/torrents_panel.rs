@@ -106,7 +106,13 @@ pub fn plan(width: usize) -> Option<Vec<(&'static str, usize)>> {
         if column.key == NAME {
             break;
         }
-        if used + column.width + 2 <= width {
+        // `name_min` is reserved on every pass, not just at the end. Kept
+        // greedily and trimmed afterwards, the name ended up with nothing:
+        // the columns summed to the full width, `saturating_sub` gave 0, and
+        // the `.max(name_min)` that papered over it pushed the row past the
+        // border, so the name was the part that got cut -- the one column
+        // this whole ordering exists to protect.
+        if used + column.width + 2 + name_min <= width {
             kept.push((column.key, column.width));
             used += column.width + 2;
         }
@@ -192,10 +198,48 @@ pub fn truncate(text: &str, width: usize) -> String {
     out
 }
 
-/// The one-line summary above the table: qbittorrent-tui draws this across
-/// three framed sections, which is six rows a doris zone often does not
-/// have. The numbers are the same, in one row.
-pub fn stats(rows: &[DownloadRow], free: Option<i64>, daemon: Option<bool>) -> String {
+/// The numbers the panel answers with, split into the three framed
+/// sections the full-frame view draws them in.
+///
+/// Three sections rather than one row because "is the daemon there", "what
+/// is moving" and "how much room is left" are three questions, and run
+/// together on one line they read as one long row of noise.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Summary {
+    /// `connected`, `[daemon unreachable]`, or empty before the first poll.
+    pub status: String,
+    /// What is moving right now.
+    pub speeds: String,
+    /// How many torrents the daemon holds.
+    pub active: String,
+    /// This run's totals, and the ratio they add up to.
+    pub session: String,
+    /// Room on the disk they are being written to.
+    pub free: String,
+}
+
+impl Summary {
+    /// The same numbers on one line, for a zone too short for three boxes.
+    pub fn one_line(&self) -> String {
+        let mut line = format!("{}   {}", self.speeds, self.active);
+        if !self.session.is_empty() {
+            line.push_str(&format!("   {}", self.session));
+        }
+        if !self.free.is_empty() {
+            line.push_str(&format!("   free {}", self.free));
+        }
+        if !self.status.is_empty() {
+            line.push_str(&format!("   {}", self.status));
+        }
+        line
+    }
+}
+
+/// Both directions of "is the daemon there", because the absence of an
+/// answer is not an answer of yes -- and an unasked daemon is not a daemon
+/// that failed to answer, which is what the word claimed before the first
+/// poll.
+pub fn summary(rows: &[DownloadRow], free: Option<i64>, daemon: Option<bool>) -> Summary {
     let mut down = 0i64;
     let mut up = 0i64;
     let mut uploaded = 0i64;
@@ -211,29 +255,48 @@ pub fn stats(rows: &[DownloadRow], free: Option<i64>, daemon: Option<bool>) -> S
     } else {
         "--".to_string()
     };
-    let mut line = format!(
-        "{} dl {} up   {} torrents   session {} up {} ({})",
-        crate::transmission::human_speed(down),
-        crate::transmission::human_speed(up),
-        rows.len(),
-        crate::transmission::human_bytes(uploaded.max(0) as u64),
-        crate::transmission::human_bytes(downloaded.max(0) as u64),
-        ratio
-    );
-    if let Some(free) = free {
-        line.push_str(&format!(
-            "   free {}",
-            crate::transmission::human_bytes(free.max(0) as u64)
-        ));
+    Summary {
+        status: match daemon {
+            Some(true) => "connected".to_string(),
+            Some(false) => "[daemon unreachable]".to_string(),
+            None => String::new(),
+        },
+        speeds: format!(
+            "{} dl {} up",
+            crate::transmission::human_speed(down),
+            crate::transmission::human_speed(up)
+        ),
+        active: format!("{} torrents", rows.len()),
+        session: format!(
+            "session {} up {} ({})",
+            crate::transmission::human_bytes(uploaded.max(0) as u64),
+            crate::transmission::human_bytes(downloaded.max(0) as u64),
+            ratio
+        ),
+        free: free
+            .map(|f| crate::transmission::human_bytes(f.max(0) as u64))
+            .unwrap_or_default(),
     }
-    // Both forms, because the question is "is the daemon there", and the
-    // answer being absent is not the same as the answer being yes. Before
-    // the first poll `None` says nothing: an unknown daemon is not a
-    // daemon that failed to answer.
-    match daemon {
-        Some(true) => line.push_str("   connected"),
-        Some(false) => line.push_str("   [daemon unreachable]"),
-        None => {}
+}
+
+/// How the three summary sections share `width`, or `None` when three
+/// boxes cannot each hold their longest line.
+///
+/// Status is offered the most because its second line is the longest of
+/// the three; the other two are then what is left, each with a floor.
+pub fn section_widths(width: usize) -> Option<[usize; 3]> {
+    // Active is offered what its session line needs: `session 0 B up 0 B
+    // (0.00)` is longer than either of the others' second lines, and a box
+    // that clips it mid-word is worse than a narrower neighbour.
+    const STATUS_MIN: usize = 24;
+    const ACTIVE_MIN: usize = 30;
+    const FREE_MIN: usize = 14;
+    if width < STATUS_MIN + ACTIVE_MIN + FREE_MIN {
+        return None;
     }
-    line
+    // Three borders, and one column of air between each pair of boxes.
+    let free = FREE_MIN;
+    let rest = width - free - 3;
+    let active = ACTIVE_MIN;
+    Some([rest - active, active, free])
 }

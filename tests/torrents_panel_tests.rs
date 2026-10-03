@@ -29,6 +29,34 @@ fn row(name: &str) -> DownloadRow {
 /// The rule the whole table rests on: the name is never dropped. A row that
 /// cannot say what it is about is not a row, and a panel full of
 /// percentages under no headings is worse than a narrower table.
+/// At every width, the two rules the table rests on: the row fits the width
+/// it was given, and the name keeps at least its minimum.
+///
+/// Both were checked at three hand-picked widths and neither held at the
+/// ones in between: columns were taken greedily and the name trimmed
+/// afterwards, so past a certain width the name was the part that overflowed
+/// and got cut -- the one column the ordering exists to protect.
+#[test]
+fn test_the_plan_always_fits_and_always_leaves_the_name_a_minimum() {
+    for width in 14usize..=140 {
+        let Some(plan) = plan(width) else {
+            continue;
+        };
+        let total: usize = plan.iter().map(|(_, w)| w + 2).sum();
+        assert!(
+            total <= width,
+            "at {width} the row is {total} wide: {plan:?}"
+        );
+        let name = plan.last().expect("a plan has a name");
+        assert_eq!(name.0, "name", "the name is last, or nothing is elastic");
+        assert!(
+            name.1 >= 12,
+            "at {width} the name got {} columns: {plan:?}",
+            name.1
+        );
+    }
+}
+
 #[test]
 fn test_the_name_survives_at_every_width_a_panel_can_have() {
     for width in 14..=200 {
@@ -145,10 +173,14 @@ fn test_the_summary_totals_the_list_and_stays_one_line() {
             ..row("two")
         },
     ];
-    let line = torrents_panel::stats(&rows, Some(128_000_000_000), Some(true));
+    let summary = torrents_panel::summary(&rows, Some(128_000_000_000), Some(true));
+    let line = summary.one_line();
     assert!(!line.contains('\n'), "the summary is one row: {line:?}");
-    assert!(line.contains("2 torrents"), "{line}");
-    assert!(line.contains("5.0 MB/s"), "dl is totalled: {line}");
+    assert!(summary.active.contains("2 torrents"), "{line}");
+    assert!(
+        summary.speeds.contains("5.0 MB/s"),
+        "dl is totalled: {line}"
+    );
     assert!(line.contains("free 119.2 GB"), "{line}");
     assert!(
         !line.contains("unreachable"),
@@ -165,7 +197,7 @@ fn test_the_summary_totals_the_list_and_stays_one_line() {
 /// panel claiming something it does not know.
 #[test]
 fn test_an_unasked_daemon_is_not_called_unreachable() {
-    let line = torrents_panel::stats(&[], None, None);
+    let line = torrents_panel::summary(&[], None, None).one_line();
     assert!(!line.contains("unreachable"), "{line}");
     assert!(!line.contains("connected"), "{line}");
 }
@@ -174,7 +206,7 @@ fn test_an_unasked_daemon_is_not_called_unreachable() {
 /// a row of zeros and no way to tell it from a stalled download.
 #[test]
 fn test_an_unreachable_daemon_says_so() {
-    let line = torrents_panel::stats(&[], None, Some(false));
+    let line = torrents_panel::summary(&[], None, Some(false)).one_line();
     assert!(line.contains("[daemon unreachable]"), "{line}");
     assert!(line.contains("0 torrents"), "{line}");
 }
