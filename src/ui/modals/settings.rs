@@ -71,6 +71,8 @@ pub enum SettingsAction {
     CheckTorrserverStatus,
     ToggleDownloadEnabled,
     CycleDownloadDirMode,
+    /// Which file manager `o` opens a download in.
+    CycleFileManager,
     ToggleCloseTorrentCoreOnExit,
     RunHealthCheck,
     OpenLog,

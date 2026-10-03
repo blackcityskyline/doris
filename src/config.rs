@@ -106,6 +106,16 @@ pub struct Config {
     /// A daemon that downloads to a directory you chose is.
     #[serde(default = "default_transmission_url")]
     pub transmission_url: String,
+    /// Which file manager `o` opens a download in: `auto`, or one of the
+    /// keys in `app::files::MANAGERS`.
+    ///
+    /// `auto` walks that list in preference order and takes the first that
+    /// is installed. Naming one pins it, and a named manager that is not
+    /// installed says so and falls back rather than doing nothing -- a
+    /// setting that silently opens something else is worse than one that
+    /// admits it cannot be honoured.
+    #[serde(default = "default_file_manager")]
+    pub file_manager: String,
 
     #[serde(default = "default_true")]
     pub download_enabled: bool,
@@ -161,6 +171,7 @@ impl Default for Config {
             save_credentials: true,
             enabled_sources: Vec::new(),
             transmission_url: default_transmission_url(),
+            file_manager: default_file_manager(),
             download_enabled: true,
             download_dir_mode: default_download_dir_mode(),
             download_dir_custom_1: String::new(),
@@ -221,6 +232,10 @@ fn default_presets() -> Vec<String> {
         "1,3".to_string(),
         "1,2".to_string(),
     ]
+}
+
+fn default_file_manager() -> String {
+    crate::app::files::AUTO.to_string()
 }
 
 fn default_transmission_url() -> String {

@@ -232,6 +232,25 @@ pub(super) fn settings_categories(
                     action: SettingsAction::CycleDownloadDirMode,
                 },
                 SettingsItem {
+                    label: "File manager".into(),
+                    value: crate::app::files::display_name(&config.file_manager),
+                    description: vec![
+                        "Which one `o` opens a".into(),
+                        "download's folder in.".into(),
+                        "".into(),
+                        "auto takes the first of the".into(),
+                        "list that is installed,".into(),
+                        "terminal ones first.".into(),
+                        "".into(),
+                        "(terminal) takes this".into(),
+                        "terminal over; (desktop)".into(),
+                        "opens its own window.".into(),
+                        "".into(),
+                        "Use Left/Right to cycle.".into(),
+                    ],
+                    action: SettingsAction::CycleFileManager,
+                },
+                SettingsItem {
                     label: "Custom directory 1".into(),
                     value: if config.download_dir_custom_1.is_empty() {
                         "(not set)".into()

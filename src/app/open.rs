@@ -18,10 +18,24 @@ use std::process::Command;
 pub fn open_path(
     terminal: &mut Terminal,
     config: &Config,
-    program: &str,
+    manager: &crate::app::files::Manager,
     path: &str,
 ) -> Result<()> {
-    let mut child = match Command::new(program).arg(path).spawn() {
+    let program = manager.program;
+    let mut command = Command::new(program);
+    command.arg(path);
+
+    // A desktop manager draws its own window and needs none of this
+    // terminal, so it is given none: inheriting stdout lets one line of its
+    // startup output scroll the frame it was opened from, and the user comes
+    // back to a detail view that has moved up the screen.
+    let desktop = !manager.takes_terminal;
+    if desktop {
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+    }
+
+    let mut child = match command.spawn() {
         Ok(child) => child,
         Err(e) => {
             // Nothing was started, so nothing has to be put back.
@@ -30,9 +44,9 @@ pub fn open_path(
         }
     };
 
-    // A GUI manager draws its own window and does not read this terminal, so
-    // doris stays exactly as it was and the child is simply not waited for.
-    if crate::app::files::GUI_MANAGERS.contains(&program) || program == "xdg-open" {
+    // Not waited for, and the terminal is not touched: doris carries on
+    // drawing exactly as it was.
+    if desktop {
         crate::log::log("files", &format!("opened {path} with {program}"));
         return Ok(());
     }
@@ -60,12 +74,6 @@ pub fn open_path(
         }
     }
     Ok(())
-}
-
-/// Whether the program needs the terminal, asked separately from whether it
-/// exists so the two decisions are not one `if`.
-pub fn takes_terminal(program: &str) -> bool {
-    crate::app::files::TUI_MANAGERS.contains(&program)
 }
 
 /// The directory a torrent's files are in, checked before anything spawns.

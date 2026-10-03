@@ -67,7 +67,7 @@ pub enum Event {
     /// did not set up, and a file manager that starts inside the alternate
     /// screen is a file manager nobody can see.
     OpenPath {
-        program: String,
+        manager: &'static crate::app::files::Manager,
         path: String,
     },
     /// The answer to a detail modal's `Source::details` request: the file list for the page it

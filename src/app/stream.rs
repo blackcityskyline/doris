@@ -118,13 +118,24 @@ impl App {
             self.ui.add_log(&format!("{dir} is not there any more"));
             return;
         }
-        let Some(program) = crate::app::files::pick(dir) else {
+        // The setting picks the manager, and `pick` also says which one it
+        // wanted but could not have: a name that is not installed says so
+        // and falls back, rather than quietly running something else.
+        let (manager, missing) = crate::app::files::pick(&self.config.file_manager);
+        let Some(manager) = manager else {
             self.ui.add_log(&format!("Nothing here can open {dir}"));
             return;
         };
-        self.ui.add_log(&format!("Opening {} in {}", dir, program));
+        if let Some(missing) = missing {
+            self.ui.add_log(&format!(
+                "{missing} is not installed; opening with {}",
+                manager.program
+            ));
+        }
+        self.ui
+            .add_log(&format!("Opening {} in {}", dir, manager.program));
         let _ = self.event_handler.sender().send(Event::OpenPath {
-            program: program.to_string(),
+            manager,
             path: dir.to_string(),
         });
     }

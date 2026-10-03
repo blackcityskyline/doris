@@ -774,8 +774,8 @@ impl App {
                         },
                         // See `Event::OpenPath`: only this loop has the
                         // terminal to hand over and take back.
-                        Event::OpenPath { program, path } => {
-                            open::open_path(&mut terminal, &self.config, &program, &path)?;
+                        Event::OpenPath { manager, path } => {
+                            open::open_path(&mut terminal, &self.config, manager, &path)?;
                             self.terminal_size = terminal.size()
                                 .map(|s| (s.width, s.height))
                                 .unwrap_or(self.terminal_size);

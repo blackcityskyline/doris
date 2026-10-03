@@ -302,6 +302,13 @@ impl App {
                         self.ui.last_cycle_direction,
                     );
                 }
+                SettingsAction::CycleFileManager => {
+                    self.config.file_manager = cycle_str(
+                        &self.config.file_manager,
+                        &crate::app::files::keys(),
+                        self.ui.last_cycle_direction,
+                    );
+                }
                 SettingsAction::CycleDownloadDirMode => {
                     self.config.download_dir_mode = cycle_str(
                         &self.config.download_dir_mode,
