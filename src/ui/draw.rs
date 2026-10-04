@@ -485,15 +485,7 @@ impl App {
         // at least one download and the armed question. A panel whose boxes
         // push the question off the screen is worse than a panel with its
         // numbers on one line.
-        // Header, streaming line, and the row a bottom-border keybind takes
-        // when this zone has one: it is drawn over the panel's last row, so
-        // that row is not a download.
-        let bottom_keys = usize::from(
-            super::layout::zone_buttons(id)
-                .iter()
-                .any(|b| b.slot == super::layout::FrameSlot::BottomLeft),
-        );
-        let overhead = 2 + usize::from(prompt.is_some()) + bottom_keys;
+        let overhead = 2 + usize::from(prompt.is_some()); // header + stream line
         let widths = super::torrents_panel::section_widths(inner_width);
         let framed = widths.is_some()
             && (inner.height as usize) > super::torrents_panel::SECTION_HEIGHT as usize + overhead;
@@ -812,10 +804,7 @@ impl App {
         // Four for the box, the header and the remove prompt, one spare: a control
         // row that gets pushed out of the frame is a control the user cannot
         // see, which is where this all started.
-        // Five for the box, the header and the remove prompt, one spare, and
-        // one more for the keybind row that now sits inside the bottom of the
-        // box rather than on its border.
-        let visible = (table_height as usize).saturating_sub(6).max(1);
+        let visible = (table_height as usize).saturating_sub(5).max(1);
         // The box's own inner width, not the view's: the paragraph inside a
         // frame is two columns narrower than the frame, and a row built to
         // the wider one is clipped at the right -- which is where `Ratio`
@@ -1462,15 +1451,17 @@ impl App {
         // between them. With "Show boxes" off there is no frame to
         // bracket against, so they go with it.
         //
-        // The brackets face down, `┌word┐`, towards the frame they belong to:
-        // every keybind row in doris is written against a frame, whether it
-        // sits on that frame's top border or on the row just inside its
-        // bottom one. `┌word┐` on the top border joins the line on both sides
-        // and reaches into the panel; on the bottom row the same pair points
-        // at the line underneath, which is why the bottom row is one row
-        // *inside* the frame rather than on it.
+        // Which way round they face is the edge they sit on: a word on the
+        // top border has the panel below it, so its stubs point down
+        // (`┌word┐`), and a word on the bottom border has the panel above it,
+        // so its stubs point up (`└word┘`). Both were drawn `┌…┐`, which on
+        // the bottom edge points the brackets out of the zone and away from
+        // the panel the word acts on.
+        let (open, close) = match button.slot {
+            super::layout::FrameSlot::BottomLeft => ("└", "┘"),
+            _ => ("┌", "┐"),
+        };
         let bracketed = config.show_boxes;
-        let (open, close) = ("┌", "┐");
         let mut spans = Vec::new();
         if bracketed {
             spans.push(Span::styled(
@@ -1493,18 +1484,16 @@ impl App {
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
 
-    /// Keys on the row just **inside a box's bottom border**, left aligned,
-    /// dropping whole buttons that do not fit.
+    /// Keys along the **bottom border of a box**, left aligned, dropping
+    /// whole buttons that do not fit.
     ///
-    /// The keys belong to the downloads box -- the box whose rows they act on
-    /// -- so they are written against *its* frame, not the outer one that
-    /// holds the whole view: a keybind row on the view's own frame says "this
-    /// is what this view is", where on the box it says "this is what these
-    /// rows do".
-    ///
-    /// Inside the border, not on it, so the frame stays one continuous line
-    /// with the keys hanging above it instead of chopping it into pieces --
-    /// and `┌unlim…` cut off by the frame is a key that reads as a typo.
+    /// The keys belong to the downloads box -- the box whose contents they
+    /// act on -- so they are written on *its* frame, not on the outer one
+    /// that holds the whole view. A keybind row on the view's own frame
+    /// says "this is what this view is"; on the box it says "this is what
+    /// these rows do", which is the difference between a caption and a set
+    /// of controls. And a `┌unlim…` cut off by the frame is a key that
+    /// reads as a typo.
     fn render_buttons_on_bottom_border(
         &self,
         frame: &mut Frame,
@@ -1512,14 +1501,10 @@ impl App {
         buttons: &[super::layout::FrameButton],
         config: &Config,
     ) {
-        // Four rows: a border, the keys, one row of content, a border. In a
-        // three-row box the keys *are* the content, and the one line the box
-        // had left is gone -- a table whose every row is a keybind is not a
-        // table.
-        if box_area.height < 4 || box_area.width < 2 {
-            return;
+        if box_area.height < 2 || box_area.width < 2 {
+            return; // no border row to write on
         }
-        let row = box_area.y + box_area.height - 2;
+        let bottom = box_area.y + box_area.height - 1;
         let mut x = box_area.x;
         for button in buttons {
             if x + button.width() > box_area.x + box_area.width {
@@ -1528,7 +1513,7 @@ impl App {
             self.draw_frame_button(
                 frame,
                 button,
-                Rect::new(x, row, button.width(), 1),
+                Rect::new(x, bottom, button.width(), 1),
                 config,
                 |_| false,
             );
