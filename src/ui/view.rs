@@ -406,15 +406,20 @@ pub fn sources_summary(config: &Config) -> String {
     }
 }
 
-/// Columns kept between two elements of a frame legend; the buttons
-/// sit a couple of columns apart on the border, not flush against each
-/// other.
-/// Columns between two frame buttons.
+/// Columns between two frame buttons on a **top** border, where the frame
+/// line runs between them and the gap is what shows it.
 ///
 /// Public because the full-frame views write buttons on their own bottom
 /// border too, and a gap only the panels knew about would be a gap the two
 /// renderers disagreed about.
 pub const FRAME_GAP: u16 = 2;
+
+/// The gap between the groups of a **bottom** keybind row: none.
+///
+/// The reference writes that row as `┘word└┘word└` -- flush, with the two
+/// corners of each pair doing the separating. A gap there would put three
+/// glyphs in a row where the reference has two.
+pub const FRAME_GAP_BOTTOM: u16 = 0;
 
 /// The rects [`App::frame_layout`] hands out: every frame button with
 /// the screen rectangle it is drawn into, plus the panel's info text.
@@ -884,7 +889,7 @@ impl App {
             }
             out.buttons
                 .push((b.clone(), Rect::new(cx, bottom, b.width(), 1)));
-            cx += b.width() + FRAME_GAP;
+            cx += b.width() + FRAME_GAP_BOTTOM;
         }
 
         out

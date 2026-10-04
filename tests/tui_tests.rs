@@ -1207,15 +1207,16 @@ fn test_the_torrent_keybinds_are_written_on_the_downloads_box_border() {
     let words = row_text(row);
 
     // On a frame, bracketed like the panels' buttons -- and facing *into* the
-    // zone, which on the bottom border means `└pause┘`. Drawn `┌pause┐` they
-    // point out of the panel and away from the rows they act on.
+    // bottom border is `┘pause└`: the left glyph reaches back along the frame
+    // line and the right one forward. The reference's own pair, and the one
+    // that was drawn mirrored here.
     assert!(
-        words.contains('└') && words.contains('┘'),
-        "the keybinds are not bracketed towards the zone: `{words}`"
+        words.contains('┘') && words.contains('└'),
+        "the keybinds are not bracketed: `{words}`"
     );
     assert!(
         !words.contains('┌') && !words.contains('┐'),
-        "the keybinds' brackets face outwards: `{words}`"
+        "the keybinds' brackets are the other pair: `{words}`"
     );
     // On a box *inside* the view: the row closes that box one column before the
     // view's own border, so the row cannot be the view's bottom edge.

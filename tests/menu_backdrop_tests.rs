@@ -371,12 +371,14 @@ fn test_a_frame_button_is_bracketed() {
     let line: String = (0..buf.area.width)
         .map(|x| buf[(x, 3)].symbol().to_string())
         .collect();
+    // `┐word┌` on the top border: the left glyph reaches back along the frame
+    // line and the right one forward.
     assert!(
-        line.contains('┌') && line.contains('┐'),
+        line.contains('┐') && line.contains('┌'),
         "the frame row should carry a bracketed button: {line}"
     );
     assert!(
-        line.contains("┌filter┐") && line.contains("┌group┐"),
+        line.contains("┐filter┌") && line.contains("┐group┌"),
         "each button is bracketed: {line}"
     );
 }

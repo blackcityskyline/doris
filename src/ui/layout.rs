@@ -948,10 +948,21 @@ pub struct FrameButton {
 }
 
 impl FrameButton {
-    /// What actually gets drawn: `label` when it already contains the hotkey, otherwise `label`
-    /// followed by the key.
+    /// What actually gets drawn.
+    ///
+    /// A letter key is the word's own first letter, the way the reference
+    /// writes `t` + `erminate`, `s` + `ignals`, `N` + `ice`: one word with its
+    /// first letter in the key colour, and no second copy of the key after it.
+    /// Anything that is not a letter -- an arrow, `↵`, `+`, `-`, `0` -- has no
+    /// place inside a word, so it follows it: `info ↵`, `faster +`.
     pub fn text(&self) -> String {
         if self.is_category() {
+            return self.label.clone();
+        }
+        let first = self.label.chars().next();
+        if self.key.is_ascii_alphabetic()
+            && first.is_some_and(|c| c.eq_ignore_ascii_case(&self.key))
+        {
             return self.label.clone();
         }
         if self.label.contains(self.key) {
@@ -1108,6 +1119,11 @@ pub fn button_spans(
     hovered: bool,
 ) -> Vec<Span<'static>> {
     let text = button.text();
+    // Not bold at rest, unlike the reference, which wraps every group in one
+    // bold run. doris spends the weight on something instead: the hotkey is
+    // always bold, and an *active* button bolds its whole word, so a button
+    // that is currently in effect looks different from one that is merely
+    // available.
     let word_style = Style::default().fg(theme.title.to_color());
     let hotkey_style = Style::default()
         .fg(theme.hi_fg.to_color())

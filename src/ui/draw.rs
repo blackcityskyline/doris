@@ -1451,15 +1451,16 @@ impl App {
         // between them. With "Show boxes" off there is no frame to
         // bracket against, so they go with it.
         //
-        // Which way round they face is the edge they sit on: a word on the
-        // top border has the panel below it, so its stubs point down
-        // (`┌word┐`), and a word on the bottom border has the panel above it,
-        // so its stubs point up (`└word┘`). Both were drawn `┌…┐`, which on
-        // the bottom edge points the brackets out of the zone and away from
-        // the panel the word acts on.
+        // Which pair, is the edge the word sits on -- and the pairs are named
+        // from the panel's point of view: the glyph at the left of the word
+        // and the one at its right. A word interrupts a horizontal line, so its
+        // left glyph has to reach *back* along that line and its right glyph
+        // *forward*: `┘word└` on the bottom edge and `┐word┌` on the top one.
+        // Both were drawn the other way round here, which is what put the
+        // stubs on the wrong side of every keybind row in the app.
         let (open, close) = match button.slot {
-            super::layout::FrameSlot::BottomLeft => ("└", "┘"),
-            _ => ("┌", "┐"),
+            super::layout::FrameSlot::BottomLeft => ("┘", "└"),
+            _ => ("┐", "┌"),
         };
         let bracketed = config.show_boxes;
         let mut spans = Vec::new();
@@ -1517,7 +1518,9 @@ impl App {
                 config,
                 |_| false,
             );
-            x += button.width() + super::view::FRAME_GAP;
+            // No gap between the groups: the reference's own keybind row is
+            // `┘word└┘word└`, and the two corners are the separator.
+            x += button.width() + super::view::FRAME_GAP_BOTTOM;
         }
     }
 }

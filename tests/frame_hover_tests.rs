@@ -144,12 +144,12 @@ fn the_drawn_frame_marks_the_hovered_button() {
     // The word is underlined, and the brackets round it are not: those two
     // cells are frame furniture in `div_line`, the same line the rest of the
     // border is drawn in, and underlining them would draw a box rather than
-    // mark a button. Which way round they face is the edge they sit on: this
-    // button is on the panel's bottom border, so the zone is above it and the
-    // stubs point up.
+    // mark a button. Which pair they are is the edge they sit on, named from
+    // the panel's point of view: the glyph left of the word and the one right
+    // of it, so `┘word└` on the bottom border and `┐word┌` on the top.
     let (open, close) = match button.slot {
-        doris::ui::layout::FrameSlot::BottomLeft => ("└", "┘"),
-        _ => ("┌", "┐"),
+        doris::ui::layout::FrameSlot::BottomLeft => ("┘", "└"),
+        _ => ("┐", "┌"),
     };
     assert_eq!(
         buf[(rect.x, rect.y)].symbol(),
