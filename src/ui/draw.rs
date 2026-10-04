@@ -581,8 +581,17 @@ impl App {
             .saturating_sub(visible.saturating_sub(1))
             .min(self.downloads.len().saturating_sub(1));
 
+        // The same two-column gutter the rows below get for the cursor marker.
+        // Without it the header starts two columns left of the data, and
+        // every column after the name is a column off its own heading --
+        // which is what a table with nine columns and a header that does not
+        // line up looks like.
+        let head = match marker {
+            true => format!("  {}", panel::header(&plan)),
+            false => panel::header(&plan),
+        };
         table.push(Line::from(Span::styled(
-            panel::header(&plan),
+            head,
             Style::default().fg(self.theme.div_line.to_color()),
         )));
         let hot = Style::default()

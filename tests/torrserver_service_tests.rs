@@ -105,7 +105,9 @@ fn a_pid_that_is_not_torrserver_is_never_stopped() {
 /// process has no working directory anybody chose, and its own default is
 /// `./settings` there.
 #[test]
+#[serial]
 fn the_pid_file_and_the_cache_live_beside_doris_state() {
+    scratch_home("where_state_lives");
     let pid = service::pid_file();
     assert_eq!(
         pid,

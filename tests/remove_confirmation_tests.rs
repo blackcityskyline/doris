@@ -101,9 +101,9 @@ fn the_panel_shows_the_question_while_armed() {
     );
     // The panel is ~50 columns wide in this layout, so the name is
     // truncated; the row's progress is not, and it is on screen only
-    // because a row was drawn.
+    // because a row was drawn. One decimal, as the table prints it.
     assert!(
-        plain.contains("25%"),
+        plain.contains("25.0%"),
         "the panel keeps its rows while the question is up: {plain}"
     );
 }

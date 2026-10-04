@@ -738,6 +738,89 @@ fn render_detail_framed(app: &mut UiApp, id: ZoneId, w: u16, h: u16) -> ratatui:
     terminal.backend().buffer().clone()
 }
 
+/// The header lines up with the rows under it, gutter included.
+///
+/// The rows carry a two-column cursor marker (`▸ `) and the header did not,
+/// so every column after the name sat one gutter to the right of its own
+/// heading. A nine-column table whose header does not line up with its rows
+/// is the reference's shape with none of its readability, and the eye reads
+/// the misalignment before it reads any of the numbers.
+///
+/// The check is the last non-blank column of each: the `Ratio` heading and the
+/// ratio value are both right-aligned, so equal columns mean every column
+/// above them lines up too.
+#[test]
+fn test_the_downloads_header_lines_up_with_the_rows_under_it() {
+    let mut app = make_test_app();
+    app.downloads = vec![doris::ui::view::DownloadRow {
+        id: 1,
+        hash: "045e85f2ebc24a875a64fe2e9ac9b61f7aad0499".into(),
+        name: "A.Very.Long.Torrent.Name.2024.1080p".into(),
+        fraction: 0.42,
+        download_speed: 4_200_000,
+        upload_speed: 890_000,
+        seeds: 3,
+        peers: 12,
+        total_size: 1_990_000_000,
+        left: 1_150_000_000,
+        status: 4,
+        uploaded: 340_000_000,
+        downloaded: 840_000_000,
+        ..Default::default()
+    }];
+    // The `T` view, where the cursor marker is drawn: the panel has none, so
+    // the gutter only exists here.
+    let buf = render_detail(&mut app, ZoneId::Torrent, 120, 30);
+    let rows: Vec<String> = (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+    let header = table_header(&buf);
+    let header_row = rows
+        .iter()
+        .position(|r| *r == header)
+        .expect("the header row is not where it was drawn");
+    let data = rows[header_row + 1].clone();
+    // The last thing drawn that is content: the frame's own border is not
+    // content, and counting it made both lines the same length whatever the
+    // gutter did -- which is how a mutation passed this.
+    let end = |line: &str| {
+        let content = line.trim_end_matches([' ', '│', '|']);
+        line.chars().count() - content.chars().count()
+    };
+
+    assert!(
+        data.contains('▸') || data.starts_with("││  "),
+        "the row under the header has no cursor gutter: `{data}`"
+    );
+    assert_eq!(
+        end(rows[header_row].as_str()),
+        end(data.as_str()),
+        "the header ends in a different column than the row below it:\n  {}\n  {}",
+        rows[header_row],
+        data
+    );
+}
+
+/// The downloads table's header row, as drawn.
+///
+/// Found by its own first columns rather than by a fixed row number: the
+/// header moves when the boxes above it change height, and a test that pins a
+/// row number pins the layout instead of the claim.
+fn table_header(buf: &ratatui::buffer::Buffer) -> String {
+    (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .find(|row| row.contains("Name") && row.contains("Progress"))
+        .unwrap_or_else(|| panic!("no table header in the buffer"))
+}
+
 fn all_text(buf: &ratatui::buffer::Buffer) -> String {
     (0..buf.area.height)
         .map(|y| {
@@ -1088,7 +1171,7 @@ fn test_the_torrent_panel_frames_its_numbers_like_the_detail_view() {
     // rows, where it showed through the one column between two boxes.
     let header = rows
         .iter()
-        .position(|r| r.contains("state"))
+        .position(|r| r.contains("Name") && r.contains("Progress"))
         .expect("the table header is not drawn at all");
     assert!(
         header > top + 3,
@@ -1231,8 +1314,12 @@ fn test_the_torrent_detail_view_describes_the_selected_download() {
         "the streaming server's torrent is not the subject: it is a \
          different service, and the panel does not list it"
     );
+    // The table itself is still there at the full frame width. Its *name*
+    // column is not asked about: at 100 columns the reference's nine columns
+    // leave twelve for the name, and a name is the one cell that is supposed
+    // to be cut. What must not happen is the table going away.
     assert!(
-        text.contains("Downloaded.Thing.2024"),
+        text.contains("Progress") && text.contains("Ratio"),
         "and the table itself, at the full frame width, is still there -- \
          dropping columns is what `T` exists to stop"
     );
@@ -1270,19 +1357,29 @@ fn test_the_torrent_detail_view_keeps_every_column_the_zone_had_to_drop() {
     }];
 
     // The same app at a zone's width, and at the frame's.
-    let narrow = all_text(&render_detail(&mut app, ZoneId::Torrent, 46, 20));
-    let wide = all_text(&render_detail(&mut app, ZoneId::Torrent, 120, 30));
+    let narrow = render_detail(&mut app, ZoneId::Torrent, 46, 20);
+    let wide_text = all_text(&render_detail(&mut app, ZoneId::Torrent, 120, 30));
+    let wide = render_detail(&mut app, ZoneId::Torrent, 120, 30);
 
     // Everything the plan can offer, at 120 columns.
-    for column in ["state", "down", "up", "eta", "size", "ratio"] {
+    for column in [
+        "Progress", "Status", "Size", "Down", "Up", "Seeds", "Peers", "Ratio",
+    ] {
         assert!(
-            wide.contains(column),
+            wide_text.contains(column),
             "`{column}` is dropped by the zone and kept by `T`"
         );
     }
+    // Read on the table's *header row*, not on the whole screen: the facts
+    // box has its own `Ratio` and `Seeds` lines, and those are not the
+    // columns this is about.
     assert!(
-        !narrow.contains("ratio"),
+        !table_header(&narrow).contains("Ratio"),
         "which is the point: at zone width there is no room for it"
+    );
+    assert!(
+        table_header(&wide).contains("Ratio"),
+        "and at the frame's width it is back"
     );
 }
 

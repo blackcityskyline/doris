@@ -26,59 +26,77 @@ pub struct Column {
     pub width: usize,
 }
 
-/// The columns, in the order they are dropped. The name is last because it
-/// is the one that takes whatever is left: a table row that cannot say what
-/// it is about is not a row.
+/// The columns, left to right, as the reference draws them.
+///
+/// Name first, then the numbers, and the name is the elastic one: it takes
+/// whatever is left. It used to be the other way round -- `% state down up eta
+/// size ratio name` -- which meant the table did not match the reference by
+/// name or by order, and a panel the user already knows how to read was
+/// reading as a different table.
+///
+/// No `eta`: the reference has no ETA column, and it is the one number here
+/// that is a guess about the future rather than a reading of the torrent. It
+/// is still in the detail view, where there is room to explain it.
 ///
 /// There is no "essential" flag, because there was one that did nothing:
 /// `plan` gave the name the leftover width by construction, so a flag
 /// saying the same thing was a second copy of the rule that could be
 /// flipped without changing the answer -- which is exactly what a mutation
-/// showed. The rule that holds is the order.
+/// showed. The rule that holds is the order: the first entry is the one
+/// that never goes, and what is dropped is the tail.
 pub const COLUMNS: &[Column] = &[
     Column {
+        key: "name",
+        title: "Name",
+        width: 24,
+    },
+    Column {
         key: "percent",
-        title: "%",
-        width: 5,
-    },
-    Column {
-        key: "state",
-        title: "state",
-        width: 13,
-    },
-    Column {
-        key: "down",
-        title: "down",
-        width: 7,
-    },
-    Column {
-        key: "up",
-        title: "up",
-        width: 7,
-    },
-    Column {
-        key: "eta",
-        title: "eta",
-        width: 6,
-    },
-    Column {
-        key: "size",
-        title: "size",
+        title: "Progress",
         width: 8,
     },
     Column {
-        key: "ratio",
-        title: "ratio",
-        width: 5,
+        key: "state",
+        // `downloading` is eleven characters and it is the state a panel is
+        // looked at most; the queued states are shortened in `status_cell`
+        // rather than truncated here.
+        title: "Status",
+        width: 11,
     },
     Column {
-        key: "name",
-        title: "name",
-        width: 24,
+        key: "size",
+        title: "Size",
+        width: 9,
+    },
+    Column {
+        key: "down",
+        title: "Down",
+        width: 10,
+    },
+    Column {
+        key: "up",
+        title: "Up",
+        width: 10,
+    },
+    Column {
+        key: "seeds",
+        title: "Seeds",
+        width: 7,
+    },
+    Column {
+        key: "peers",
+        title: "Peers",
+        width: 7,
+    },
+    Column {
+        key: "ratio",
+        title: "Ratio",
+        width: 5,
     },
 ];
 
-/// The column that takes the leftover width.
+/// The column that takes the leftover width, and the one that is never
+/// dropped.
 const NAME: &str = "name";
 
 /// What fits in `width`, as the columns to draw and how much each gets.
@@ -94,32 +112,30 @@ pub fn plan(width: usize) -> Option<Vec<(&'static str, usize)>> {
         return None;
     }
 
-    // The name takes what is left after everything else has been offered
-    // its maximum. That ordering is the whole rule: the name is last and
-    // it is elastic, so the columns in front of it are exactly those that
-    // fit.
-    let mut used = 2;
-    let mut kept: Vec<(&'static str, usize)> = Vec::new();
-    for column in COLUMNS {
-        // The last column is the name, and the name is elastic, so it is
-        // not offered a width here: it is what is left after the others.
-        if column.key == NAME {
+    // The name is first and elastic, so what is decided here is how much of
+    // the tail fits beside a name of at least `name_min`, and the name takes
+    // the rest. `name_min` is reserved on every pass, not just at the end:
+    // taken greedily and trimmed afterwards, the name ended up with nothing,
+    // and the `.max(name_min)` that papered over it pushed the row past the
+    // border -- so the name was the part that got cut, the one column this
+    // whole ordering exists to protect.
+    let mut fixed: Vec<(&'static str, usize)> = Vec::new();
+    let mut used = name_min + 2;
+    for column in COLUMNS.iter().skip(1) {
+        // `break` and not `continue`: a narrow panel loses the tail, not the
+        // columns in between. Skipping a column too wide for the width and
+        // keeping the one after it puts `Ratio` next to `Name` on a narrow
+        // screen, which reads as a table with its middle missing.
+        if used + column.width + 2 > width {
             break;
         }
-        // `name_min` is reserved on every pass, not just at the end. Kept
-        // greedily and trimmed afterwards, the name ended up with nothing:
-        // the columns summed to the full width, `saturating_sub` gave 0, and
-        // the `.max(name_min)` that papered over it pushed the row past the
-        // border, so the name was the part that got cut -- the one column
-        // this whole ordering exists to protect.
-        if used + column.width + 2 + name_min <= width {
-            kept.push((column.key, column.width));
-            used += column.width + 2;
-        }
+        fixed.push((column.key, column.width));
+        used += column.width + 2;
     }
-    let name_width = width.saturating_sub(used).max(name_min);
-    kept.push((NAME, name_width));
-    Some(kept)
+    let mut plan = Vec::with_capacity(fixed.len() + 1);
+    plan.push((NAME, width.saturating_sub(used).max(name_min)));
+    plan.extend(fixed);
+    Some(plan)
 }
 
 /// The columns and their widths, as the header line draws them.
@@ -152,12 +168,15 @@ pub fn row(row: &DownloadRow, plan: &[(&'static str, usize)]) -> String {
     let mut line = String::new();
     for (key, width) in plan {
         let cell = match *key {
-            "percent" => format!("{:.0}%", row.percent()),
-            "state" => row.state().to_string(),
+            // One decimal, as the reference prints it: `100.0%` reads as a
+            // measurement and `99%` reads as a rounding of one.
+            "percent" => format!("{:.1}%", row.percent()),
+            "state" => status_cell(row).to_string(),
+            "size" => crate::transmission::human_bytes(row.total_size.max(0) as u64),
             "down" => crate::transmission::human_speed(row.download_speed),
             "up" => crate::transmission::human_speed(row.upload_speed),
-            "eta" => row.eta_text().unwrap_or_else(|| "--".into()),
-            "size" => crate::transmission::human_bytes(row.total_size.max(0) as u64),
+            "seeds" => peers_cell(row.seeds, row.trackers.iter().map(|t| t.seeders)),
+            "peers" => peers_cell(row.peers, row.trackers.iter().map(|t| t.leechers)),
             "ratio" => row
                 .ratio()
                 .map(|r| format!("{r:.2}"))
@@ -196,6 +215,36 @@ pub fn truncate(text: &str, width: usize) -> String {
     let mut out: String = text.chars().take(keep).collect();
     out.push('…');
     out
+}
+
+/// The word in the `Status` column.
+///
+/// The states that are all waiting are one word here. `queued to verify`,
+/// `queued to download` and `queued to seed` are nineteen columns of a table
+/// that has eleven, and a panel watched live tells them apart by the number
+/// next to them, not by the queue. The exact word is in the detail view,
+/// where there is room for it.
+fn status_cell(row: &DownloadRow) -> &'static str {
+    match row.state() {
+        "queued to verify" | "queued to download" | "queued to seed" => "queued",
+        other => other,
+    }
+}
+
+/// `connected/known`, the way the reference prints its `Seeds` and `Peers`.
+///
+/// The second number is the most any tracker reported, which is what "known"
+/// means: trackers disagree, they go stale, and the largest is the only one
+/// of them that is not understating. With no tracker answering there is
+/// nothing to compare against, so the cell is the connected count alone --
+/// a `/0` would read as a measurement of zero seeder.
+fn peers_cell(connected: i64, known: impl Iterator<Item = i64>) -> String {
+    let total = known.max().unwrap_or(0).max(0);
+    if total > connected {
+        format!("{connected}/{total}")
+    } else {
+        format!("{connected}")
+    }
 }
 
 /// The numbers the panel answers with, split into the three framed

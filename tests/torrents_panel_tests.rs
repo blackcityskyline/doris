@@ -47,8 +47,8 @@ fn test_the_plan_always_fits_and_always_leaves_the_name_a_minimum() {
             total <= width,
             "at {width} the row is {total} wide: {plan:?}"
         );
-        let name = plan.last().expect("a plan has a name");
-        assert_eq!(name.0, "name", "the name is last, or nothing is elastic");
+        let name = plan.first().expect("a plan has a name");
+        assert_eq!(name.0, "name", "the name is first, or nothing is elastic");
         assert!(
             name.1 >= 12,
             "at {width} the name got {} columns: {plan:?}",
@@ -67,9 +67,9 @@ fn test_the_name_survives_at_every_width_a_panel_can_have() {
             );
             continue;
         };
-        let last = columns.last().expect("a plan is never empty");
-        assert_eq!(last.0, "name", "at width {width} the name was dropped");
-        assert!(last.1 >= 12, "at width {width} the name got {last:?}");
+        let first = columns.first().expect("a plan is never empty");
+        assert_eq!(first.0, "name", "at width {width} the name was dropped");
+        assert!(first.1 >= 12, "at width {width} the name got {first:?}");
     }
 }
 
@@ -110,18 +110,29 @@ fn test_columns_disappear_from_the_tail_and_never_reordered() {
         }
         assert_eq!(seen.len(), keys.len(), "{label}: {keys:?}");
     }
-    assert_eq!(w.last(), Some(&"name"));
+    assert_eq!(
+        w.first(),
+        Some(&"name"),
+        "the name is first, as the reference has it"
+    );
     assert!(
         w.len() > n.len(),
         "a narrow panel drops columns: {} vs {}",
         w.len(),
         n.len()
     );
-    for key in &n {
+    // The kept columns keep the reference's order, so a narrow panel is a
+    // prefix of a wide one and never a reshuffle.
+    assert_eq!(
+        n,
+        w.iter().take(n.len()).cloned().collect::<Vec<_>>(),
+        "the narrow plan is not a prefix of the wide one: {n:?} vs {w:?}"
+    );
+    for key in n.iter().filter(|k| **k != "name") {
         assert!(w.contains(key), "{key:?} appeared out of nowhere");
         assert!(
-            w.iter().position(|k| k == key) <= w.iter().rposition(|k| k == &"name"),
-            "{key:?} moved after the name"
+            w.iter().position(|k| k == key) >= Some(1),
+            "{key:?} moved in front of the name"
         );
     }
 }
