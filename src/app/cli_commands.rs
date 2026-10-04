@@ -219,24 +219,24 @@ async fn download(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
     let (mut app, item) = resolve_row(args, a).await?;
     app.ui.selected = 0;
     app.ui.results = vec![item.clone()];
-    let saved = app.download_selected_to_disk().await;
+    let id = app.download_selected().await;
     // Why it did not happen is the last thing the app logged, and a
-    // command that says only "nothing was written" has thrown away the
+    // command that says only "nothing was added" has thrown away the
     // answer the action just gave it.
     let reason = app.ui.logs.back().cloned();
     if json {
         let payload = serde_json::json!({
             "title": item.title,
-            "path": saved,
-            "reason": if saved.is_none() { reason } else { None },
+            "id": id,
+            "reason": if id.is_none() { reason } else { None },
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else if let Some(path) = &saved {
-        println!("{}", path.display());
+    } else if let Some(id) = id {
+        println!("{id}");
     } else {
-        println!("{}", reason.unwrap_or_else(|| "nothing was written".into()));
+        println!("{}", reason.unwrap_or_else(|| "nothing was added".into()));
     }
-    Ok(i32::from(saved.is_none()))
+    Ok(i32::from(id.is_none()))
 }
 
 async fn info(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {

@@ -200,20 +200,29 @@ pub fn safe_filename(title: &str) -> String {
         .to_string()
 }
 
-/// What the download key owes a row that has no `.torrent` to fetch YTS publishes magnets, not
-/// files `(file name, contents)` for a `<title>.magnet` file, or `None` when the row *does*
-/// have a download URL and must go through its Source exactly as before.
-pub fn magnet_only_download(
-    item: &crate::sources::models::TorrentItem,
-) -> Option<(String, String)> {
-    if !item.download_url.is_empty() {
-        return None;
-    }
-    let magnet = item.magnet.as_deref()?;
-    Some((
-        format!("{}.magnet", safe_filename(&item.title)),
-        format!("{}\n", magnet),
-    ))
+/// Where a fetched `.torrent` is put for the daemon to read.
+///
+/// Transmission's `torrent-add` takes a path, a URL or a magnet. The data URI
+/// -- the obvious way to hand over bytes without writing anything, and what
+/// this first did -- is not one of them: Transmission 4 answers
+/// `unrecognized info` to `data:application/x-bittorrent;base64,...`,
+/// measured against 4.1.3's own RPC. So the bytes go to a file under doris's
+/// state and the daemon is handed that path, and the file is deleted once the
+/// daemon has taken it.
+///
+/// Not in the downloads directory: that is where the user's films go, and a
+/// `.torrent` lying next to them is the thing this change exists to stop
+/// producing.
+///
+/// The ceiling is the obvious one -- the daemon has to be able to read the
+/// path, so a Transmission with a filesystem of its own cannot be fed this
+/// way. `doris downloads --add <path>` has the same limit, so the key and the
+/// CLI agree; serving the bytes over the bridge is the way out if a remote
+/// daemon ever has to work.
+pub fn torrent_handoff(state_dir: &std::path::Path, item_title: &str) -> std::path::PathBuf {
+    state_dir
+        .join("add")
+        .join(format!("{}.torrent", safe_filename(item_title)))
 }
 
 /// The registered id to talk to for a result row.

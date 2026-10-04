@@ -1,7 +1,6 @@
 //! The tracked torrent: starting a stream, pausing, removing, downloading a row.
 
 use super::*;
-use std::path::PathBuf;
 
 impl App {
     /// Pause (drop) or resume (re-get) the torrent the panel is currently showing.
@@ -287,19 +286,22 @@ impl App {
         source.download_torrent(&item.download_url).await
     }
 
-    /// Download the selected result's .torrent file to disk (Options ->
-    /// download's resolved directory), dispatching to whichever Source
-    /// actually produced it -- `TorrentItem.source` matters here because
-    /// the "all" Results tab can mix rows from more than one source at
-    /// once, each needing a different download client.
+    /// Hand the selected result to the download daemon and start fetching it.
     ///
-    /// Returns where it went. The TUI ignores that and reads the log panel
+    /// It used to save the `.torrent` (or a `.magnet`) next to the other
+    /// downloads and stop there, which is a file nobody opens: the key is
+    /// called *download*, and what it downloaded was the recipe, not the
+    /// film. The daemon is already there -- the Torrent panel is its list --
+    /// so a row goes in as a magnet where the row has one and as the fetched
+    /// bytes where it does not, and the panel picks it up within a poll.
+    ///
+    /// Returns the daemon's id. The TUI ignores that and reads the log panel
     /// it just wrote, which is what a panel is for; a CLI command has to
-    /// print the path, and reading a formatted log line back to recover a
+    /// print the id, and reading a formatted log line back to recover a
     /// value the function already had is how the answer came out wrong
     /// once already -- `add_log` prefixes a timestamp, so the prefix a
     /// reader looks for is not at the front of the line.
-    pub(super) async fn download_selected_to_disk(&mut self) -> Option<PathBuf> {
+    pub(super) async fn download_selected(&mut self) -> Option<i64> {
         let Some(item) = self.ui.results.get(self.ui.selected).cloned() else {
             self.ui.add_log("No result selected to download.");
             return None;
@@ -332,58 +334,89 @@ impl App {
             }
         }
 
-        // A row with no `.torrent` to fetch (YTS and friends, B8 wave 1)
-        if let Some((name, payload)) = magnet_only_download(&item) {
-            let dir = self.resolve_download_dir();
-            let path = std::path::Path::new(&dir).join(&name);
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+        let (link, handoff) = match self.daemon_handoff_for(&item).await {
+            Ok(handoff) => handoff,
+            Err(e) => {
+                self.ui.add_log(&format!("Could not get the torrent: {e}"));
+                return None;
             }
-            return match std::fs::write(&path, payload.as_bytes()) {
-                Ok(_) => {
-                    self.ui
-                        .add_log(&format!("Saved magnet link to {}", path.display()));
-                    self.ui.last_download = Some(path.clone());
-                    Some(path)
-                }
-                Err(e) => {
-                    self.ui.add_log(&format!("Failed to save file: {e}"));
-                    None
-                }
-            };
-        }
-
-        // `get_source` launches the browser only for sources whose
-        let bytes_result: Result<Vec<u8>> = match self.get_source(source_id_for(&item)).await {
-            Ok(source) => Self::download_bytes_for(&item, source.as_ref()).await,
-            Err(e) => Err(e),
         };
 
-        match bytes_result {
-            Ok(bytes) => {
-                let dir = self.resolve_download_dir();
-                let path = std::path::Path::new(&dir)
-                    .join(format!("{}.torrent", safe_filename(&item.title)));
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                match std::fs::write(&path, &bytes) {
-                    Ok(_) => {
-                        self.ui.add_log(&format!("Saved to {}", path.display()));
-                        self.ui.last_download = Some(path.clone());
-                        Some(path)
-                    }
-                    Err(e) => {
-                        self.ui.add_log(&format!("Failed to save file: {e}"));
-                        None
-                    }
-                }
+        // Built here rather than held on `App`: the client is two cheap
+        // values, and the only other user (the poller) already has its own.
+        let transmission = crate::transmission::Transmission::with_auth(
+            &self.config.transmission_url,
+            crate::credentials::load_credential(crate::app::TRANSMISSION_RESOURCE),
+        );
+        let dir = self.resolve_download_dir();
+        let answer = match transmission.add(&link, Some(&dir)).await {
+            Ok(crate::transmission::Added::Fresh(id)) => {
+                self.ui.add_log(&format!(
+                    "Added to the download daemon as #{id} -- it is in the Torrent zone now."
+                ));
+                Some(id)
             }
-            Err(e) => {
-                self.ui.add_log(&format!("Download failed: {e}"));
+            Ok(crate::transmission::Added::AlreadyThere(id)) => {
+                self.ui
+                    .add_log(&format!("The daemon already has this one, as #{id}."));
+                Some(id)
+            }
+            Ok(crate::transmission::Added::Refused(why)) => {
+                self.ui
+                    .add_log(&format!("The download daemon refused it: {why}"));
                 None
             }
+            Err(e) => {
+                self.ui.add_log(&format!(
+                    "The download daemon is not answering: {e} (Options -> streaming \
+                     -> Transmission URL)"
+                ));
+                None
+            }
+        };
+        // The file has done its job once the daemon has read it -- and only
+        // then: on a refusal it stays, because that is the one case where the
+        // user has a `.torrent` they can hand over by hand.
+        if answer.is_some() {
+            if let Some(path) = &handoff {
+                let _ = std::fs::remove_file(path);
+            }
+        } else if let Some(path) = &handoff {
+            self.ui.add_log(&format!(
+                "The .torrent is at {} if you want to hand it over yourself.",
+                path.display()
+            ));
         }
+        answer
+    }
+
+    /// What the daemon is handed, and the file it came out of when it is a
+    /// file: the magnet the row carries, or its `.torrent` fetched through the
+    /// Source that produced it and written under doris's state.
+    ///
+    /// `TorrentItem.source` matters here: the "all" Results tab mixes rows
+    /// from more than one source at once, each needing a different client.
+    /// And the bytes are fetched here rather than handed over as the tracker's
+    /// URL because half these trackers need this session's cookies, which the
+    /// daemon does not have.
+    async fn daemon_handoff_for(
+        &mut self,
+        item: &crate::sources::models::TorrentItem,
+    ) -> Result<(String, Option<std::path::PathBuf>)> {
+        if let Some(magnet) = item.magnet.as_deref() {
+            return Ok((magnet.to_string(), None));
+        }
+        // `get_source` launches the browser only for sources whose
+        let bytes = match self.get_source(source_id_for(item)).await {
+            Ok(source) => Self::download_bytes_for(item, source.as_ref()).await?,
+            Err(e) => return Err(e),
+        };
+        let path = crate::app::torrent_handoff(&crate::log::state_dir(), &item.title);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, &bytes)?;
+        Ok((path.display().to_string(), Some(path)))
     }
 
     pub(super) async fn spawn_stream(&mut self) {

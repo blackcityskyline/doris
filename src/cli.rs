@@ -79,7 +79,7 @@ pub enum Command {
     /// Send a row to TorrServer and print the URL to watch.
     Play(RowArgs),
 
-    /// Write a row's .torrent to disk and print where it went.
+    /// Hand a row to the download daemon and print its id there.
     Download(RowArgs),
 
     /// A row's facts: magnet, page, and the file list its source reads.

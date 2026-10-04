@@ -214,9 +214,9 @@ pub(super) fn settings_categories(
                     label: "Enable downloading".into(),
                     value: bool_str(config.download_enabled),
                     description: vec![
-                        "Allow \"Download\" play mode".into(),
-                        "(saving .torrent files)".into(),
-                        "in addition to streaming.".into(),
+                        "\"d\" hands a row to the daemon".into(),
+                        "to fetch; \"Download\" play mode saves".into(),
+                        "the .torrent instead of streaming.".into(),
                     ],
                     action: SettingsAction::ToggleDownloadEnabled,
                 },

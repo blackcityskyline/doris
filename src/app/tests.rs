@@ -227,6 +227,82 @@ async fn every_letter_of_a_query_reaches_the_box() {
     assert_eq!(app.ui.sources_cursor, 0, "the panel cursor must not move");
 }
 
+/// `d` on a result row hands the row to the download daemon.
+///
+/// It used to write the `.torrent` -- or a `.magnet`, for the trackers that
+/// publish nothing else -- into the downloads directory and stop there, which
+/// is a recipe nobody cooks: the key is called *download*, and the daemon is
+/// the thing that downloads. The panel it appears in is the daemon's own list,
+/// so a row that goes in shows up there.
+///
+/// The daemon here is a closed port, so the daemon cannot answer and the file
+/// must not appear: those are the two things the key must never do again, and
+/// one test can hold both.
+#[tokio::test]
+async fn d_on_a_result_hands_it_to_the_daemon_and_writes_no_file() {
+    let dir = throwaway_config();
+    let downloads = std::env::temp_dir().join(format!("doris-dl-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&downloads);
+    std::fs::create_dir_all(&downloads).expect("a scratch downloads directory");
+
+    let config = Config {
+        bridge_port: 0,
+        enabled_sources: Vec::new(),
+        // A closed port: the daemon is not answering, on purpose. This test
+        // must never reach the user's own Transmission.
+        transmission_url: "http://127.0.0.1:9".into(),
+        download_dir_mode: "custom1".into(),
+        download_dir_custom_1: downloads.display().to_string(),
+        ..Config::default()
+    };
+    let mut argv = vec!["doris", "--config"];
+    argv.push(dir.to_str().expect("utf-8 test path"));
+    let mut app = App::new(Args::parse_from(argv), config)
+        .await
+        .expect("an App for a download-key test");
+    app.ui.show_menu = false;
+    app.ui.zones.focused = ZoneId::Results;
+    app.ui.results = vec![crate::sources::models::TorrentItem {
+        title: "Some.Movie.2024".into(),
+        source: "rutracker".into(),
+        magnet: Some("magnet:?xt=urn:btih:0123456789abcdef".into()),
+        ..Default::default()
+    }];
+    app.ui.selected = 0;
+
+    app.handle_key(press(KeyCode::Char('d')))
+        .await
+        .expect("the download key");
+
+    let logged = app
+        .ui
+        .logs
+        .iter()
+        .rev()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(
+        logged.contains("download daemon"),
+        "`d` did not go to the daemon, it went somewhere else: {logged}"
+    );
+    let written: Vec<String> = std::fs::read_dir(&downloads)
+        .expect("the downloads directory")
+        .map(|entry| {
+            entry
+                .expect("a directory entry")
+                .file_name()
+                .display()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        written.is_empty(),
+        "`d` wrote {written:?} instead of downloading anything"
+    );
+}
+
 /// The other half of the same guard: outside input mode the panel's
 /// keys must still do exactly what they did.
 #[tokio::test]

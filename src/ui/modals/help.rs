@@ -82,7 +82,8 @@ pub const SEARCH_KEYS: &[(&str, &str)] = &[
     ("", "re-asks the checked sources for it."),
     ("Enter", "In Trackers, switches the row under it."),
     ("v", "Logs the selected row's details to the Log zone."),
-    ("d", "Downloads the selected row's .torrent to disk."),
+    ("d", "Hands the row to the download daemon; it"),
+    ("", "starts fetching, and shows up in Torrent."),
     ("Shift+Enter, D", "Row details: magnet, page, file list."),
 ];
 

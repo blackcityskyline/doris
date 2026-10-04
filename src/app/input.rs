@@ -89,7 +89,7 @@ impl App {
                             }
                         }
                         Some(UiAction::Download) => {
-                            self.download_selected_to_disk().await;
+                            self.download_selected().await;
                         }
                         Some(UiAction::Info) => self.show_selected_info(),
                         Some(UiAction::Play) => {
@@ -452,7 +452,7 @@ impl App {
                         self.spawn_stream().await;
                     }
                     DetailAction::Download => {
-                        self.download_selected_to_disk().await;
+                        self.download_selected().await;
                     }
                 }
             }
@@ -624,7 +624,7 @@ impl App {
                 }
             }
             KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Results => {
-                self.download_selected_to_disk().await;
+                self.download_selected().await;
             }
             KeyCode::Char('v') if self.ui.zones.focused == ZoneId::Results => {
                 self.show_selected_info();

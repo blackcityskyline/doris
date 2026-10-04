@@ -1,6 +1,6 @@
 use doris::app::{
-    cycle_index, enter_action, fill_missing_magnet, magnet_only_download, safe_filename,
-    source_id_for, source_needs_browser, EnterAction,
+    cycle_index, enter_action, fill_missing_magnet, safe_filename, source_id_for,
+    source_needs_browser, torrent_handoff, EnterAction,
 };
 use doris::config::Config;
 use doris::results::{apply_source_done, finish_search, resolve_cookie_file, source_outcome_line};
@@ -477,54 +477,34 @@ fn test_finish_search_clamps_the_selection_when_dedup_removed_that_row() {
     );
 }
 
-// --- download key: magnet-only rows -----------------------------
+// --- download key: what the daemon is handed ----------------------
 
-/// A YTS row: no `.torrent` anywhere, the magnet *is* the payload.
+/// The handoff file lives under doris's own state, named after the row.
+///
+/// Not in the downloads directory: a `.torrent` lying next to the user's
+/// films is what the `d` key used to leave behind, and the whole point is
+/// that it now downloads instead.
+///
+/// A data URI was the first answer and it does not work: Transmission 4
+/// answers `unrecognized info` to `data:application/x-bittorrent;base64,...`
+/// (measured against 4.1.3's RPC), so the bytes go to a file and the daemon
+/// reads that path.
 #[test]
-fn test_a_magnet_only_row_pays_its_magnet_as_a_file() {
-    let item = TorrentItem {
-        title: "Matrix: Generation (2024) [720p web]".to_string(),
-        download_url: String::new(),
-        magnet: Some("magnet:?xt=urn:btih:937c8886&dn=x".to_string()),
-        ..Default::default()
-    };
+fn test_the_handoff_file_is_named_after_the_row_and_kept_out_of_downloads() {
+    let path = torrent_handoff(
+        std::path::Path::new("/state/doris"),
+        "YTS: The Matrix / 2003",
+    );
 
-    let (name, payload) =
-        magnet_only_download(&item).expect("a magnet-only row must download as a file");
-    assert_eq!(name, "Matrix_ Generation _2024_ _720p web_.magnet");
     assert_eq!(
-        payload, "magnet:?xt=urn:btih:937c8886&dn=x\n",
-        "the file holds the magnet, newline-terminated like a link list expects"
+        path,
+        std::path::PathBuf::from("/state/doris/add/YTS_ The Matrix _ 2003.torrent"),
+        "the file is under doris's state, named like every other download"
     );
-}
-
-/// rutor rows carry *both* a download URL and a magnet: the magnet is
-/// the streaming path, not an excuse to stop fetching the file the
-/// user asked to save.
-#[test]
-fn test_a_row_with_a_download_url_keeps_going_through_its_source() {
-    let item = TorrentItem {
-        title: "rutor row".to_string(),
-        download_url: "https://rutor.info/download/123".to_string(),
-        magnet: Some("magnet:?xt=urn:btih:abc".to_string()),
-        ..Default::default()
-    };
-
     assert!(
-        magnet_only_download(&item).is_none(),
-        "a fetchable row must not be silently reduced to a link file"
+        !path.to_string_lossy().contains("Downloads"),
+        "a .torrent in the downloads directory is the thing this stops doing"
     );
-}
-
-#[test]
-fn test_a_row_with_neither_a_url_nor_a_magnet_is_not_written_at_all() {
-    // Such a row must fail in the normal path *with a message*; writing
-    let item = TorrentItem {
-        title: "broken row".to_string(),
-        ..Default::default()
-    };
-
-    assert!(magnet_only_download(&item).is_none());
 }
 
 /// The sanitizer both download paths now share: only the characters a
