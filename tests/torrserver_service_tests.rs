@@ -8,22 +8,45 @@
 //! TorrServer is not ours either, whatever the file says.
 
 use doris::torrserver::service;
+use serial_test::serial;
 
 /// A pid that is certainly not running, so the tests never signal a stranger.
 const NO_SUCH_PID: i32 = i32::MAX;
+
+/// A `$HOME` of this test's own, so every path under it is scratch.
+///
+/// `state_dir()` is `~/.local/share/doris` and two of these tests *write*
+/// there: one deleted the pid file if it found one, another overwrote it.
+/// That is the user's own state on a machine where doris has started its own
+/// TorrServer -- which is the designed behaviour, it is meant to outlive
+/// doris -- and deleting that pid file quietly makes doris unable to stop the
+/// process it started. It also made this file's own tests lie: the
+/// missing-binary test asserted its error message and got "already started
+/// here", which is a true answer about the machine and the wrong one to be
+/// testing.
+///
+/// `#[serial]` because `$HOME` is process-wide: these four tests change it,
+/// and a `#[serial]` only orders against other `#[serial]` tests.
+fn scratch_home(name: &str) {
+    let dir = std::env::temp_dir().join(format!("doris-tsvc-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".local/share/doris")).expect("a scratch state dir");
+    std::env::set_var("HOME", &dir);
+}
 
 /// Nothing of ours is running: stopping says so, and does not invent a pid.
 ///
 /// The message is the whole point. "Stopped" when nothing was started is a
 /// lie a user acts on -- they go and look for a service that is still up.
 #[test]
+#[serial]
 fn stopping_without_a_pid_stops_nothing_and_says_so() {
-    if let Some(pid) = service::owned_pid() {
-        // A real one on this machine from an earlier test run: clear it so
-        // the assertion is about the rule and not about the machine.
-        let _ = std::fs::remove_file(service::pid_file());
-        assert!(pid > 0);
-    }
+    scratch_home("stopping_without_a_pid");
+    assert_eq!(
+        service::owned_pid(),
+        None,
+        "a scratch state dir has nothing in it, which is the premise here"
+    );
     let what = service::stop();
     assert!(
         what.contains("nothing of ours"),
@@ -41,7 +64,9 @@ fn stopping_without_a_pid_stops_nothing_and_says_so() {
 /// number was reused, or the file was written by an older version. Either
 /// way, signalling it would stop an unrelated program.
 #[test]
+#[serial]
 fn a_pid_that_is_not_torrserver_is_never_stopped() {
+    scratch_home("a_pid_that_is_not");
     // This process: definitely running, definitely not TorrServer.
     let mine = std::process::id() as i32;
     assert!(mine != NO_SUCH_PID);
@@ -105,7 +130,9 @@ fn the_pid_file_and_the_cache_live_beside_doris_state() {
 /// message that sends someone to the web instead of to the two lines that
 /// would fix it.
 #[test]
+#[serial]
 fn a_missing_binary_is_reported_with_the_way_out() {
+    scratch_home("a_missing_binary");
     let err = service::start("/nowhere/torrserver", "", false)
         .unwrap_err()
         .to_string();
@@ -121,7 +148,9 @@ fn a_missing_binary_is_reported_with_the_way_out() {
 /// answers the wrong requests -- and the pid file would then name a process
 /// that lost the race, which is the state the stop rule exists to avoid.
 #[test]
+#[serial]
 fn starting_with_something_already_answering_starts_nothing() {
+    scratch_home("starting_with_something");
     let what = service::start("/nowhere/torrserver", "", true).unwrap();
     assert!(what.contains("already answering"), "and says why: {what}");
     assert_eq!(
