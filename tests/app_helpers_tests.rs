@@ -1,5 +1,5 @@
 use doris::app::{
-    cycle_index, enter_action, fill_missing_magnet, safe_filename, source_id_for,
+    cycle_index, enter_action, fill_missing_magnet, row_needs_source, safe_filename, source_id_for,
     source_needs_browser, torrent_handoff, EnterAction,
 };
 use doris::config::Config;
@@ -657,4 +657,53 @@ async fn test_the_default_lookup_answers_without_touching_the_network() {
         .await
         .expect("the default never fails");
     assert!(found.is_none(), "no link to find, and nothing was fetched");
+}
+
+/// Whether streaming a row needs a tracker behind it.
+///
+/// The bug this pins: a rutracker row carries a *relative* `dl.php?t=...`
+/// link and no magnet, so it has a way in while looking link-less. Counting
+/// only "no magnet" said no tracker was needed, the magnet add never ran, and
+/// the fallback that would have fetched the `.torrent` had no source to fetch
+/// it with -- the dead end the log called "the magnet link was refused and no
+/// tracker is known for this row", said about a magnet the row never had.
+#[test]
+fn a_row_with_a_link_needs_a_tracker_even_when_it_has_no_magnet() {
+    let rutracker = TorrentItem {
+        title: "Дюна".into(),
+        source: "rutracker".into(),
+        magnet: None,
+        download_url: "dl.php?t=6124572".into(),
+        page_url: "viewtopic.php?t=6124572".into(),
+        ..Default::default()
+    };
+    assert!(
+        row_needs_source(&rutracker),
+        "a row with a link and no magnet needs one: the magnet add can fail \
+         and the .torrent fallback is what is left"
+    );
+
+    // A magnet and nothing to fall back to: the link is the whole of what
+    // goes to the server, and building a source would launch a browser to do
+    // nothing.
+    let magnet_only = TorrentItem {
+        magnet: Some("magnet:?xt=urn:btih:abc".into()),
+        download_url: String::new(),
+        ..rutracker.clone()
+    };
+    assert!(
+        !row_needs_source(&magnet_only),
+        "a row named by --magnet needs no tracker"
+    );
+
+    // Both, and neither.
+    assert!(row_needs_source(&TorrentItem {
+        magnet: Some("magnet:?xt=urn:btih:abc".into()),
+        download_url: "dl.php?t=1".into(),
+        ..Default::default()
+    }));
+    assert!(row_needs_source(&TorrentItem {
+        title: "nothing".into(),
+        ..Default::default()
+    }));
 }

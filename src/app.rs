@@ -226,6 +226,21 @@ pub fn torrent_handoff(state_dir: &std::path::Path, item_title: &str) -> std::pa
         .join(format!("{}.torrent", safe_filename(item_title)))
 }
 
+/// Whether streaming this row needs a tracker behind it.
+///
+/// Two things need one: reading a magnet off the row's page when the row
+/// carries none, and fetching the `.torrent` when the magnet add fails and
+/// the row has a link to fall back to. Counting only the first is what broke
+/// it -- a rutracker row carries a relative `dl.php?t=…`, so it *has* a link
+/// while having no magnet, and the row was told no tracker was known for it.
+///
+/// A row that already has a magnet and no link needs nothing: the link is the
+/// whole of what goes to TorrServer, and building a source for it would mean
+/// launching a browser to do nothing.
+pub fn row_needs_source(item: &crate::sources::models::TorrentItem) -> bool {
+    item.magnet.is_none() || !item.download_url.is_empty()
+}
+
 /// The registered id to talk to for a result row.
 pub fn source_id_for(item: &crate::sources::models::TorrentItem) -> &'static str {
     match source::get_source(&item.source) {

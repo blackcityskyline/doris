@@ -480,13 +480,22 @@ impl App {
         // question this key does not ask.
         self.ui.state = AppState::Streaming;
 
-        // The source is here to read a magnet off the row's page, and only for a
-        // row that has none. A row that already carries a magnet -- every
-        // one of them from a JSON API source, and every one named by
-        // `doris play --magnet` -- needs nothing from a tracker, and asking
-        // for it means launching a browser to do nothing. So the source is
-        // built only when it will be used, and its absence is not an error.
-        let needs_source = item.magnet.is_none() && item.download_url.is_empty();
+        // The source is here for two things, and only counting the first is
+        // what broke: read a magnet off the row's page when the row carries
+        // none, and -- the one that was missing -- fetch the `.torrent` when
+        // the magnet add fails and the row has a link to fall back to.
+        //
+        // A rutracker row carries a *relative* `dl.php?t=…`, so "has a link"
+        // and "needs no tracker" are not the same question. The row has a way
+        // in, its magnet add can still fail, and the fallback then had no
+        // source to fetch with -- which is what the log called "the magnet
+        // link was refused and no tracker is known for this row", said about a
+        // magnet the row never had.
+        //
+        // Building it is cheap where it is now built: a source that needs a
+        // browser hands back the session the search already opened, and one
+        // that does not is just a client.
+        let needs_source = crate::app::row_needs_source(&item);
         let source = if needs_source {
             match self.source_for_row(source_id_for(&item)).await {
                 Ok(s) => Some(s),
@@ -588,8 +597,17 @@ impl App {
                     // by `--magnet` never gets here: it had nothing to
                     // fail, so there was no source to build.
                     let Some(source) = source.as_ref() else {
-                        let msg = "The magnet link was refused and no tracker is known for \
-                                   this row, so the .torrent cannot be fetched.";
+                        // Which of the two it was matters: a row whose magnet
+                        // was refused and a row that never had one are
+                        // different problems with different fixes, and the
+                        // message used to claim the first for both.
+                        let msg = if item.magnet.is_some() {
+                            "TorrServer refused the magnet link and this row has no \
+                             .torrent to fall back to."
+                        } else {
+                            "This row has no magnet link, and no tracker to fetch its \
+                             .torrent from."
+                        };
                         log(msg);
                         let _ = event_tx.send(Event::StreamError(msg.into()));
                         return;
