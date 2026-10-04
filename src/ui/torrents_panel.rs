@@ -105,55 +105,130 @@ const NAME: &str = "name";
 /// printing nothing but a count: a two-column table of truncated names is
 /// worse than saying there are three downloads.
 pub fn plan(width: usize) -> Option<Vec<(&'static str, usize)>> {
-    // One column of breathing room at each end is all the panel needs; the
-    // two spaces after each cell are inside the widths below.
     let name_min = 12;
     if width < name_min + 2 {
         return None;
     }
 
     // The name is first and elastic, so what is decided here is how much of
-    // the tail fits beside a name of at least `name_min`, and the name takes
-    // the rest. `name_min` is reserved on every pass, not just at the end:
-    // taken greedily and trimmed afterwards, the name ended up with nothing,
-    // and the `.max(name_min)` that papered over it pushed the row past the
-    // border -- so the name was the part that got cut, the one column this
-    // whole ordering exists to protect.
+    // the tail fits beside a name of at least `name_min`, *and* beside the
+    // gaps the groups are separated by. `name_min` is reserved on every pass,
+    // not just at the end: taken greedily and trimmed afterwards, the name
+    // ended up with nothing, and the `.max(name_min)` that papered over it
+    // pushed the row past the border -- so the name was the part that got
+    // cut, the one column this whole ordering exists to protect.
     let mut fixed: Vec<(&'static str, usize)> = Vec::new();
-    let mut used = name_min + 2;
     for column in COLUMNS.iter().skip(1) {
+        let mut trial = fixed.clone();
+        trial.push((column.key, column.width));
         // `break` and not `continue`: a narrow panel loses the tail, not the
         // columns in between. Skipping a column too wide for the width and
         // keeping the one after it puts `Ratio` next to `Name` on a narrow
         // screen, which reads as a table with its middle missing.
-        if used + column.width + 2 > width {
+        // `measured` already counts the name's `name_min`, so it is not
+        // added again here: counting it twice is what dropped a column at 42
+        // columns that fits in 35, and left the name 31 columns wide.
+        if measured(&trial, name_min) > width {
             break;
         }
-        fixed.push((column.key, column.width));
-        used += column.width + 2;
+        fixed = trial;
     }
+    // The name takes the rest, so the row is exactly as wide as the panel.
+    // It used to be `width - used`, with two columns of slack per column
+    // counted that the drawing never spent -- which is where the empty sixth
+    // of the panel on the right came from.
+    let name_width = width - measured(&fixed, 0);
     let mut plan = Vec::with_capacity(fixed.len() + 1);
-    plan.push((NAME, width.saturating_sub(used).max(name_min)));
+    plan.push((NAME, name_width.max(name_min)));
     plan.extend(fixed);
     Some(plan)
+}
+
+/// How many columns the plan keeps plus the gaps between them, `name_width`
+/// columns of name included.
+///
+/// The one place the widths and the gaps are added up, so the name cannot be
+/// given a width that leaves a hole at the right of every row and a header
+/// that disagrees with it.
+fn measured(fixed: &[(&'static str, usize)], name_width: usize) -> usize {
+    let mut total = name_width;
+    let mut previous = NAME;
+    for (key, width) in fixed {
+        // Including the first one: the gap between the name and the column
+        // after it is three spaces, and leaving it out of this sum is what
+        // made every row three columns wider than the panel that drew it.
+        total += gap_after(previous, key);
+        total += width;
+        previous = key;
+    }
+    total
+}
+
+/// Which question each column answers, and so how far it sits from its
+/// neighbours.
+///
+/// `Name | Progress Status Size | Down Up | Seeds Peers Ratio`: one space
+/// inside a group, three between groups. A row that spaces every column
+/// equally says the columns are equally related, and they are not -- a name
+/// next to `Progress` is a different kind of thing from `Down` next to `Up`.
+const GROUPS: &[&[&str]] = &[
+    &["name"],
+    &["percent", "state", "size"],
+    &["down", "up"],
+    &["seeds", "peers", "ratio"],
+];
+
+/// One space inside a group, three between groups.
+const GAP_IN_GROUP: usize = 1;
+const GAP_BETWEEN_GROUPS: usize = 3;
+
+fn group_of(key: &str) -> usize {
+    GROUPS
+        .iter()
+        .position(|group| group.contains(&key))
+        .unwrap_or(0)
+}
+
+/// The columns between `previous` and `next`.
+fn gap_after(previous: &str, next: &str) -> usize {
+    if group_of(previous) == group_of(next) {
+        GAP_IN_GROUP
+    } else {
+        GAP_BETWEEN_GROUPS
+    }
 }
 
 /// The columns and their widths, as the header line draws them.
 pub fn header(plan: &[(&'static str, usize)]) -> String {
     let mut line = String::new();
-    for (key, width) in plan {
+    for (i, (key, width)) in plan.iter().enumerate() {
         let title = COLUMNS
             .iter()
             .find(|c| c.key == *key)
             .map(|c| c.title)
             .unwrap_or(key);
-        if *key == "name" {
-            line.push_str(&format!(" {title:<width$}", width = width));
+        // The name is the one left-aligned cell; everything else is a number
+        // or a word in a column of its own width.
+        if *key == NAME {
+            line.push_str(&format!("{title:<width$}"));
         } else {
-            line.push_str(&format!("{title:>width$} ", width = width));
+            line.push_str(&format!("{title:>width$}"));
         }
+        line.push_str(&separator(plan, i));
     }
     line
+}
+
+/// The gap after column `index`: nothing after the last one, one space
+/// inside a group, three between groups.
+///
+/// Shared by the header and the rows, which is the only reason they cannot
+/// disagree about where a column begins.
+fn separator(plan: &[(&'static str, usize)], index: usize) -> String {
+    match (plan.get(index), plan.get(index + 1)) {
+        (Some((key, _)), Some((next, _))) => " ".repeat(gap_after(key, next)),
+        _ => String::new(),
+    }
 }
 
 /// One row's text under a plan.
@@ -166,7 +241,7 @@ pub fn header(plan: &[(&'static str, usize)]) -> String {
 /// worse than a name that is visibly cut.
 pub fn row(row: &DownloadRow, plan: &[(&'static str, usize)]) -> String {
     let mut line = String::new();
-    for (key, width) in plan {
+    for (index, (key, width)) in plan.iter().enumerate() {
         let cell = match *key {
             // One decimal, as the reference prints it: `100.0%` reads as a
             // measurement and `99%` reads as a rounding of one.
@@ -189,11 +264,12 @@ pub fn row(row: &DownloadRow, plan: &[(&'static str, usize)]) -> String {
         // overflows pushes the rest of the row past the frame instead of
         // losing its own tail.
         let cell = truncate(&cell, *width);
-        if *key == "name" {
-            line.push_str(&format!(" {cell:<width$}", width = width));
+        if *key == NAME {
+            line.push_str(&format!("{cell:<width$}"));
         } else {
-            line.push_str(&format!("{cell:>width$} ", width = width));
+            line.push_str(&format!("{cell:>width$}"));
         }
+        line.push_str(&separator(plan, index));
     }
     line
 }

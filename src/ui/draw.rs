@@ -805,7 +805,11 @@ impl App {
         // row that gets pushed out of the frame is a control the user cannot
         // see, which is where this all started.
         let visible = (table_height as usize).saturating_sub(5).max(1);
-        let parts = self.downloads_parts(inner_width, visible, true);
+        // The box's own inner width, not the view's: the paragraph inside a
+        // frame is two columns narrower than the frame, and a row built to
+        // the wider one is clipped at the right -- which is where `Ratio`
+        // lost its last two characters.
+        let parts = self.downloads_parts(inner_width.saturating_sub(2), visible, true);
         table_lines.extend(parts.stream);
 
         match sections {

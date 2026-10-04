@@ -37,15 +37,25 @@ fn row(name: &str) -> DownloadRow {
 /// afterwards, so past a certain width the name was the part that overflowed
 /// and got cut -- the one column the ordering exists to protect.
 #[test]
-fn test_the_plan_always_fits_and_always_leaves_the_name_a_minimum() {
-    for width in 14usize..=140 {
+fn test_the_row_fills_the_width_exactly_and_the_name_keeps_its_minimum() {
+    for width in 14usize..=200 {
         let Some(plan) = plan(width) else {
             continue;
         };
-        let total: usize = plan.iter().map(|(_, w)| w + 2).sum();
-        assert!(
-            total <= width,
-            "at {width} the row is {total} wide: {plan:?}"
+        // Exactly, not "no more than": the panel used to reserve two columns
+        // per column that the drawing never spent, which is where the empty
+        // sixth of the screen on the right came from.
+        let drawn = torrents_panel::row(&row("something"), &plan);
+        assert_eq!(
+            drawn.chars().count(),
+            width,
+            "at {width} the row is {} wide: {plan:?}",
+            drawn.chars().count()
+        );
+        assert_eq!(
+            torrents_panel::header(&plan).chars().count(),
+            width,
+            "at {width} the header does not match the row: {plan:?}"
         );
         let name = plan.first().expect("a plan has a name");
         assert_eq!(name.0, "name", "the name is first, or nothing is elastic");
@@ -57,82 +67,90 @@ fn test_the_plan_always_fits_and_always_leaves_the_name_a_minimum() {
     }
 }
 
+/// The gaps say which columns answer the same question: one space inside a
+/// group, three between groups.
+///
+/// `Name | Progress Status Size | Down Up | Seeds Peers Ratio`. A row that
+/// spaces every column equally says the columns are equally related, and
+/// they are not -- a name next to `Progress` is a different kind of thing
+/// from `Down` next to `Up`.
+///
+/// Measured on the drawn header, between where one column's cell ends and
+/// where the next one's title begins: every other column is right-aligned in
+/// a cell of its own width, so its title ends exactly at that cell's right
+/// edge and what is left between them is the gap and nothing else.
 #[test]
-fn test_the_name_survives_at_every_width_a_panel_can_have() {
-    for width in 14..=200 {
-        let Some(columns) = plan(width) else {
-            assert!(
-                width < 14,
-                "nothing fits at {width}, which should not happen above 13"
-            );
-            continue;
-        };
-        let first = columns.first().expect("a plan is never empty");
-        assert_eq!(first.0, "name", "at width {width} the name was dropped");
-        assert!(first.1 >= 12, "at width {width} the name got {first:?}");
-    }
-}
+fn test_the_columns_are_grouped_and_the_gaps_say_so() {
+    let wide = plan(160).expect("a plan");
+    let header = torrents_panel::header(&wide);
+    let keys: Vec<&str> = wide.iter().map(|(k, _)| *k).collect();
+    assert_eq!(
+        keys,
+        vec!["name", "percent", "state", "size", "down", "up", "seeds", "peers", "ratio"],
+        "the reference's order: {keys:?}"
+    );
 
-/// Narrower than a name and the panel says how many there are rather than
-/// drawing a table of truncated nothing.
-#[test]
-fn test_a_panel_too_narrow_for_a_name_says_so_instead_of_drawing_one() {
-    assert!(plan(13).is_none(), "twelve columns is not a table");
-    assert!(plan(0).is_none());
-    assert!(plan(1).is_none());
-    assert!(plan(14).is_some());
-}
-
-/// Columns are dropped from the tail and the ones kept stay in one order,
-/// so the table does not reshuffle itself as the window changes: a
-/// percentage column that becomes a name column when the panel narrows is
-/// unreadable.
-#[test]
-fn test_columns_disappear_from_the_tail_and_never_reordered() {
-    let wide = plan(160).expect("wide");
-    let narrow = plan(60).expect("narrow");
-
-    let order =
-        |columns: &[(&'static str, usize)]| columns.iter().map(|(k, _)| *k).collect::<Vec<_>>();
-    let (w, n) = (order(&wide), order(&narrow));
-    // No column may appear twice. A mutation that made the name take part
-    // in the fitting loop instead of stopping it pushed `name` into the
-    // plan a second time, and the table drew it twice -- which every other
-    // assertion here was happy with.
-    for (label, keys) in [("wide", &w), ("narrow", &n)] {
-        let mut seen: Vec<&str> = Vec::new();
-        for key in keys.iter() {
-            assert!(
-                !seen.contains(key),
-                "{label}: {key:?} appears twice: {keys:?}"
-            );
-            seen.push(key);
+    let width_of = |key: &str| {
+        wide.iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, w)| *w)
+            .unwrap_or_else(|| panic!("{key} is not in the plan"))
+    };
+    let title_of = |key: &str| {
+        torrents_panel::COLUMNS
+            .iter()
+            .find(|c| c.key == key)
+            .map(|c| c.title)
+            .unwrap_or_else(|| panic!("{key} has no title"))
+    };
+    let at = |key: &str| {
+        header
+            .find(title_of(key))
+            .unwrap_or_else(|| panic!("{key} is not in the header: {header:?}"))
+    };
+    // Where the cell of `key` ends: the name's cell is left-aligned and runs
+    // from the left edge, and every other column's title is right-aligned, so
+    // its last character sits in the cell's last one.
+    let cell_end = |key: &str| {
+        if key == "name" {
+            width_of(key)
+        } else {
+            at(key) + title_of(key).chars().count()
         }
-        assert_eq!(seen.len(), keys.len(), "{label}: {keys:?}");
+    };
+    // The gap is what is between two *cells*. Measuring it from one title's
+    // last character to the next title's first would count the second cell's
+    // own left padding as well -- `Down` sits in a cell of ten and is four
+    // characters wide -- so that padding comes off first.
+    let leading_pad = |key: &str| width_of(key) - title_of(key).chars().count();
+    let gap = |left: &str, right: &str| -> usize {
+        let between = &header[cell_end(left)..at(right) - leading_pad(right)];
+        assert_eq!(
+            between.trim(),
+            "",
+            "what is between {left} and {right} should be only the gap: {between:?}"
+        );
+        between.chars().count()
+    };
+
+    for (left, right) in [("name", "percent"), ("size", "down"), ("up", "seeds")] {
+        assert_eq!(
+            gap(left, right),
+            3,
+            "{left} and {right} are different groups, so three columns of gap"
+        );
     }
-    assert_eq!(
-        w.first(),
-        Some(&"name"),
-        "the name is first, as the reference has it"
-    );
-    assert!(
-        w.len() > n.len(),
-        "a narrow panel drops columns: {} vs {}",
-        w.len(),
-        n.len()
-    );
-    // The kept columns keep the reference's order, so a narrow panel is a
-    // prefix of a wide one and never a reshuffle.
-    assert_eq!(
-        n,
-        w.iter().take(n.len()).cloned().collect::<Vec<_>>(),
-        "the narrow plan is not a prefix of the wide one: {n:?} vs {w:?}"
-    );
-    for key in n.iter().filter(|k| **k != "name") {
-        assert!(w.contains(key), "{key:?} appeared out of nowhere");
-        assert!(
-            w.iter().position(|k| k == key) >= Some(1),
-            "{key:?} moved in front of the name"
+    for (left, right) in [
+        ("percent", "state"),
+        ("state", "size"),
+        ("down", "up"),
+        ("seeds", "peers"),
+        ("peers", "ratio"),
+    ] {
+        assert_eq!(
+            gap(left, right),
+            1,
+            "{left} and {right} answer the same question, so one column of gap"
         );
     }
 }
