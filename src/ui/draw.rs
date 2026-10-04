@@ -1432,7 +1432,7 @@ impl App {
         }
     }
 
-    /// One frame button: `┌word key┐` drawn over the border row it sits on.
+    /// One frame button, drawn over the border row it sits on.
     ///
     /// Shared with the zone frames so a key written on the panel and the same
     /// key written on the full view are drawn by one piece of code -- the
@@ -1446,16 +1446,26 @@ impl App {
         active: impl Fn(&super::layout::FrameButton) -> bool,
     ) {
         // The bracket round the word is what makes it read as a
-        // control rather than as more of the panel's title -- the
-        // reference draws each one as `┌` + letter + word + `┐`
-        // -- a bracket on each side, with the plain frame line
+        // control rather than as more of the panel's title -- a
+        // bracket on each side, with the plain frame line
         // between them. With "Show boxes" off there is no frame to
         // bracket against, so they go with it.
+        //
+        // Which way round they face is the edge they sit on: a word on the
+        // top border has the panel below it, so its stubs point down
+        // (`┌word┐`), and a word on the bottom border has the panel above it,
+        // so its stubs point up (`└word┘`). Both were drawn `┌…┐`, which on
+        // the bottom edge points the brackets out of the zone and away from
+        // the panel the word acts on.
+        let (open, close) = match button.slot {
+            super::layout::FrameSlot::BottomLeft => ("└", "┘"),
+            _ => ("┌", "┐"),
+        };
         let bracketed = config.show_boxes;
         let mut spans = Vec::new();
         if bracketed {
             spans.push(Span::styled(
-                "┌",
+                open,
                 Style::default().fg(self.theme.div_line.to_color()),
             ));
         }
@@ -1467,7 +1477,7 @@ impl App {
         ));
         if bracketed {
             spans.push(Span::styled(
-                "┐",
+                close,
                 Style::default().fg(self.theme.div_line.to_color()),
             ));
         }

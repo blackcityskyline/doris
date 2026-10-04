@@ -119,6 +119,10 @@ fn what_lights_up_is_what_a_click_hits() {
 #[test]
 fn the_drawn_frame_marks_the_hovered_button() {
     let mut app = app();
+    let button = doris::ui::layout::zone_buttons(ZoneId::Results)
+        .into_iter()
+        .next()
+        .expect("Results has a frame button");
     let rect = first_button(&app, ZoneId::Results);
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     let config = doris::config::Config::default();
@@ -137,16 +141,22 @@ fn the_drawn_frame_marks_the_hovered_button() {
     app.set_hover(rect.y, rect.x);
     terminal.draw(|f| app.render(f, &config)).unwrap();
     let buf = terminal.backend().buffer().clone();
-    // The word is underlined, and the `┌`/`┐` round it are not: those
-    // two cells are frame furniture in `div_line`, the same line the rest
-    // of the border is drawn in, and underlining them would draw a box
-    // rather than mark a button.
+    // The word is underlined, and the brackets round it are not: those two
+    // cells are frame furniture in `div_line`, the same line the rest of the
+    // border is drawn in, and underlining them would draw a box rather than
+    // mark a button. Which way round they face is the edge they sit on: this
+    // button is on the panel's bottom border, so the zone is above it and the
+    // stubs point up.
+    let (open, close) = match button.slot {
+        doris::ui::layout::FrameSlot::BottomLeft => ("└", "┘"),
+        _ => ("┌", "┐"),
+    };
     assert_eq!(
         buf[(rect.x, rect.y)].symbol(),
-        "┌",
-        "the button is drawn bracketed"
+        open,
+        "the button is bracketed"
     );
-    assert_eq!(buf[(rect.x + rect.width - 1, rect.y)].symbol(), "┐");
+    assert_eq!(buf[(rect.x + rect.width - 1, rect.y)].symbol(), close);
     let word_underlined = (rect.x + 1..rect.x + rect.width - 1)
         .filter(|&c| buf[(c, rect.y)].modifier.contains(Modifier::UNDERLINED))
         .count();
