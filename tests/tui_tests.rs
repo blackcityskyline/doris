@@ -878,10 +878,19 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
     let torrent = app.zones.get_area(ZoneId::Torrent);
     let t_top = row_text(&terminal, torrent.y);
     assert!(t_top.contains("pause"), "Torrent top border: {}", t_top);
+    // The bottom key is on the row *inside* the frame, so the border itself
+    // is one unbroken line: drawn on it, the words chopped the frame into
+    // pieces with the panel hanging off them.
     let t_bottom = row_text(&terminal, torrent.y + torrent.height - 1);
+    let t_inside = row_text(&terminal, torrent.y + torrent.height - 2);
     assert!(
-        t_bottom.contains("delete"),
-        "Torrent bottom border: {}",
+        t_inside.contains("delete"),
+        "Torrent row inside the bottom border: {}",
+        t_inside
+    );
+    assert!(
+        !t_bottom.contains("delete"),
+        "and the border is not chopped by it: {}",
         t_bottom
     );
 }
@@ -1206,26 +1215,34 @@ fn test_the_torrent_keybinds_are_written_on_the_downloads_box_border() {
         .expect("the keybinds are not drawn");
     let words = row_text(row);
 
-    // On a frame, bracketed like the panels' buttons -- and facing *into* the
-    // zone, which on the bottom border means `└pause┘`. Drawn `┌pause┐` they
-    // point out of the panel and away from the rows they act on.
+    // Bracketed like the panels' buttons -- `┌pause┐` -- and on the row just
+    // *inside* the box's bottom border, so the frame underneath is one
+    // unbroken line. Drawn on the border itself they chopped it into pieces
+    // with the box hanging off them.
     assert!(
-        words.contains('└') && words.contains('┘'),
-        "the keybinds are not bracketed towards the zone: `{words}`"
+        words.contains('┌') && words.contains('┐'),
+        "the keybinds are not bracketed: `{words}`"
     );
     assert!(
-        !words.contains('┌') && !words.contains('┐'),
-        "the keybinds' brackets face outwards: `{words}`"
+        !words.contains('└') && !words.contains('┘'),
+        "the keybinds' brackets face the wrong way: `{words}`"
     );
-    // On a box *inside* the view: the row closes that box one column before the
-    // view's own border, so the row cannot be the view's bottom edge.
-    let mut from_the_right = words.chars().rev();
+    let below = row_text(row + 1);
+    assert!(
+        below.contains('╰') && !below.contains("pause"),
+        "and the frame itself must be whole under them: `{below}`"
+    );
+    // That border is the *downloads box's*, not the view's own: it closes one
+    // column before the view's right border, and the facts box is drawn under
+    // it. Both in one row, because the row below the keys is the one that
+    // answers it.
+    let mut from_the_right = below.chars().rev();
     let last = from_the_right.next().unwrap_or(' ');
     let before_last = from_the_right.next().unwrap_or(' ');
     assert!(
-        (before_last == '╯' || before_last == '└') && (last == '│' || last == '|'),
-        "the keybinds are on the view's own frame, not on the downloads box's: \
-         `{words}`"
+        before_last == '╯' && (last == '│' || last == '|'),
+        "the border under the keys is the view's own, not the downloads box's: \
+         `{below}`"
     );
     // And the downloads box is not the last thing drawn: the facts box is
     // under it, so the keys are not in the lowest row of the view.
@@ -1234,10 +1251,12 @@ fn test_the_torrent_keybinds_are_written_on_the_downloads_box_border() {
         "the keybinds are in the very bottom row, row {row} of {}",
         buf.area.height - 1
     );
+    // Two rows down: the row below the keys is the downloads box's own
+    // border, and the one after that is the top of the facts box.
     assert!(
-        row_text(row + 1).contains('╭'),
+        row_text(row + 2).contains('╭'),
         "no box under the keybinds: `{}`",
-        row_text(row + 1)
+        row_text(row + 2)
     );
 
     // The key itself, in the colour that marks a key everywhere else.

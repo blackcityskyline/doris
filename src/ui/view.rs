@@ -876,15 +876,23 @@ impl App {
             }
         }
 
-        // Bottom left: the action row.
+        // Bottom left: the action row, on the row *inside* the frame.
+        //
+        // On the border itself the words broke the frame into pieces with
+        // the panel hanging off them, and the bracket that joined the word
+        // back to the line pointed up, away from the panel the keys act on.
+        // One row up, with the brackets facing down at a frame that is now
+        // one continuous line, says "these belong to the box above".
         let mut cx = left;
-        for b in buttons.iter().filter(|b| b.slot == FrameSlot::BottomLeft) {
-            if !fits(cx, b.width()) {
-                break;
+        if bottom > area.y {
+            for b in buttons.iter().filter(|b| b.slot == FrameSlot::BottomLeft) {
+                if !fits(cx, b.width()) {
+                    break;
+                }
+                out.buttons
+                    .push((b.clone(), Rect::new(cx, bottom - 1, b.width(), 1)));
+                cx += b.width() + FRAME_GAP;
             }
-            out.buttons
-                .push((b.clone(), Rect::new(cx, bottom, b.width(), 1)));
-            cx += b.width() + FRAME_GAP;
         }
 
         out
