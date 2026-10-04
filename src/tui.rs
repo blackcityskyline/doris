@@ -1,8 +1,8 @@
 use anyhow::Result;
 use crossterm::{
     event::{
-        DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -82,6 +82,11 @@ fn enter<W: Write>(w: &mut W, enhance_keys: bool, mouse: bool) -> io::Result<()>
     if mouse {
         execute!(w, EnableMouseCapture)?;
     }
+    // 2004. A file dragged in from a file manager is a paste, and without
+    // this it arrives as a key per character -- so `d`, `o` and `T` in the
+    // path would be pressed one at a time at the app. With it, the whole
+    // thing arrives as one event and can be read as what it is.
+    execute!(w, EnableBracketedPaste)?;
     if enhance_keys {
         execute!(w, PushKeyboardEnhancementFlags(KEY_FLAGS))?;
     }
@@ -91,6 +96,7 @@ fn enter<W: Write>(w: &mut W, enhance_keys: bool, mouse: bool) -> io::Result<()>
 /// The reverse order: drop the protocol while the user can still see what happens, then leave
 /// the screen.
 fn leave<W: Write>(w: &mut W, enhanced: bool, mouse: bool) -> io::Result<()> {
+    let _ = execute!(w, DisableBracketedPaste);
     if enhanced {
         execute!(w, PopKeyboardEnhancementFlags)?;
     }
@@ -125,6 +131,9 @@ mod tests {
             out.contains("\x1b[>1u"),
             "push keyboard enhancement flags (disambiguate escape codes): {out:?}"
         );
+        // 2004: a file dragged in from a file manager is a paste, and
+        // without this it arrives as one keypress per letter of its path.
+        assert!(out.contains("\x1b[?2004h"), "bracketed paste: {out:?}");
     }
 
     #[test]

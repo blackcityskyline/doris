@@ -8,6 +8,9 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
+    /// Text pasted in one piece, which is what a file dragged in from a file
+    /// manager is: the terminal sends the path, not the keys for it.
+    Paste(String),
     /// One source of `generation` answered: its rows render immediately instead of after the
     /// slowest source.
     SourceDone {
@@ -112,6 +115,11 @@ impl EventHandler {
                     }
                     Ok(CrosstermEvent::Mouse(mouse)) => {
                         let _ = event_tx.send(Event::Mouse(mouse));
+                    }
+                    Ok(CrosstermEvent::Paste(text)) => {
+                        if event_tx.send(Event::Paste(text)).is_err() {
+                            break;
+                        }
                     }
                     Ok(CrosstermEvent::Resize(w, h)) => {
                         let _ = event_tx.send(Event::Resize(w, h));

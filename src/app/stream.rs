@@ -68,6 +68,13 @@ impl App {
         /// The keys that act on a row, and so need a row.
         const ROW_KEYS: &[char] = &['p', 'd', 'v', 'o', 'f', '+', '=', '-', '0'];
 
+        // `a` is not one of them: it opens the magnet field, and a field is
+        // not something that needs a row to open.
+        if code == KeyCode::Char('a') {
+            self.ui.open_magnet_modal();
+            return Ok(());
+        }
+
         let Some(row) = self.ui.downloads.get(self.ui.download_cursor).cloned() else {
             if matches!(code, KeyCode::Char(c) if ROW_KEYS.contains(&c)) {
                 self.ui.add_log("No download to act on.");
@@ -391,6 +398,45 @@ impl App {
     }
 
     /// What the daemon is handed, and the file it came out of when it is a
+    /// Hand a link the user typed or pasted to the daemon.
+    ///
+    /// The one path both the magnet field and a dropped file take, so the two
+    /// cannot end up with different rules about what is addable or what the
+    /// daemon said about it.
+    pub(super) async fn add_link_to_daemon(&mut self, link: &str) {
+        let transmission = crate::transmission::Transmission::with_auth(
+            &self.config.transmission_url,
+            crate::credentials::load_credential(crate::app::TRANSMISSION_RESOURCE),
+        );
+        let dir = self.resolve_download_dir();
+        match transmission.add(link, Some(&dir)).await {
+            Ok(crate::transmission::Added::Fresh(id)) => {
+                self.ui.add_log(&format!(
+                    "Added to the download daemon as #{id} -- it is in the Torrent zone now."
+                ));
+                self.ui.magnet_done();
+            }
+            Ok(crate::transmission::Added::AlreadyThere(id)) => {
+                self.ui
+                    .add_log(&format!("The daemon already has this one, as #{id}."));
+                self.ui.magnet_done();
+            }
+            Ok(crate::transmission::Added::Refused(why)) => {
+                let message = format!("The download daemon refused it: {why}");
+                self.ui.add_log(&message.clone());
+                self.ui.magnet_says(message);
+            }
+            Err(e) => {
+                let message = format!(
+                    "The download daemon is not answering: {e} (Options -> streaming -> \
+                     Transmission URL)"
+                );
+                self.ui.add_log(&message.clone());
+                self.ui.magnet_says(message);
+            }
+        }
+    }
+
     /// file: the magnet the row carries, or its `.torrent` fetched through the
     /// Source that produced it and written under doris's state.
     ///

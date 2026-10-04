@@ -994,6 +994,9 @@ const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
 const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::TopRight, 'p', "pause"),
     (FrameSlot::BottomLeft, 'd', "delete"),
+    // A magnet the user has in no list at all -- from a message board, a
+    // friend. It opens a field; the daemon is the orchestrator's to ask.
+    (FrameSlot::TopRight, 'a', "add"),
 ];
 
 /// The keys of the Torrent full-frame view (`T`), along its bottom border.
@@ -1011,6 +1014,7 @@ const DETAIL_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::BottomLeft, '+', "faster"),
     (FrameSlot::BottomLeft, '-', "slower"),
     (FrameSlot::BottomLeft, '0', "unlimited"),
+    (FrameSlot::BottomLeft, 'a', "add"),
 ];
 
 pub fn detail_buttons() -> Vec<FrameButton> {

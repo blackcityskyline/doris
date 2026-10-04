@@ -1340,6 +1340,203 @@ async fn a_click_beside_the_menu_items_does_nothing() {
     assert!(app.ui.show_menu, "and must leave the menu open");
 }
 
+/// `a` on the Torrents panel opens the magnet field.
+///
+/// A torrent the user has in no list is the one download there is no row to
+/// press `d` on, and `p`/`d` are taken by the row under the cursor. The key
+/// is on the frame as `┌add┐` too, so the mouse reaches the same thing.
+#[tokio::test]
+async fn a_on_the_torrents_panel_opens_the_magnet_field() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.zones.focused = ZoneId::Torrent;
+
+    app.handle_key(press(KeyCode::Char('a'))).await.expect("a");
+
+    assert!(
+        matches!(app.ui.modal, crate::ui::view::Modal::Magnet(_)),
+        "`a` must open the magnet field, not fall through to something else"
+    );
+}
+
+/// The same key in the full-frame view, where the downloads list is the whole
+/// screen and a magnet is still the one thing it cannot show.
+#[tokio::test]
+async fn a_in_the_torrents_full_frame_also_opens_the_field() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui
+        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+
+    app.handle_key(press(KeyCode::Char('a'))).await.expect("a");
+
+    assert!(matches!(app.ui.modal, crate::ui::view::Modal::Magnet(_)));
+}
+
+/// The divider between the `T` view's two boxes moves on
+/// `ctrl+shift+arrows` -- the same chord the zones move their own dividers
+/// on -- and the plain arrows still move the cursor.
+///
+/// Both halves in one test because they are one decision: an arrow key that
+/// resized would stop being a cursor key, and the plain one losing the
+/// resize would make the chord the only way, which is what it is.
+#[tokio::test]
+async fn ctrl_shift_arrows_resize_the_torrents_full_frame_divider() {
+    let mut app = app_focused_on_sources(None).await;
+    app.terminal_size = (120, 34);
+    app.ui.downloads = vec![
+        crate::ui::view::DownloadRow {
+            id: 1,
+            name: "one".into(),
+            ..Default::default()
+        },
+        crate::ui::view::DownloadRow {
+            id: 2,
+            name: "two".into(),
+            ..Default::default()
+        },
+    ];
+    app.ui
+        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+    let screen = app.screen();
+    let before = app.ui.detail_split;
+
+    // Plain Down is the cursor, and must stay it.
+    app.handle_key(press(KeyCode::Down)).await.expect("Down");
+    assert_eq!(app.ui.download_cursor, 1, "plain Down is the cursor");
+    assert_eq!(
+        app.ui.detail_split, before,
+        "and a plain arrow must not touch the divider"
+    );
+
+    let grow = KeyEvent::new(KeyCode::Down, KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    app.handle_key(grow).await.expect("ctrl+shift+Down");
+    let grown = app.ui.detail_split.expect("the divider moved");
+    let config = Config::default();
+    let after_one = app.ui.detail_budget_at(screen, &config).downloads_height;
+    assert!(grown > 0, "ctrl+shift+Down set no height: {grown:?}");
+
+    // And it moved a row at a time, not to the end: two presses, two rows.
+    app.handle_key(grow).await.expect("ctrl+shift+Down again");
+    let two = app.ui.detail_split.expect("still a split");
+    assert_eq!(
+        two,
+        grown + 1,
+        "one press is one row: {grown:?} then {two:?}"
+    );
+    assert_eq!(
+        after_one + 1,
+        app.ui.detail_budget_at(screen, &config).downloads_height,
+        "and the table is one row taller, which is the point of the key"
+    );
+
+    let shrink = KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    app.handle_key(shrink).await.expect("ctrl+shift+Up");
+    assert_eq!(
+        app.ui.detail_split,
+        Some(grown),
+        "the other direction moves back"
+    );
+}
+
+/// The same divider, by pointer: a press on the row that separates the two
+/// boxes arms the drag, the drag moves it, the release lets go.
+///
+/// The row is computed from the same budget the renderer draws from, so this
+/// cannot drift from what is on screen -- a border drawn somewhere the
+/// pointer cannot reach it is a divider that cannot be pulled.
+#[tokio::test]
+async fn dragging_the_border_between_the_torrents_boxes_resizes_them() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    let mut app = app_focused_on_sources(None).await;
+    app.terminal_size = (120, 34);
+    app.ui.downloads = vec![crate::ui::view::DownloadRow {
+        id: 1,
+        name: "one".into(),
+        ..Default::default()
+    }];
+    app.ui
+        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+    let screen = app.screen();
+    let config = Config::default();
+    let table_before = app.ui.detail_budget_at(screen, &config).downloads_height;
+    let divider = app
+        .ui
+        .detail_divider_row(screen, &config)
+        .expect("a 120x34 view with a facts box has a divider");
+
+    let mouse = |kind, row| MouseEvent {
+        kind,
+        column: 10,
+        row,
+        modifiers: KeyModifiers::NONE,
+    };
+
+    app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), divider))
+        .await;
+    assert!(
+        app.ui.detail_dragging,
+        "the press on the border arms the drag"
+    );
+
+    app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), divider - 6))
+        .await;
+    let table_after = app.ui.detail_budget_at(screen, &config).downloads_height;
+    assert_eq!(
+        table_before - 6,
+        table_after,
+        "dragging the border up six rows must take six rows from the table: \
+         {table_before} then {table_after}"
+    );
+
+    app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), divider - 6))
+        .await;
+    assert!(!app.ui.detail_dragging, "the release lets go");
+
+    // A press that is not on the border is not a resize.
+    app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 1))
+        .await;
+    assert!(
+        !app.ui.detail_dragging,
+        "a press in the middle of the view must not arm the drag"
+    );
+}
+
+/// A paste is text when a box is being typed into, and a torrent when it is
+/// not.
+///
+/// The distinction is the whole feature: dropping a `.torrent` on the search
+/// box must not start a download the user is halfway through typing, and a
+/// magnet dropped on the app must not be typed into a search nobody is doing.
+#[tokio::test]
+async fn a_paste_goes_to_a_box_or_to_the_daemon_and_not_both() {
+    let mut app = app_focused_on_sources(None).await;
+
+    // Nothing open: a query is not a download, and typing it does nothing.
+    app.handle_paste("the matrix").await.expect("a paste");
+    assert_eq!(
+        app.ui.search_input, "",
+        "a paste with no box open is not typed"
+    );
+
+    // The search box: text goes in, and does not start anything.
+    app.ui.enter_input_mode();
+    app.handle_paste("dune part two").await.expect("a paste");
+    assert_eq!(app.ui.search_input, "dune part two");
+
+    // The magnet field: a paste lands in the field, half-typed link and all.
+    app.ui.exit_input_mode();
+    app.ui.open_magnet_modal();
+    app.handle_paste("magnet:?xt=urn:btih:abc")
+        .await
+        .expect("a paste");
+    match &app.ui.modal {
+        crate::ui::view::Modal::Magnet(state) => {
+            assert_eq!(state.input, "magnet:?xt=urn:btih:abc");
+        }
+        other => panic!("the field closed on a paste: {other:?}"),
+    }
+}
+
 /// The Torrents detail view is a list, so it moves a cursor. It used to take
 /// the keyboard and do nothing with it but close: a full-frame table of
 /// every download in the daemon, with no way to pick one of them.

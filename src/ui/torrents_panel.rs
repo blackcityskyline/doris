@@ -328,6 +328,66 @@ pub fn summary(rows: &[DownloadRow], free: Option<i64>, daemon: Option<bool>) ->
     }
 }
 
+/// The three summary boxes: a top border, two lines, a bottom border.
+pub const SECTION_HEIGHT: u16 = 4;
+
+/// The smallest box that is still a box: a frame with one line inside it.
+const MIN_BOX: u16 = 3;
+
+/// The `T` view's vertical budget: the summary boxes, the downloads table and
+/// the facts box.
+///
+/// One pure function because two things need the same answer -- the renderer,
+/// and the pointer, which has to know which row is the border between the
+/// table and the facts before it can decide that a drag on it is a resize
+/// rather than a click. A border that is drawn somewhere else than where it
+/// can be grabbed is a divider that cannot be pulled.
+///
+/// `split` is what the user has dragged or keyed, in rows for the table.
+/// `None` is the automatic budget: the facts box whole or not at all, and the
+/// table takes the rest -- a list with fewer rows is still a list, while a
+/// facts box too short to hold a fact line is a caption over nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetailBudget {
+    pub sections_height: u16,
+    pub downloads_height: u16,
+    pub facts_height: u16,
+}
+
+pub fn detail_budget(
+    inner_height: u16,
+    inner_width: usize,
+    facts_len: usize,
+    split: Option<u16>,
+) -> DetailBudget {
+    let wanted_facts = (facts_len as u16).saturating_add(2);
+    let sections_height = if section_widths(inner_width).is_some()
+        && inner_height >= wanted_facts + SECTION_HEIGHT + 7
+    {
+        SECTION_HEIGHT
+    } else {
+        0
+    };
+    let room = inner_height.saturating_sub(sections_height);
+    let automatic_facts = if room >= wanted_facts + MIN_BOX {
+        wanted_facts
+    } else {
+        0
+    };
+    let downloads_height = match split {
+        // What the user asked for, within what the view can give: the table
+        // keeps at least a box, and the facts box keeps one too, so a drag
+        // past either end stops instead of eating the other panel.
+        Some(wanted) => wanted.clamp(MIN_BOX, room.saturating_sub(MIN_BOX).max(MIN_BOX)),
+        None => room.saturating_sub(automatic_facts).max(1),
+    };
+    DetailBudget {
+        sections_height,
+        downloads_height,
+        facts_height: room.saturating_sub(downloads_height),
+    }
+}
+
 /// How the three summary sections share `width`, or `None` when three
 /// boxes cannot each hold their longest line.
 ///

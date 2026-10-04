@@ -37,6 +37,9 @@ pub enum UiAction {
     /// The Results frame's category arrows were clicked: the same re-ask
     /// `g` fires, which needs an async caller -- `click_at` has none.
     ReaskCategory,
+    /// The `add` frame button: open the magnet field. Opening is all the
+    /// view can do; the daemon is the orchestrator's.
+    AddMagnet,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -51,6 +54,8 @@ pub enum Modal {
     TorrentDetail(Box<TorrentDetailState>),
     /// One download's files, and which of them are being fetched.
     Files(Box<FilesState>),
+    /// A magnet link being typed, for a torrent that is in no list yet.
+    Magnet(Box<crate::ui::modals::magnet::MagnetState>),
 }
 
 /// What a key in the detail modal asks the orchestrator for.
@@ -201,6 +206,14 @@ pub struct App {
     pub pending_files: Vec<(usize, bool)>,
     pub detail_logs: Vec<String>,
     pub detail_view: Option<ZoneId>,
+    /// Rows the `T` view gives the downloads table, when the user has said
+    /// so by dragging the border or by key. `None` is the automatic budget.
+    ///
+    /// Transient, like the zones' weights: a `Shift+P` preset is a new
+    /// arrangement, and a divider the user pulled by hand is not part of it.
+    pub detail_split: Option<u16>,
+    /// The pointer is on that border and is being dragged.
+    pub detail_dragging: bool,
     pub detail_log_scroll: usize,
     pub state: AppState,
     /// What each source answered for the running search: pending, how many rows, an error or a
@@ -440,6 +453,8 @@ impl App {
             pending_files: Vec::new(),
             detail_logs: Vec::new(),
             detail_view: None,
+            detail_split: None,
+            detail_dragging: false,
             detail_log_scroll: 0,
             state: AppState::Idle,
             source_status: HashMap::new(),
@@ -907,6 +922,7 @@ impl App {
             (ZoneId::Results, 'v') => Some(UiAction::Info),
             (ZoneId::Torrent, 'p') => Some(UiAction::TogglePause),
             (ZoneId::Torrent, 'd') => Some(UiAction::Remove),
+            (ZoneId::Torrent, 'a') => Some(UiAction::AddMagnet),
             _ => None,
         }
     }

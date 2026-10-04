@@ -487,9 +487,13 @@ impl App {
         // numbers on one line.
         let overhead = 2 + usize::from(prompt.is_some()); // header + stream line
         let widths = super::torrents_panel::section_widths(inner_width);
-        let framed =
-            widths.is_some() && (inner.height as usize) > SECTION_HEIGHT as usize + overhead;
-        let sections_height = if framed { SECTION_HEIGHT } else { 0 };
+        let framed = widths.is_some()
+            && (inner.height as usize) > super::torrents_panel::SECTION_HEIGHT as usize + overhead;
+        let sections_height = if framed {
+            super::torrents_panel::SECTION_HEIGHT
+        } else {
+            0
+        };
 
         // Rows the table does not get: the boxes, its own header, the
         // streaming line above it and the question. Everything else is a
@@ -527,7 +531,7 @@ impl App {
                     x: inner.x,
                     y: inner.y,
                     width: inner.width,
-                    height: SECTION_HEIGHT,
+                    height: super::torrents_panel::SECTION_HEIGHT,
                 },
                 &parts.summary,
                 &widths,
@@ -697,11 +701,65 @@ impl App {
     /// back to it when nothing is being downloaded, which is the only case
     /// where it is the subject rather than a footnote.
     fn render_detail_torrent(&self, frame: &mut Frame, area: Rect, config: &Config) {
-        let facts: Vec<Line> = match self.downloads.get(self.download_cursor) {
+        let inner = self.detail_inner(area);
+        let facts = self.detail_facts(config);
+        let budget = super::torrents_panel::detail_budget(
+            inner.height,
+            inner.width as usize,
+            facts.len(),
+            self.detail_split,
+        );
+        self.render_detail_torrent_parts(frame, inner, facts, budget, config);
+    }
+
+    /// The facts the `T` view lists: the row under the cursor, or the
+    /// streaming server's own torrent when nothing is being downloaded.
+    pub(crate) fn detail_facts(&self, config: &Config) -> Vec<Line<'_>> {
+        match self.downloads.get(self.download_cursor) {
             Some(row) => self.download_detail_lines(row, config),
             None => self.stream_detail_lines(config),
-        };
+        }
+    }
 
+    /// The view's own frame taken off, so every rectangle inside it is
+    /// measured from the place the renderer measures from.
+    pub(crate) fn detail_inner(&self, area: Rect) -> Rect {
+        Rect {
+            x: area.x + 1,
+            y: area.y + 1,
+            width: area.width.saturating_sub(2),
+            height: area.height.saturating_sub(2),
+        }
+    }
+
+    /// What the view's boxes are, for anything that has to know where the
+    /// border is drawn -- the pointer above all.
+    ///
+    /// The same budget the renderer draws through, with the same facts list,
+    /// so "the row you can grab" and "the row that is drawn" cannot be two
+    /// different rows.
+    pub(crate) fn detail_budget_at(
+        &self,
+        area: Rect,
+        config: &Config,
+    ) -> super::torrents_panel::DetailBudget {
+        let inner = self.detail_inner(area);
+        super::torrents_panel::detail_budget(
+            inner.height,
+            inner.width as usize,
+            self.detail_facts(config).len(),
+            self.detail_split,
+        )
+    }
+
+    fn render_detail_torrent_parts(
+        &self,
+        frame: &mut Frame,
+        inner: Rect,
+        facts: Vec<Line<'_>>,
+        budget: super::torrents_panel::DetailBudget,
+        config: &Config,
+    ) {
         let title = Span::styled(
             // `T` and not `T/Esc`: Esc opens the menu over this view, so
             // promising to close it here would be a lie about the key.
@@ -711,8 +769,17 @@ impl App {
         let block = self
             .themed_block(self.theme.primary_color(), config)
             .title(title);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        // The frame is `inner` plus the one cell of border on each side,
+        // which is what `detail_inner` took off.
+        frame.render_widget(
+            block,
+            Rect {
+                x: inner.x.saturating_sub(1),
+                y: inner.y.saturating_sub(1),
+                width: inner.width.saturating_add(2).min(inner.width + 2),
+                height: inner.height.saturating_add(2),
+            },
+        );
 
         // Four boxes, because one undifferentiated block of text is what
         // this view was: three questions asked together on one row, then a
@@ -723,24 +790,14 @@ impl App {
         let sections = super::torrents_panel::section_widths(inner_width);
         let prompt = self.remove_prompt_line();
 
-        // Budgeted from the inside out, every part derived from the one
-        // below it rather than from the frame: a rect that reaches past
-        // `inner` is a panic in the buffer, not a frame drawn slightly
-        // wrong. The table is the part that loses rows -- it is a list, and
-        // a list with fewer rows is still a list.
-        let wanted_facts = (facts.len() as u16).saturating_add(2);
-        let framed = sections.is_some() && inner.height >= wanted_facts + SECTION_HEIGHT + 7;
-        let sections_height = if framed { SECTION_HEIGHT } else { 0 };
-        // The facts box whole or not at all: a frame too short to hold one
-        // fact line is a caption over nothing, and the rows it ate are rows
-        // of the table the user came to this view for.
-        let room = inner.height.saturating_sub(sections_height);
-        let facts_height = if room >= wanted_facts + 3 {
-            wanted_facts
-        } else {
-            0
-        };
-        let table_height = room.saturating_sub(facts_height).max(1);
+        // `budget` came from the caller, who took it from the same pure
+        // function the pointer asks: a rect that reaches past `inner` is a
+        // panic in the buffer, and two budgets is how a border ends up drawn
+        // somewhere it cannot be grabbed.
+        let sections_height = budget.sections_height;
+        let framed = sections_height > 0;
+        let facts_height = budget.facts_height;
+        let table_height = budget.downloads_height;
 
         let mut y = inner.y;
         let mut table_lines: Vec<Line> = Vec::new();
@@ -759,13 +816,13 @@ impl App {
                         x: inner.x,
                         y,
                         width: inner.width,
-                        height: SECTION_HEIGHT,
+                        height: super::torrents_panel::SECTION_HEIGHT,
                     },
                     &parts.summary,
                     &widths,
                     config,
                 );
-                y += SECTION_HEIGHT;
+                y += super::torrents_panel::SECTION_HEIGHT;
             }
             _ => {
                 // Truncated rather than clipped: a line cut at the border
@@ -1270,6 +1327,8 @@ impl App {
             self.render_help_modal(frame, area, config);
         } else if matches!(self.modal, Modal::TorrentDetail(_)) {
             self.render_detail_modal(frame, area, config);
+        } else if matches!(self.modal, Modal::Magnet(_)) {
+            self.render_magnet_modal(frame, area, config);
         }
     }
 }
@@ -1277,10 +1336,6 @@ impl App {
 /// `Src` sits between the metadata and the title: on the `all` tab a
 /// single page mixes trackers, and the row is the only place that says
 /// who returned it.
-/// Three boxes of two rows each: a top border, the section's two lines,
-/// and a bottom border.
-const SECTION_HEIGHT: u16 = 4;
-
 /// The Torrents panel's content, split the way its two renderers want it.
 struct Downloads<'a> {
     summary: super::torrents_panel::Summary,

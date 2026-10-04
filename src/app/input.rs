@@ -73,6 +73,17 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 // Same rule as the keyboard: a click that is not on the
                 self.ui.disarm_remove();
+                if self.ui.detail_view.is_some() {
+                    // In a full-frame view a press on the one draggable
+                    // border is a resize and nothing else; anywhere else it
+                    // belongs to the view's own keys.
+                    if self
+                        .ui
+                        .detail_resize_start(mouse.row, self.screen(), &self.config)
+                    {
+                        return;
+                    }
+                }
                 if self.ui.detail_view == Some(ZoneId::Log) {
                     self.ui.detail_log_scroll = self.ui.detail_logs.len();
                 } else if self.ui.modal == Modal::None && self.ui.search_box_at(mouse.row) {
@@ -92,6 +103,7 @@ impl App {
                             self.download_selected().await;
                         }
                         Some(UiAction::Info) => self.show_selected_info(),
+                        Some(UiAction::AddMagnet) => self.ui.open_magnet_modal(),
                         Some(UiAction::Play) => {
                             // The `play` frame button is Enter on the
                             match enter_action(
@@ -114,11 +126,20 @@ impl App {
             }
             // The divider follow and the release: `resize_start` armed
             MouseEventKind::Drag(MouseButton::Left) => {
-                if self.ui.modal == Modal::None {
+                if self.ui.modal != Modal::None {
+                    return;
+                }
+                if self.ui.detail_dragging {
+                    self.ui
+                        .detail_resize_drag(mouse.row, self.screen(), &self.config);
+                } else {
                     self.ui.zones.resize_drag(mouse.row, mouse.column);
                 }
             }
-            MouseEventKind::Up(MouseButton::Left) => self.ui.zones.resize_end(),
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.ui.detail_resize_end();
+                self.ui.zones.resize_end();
+            }
             _ => {}
         }
     }
@@ -170,6 +191,12 @@ impl App {
             }
             ZoneId::Torrent | ZoneId::Trackers => {}
         }
+    }
+
+    /// The whole terminal as a rectangle: what the pointer's row and column
+    /// are counted in, and what every hit test takes.
+    pub(super) fn screen(&self) -> ratatui::layout::Rect {
+        ratatui::layout::Rect::new(0, 0, self.terminal_size.0, self.terminal_size.1)
     }
 
     /// One frame, bracketed by synchronized output when the option is on.
@@ -434,6 +461,15 @@ impl App {
             return Ok(Some(()));
         }
 
+        if let Modal::Magnet(_) = self.ui.modal {
+            // The field owns the keyboard: a dialog the user is typing a
+            // magnet into must not read `p` as pause or `d` as remove.
+            if let Some(link) = self.ui.magnet_key(key) {
+                self.add_link_to_daemon(&link).await;
+            }
+            return Ok(Some(()));
+        }
+
         if let Modal::Files(_) = self.ui.modal {
             // The file list owns the keyboard: it is the only place a
             // download can be cut down to the files actually wanted.
@@ -508,6 +544,18 @@ impl App {
                 // nothing with it but close: a full-frame list of downloads
                 // with no way to choose one of them.
                 _ if view == ZoneId::Torrent => {
+                    // The divider between its two boxes, on the same chord
+                    // the zones move their own: `ctrl+shift` and an arrow.
+                    // Read before the plain arrows below, which move the
+                    // cursor.
+                    if Self::layout_arrow(&key)
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                        && key.modifiers.contains(KeyModifiers::SHIFT)
+                    {
+                        let up = matches!(key.code, KeyCode::Up);
+                        self.ui.detail_resize_key(up, self.screen(), &self.config);
+                        return Ok(Some(()));
+                    }
                     let last = self.ui.downloads.len().saturating_sub(1);
                     match key.code {
                         KeyCode::Home => self.ui.download_cursor = 0,
@@ -628,6 +676,12 @@ impl App {
             }
             KeyCode::Char('v') if self.ui.zones.focused == ZoneId::Results => {
                 self.show_selected_info();
+            }
+            // The frame's `add` button, by key as well as by click: a magnet
+            // the user has in no list at all is the one download there is no
+            // row to press `d` on.
+            KeyCode::Char('a') if self.ui.zones.focused == ZoneId::Torrent => {
+                self.ui.open_magnet_modal();
             }
             // The category row's keys, next to `g`/`G` and gated the same
             KeyCode::Char('g') if self.ui.zones.focused == ZoneId::Results => {

@@ -9,6 +9,7 @@ pub mod cli_commands;
 pub mod files;
 mod input;
 pub mod open;
+mod paste;
 mod search;
 mod session;
 mod settings;
@@ -824,6 +825,7 @@ impl App {
                     match event? {
                         Event::Key(key) => self.handle_key(key).await?,
                         Event::Mouse(mouse) => self.handle_mouse(mouse).await,
+                        Event::Paste(text) => self.handle_paste(&text).await?,
                         Event::Tick => {},
                         Event::Resize(w, h) => {
                             self.terminal_size = (w, h);

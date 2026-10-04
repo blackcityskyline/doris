@@ -1,3 +1,4 @@
+pub(crate) mod detail_resize;
 pub(crate) mod draw;
 pub mod layout;
 pub mod menu;

@@ -1,4 +1,4 @@
-use doris::ui::torrents_panel::{self, plan};
+use doris::ui::torrents_panel::{self, detail_budget, plan};
 use doris::ui::view::DownloadRow;
 
 /// The panel is asked "what fits?" on every resize and every terminal, so
@@ -243,4 +243,69 @@ fn test_an_unmeasured_ratio_prints_as_two_dashes() {
     fresh.downloaded = 800;
     fresh.uploaded = 200;
     assert!(torrents_panel::row(&fresh, &plan).contains("0.25"));
+}
+
+/// The `T` view's rows, divided three ways.
+///
+/// One pure function because two callers need the same answer -- the
+/// renderer, and the pointer, which has to know which row separates the two
+/// boxes before it can tell a drag on it from a click. Drawn one way and
+/// grabbed another is a divider that cannot be pulled.
+#[test]
+fn test_the_full_frame_budget_divides_what_it_has_between_three_boxes() {
+    let b = detail_budget(30, 120, 8, None);
+
+    assert_eq!(
+        b.sections_height, 4,
+        "the three summary boxes are four rows"
+    );
+    assert_eq!(
+        b.sections_height + b.downloads_height + b.facts_height,
+        30,
+        "and the three of them are the whole view: {b:?}"
+    );
+    assert_eq!(b.facts_height, 10, "eight facts and the frame they sit in");
+    assert!(b.downloads_height > 10, "the table keeps the rest: {b:?}");
+}
+
+/// A split the user set wins over the automatic one, and stops at both ends:
+/// the table keeps a box, and the facts box keeps one, so a drag past either
+/// end does not eat the other panel.
+#[test]
+fn test_a_split_the_user_set_is_kept_within_what_the_view_can_give() {
+    let room = detail_budget(30, 120, 8, None);
+    let total = room.sections_height + room.downloads_height + room.facts_height;
+
+    let asked_for_more = detail_budget(30, 120, 8, Some(999));
+    assert_eq!(
+        asked_for_more.downloads_height + asked_for_more.facts_height,
+        total - 4,
+        "the table cannot grow into the facts box: {asked_for_more:?}"
+    );
+    assert_eq!(
+        asked_for_more.facts_height, 3,
+        "which keeps one line of facts: {asked_for_more:?}"
+    );
+
+    let asked_for_nothing = detail_budget(30, 120, 8, Some(0));
+    assert_eq!(
+        asked_for_nothing.downloads_height, 3,
+        "nor can it be pushed out of the view: {asked_for_nothing:?}"
+    );
+}
+
+/// The split is transient: `None` is the automatic budget, and that is what
+/// a fresh view starts from.
+#[test]
+fn test_no_split_is_the_automatic_budget() {
+    assert_eq!(
+        detail_budget(30, 120, 8, None),
+        detail_budget(30, 120, 8, None),
+        "the same view twice is the same budget"
+    );
+    assert_ne!(
+        detail_budget(30, 120, 8, None).downloads_height,
+        detail_budget(30, 120, 8, Some(6)).downloads_height,
+        "and a split is the only thing that changes it"
+    );
 }
