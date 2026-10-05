@@ -14,7 +14,25 @@ use super::net::{browser_client, fetch_resilient, first_ok, FetchOptions};
 use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source};
 
 /// Mirror hosts, first live-verified answer first (see the module doc).
-pub const HOSTS: [&str; 4] = ["yts.gg", "movies-api.accel.li", "yts.am", "yts.mx"];
+///
+/// Measured 2026-10-05, `GET /api/v2/list_movies.json?query=matrix&limit=1`:
+///
+/// | host                  | answer                                        |
+/// |-----------------------|-----------------------------------------------|
+/// | `yts.gg`              | 200, the API                                  |
+/// | `movies-api.accel.li` | 200, the API, its own edge                    |
+/// | `yts.am` `.lt` `.ag`  | 301 **to `yts.gg`** -- one host wearing 3 names |
+/// | `yts.mx`              | no answer                                     |
+/// | `yts.rs`              | 500                                           |
+/// | `yts.su`              | 404                                           |
+///
+/// The redirectors were in the list as backups and are not backups: a
+/// 301 to the primary takes the primary down with it, so they were pure
+/// latency on the walk. `yts.mx` no longer answers at all. What is left is
+/// one host and one genuinely separate edge, which is the most YTS offers --
+/// `live_every_host_in_the_mirror_list_still_answers` is the check that says
+/// so out loud.
+pub const HOSTS: [&str; 2] = ["yts.gg", "movies-api.accel.li"];
 
 pub const PAGE_SIZE: usize = 50;
 

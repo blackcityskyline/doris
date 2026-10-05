@@ -76,3 +76,37 @@ async fn live_browse_returns_the_newest_movies_first() {
     );
     println!("hosts in play: {:?}", HOSTS);
 }
+
+/// The mirror list is only a backup list if **more than one** entry answers.
+/// One host with two names on it (a redirect) is a single point of failure
+/// wearing a disguise -- which is exactly what the list held until the
+/// 2026-10-05 sweep found `yts.am`/`.lt`/`.ag` all 301-ing to `yts.gg`.
+#[tokio::test]
+#[ignore = "requires network access to the YTS API"]
+async fn live_every_host_in_the_mirror_list_still_answers() {
+    let client = doris::sources::net::browser_client();
+    let mut live = Vec::new();
+    for host in HOSTS {
+        let url = doris::sources::yts::list_movies_url(host, "matrix", 0);
+        let answer = client
+            .get(&url)
+            .send()
+            .await
+            .map(|r| r.status().as_u16())
+            .unwrap_or(0);
+        println!("  {host} -> {answer} ({url})");
+        if answer == 200 {
+            live.push(host);
+        }
+    }
+    assert_eq!(
+        live.len(),
+        HOSTS.len(),
+        "a dead host in the list is dead weight on the walk: {live:?} of {:?}",
+        HOSTS
+    );
+    assert!(
+        live.len() >= 2,
+        "a backup list needs two hosts that answer, not one: {live:?}"
+    );
+}

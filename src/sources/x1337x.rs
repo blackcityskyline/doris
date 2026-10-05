@@ -16,6 +16,14 @@ use super::source::{AuthContext, Group, LogFn, SearchPage, SearchRequest, Source
 /// `1337xx.to` spellings serve real markup, torio's other three are
 /// behind the challenge and stay as the fallback a mirror outage would
 /// need.
+///
+/// Swept 2026-10-05, `GET /search/dune/1/`: `www.1337xx.to` and `1337xx.to`
+/// answer 200 and `parse_rows` reads 20 rows off each; the other three answer
+/// 403 Cloudflare. `1337x.lol` answers 200 too, but with another site's markup
+/// -- the parser refuses it (`no results table`) -- so it stays out of the list.
+/// That is the order that matters: [`first_ok`] stops at the first **200**, so a
+/// host that answers with markup we cannot read kills the search outright,
+/// where a 403 only costs a hop and the walk moves on.
 pub const HOSTS: &[&str] = &[
     "www.1337xx.to",
     "1337xx.to",
