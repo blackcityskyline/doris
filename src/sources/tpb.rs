@@ -128,6 +128,7 @@ fn to_row(item: &ApibayItem) -> Option<TorrentItem> {
         source: "tpb".to_string(),
         group: group_for_category(category),
         query: String::new(),
+        ..Default::default()
     })
 }
 

@@ -126,14 +126,20 @@ impl Filter {
     }
 }
 
-/// The four fields a bare word searches.
+/// The fields a bare word searches: the row's title, size, source and group,
+/// plus the two the site states about the release itself -- who announced it and
+/// where it filed it. Those two are what a bare `fitgirl` or `switch` is
+/// actually asking for, and ext rows carry both from the search answer, so
+/// there is nothing extra to read and nothing to fetch.
 fn haystack(item: &TorrentItem) -> String {
     format!(
-        "{} {} {} {}",
+        "{} {} {} {} {} {}",
         item.title,
         item.size,
         item.source,
-        item.group.map_or("", |g| g.label())
+        item.group.map_or("", |g| g.label()),
+        item.uploader,
+        item.category,
     )
     .to_lowercase()
 }

@@ -288,6 +288,7 @@ fn to_row(row: &str, patterns: &Patterns) -> Option<TorrentItem> {
         // The row's own forum, so a tab switch can filter rows the
         group: forum_of(row).and_then(group_for_forum),
         query: String::new(),
+        ..Default::default()
     })
 }
 

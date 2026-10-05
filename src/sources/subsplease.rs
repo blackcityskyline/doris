@@ -158,6 +158,7 @@ fn to_row(entry: &SpEntry) -> Option<TorrentItem> {
         source: "subsplease".to_string(),
         group: Some(Group::Anime),
         query: String::new(),
+        ..Default::default()
     })
 }
 

@@ -183,3 +183,39 @@ fn the_filter_box_uses_the_syntax_on_real_rows() {
     app.update_filter();
     assert_eq!(app.filtered_indices, vec![1], "and can be flipped");
 }
+
+/// Автор и путь категории ищутся обычным словом: `fitgirl` находит её раздачи,
+/// `switch` -- то, что ext положил в `Games / Switch`. Оба поля приезжают
+/// вместе со строкой поиска, так что фильтр работает по тому, что уже есть.
+#[test]
+fn test_a_bare_word_also_searches_who_uploaded_it_and_where_it_was_filed() {
+    let row = TorrentItem {
+        title: "The Sims 4: Deluxe Edition".to_string(),
+        source: "ext".to_string(),
+        uploader: "FitGirl".to_string(),
+        category: "Games / PC Games".to_string(),
+        group: Some(Group::Games),
+        ..Default::default()
+    };
+
+    for word in ["fitgirl", "pc games", "ext", "sims"] {
+        assert!(
+            Filter::parse(word).matches(&row),
+            "'{word}' matches a row whose uploader or category says it"
+        );
+    }
+    assert!(
+        !Filter::parse("switch").matches(&row),
+        "and one that does not say it, does not match"
+    );
+    // Отрицание работает по тем же полям, и в ту же сторону: `-fitgirl`
+    // убирает её раздачи, а не оставляет.
+    assert!(
+        !Filter::parse("-fitgirl").matches(&row),
+        "so `-fitgirl` drops this row"
+    );
+    assert!(
+        Filter::parse("-switch").matches(&row),
+        "and `-switch` keeps it"
+    );
+}

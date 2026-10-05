@@ -27,6 +27,7 @@ use crate::cli::{
 use crate::config::Config;
 use crate::filter::Filter;
 use crate::sources::models::TorrentItem;
+use crate::sources::orchestrator::{self, SourceStatus};
 use crate::sources::source::{Group, KNOWN_SOURCES};
 use crate::torrserver::api::TorrServer;
 use crate::ui::view::Modal;
@@ -90,7 +91,47 @@ async fn search(args: &Args, a: &SearchArgs, json: bool) -> Result<i32> {
     let rows = fetch(&mut app, a).await?;
     let found = !rows.is_empty();
     print_rows(&rows, json);
+    report_sources(&app, json);
     Ok(i32::from(!found))
+}
+
+/// What each asked source actually did, for the ones that did not answer.
+///
+/// Without this the command's whole answer to "why is the list empty" is
+/// "nothing found", and a source that refused and a source with nothing to say
+/// are the same output. Measured 05.10.2026: `doris --json search --source ext`
+/// printed `[]` while the reason (a Cloudflare checkbox nobody was there to
+/// tick) went only to the log file -- and an empty array reads as an empty
+/// index, which is a claim about the tracker rather than about the run.
+///
+/// On stderr, so a `--json` run still pipes a clean array and a table still
+/// ends where it always did.
+fn report_sources(app: &App, json: bool) {
+    let mut lines: Vec<String> = Vec::new();
+    for (id, status) in &app.ui.source_status {
+        match status {
+            SourceStatus::Error(why) => lines.push(format!("{id}: {why}")),
+            SourceStatus::Timeout => lines.push(format!(
+                "{id}: timed out ({})",
+                orchestrator::PER_SOURCE_TIMEOUT.as_secs()
+            )),
+            _ => {}
+        }
+    }
+    lines.sort();
+    if lines.is_empty() {
+        return;
+    }
+    if json {
+        for line in lines {
+            eprintln!("{line}");
+        }
+    } else {
+        eprintln!();
+        for line in lines {
+            eprintln!("  {line}");
+        }
+    }
 }
 
 /// Run a search and hand back the rows that survived the filter and the
@@ -267,6 +308,8 @@ async fn info(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
             "page_url": item.page_url,
             "download_url": item.download_url,
             "group": item.group.map(|g| g.label()),
+            "uploader": item.uploader,
+            "category": item.category,
             "files": detail.as_ref().map(|d| d.files.clone()).unwrap_or_default(),
             "pending": detail.as_ref().is_some_and(|d| d.pending),
             "error": detail.as_ref().and_then(|d| d.error.clone()),
@@ -283,6 +326,17 @@ async fn info(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
             item.group
                 .map(|g| g.label().to_string())
                 .unwrap_or_default()
+        );
+        println!("by:      {}", item.uploader);
+        println!(
+            "where:   {}",
+            if item.category.is_empty() {
+                item.group
+                    .map(|g| g.label().to_string())
+                    .unwrap_or_default()
+            } else {
+                item.category.clone()
+            }
         );
         println!("hash:    {}", item.info_hash);
         println!("magnet:  {}", item.magnet.clone().unwrap_or_default());

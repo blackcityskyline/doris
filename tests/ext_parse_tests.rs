@@ -6,7 +6,8 @@
 //! and a category that is the *second* path link of the "Posted by" line.
 
 use doris::sources::ext::{
-    magnet_from_answer, parse_rows, search_url, topic_id, CATEGORY_IDS, EXT_GROUPS, PAGE_SIZE,
+    magnet_from_answer, parse_files, parse_rows, search_url, topic_id, CATEGORY_IDS, EXT_GROUPS,
+    PAGE_SIZE,
 };
 use doris::sources::source::Group;
 
@@ -20,7 +21,8 @@ const ROWS: &str = r#"[
     "seeds": "1023",
     "leechers": "183",
     "age_title": "06 April 2024",
-    "category": "Movies"
+    "category": "Movies / Highres Movies",
+    "uploader": "vtwin88cube"
   },
   {
     "title": "Dune.Prophecy.S01E03.1080p.WEB.H264-SuccessfulCrab[TGx]",
@@ -29,7 +31,8 @@ const ROWS: &str = r#"[
     "seeds": "966",
     "leechers": "114",
     "age_title": "02 December 2024",
-    "category": "TV"
+    "category": "TV / Episodes HD",
+    "uploader": "TGxGoodies"
   },
   {
     "title": "Dune.Awakening.Ultimate.Edition.v1.5.3.0.16-DLCS-Bonuses-FitGirl",
@@ -38,7 +41,8 @@ const ROWS: &str = r#"[
     "seeds": "907",
     "leechers": "287",
     "age_title": "23 December 2024",
-    "category": "Games"
+    "category": "Games / PC Games",
+    "uploader": "FitGirl"
   }
 ]"#;
 
@@ -329,4 +333,75 @@ fn test_the_registry_and_the_category_table_say_the_same_thing() {
             > 1),
         "and a group has one category id, not two"
     );
+}
+
+/// Кто залил и куда сайт положил раздачу: для ext это единственное, что
+/// отличает «игра для Switch» от «игра для ПК», потому что тегов у раздач
+/// ext нет вообще (на странице есть только site-wide «Popular Tags»), а
+/// подкатегория -- есть, и она приезжает вместе со строкой поиска.
+#[test]
+fn test_a_row_says_who_uploaded_it_and_where_the_site_filed_it() {
+    let rows = parse_rows(ROWS).expect("the fixture is one page's rows");
+
+    assert_eq!(rows[0].uploader, "vtwin88cube");
+    assert_eq!(
+        rows[0].category, "Movies / Highres Movies",
+        "the subcategory is what the group cannot say: ext files one release under \
+         Movies/Highres and another under Movies/3D"
+    );
+    assert_eq!(rows[2].uploader, "FitGirl");
+    assert_eq!(rows[2].category, "Games / PC Games");
+
+    // А группа -- это первый сегмент пути, а не весь путь.
+    assert_eq!(rows[0].group, Some(Group::Movies));
+    assert_eq!(rows[2].group, Some(Group::Games));
+}
+
+/// Раздача, у которой сайт не показал загрузчика, -- это строка, а не сбой.
+#[test]
+fn test_a_row_without_an_uploader_still_arrives() {
+    let row = r#"[{"title":"Dune.2021.1080p","href":"/dune-2021-1080p-15343355/",
+                    "size":"2 GB","seeds":"7","category":"Movies / 1080p"}]"#;
+    let rows = parse_rows(row).expect("a row with no uploader still parses");
+    assert_eq!(
+        rows[0].uploader, "",
+        "and says so, rather than borrowing a name"
+    );
+    assert_eq!(rows[0].group, Some(Group::Movies));
+}
+
+/// Список файлов: имя и размер из своей же строки, папка -- по своему классу.
+#[test]
+fn test_the_file_list_reads_name_and_size_off_their_own_row() {
+    // Живая разметка страницы раздачи (05.10.2026): у файла две ячейки
+    // размера -- тип (`EXE`) и сам размер (`101 KB`), и у папки вложенная
+    // таблица, чьи размеры не belong этому файлу.
+    let files = parse_files(
+        r#"[
+          {"name":"MD5","size":"409.6 B","folder":true},
+          {"name":"QuickSFV.EXE","size":"101 KB","folder":false},
+          {"name":"setup.exe","size":"6.3 MB","folder":false}
+        ]"#,
+    )
+    .expect("the file list is readable");
+
+    assert_eq!(files.len(), 3);
+    assert_eq!(files[0].name, "MD5");
+    assert_eq!(
+        files[0].size, "409.6 B",
+        "a folder row carries its own size; its children's sizes are not its own"
+    );
+    assert_eq!(files[1].name, "QuickSFV.EXE");
+    assert_eq!(
+        files[1].size, "101 KB",
+        "the size is the row's last size cell"
+    );
+    assert_eq!(files[2].size, "6.3 MB");
+}
+
+/// Раздача без файлов -- пустой список, а не ошибка: страница может быть
+/// закрыта на просмотр, и тогда модалка пишет, что файлов нет.
+#[test]
+fn test_a_release_with_no_file_list_is_empty_and_not_an_error() {
+    assert_eq!(parse_files("[]").expect("an empty list parses").len(), 0);
 }

@@ -707,3 +707,49 @@ fn a_row_with_a_link_needs_a_tracker_even_when_it_has_no_magnet() {
         ..Default::default()
     }));
 }
+
+// --- `d` сначала спрашивает демона -----------------------------------------
+
+/// `d` на строке, у которой нет ни магнета, ни `.torrent`, сначала читает
+/// магнет из браузера -- а потом узнаёт, что демон не запущен. Измерено
+/// 05.10.2026: 17 секунд и прогон браузера, чтобы сообщить то, что можно было
+/// сказать сразу.
+#[test]
+fn test_the_daemon_is_asked_before_the_browser_is() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let err = rt
+        .block_on(doris::app::daemon_is_there(
+            &doris::transmission::Transmission::new("http://127.0.0.1:1"),
+            "http://127.0.0.1:1",
+        ))
+        .expect_err("nothing is listening on port 1");
+
+    assert!(
+        err.contains("not answering"),
+        "the message has to say what is wrong: {err}"
+    );
+    assert!(
+        err.contains("Options -> streaming"),
+        "and where to fix it, or the reader is left guessing: {err}"
+    );
+    assert!(
+        err.contains("http://127.0.0.1:1"),
+        "and which address it tried, since that is the setting: {err}"
+    );
+}
+
+/// Тот же текст на всех путях, что отдают что-то демону: одна формулировка
+/// правильная, три одинаковые копии протухнут по отдельности.
+#[test]
+fn test_one_sentence_says_the_daemon_is_not_there() {
+    let line = doris::app::daemon_absent("http://127.0.0.1:9094", "connection refused");
+    assert!(line.contains("not answering"));
+    assert!(
+        line.contains("connection refused"),
+        "what the socket said: {line}"
+    );
+    assert!(line.contains("http://127.0.0.1:9094"));
+}

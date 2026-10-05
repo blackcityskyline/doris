@@ -10,6 +10,16 @@ use crate::config::Config;
 use crate::sources::source::Group;
 use crate::ui::view::{centered_rect, App, Modal};
 
+/// What a fact the row does not carry reads as. The modal already spells `-`
+/// for a missing hash and a missing magnet; these two are the same question.
+fn fallback(value: &str) -> &str {
+    if value.is_empty() {
+        "-"
+    } else {
+        value
+    }
+}
+
 impl App {
     /// Draw the detail modal: `Label: value` rows for the row itself,
     /// then the file list with the cursor reversed, then the keys.
@@ -66,6 +76,14 @@ impl App {
             Line::from(vec![
                 Span::styled("Group:   ", label),
                 Span::styled(state.item.group.map_or("-", Group::label), value),
+            ]),
+            Line::from(vec![
+                Span::styled("By:      ", label),
+                Span::styled(fallback(&state.item.uploader), value),
+            ]),
+            Line::from(vec![
+                Span::styled("Where:   ", label),
+                Span::styled(fallback(&state.item.category), value),
             ]),
             Line::from(vec![
                 Span::styled("Hash:    ", label),

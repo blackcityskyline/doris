@@ -45,10 +45,25 @@ use crate::browser::cdp::Browser;
 use crate::sources::cookies::{self, Cookie};
 
 use super::format::format_date;
-use super::models::TorrentItem;
+use super::models::{FileEntry, TorrentItem};
 use super::source::{Group, SearchPage, SearchRequest, Source};
 
 pub const HOME_URL: &str = "https://ext.to/";
+
+/// What a Cloudflare page that never clears says -- in the log, and in the
+/// error the caller turns into a per-source failure.
+///
+/// It has to be *this* sentence rather than an empty result page. Measured
+/// 05.10.2026: hidden mode, `doris search --source ext "dune"` answered
+/// `nothing found` and `--json` answered `[]`, while the reason -- a checkbox
+/// nobody was there to tick -- was only ever written to a log file. A tracker
+/// that answered nothing and a tracker that refused to answer are different
+/// facts, and only one of them is what happened.
+pub const CLOUDFLARE_WANTS_A_PERSON: &str = "Cloudflare is still asking for a person -- \
+     ext answers only a browser it can keep: run with a visible browser \
+     (`--browser-visibility visible`, or set browser_visibility = \"visible\") and \
+     tick its checkbox once. A hidden browser gets a fresh temporary profile \
+     every run, so it can never keep the clearance that click gives it.";
 const SITE: &str = "https://ext.to";
 
 /// Rows one browse page holds, live on `dune` (50, and the pager counts 50 per
@@ -75,7 +90,12 @@ pub const EXT_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group
 /// from a page asked without a category, so the group comes from the row rather
 /// than from the request.
 fn group_of_label(label: &str) -> Option<Group> {
-    match label.trim().to_ascii_lowercase().as_str() {
+    // The row's category is a path -- `Games / PC Games` -- and the group is
+    // its first segment. ext's own spelling for a category is the path, and
+    // matching the whole path would leave every row below a subcategory
+    // unattributed.
+    let first = label.split('/').next().unwrap_or("").trim();
+    match first.to_ascii_lowercase().as_str() {
         "movies" => Some(Group::Movies),
         "tv" => Some(Group::TV),
         "games" => Some(Group::Games),
@@ -129,8 +149,37 @@ struct ExtRow {
     /// "2 years ago", which says nothing a date column can print.
     #[serde(default)]
     age_title: String,
+    /// The site's own category path, `"Games / PC Games"`.
     #[serde(default)]
     category: String,
+    /// Who announced it.
+    #[serde(default)]
+    uploader: String,
+}
+
+/// One entry of a release's file list, as [`FILES_SCRIPT`] hands it over.
+#[derive(Debug, Deserialize)]
+struct ExtFile {
+    name: String,
+    #[serde(default)]
+    size: String,
+}
+
+/// The file list, as [`FILES_SCRIPT`] hands it over. Pure, so the shape of the
+/// page can be checked without a browser.
+pub fn parse_files(body: &str) -> Result<Vec<FileEntry>> {
+    let rows: Vec<ExtFile> =
+        serde_json::from_str(body).context("ext: cannot read the file list")?;
+    Ok(rows.into_iter().map(FileEntry::from).collect())
+}
+
+impl From<ExtFile> for FileEntry {
+    fn from(file: ExtFile) -> Self {
+        FileEntry {
+            name: file.name,
+            size: file.size,
+        }
+    }
 }
 
 /// The rows off one page, as [`ROWS_SCRIPT`] hands them over. Pure, so the
@@ -154,6 +203,8 @@ fn to_item(row: ExtRow) -> TorrentItem {
         source: "ext".to_string(),
         page_url: format!("{SITE}{}", row.href),
         group: group_of_label(&row.category),
+        category: row.category.clone(),
+        uploader: row.uploader.clone(),
         leechers: row.leechers.trim().parse().unwrap_or(0),
         ..Default::default()
     };
@@ -197,16 +248,22 @@ async function scrape() {
     const age = Array.from(row.querySelectorAll('.add-block-wrapper'))
       .find(w => (w.querySelector('.add-block') || {}).textContent === 'Age');
     const ageTitle = age ? ((age.querySelector('span[title]') || {}).title || '') : '';
-    // The category is the first path link of the "Posted by X in <category> -
-    // <subcategory>" line. The uploader link is spelled two ways on the same
-    // page -- `/user/<nick>/` on some rows, `?user_nick=<nick>&with_adult=1` on
-    // others (live, in the same result list) -- so "not /user/" alone is not
-    // enough to skip it, and a filter that misses it reads the *uploader* as the
-    // category and leaves every such row unattributed. A path that says nothing
-    // about a user is the one that is the category.
-    const category = Array.from(row.querySelectorAll('.related-posted a[href^="/"]'))
-      .map(a => [a.getAttribute('href'), a.textContent.trim()])
-      .find(([href]) => !href.includes('user'));
+    // The "Posted by <nick> in <category> - <subcategory>" line, read as what
+    // it says rather than by position. The uploader link is spelled two ways on
+    // the same page -- `/user/<nick>/` on some rows,
+    // `?user_nick=<nick>&with_adult=1` on others (live, in the same result
+    // list) -- so "not /user/" alone is not enough to skip it, and a filter
+    // that misses it reads the *uploader* as the category. What separates them
+    // is that the category links are paths and the uploader link always names a
+    // user.
+    const posted = Array.from(row.querySelectorAll('.related-posted a[href]'))
+      .map(a => [a.getAttribute('href'), a.textContent.trim()]);
+    const isUser = ([href]) => href.startsWith('/user/') || href.includes('user_nick=');
+    const uploaderLink = posted.find(isUser);
+    const categoryPath = posted
+      .filter(([href]) => !href.includes('user'))
+      .map(([, text]) => text)
+      .join(' / ');
     rows.push({
       title: link.textContent.trim(),
       href: link.getAttribute('href'),
@@ -214,7 +271,8 @@ async function scrape() {
       seeds: cells['Seeds'] || '',
       leechers: cells['Leechs'] || '',
       age_title: ageTitle,
-      category: category ? category[1] : ''
+      category: categoryPath,
+      uploader: uploaderLink ? uploaderLink[1] : ''
     });
   }
   return JSON.stringify(rows);
@@ -264,6 +322,34 @@ async function magnet() {
 return await magnet();
 "#;
 
+/// The file list off a release's own page: ext spells it with one row per
+/// entry, the name in `.file-name-line-td` and the size in the row's *last*
+/// `.file-size-td` -- the cells before it hold the file *type* (`EXE`, `MD5`),
+/// and a folder row nests a whole table of its own, which is why the size is
+/// taken from the row and not from the cell's descendants.
+const FILES_SCRIPT: &str = r#"
+async function files() {
+  const rows = [];
+  for (const cell of document.querySelectorAll('.file-name-line-td')) {
+    const row = cell.closest('tr');
+    if (!row) continue;
+    const folder = cell.className.includes('td-folder');
+    // A folder row's cell also holds its children, so the name is the
+    // `.folder-name` span and not the cell's text.
+    const nameNode = cell.querySelector('.folder-name') || cell;
+    const name = nameNode.textContent.trim();
+    if (!name) continue;
+    const sizes = Array.from(row.children)
+      .filter(td => td.classList.contains('file-size-td'))
+      .map(td => td.textContent.trim())
+      .filter(Boolean);
+    rows.push({ name: name, size: sizes.length ? sizes[sizes.length - 1] : '', folder: folder });
+  }
+  return JSON.stringify(rows);
+}
+return await files();
+"#;
+
 pub struct ExtSearcher {
     browser: Arc<Mutex<Browser>>,
     /// Interior mutability because `Source::ensure_logged_in` takes `&self`:
@@ -289,12 +375,33 @@ impl ExtSearcher {
         }
     }
 
+    /// Navigate and wait the challenge out, naming what we were after in the
+    /// error. Both per-page reads go through this: the magnet and the file list
+    /// are two halves of the same visit, and two copies of "wait, then read"
+    /// is two places for the wait to be wrong.
+    async fn open_page(browser: &Browser, url: &str, what: &str) -> Result<()> {
+        browser.navigate(url).await?;
+        crate::browser::cloudflare::patch_cdp_detection(browser)
+            .await
+            .ok();
+        let log: crate::sources::source::LogFn = Arc::new(|m: &str| crate::log::log("ext", m));
+        if !Self::wait_cloudflare(browser, &log).await {
+            // The reason, not "no results": the caller turns this into a
+            // per-source failure the Trackers panel and the CLI both print.
+            bail!(
+                "ext: Cloudflare did not let {what} through ({url}) -- {}",
+                CLOUDFLARE_WANTS_A_PERSON
+            );
+        }
+        Ok(())
+    }
+
     /// Cloudflare's page is `Just a moment...` until it is not, and on ext it
     /// can be waiting for a person to tick a box -- so this waits longer than
     /// rutracker's does, and says so in the log rather than returning a page of
     /// "verifying you are not a bot" to be parsed as zero results.
     async fn wait_cloudflare(browser: &Browser, log: &crate::sources::source::LogFn) -> bool {
-        for attempt in 0..120 {
+        for attempt in 0..45 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let title = browser.eval_js("document.title").await;
             if let Ok(serde_json::Value::String(s)) = &title {
@@ -304,12 +411,7 @@ impl ExtSearcher {
                 }
             }
         }
-        log(
-            "ext: Cloudflare is still asking for a person after 120s -- open the \
-             browser window and tick the box, then search again (ext needs a \
-             visible browser on your own profile: a hidden one starts from a \
-             clean profile every run)",
-        );
+        log(&format!("ext: {CLOUDFLARE_WANTS_A_PERSON}"));
         false
     }
 
@@ -492,14 +594,7 @@ impl ExtSearcher {
         let browser = self.browser.lock().await;
         let url = search_url(query, offset, category);
         crate::log::log("search", &format!("ext: GET {url}"));
-        browser.navigate(&url).await?;
-        crate::browser::cloudflare::patch_cdp_detection(&browser)
-            .await
-            .ok();
-        let log: crate::sources::source::LogFn = Arc::new(|m: &str| crate::log::log("ext", m));
-        if !Self::wait_cloudflare(&browser, &log).await {
-            bail!("ext: Cloudflare did not let the page through");
-        }
+        Self::open_page(&browser, &url, "the search page").await?;
         let scraped = browser.eval_js(ROWS_SCRIPT).await?;
         let text = scraped
             .as_str()
@@ -522,14 +617,7 @@ impl ExtSearcher {
         let Some(id) = topic_id(page_url) else {
             bail!("ext: no topic id in {page_url}");
         };
-        browser.navigate(page_url).await?;
-        crate::browser::cloudflare::patch_cdp_detection(&browser)
-            .await
-            .ok();
-        let log: crate::sources::source::LogFn = Arc::new(|m: &str| crate::log::log("ext", m));
-        if !Self::wait_cloudflare(&browser, &log).await {
-            bail!("ext: Cloudflare did not let the topic page through");
-        }
+        Self::open_page(&browser, page_url, "the topic page").await?;
         let answer = browser
             .eval_js(&MAGNET_SCRIPT.replace("__ID__", &id.to_string()))
             .await?;
@@ -537,6 +625,18 @@ impl ExtSearcher {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("ext: the magnet ajax returned no text"))?;
         magnet_from_answer(text)
+    }
+
+    /// The file list, read off the release's own page -- the same walk
+    /// [`Self::resolve_magnet`] makes, so both share one navigation helper.
+    pub async fn details(&self, page_url: &str) -> Result<Vec<FileEntry>> {
+        let browser = self.browser.lock().await;
+        Self::open_page(&browser, page_url, "the release page").await?;
+        let answer = browser.eval_js(FILES_SCRIPT).await?;
+        let text = answer
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("ext: the file scrape returned no text"))?;
+        parse_files(text)
     }
 
     pub async fn download_torrent(&self, _url: &str) -> Result<Vec<u8>> {
@@ -701,5 +801,9 @@ impl Source for ExtSearcher {
 
     async fn resolve_magnet(&self, page_url: &str) -> Result<Option<String>> {
         ExtSearcher::resolve_magnet(self, page_url).await
+    }
+
+    async fn details(&self, page_url: &str) -> Result<Vec<FileEntry>> {
+        ExtSearcher::details(self, page_url).await
     }
 }

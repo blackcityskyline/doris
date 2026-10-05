@@ -256,6 +256,7 @@ fn to_row(row: &str, host: &str) -> Option<TorrentItem> {
         source: "1337x".to_string(),
         group: None,
         query: String::new(),
+        ..Default::default()
     })
 }
 

@@ -47,6 +47,20 @@ pub struct TorrentItem {
     /// `search::source::Source::id()`.
     #[serde(default)]
     pub source: String,
+    /// Who announced the release, where the site says who (`""` = it does not,
+    /// or doris did not read it). Not the same as `source`: this is the
+    /// tracker's uploader -- `FitGirl`, `DODI` -- which is the answer to "who
+    /// put this up", the only part of a release that says whether a repack is
+    /// any good.
+    #[serde(default)]
+    pub uploader: String,
+    /// The site's own category path, finer than [`TorrentItem::group`]: ext
+    /// answers `Games / PC Games`, where `group` can only say `Games`. That
+    /// distinction is the whole answer to "is this a console game": ext has no
+    /// tags on a release at all, but it files one under `Games / Switch`
+    /// (sub_cat 41) rather than `Games / PC Games` (31).
+    #[serde(default)]
+    pub category: String,
 
     // --- B1 fields (numeric/hash twins of the display strings above) ---
     /// Content group this row belongs to, or `None` when the result cannot be attributed to one

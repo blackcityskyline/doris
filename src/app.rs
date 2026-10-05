@@ -284,6 +284,36 @@ pub async fn fill_missing_magnet(
     Ok(())
 }
 
+/// The one sentence every path says when the download daemon is not there.
+///
+/// One sentence, because it is read in a log panel: the setting to change and
+/// the address it is read from are the two things a reader needs, and neither
+/// of them is in "the download daemon is not answering".
+pub fn daemon_absent(url: &str, detail: &str) -> String {
+    format!(
+        "The download daemon is not answering: {detail} (Options -> streaming -> \
+         Transmission URL, currently {url})"
+    )
+}
+
+/// Ask the daemon whether it is there **before** the work, not after it.
+///
+/// A row's magnet is not always on the row: an ext row's is read out of the
+/// browser, one page load and one signed ajax, and finding out afterwards that
+/// Transmission was never running costs all of that to arrive at a message the
+/// user could have had at once. Measured 05.10.2026 with the daemon stopped: `d`
+/// on an ext row walked the browser for 17 seconds and then reported it.
+pub async fn daemon_is_there(
+    client: &crate::transmission::Transmission,
+    url: &str,
+) -> Result<(), String> {
+    if client.is_reachable().await {
+        Ok(())
+    } else {
+        Err(daemon_absent(url, "nothing is listening there"))
+    }
+}
+
 /// What pressing Enter in the results view means.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EnterAction {

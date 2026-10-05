@@ -8,7 +8,9 @@
 
 use super::layout::{FrameButton, ZoneId, SEARCH_BAR_HEIGHT};
 use super::theme::Theme;
-use super::view::{source_badge, source_rows, App, AppState, Modal, SourceRow, SOURCE_BADGE_WIDTH};
+use super::view::{
+    or_dash, source_badge, source_rows, App, AppState, Modal, SourceRow, SOURCE_BADGE_WIDTH,
+};
 use crate::config::Config;
 use crate::sources::orchestrator::SourceStatus;
 use ratatui::prelude::*;
@@ -1257,7 +1259,11 @@ impl App {
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            // Two fact lines: the row's own numbers on the first, and who
+            // announced it and where the site filed it on the second -- those
+            // two are what decides whether a release is worth the download, and
+            // neither fits on the first line, which is already full.
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
             .split(inner);
 
         // The whole terminal is this table, so its fixed columns can be
@@ -1310,7 +1316,26 @@ impl App {
                 ])
             }
         };
-        frame.render_widget(Paragraph::new(preview), chunks[1]);
+        let by = match fact {
+            None => Line::from(Span::styled("", label)),
+            Some(item) => Line::from(vec![
+                Span::styled("By: ", label),
+                Span::styled(or_dash(&item.uploader), value),
+                Span::styled("   Where: ", label),
+                Span::styled(
+                    if item.category.is_empty() {
+                        item.group
+                            .map_or("-".to_string(), |g| g.label().to_string())
+                    } else {
+                        item.category.clone()
+                    },
+                    value,
+                ),
+            ]),
+        };
+        let mut facts = vec![preview];
+        facts.push(by);
+        frame.render_widget(Paragraph::new(facts), chunks[1]);
     }
 
     fn render_modal(&mut self, frame: &mut Frame, area: Rect, config: &Config) {

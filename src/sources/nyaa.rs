@@ -129,6 +129,7 @@ fn to_row(item: &str) -> Option<TorrentItem> {
         source: "nyaa".to_string(),
         group: group_from_category(&category),
         query: String::new(),
+        ..Default::default()
     })
 }
 

@@ -320,6 +320,13 @@ impl App {
             return None;
         }
 
+        // Before the browser walk, not after it: an ext row's magnet is read out
+        // of a page, and a daemon that is not running makes all of that useless.
+        if let Err(why) = daemon_is_there(&self.transmission, &self.config.transmission_url).await {
+            self.ui.add_log(&why);
+            return None;
+        }
+
         self.ui.add_log(&format!("Downloading '{}'...", item.title));
 
         // A row with neither link nor file (1337x, B8 wave 3) reads its
@@ -349,12 +356,9 @@ impl App {
             }
         };
 
-        // Built here rather than held on `App`: the client is two cheap
-        // values, and the only other user (the poller) already has its own.
-        let transmission = crate::transmission::Transmission::with_auth(
-            &self.config.transmission_url,
-            crate::credentials::load_credential(crate::app::TRANSMISSION_RESOURCE),
-        );
+        // The same client the pre-flight just asked, built from the same URL and
+        // the same encrypted credential -- one client, one answer.
+        let transmission = self.transmission.clone();
         let dir = self.resolve_download_dir();
         let answer = match transmission.add(&link, Some(&dir)).await {
             Ok(crate::transmission::Added::Fresh(id)) => {
@@ -374,9 +378,9 @@ impl App {
                 None
             }
             Err(e) => {
-                self.ui.add_log(&format!(
-                    "The download daemon is not answering: {e} (Options -> streaming \
-                     -> Transmission URL)"
+                self.ui.add_log(&daemon_absent(
+                    &self.config.transmission_url,
+                    &e.to_string(),
                 ));
                 None
             }
@@ -427,10 +431,7 @@ impl App {
                 self.ui.magnet_says(message);
             }
             Err(e) => {
-                let message = format!(
-                    "The download daemon is not answering: {e} (Options -> streaming -> \
-                     Transmission URL)"
-                );
+                let message = daemon_absent(&self.config.transmission_url, &e.to_string());
                 self.ui.add_log(&message.clone());
                 self.ui.magnet_says(message);
             }

@@ -313,6 +313,17 @@ const LOG_CAPACITY: usize = 500;
 /// How many lines PgUp/PgDn move the log scroll.
 pub const LOG_PAGE_STEP: usize = 10;
 
+/// A fact the row does not carry, read as `-`. The same question everywhere:
+/// the source id, the uploader and the site's category path are all optional,
+/// and a blank cell reads as "still loading" where a dash reads as "not there".
+pub fn or_dash(value: &str) -> &str {
+    if value.is_empty() {
+        "-"
+    } else {
+        value
+    }
+}
+
 /// The `Src` cell for one result: the source id, or `-` when it is missing.
 pub fn source_badge(item: &TorrentItem) -> String {
     if item.source.is_empty() {
