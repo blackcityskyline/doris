@@ -141,3 +141,127 @@ fn test_saved_cookies_are_owner_only() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// The jar is one file for every source, and a browser handed a cookie for a
+/// site it was not opened on answers an error -- measured on 05.10.2026, where
+/// signing into ext failed in ten seconds with rutracker's cookies in the jar
+/// and succeeded in twenty-one with an empty one.
+#[test]
+fn test_each_source_takes_only_the_cookies_of_its_own_site() {
+    let jar = parse_netscape(
+        "# Netscape HTTP Cookie File\n\
+         .rutracker.org\tTRUE\t/\tTRUE\t0\tbb_guid\t123\n\
+         .rutracker.org\tTRUE\t/\tTRUE\t0\tcf_clearance\tabc\n\
+         .ext.to\tTRUE\t/\tTRUE\t0\t__LOGIN\ttorum\n\
+         .ext.to\tTRUE\t/\tTRUE\t0\tPHPSESSID\tdeadbeef\n\
+         .nyaa.si\tTRUE\t/\tFALSE\t0\tuser\tn\n",
+    );
+
+    let names = |host: &str| -> Vec<String> {
+        for_domain(&jar, host)
+            .iter()
+            .map(|c| c.name.clone())
+            .collect()
+    };
+    assert_eq!(names("ext.to"), vec!["__LOGIN", "PHPSESSID"]);
+    assert_eq!(names("rutracker.org"), vec!["bb_guid", "cf_clearance"]);
+    assert_eq!(names("nyaa.si").len(), 1, "a third source keeps its own");
+    assert!(
+        names("yts.mx").is_empty(),
+        "and a source with nothing in the jar gets nothing, not everything"
+    );
+}
+
+/// A leading dot means the cookie covers subdomains, which is how a jar written
+/// by the browser reads: `.rutracker.org` belongs to `forum.rutracker.org`.
+#[test]
+fn test_a_leading_dot_still_matches_a_subdomain() {
+    let jar = parse_netscape(
+        "# Netscape HTTP Cookie File\n\
+         .rutracker.org\tTRUE\t/\tTRUE\t0\tbb_guid\t123\n\
+         ext.to\tTRUE\t/\tTRUE\t0\t__LOGIN\tt\n",
+    );
+    let count = |host: &str| for_domain(&jar, host).len();
+    assert_eq!(count("forum.rutracker.org"), 1);
+    assert_eq!(count("www.ext.to"), 1);
+    assert_eq!(
+        count("notrutracker.org"),
+        0,
+        "a suffix that is not a label boundary is a different site"
+    );
+    assert_eq!(
+        count("rutracker.org.evil.example"),
+        0,
+        "and a host that merely starts with ours is not ours"
+    );
+}
+
+/// One jar, several trackers: writing one site's cookies must not take the
+/// others' away. It did, on 05.10.2026 -- signing into ext replaced the file
+/// with ext's six cookies and took rutracker's four with them, so the next
+/// rutracker search asked for a password the user had given an hour earlier.
+#[test]
+fn test_saving_one_site_leaves_the_others_in_the_jar() {
+    let dir = std::env::temp_dir().join(format!("doris-jar-merge-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("cookies.txt");
+
+    let jar = |domain: &str, name: &str, value: &str| Cookie {
+        domain: domain.to_string(),
+        path: "/".to_string(),
+        secure: true,
+        name: name.to_string(),
+        value: value.to_string(),
+    };
+
+    save_for_domain(
+        &path,
+        "rutracker.org",
+        &[
+            jar(".rutracker.org", "bb_guid", "1"),
+            jar(".rutracker.org", "cf_clearance", "rt"),
+        ],
+    )
+    .expect("rutracker's cookies are saved");
+    save_for_domain(
+        &path,
+        "ext.to",
+        &[
+            jar(".ext.to", "__LOGIN", "torum"),
+            jar(".ext.to", "PHPSESSID", "dead"),
+            jar(".ext.to", "cf_clearance", "ext"),
+        ],
+    )
+    .expect("ext's cookies are saved");
+
+    let after = load_from_file(&path).expect("the jar reads back");
+    let names = |host: &str| -> Vec<String> {
+        for_domain(&after, host)
+            .iter()
+            .map(|c| c.name.clone())
+            .collect()
+    };
+    assert_eq!(names("rutracker.org"), vec!["bb_guid", "cf_clearance"]);
+    assert_eq!(
+        names("ext.to"),
+        vec!["__LOGIN", "PHPSESSID", "cf_clearance"]
+    );
+
+    // And a second save replaces that site's own cookies rather than piling a
+    // second copy of the same name next to the first.
+    save_for_domain(&path, "ext.to", &[jar(".ext.to", "PHPSESSID", "fresh")]).unwrap();
+    let after = load_from_file(&path).expect("the jar reads back");
+    let sessions: Vec<&str> = for_domain(&after, "ext.to")
+        .iter()
+        .filter(|c| c.name == "PHPSESSID")
+        .map(|c| c.value.as_str())
+        .collect();
+    assert_eq!(sessions, vec!["fresh"], "one session per name, the newest");
+    assert_eq!(
+        for_domain(&after, "rutracker.org").len(),
+        2,
+        "and the other site is still there after it"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

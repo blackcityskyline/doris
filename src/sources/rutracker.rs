@@ -188,12 +188,22 @@ impl RutrackerSearcher {
                             loaded.len(),
                             cf.display()
                         ));
+                        // Only rutracker's own: the jar is one file for every
+                        // source, and a browser handed another site's cookies
+                        // answers an error -- which, injected wholesale, means
+                        // the session below is never injected either.
+                        let mine = cookies::for_domain(&loaded, "rutracker.org");
                         let json_cookies: Vec<serde_json::Value> =
-                            loaded.iter().map(|c| c.to_json()).collect();
-                        if let Err(e) = browser.add_cookies(&json_cookies).await {
+                            mine.iter().map(|c| c.to_json()).collect();
+                        if mine.is_empty() {
+                            log("AUTH: none of them are ours");
+                        } else if let Err(e) = browser.add_cookies(&json_cookies).await {
                             log(&format!("AUTH: failed to inject cookies: {}", e));
                         } else {
-                            log("AUTH: cookies injected into browser");
+                            log(&format!(
+                                "AUTH: {} cookies injected into browser",
+                                mine.len()
+                            ));
                         }
                     }
                     Ok(_) => {
@@ -253,7 +263,7 @@ impl RutrackerSearcher {
                         if let Some(cf) = cookie_file {
                             match self.get_cookies().await {
                                 Ok(c) => {
-                                    let _ = cookies::save_to_file(cf, &c);
+                                    let _ = cookies::save_for_domain(cf, "rutracker.org", &c);
                                     log(&format!(
                                         "AUTH: saved {} cookies to {}",
                                         c.len(),

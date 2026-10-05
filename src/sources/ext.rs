@@ -351,12 +351,24 @@ impl ExtSearcher {
 
         if let Some(file) = cookie_file {
             match cookies::load_from_file(file) {
-                Ok(saved) if !saved.is_empty() => {
-                    let json: Vec<serde_json::Value> = saved.iter().map(|c| c.to_json()).collect();
-                    browser.add_cookies(&json).await?;
-                    log(&format!("ext: {} saved cookies injected", saved.len()));
+                Ok(saved) => {
+                    // Only ext's own: the jar is one file for every source, and
+                    // a browser handed another site's cookies answers an error.
+                    let mine = cookies::for_domain(&saved, "ext.to");
+                    if mine.is_empty() {
+                        log(&format!("ext: no cookies of ours in {}", file.display()));
+                    } else {
+                        let json: Vec<serde_json::Value> =
+                            mine.iter().map(|c| c.to_json()).collect();
+                        // Not fatal: the credentials below can still type a
+                        // session in, and a walk that gives up here reports a
+                        // browser error instead of a login.
+                        match browser.add_cookies(&json).await {
+                            Ok(()) => log(&format!("ext: {} cookies injected", mine.len())),
+                            Err(e) => log(&format!("ext: could not inject those cookies: {e}")),
+                        }
+                    }
                 }
-                Ok(_) => log(&format!("ext: cookie file {} is empty", file.display())),
                 Err(e) => log(&format!("ext: no cookies from {}: {e}", file.display())),
             }
         }
@@ -370,7 +382,8 @@ impl ExtSearcher {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            log("ext: already signed in (cookies)");
+            log("ext: already signed in");
+            self.save_jar(&browser, cookie_file, &log).await;
             self.logged_in.store(true, Ordering::Relaxed);
             return Ok(true);
         }
@@ -419,13 +432,33 @@ impl ExtSearcher {
             return Ok(false);
         }
         self.logged_in.store(true, Ordering::Relaxed);
-        if let Some(file) = cookie_file {
-            if let Ok(jar) = self.cookies_of(&browser).await {
-                let _ = cookies::save_to_file(file, &jar);
-                log(&format!("ext: {} cookies saved", jar.len()));
-            }
-        }
+        self.save_jar(&browser, cookie_file, &log).await;
         Ok(true)
+    }
+
+    /// Put the browser's jar on disk, so the next run starts from a session
+    /// instead of from a login form.
+    ///
+    /// This runs on the "already signed in" path too, and that is the point:
+    /// ext's session can be sitting in the browser's own profile from a visit
+    /// the user made themselves, and a jar doris never wrote is a session the
+    /// next run has to ask the user for again.
+    async fn save_jar(
+        &self,
+        browser: &Browser,
+        cookie_file: Option<&Path>,
+        log: &crate::sources::source::LogFn,
+    ) {
+        let Some(file) = cookie_file else {
+            return;
+        };
+        match self.cookies_of(browser).await {
+            Ok(jar) => match cookies::save_for_domain(file, "ext.to", &jar) {
+                Ok(()) => log(&format!("ext: {} cookies saved", jar.len())),
+                Err(e) => log(&format!("ext: could not save the cookies: {e}")),
+            },
+            Err(e) => log(&format!("ext: could not read the cookies: {e}")),
+        }
     }
 
     /// The browser's cookies as the Netscape jar doris keeps on disk. The
