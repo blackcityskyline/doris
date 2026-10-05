@@ -1,6 +1,5 @@
 pub mod cache;
 pub mod cookies;
-pub mod eztv;
 pub mod format;
 pub mod magnet;
 pub mod models;

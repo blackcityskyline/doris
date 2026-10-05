@@ -408,6 +408,23 @@ fn test_the_category_slot_is_the_urls_third_segment() {
         "https://rutor.info/search/2/16/000/0/%D0%BC%D0%B8%D1%80",
         "page, rubric id, the search-method and sort ids, then the query"
     );
+    // One word per path segment, which is how rutor reads a multi-word query.
+    //
+    // Measured live: `.../000/0/dune/2021` answers 91 KB with a hundred magnet
+    // links, and the same two words space-encoded -- `.../000/0/dune%202021` --
+    // answers **200** with an empty page and no magnets at all. So the old
+    // space-encoded form made every two-word query look like a tracker with no
+    // results, with nothing in the answer to say so.
+    assert_eq!(
+        RutorSearcher::search_url(1, 0, "dune 2021"),
+        "https://rutor.info/search/1/0/000/0/dune/2021",
+        "the words go in as separate segments"
+    );
+    assert_eq!(
+        RutorSearcher::search_url(1, 0, "  dune   2021  "),
+        "https://rutor.info/search/1/0/000/0/dune/2021",
+        "and the runs of spaces between them are not segments of their own"
+    );
     for (group, ids) in GROUP_IDS {
         for id in ids {
             assert_eq!(

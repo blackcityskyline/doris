@@ -102,7 +102,7 @@ pub const FILTER_HELP: &[(&str, &str)] = &[
     ("Esc", "Clears the filter; cursor goes back."),
     ("all", "Category: every row, whatever it is tagged."),
     ("g, G", "Cycles category (or the frame arrows)."),
-    ("tagged", "nnmclub, nyaa, tpb, yts, eztv, subsplease,"),
+    ("tagged", "nnmclub, nyaa, tpb, yts, subsplease,"),
     ("", "torentino: the category is read off the row."),
     ("by query", "rutracker, rutor, x1337x are told the"),
     ("", "category, so an all-search cannot tag rows"),

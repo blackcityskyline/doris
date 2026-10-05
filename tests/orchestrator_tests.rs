@@ -424,15 +424,7 @@ fn a_browse_asks_only_the_sources_that_can_answer_an_empty_query() {
     };
 
     let browse = ids(true);
-    for id in [
-        "rutor",
-        "yts",
-        "tpb",
-        "eztv",
-        "subsplease",
-        "nnmclub",
-        "1337x",
-    ] {
+    for id in ["rutor", "yts", "tpb", "subsplease", "nnmclub", "1337x"] {
         assert!(browse.contains(&id), "{} must be able to browse", id);
     }
     // The two that cannot: the browser-backed one, and the one whose

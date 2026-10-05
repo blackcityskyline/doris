@@ -201,13 +201,26 @@ impl RutorSearcher {
 
     /// The search URL for one rubric id: `/search/{page}/{cat}/000/0/ {query}` -- `cat` is
     /// rutor's own rubric slot, `0` meaning "all categories" (its spelling, not ours).
+    /// Rutor's search path takes **one word per segment**.
+    ///
+    /// Measured live: `.../000/0/dune/2021` answers 91 KB with a hundred
+    /// magnet links, and `.../000/0/dune%202021` -- the same two words, space
+    /// encoded -- answers 200 with an empty page and no magnets at all. So a
+    /// multi-word query asked the old way returned nothing and looked like a
+    /// tracker with no results: one word worked, two did not, and there was
+    /// nothing in the answer to say which.
     pub fn search_url(page: usize, category: i64, query: &str) -> String {
+        let words: Vec<String> = query
+            .split_whitespace()
+            .map(urlencoding::encode)
+            .map(|word| word.into_owned())
+            .collect();
         format!(
             "{}/search/{}/{}/000/0/{}",
             Self::BASE,
             page,
             category,
-            urlencoding::encode(query)
+            words.join("/")
         )
     }
 

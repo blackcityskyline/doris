@@ -10,7 +10,6 @@ use std::sync::Arc;
 use crate::browser::cdp::Browser;
 use tokio::sync::Mutex;
 
-use super::eztv::EztvSearcher;
 use super::models::{FileEntry, TorrentItem};
 use super::nnmclub::NnmclubSearcher;
 use super::nyaa::NyaaSearcher;
@@ -199,9 +198,6 @@ const NYAA_GROUPS: &[Group] = &[Group::Anime];
 /// NNM-Club spans four forums -- the three torio splits (movies, TV, games) plus the anime
 /// ones.
 const NNMCLUB_GROUPS: &[Group] = &[Group::Movies, Group::TV, Group::Games, Group::Anime];
-
-/// EZTV is TV-only, and its rows say `Group::TV` to match.
-const EZTV_GROUPS: &[Group] = &[Group::TV];
 
 /// 1337x's site sections that map onto a `Group`, declared when wave 3 landed it as
 /// implemented.
@@ -399,17 +395,6 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: NyaaSearcher::HOME_URL,
     },
     SourceInfo {
-        id: "eztv",
-        label: "EZTV",
-        implemented: true,
-        groups: EZTV_GROUPS,
-        category_filter: true,
-        supports_browse: true,
-        requires_browser: false,
-        block_hosts: &[],
-        home_url: EztvSearcher::HOME_URL,
-    },
-    SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
         implemented: true,
@@ -470,7 +455,6 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
         "subsplease" => Ok(Arc::new(SubsPleaseSearcher::new())),
         "nyaa" => Ok(Arc::new(NyaaSearcher::new())),
         "nnmclub" => Ok(Arc::new(NnmclubSearcher::new())),
-        "eztv" => Ok(Arc::new(EztvSearcher::new())),
         "1337x" => Ok(Arc::new(X1337xSearcher::new())),
         "torentino" => Ok(Arc::new(TorentinoSearcher::new())),
         other => Err(anyhow!("unknown source '{}'", other)),
@@ -545,6 +529,16 @@ pub fn migrate_config(config: &mut crate::config::Config) {
         })
         .cloned()
         .collect();
+
+    // A source this build no longer has leaves the list it was checked in.
+    //
+    // EZTV is the first: its API has no search, so every query against it was
+    // an error, and a config that still listed it kept listing it -- the
+    // checkbox list filters by the registry, so the id sat there invisible and
+    // stayed there across every run. Dropping it here is the same place that
+    // already drops ids the registry has but has not built.
+    let registered = |id: &String| KNOWN_SOURCES.iter().any(|info| info.id == *id);
+    config.enabled_sources.retain(|id| registered(id));
 
     for id in default_enabled_sources() {
         let known_before = known.iter().any(|k| k == &id);

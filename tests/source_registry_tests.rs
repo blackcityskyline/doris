@@ -159,7 +159,7 @@ fn test_a_category_a_source_cannot_serve_is_documented_as_unverified() {
         "rutracker's f[] slot was verified live: two forum ids answer \
          disjoint topic sets"
     );
-    for id in ["rutor", "1337x", "nnmclub", "tpb", "yts", "eztv", "nyaa"] {
+    for id in ["rutor", "1337x", "nnmclub", "tpb", "yts", "nyaa"] {
         let info = KNOWN_SOURCES
             .iter()
             .find(|s| s.id == id)
@@ -369,7 +369,6 @@ fn test_the_registry_says_which_sources_can_browse() {
         ("yts", true),
         ("tpb", true),
         ("subsplease", true),
-        ("eztv", true),
         ("nnmclub", true),
         ("1337x", true),
         ("nyaa", false),

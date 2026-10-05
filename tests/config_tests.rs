@@ -303,7 +303,7 @@ fn test_a_config_from_before_wave1_gains_the_new_sources() {
     )
     .expect("legacy config parses");
 
-    for id in ["yts", "tpb", "subsplease", "eztv"] {
+    for id in ["yts", "tpb", "subsplease"] {
         assert!(
             config.enabled_sources.iter().any(|s| s == id),
             "{} must arrive enabled, got {:?}",
@@ -499,5 +499,33 @@ fn load_without_a_file_uses_the_first_run_config() {
     assert!(
         !arm_text.contains("Config::default()"),
         "and not the raw struct, which carries no source list: {arm_text}"
+    );
+}
+
+/// A source this build no longer has is dropped from the list it was checked
+/// in, rather than sitting there invisible.
+///
+/// EZTV is the case: its API has no search, so it was removed, and the filter
+/// that builds the checkbox list works off the registry -- so a stale id in
+/// the config produced no row, no error and no way to tell.
+#[test]
+fn test_a_source_this_build_dropped_leaves_the_enabled_list() {
+    let config = from_toml("enabled_sources = [\n    \"rutracker\",\n    \"eztv\",\n]\n")
+        .expect("a config naming a removed source still parses");
+
+    assert!(
+        !config.enabled_sources.iter().any(|s| s == "eztv"),
+        "a removed source must not stay checked in: {:?}",
+        config.enabled_sources
+    );
+    assert!(
+        config.enabled_sources.iter().any(|s| s == "rutracker"),
+        "and the sources that are still here stay: {:?}",
+        config.enabled_sources
+    );
+    assert!(
+        !config.known_sources.iter().any(|s| s == "eztv"),
+        "nor in the list of what this build knows: {:?}",
+        config.known_sources
     );
 }

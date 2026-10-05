@@ -616,13 +616,14 @@ fn test_category_row_offers_only_groups_an_enabled_source_serves() {
         "yts declares Movies and nothing else"
     );
 
-    let eztv_only = Config {
-        enabled_sources: vec!["eztv".to_string()],
+    let subsplease_only = Config {
+        enabled_sources: vec!["subsplease".to_string()],
         ..Default::default()
     };
     assert_eq!(
-        doris::ui::modals::settings::group_tabs(&eztv_only),
-        vec![None, Some(Group::TV)]
+        doris::ui::modals::settings::group_tabs(&subsplease_only),
+        vec![None, Some(Group::Anime)],
+        "a single-group source still gets the unfiltered tab"
     );
 
     let all_off = Config {
