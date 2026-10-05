@@ -124,7 +124,11 @@ impl App {
                 let cookie_file = self.resolve_cookie_file();
                 let username = self.args.username.clone();
                 let password = self.args.password.clone();
-                let saved_creds = crate::credentials::load_credentials();
+                // Each login gets its own credentials: two trackers with two
+                // accounts are the norm, and one pair sent to both is how the
+                // wrong password reaches the wrong site -- and reads as "that
+                // tracker is down".
+                let saved_creds = crate::credentials::load_credential(info.id);
                 let event_tx_log = self.event_handler.sender();
                 let fetch = async move {
                     if info.requires_browser {
@@ -135,7 +139,7 @@ impl App {
                             (Some(u), Some(p)) => (Some(u), Some(p)),
                             _ => match saved_creds {
                                 Some((u, p)) => {
-                                    log("Using saved credentials");
+                                    log(&format!("Using the saved credentials for {}", info.id));
                                     (Some(u), Some(p))
                                 }
                                 None => (None, None),

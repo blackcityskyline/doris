@@ -1,4 +1,5 @@
 use doris::config::Config;
+use doris::credentials::LOGIN_RESOURCES;
 use doris::sources::orchestrator;
 use doris::sources::rutor::RutorSearcher;
 use doris::sources::source::{
@@ -204,10 +205,48 @@ fn test_only_browser_backed_sources_ask_for_a_browser() {
         .filter(|s| s.requires_browser)
         .map(|s| s.id)
         .collect();
-    assert_eq!(browser_backed, vec!["rutracker"]);
+    // ext is here too, and for the same reason rutracker is: Cloudflare decides
+    // whether a page is served, and a plain HTTP client does not get one. What
+    // ext adds on top is that its *search* path is the challenged one, so it
+    // needs the user's own browser profile -- see `sources/ext.rs`.
+    assert_eq!(browser_backed, vec!["rutracker", "ext"]);
     assert!(!source::get_source("1337x").unwrap().requires_browser);
     // A planned source still declares how its host behaves, because
     assert!(!source::get_source("torentino").unwrap().requires_browser);
+}
+
+#[test]
+fn test_every_login_tab_is_a_source_that_can_be_logged_into() {
+    // A tab in the login modal names a source and keys its credentials in the
+    // store, so a tab naming a source that cannot answer is a tab that types
+    // into nowhere -- and it looks like a wrong password, not like a mistake.
+    for id in doris::credentials::LOGIN_RESOURCES {
+        let info = source::get_source(id)
+            .unwrap_or_else(|| panic!("the login tab '{id}' is not a registered source"));
+        assert!(
+            info.implemented,
+            "the login tab '{id}' names an unbuilt source"
+        );
+        assert!(
+            info.requires_browser,
+            "the login tab '{id}' names a source with no browser to type into"
+        );
+    }
+    assert!(
+        LOGIN_RESOURCES.contains(&"ext"),
+        "ext rows carry no magnet of their own, so signing into it is not optional"
+    );
+}
+
+#[test]
+fn test_the_two_login_tabs_are_two_accounts() {
+    // One pair of credentials sent to both trackers is how the wrong password
+    // reaches the wrong site, so the search path reads the store by source id
+    // and the two ids have to differ.
+    assert_ne!(
+        LOGIN_RESOURCES[0], LOGIN_RESOURCES[1],
+        "two tabs on one id are one account typed twice"
+    );
 }
 
 #[test]

@@ -93,7 +93,9 @@ impl App {
             );
         }
 
-        let source = match self.get_source("rutracker").await {
+        // The tab the credentials were typed into names the source: two
+        // trackers, two accounts, one store.
+        let source = match self.get_source(resource).await {
             Ok(s) => s,
             Err(e) => {
                 self.ui.add_log(&format!("Browser error: {}", e));

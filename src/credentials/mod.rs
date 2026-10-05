@@ -15,8 +15,10 @@ const KEY_LEN: usize = 16;
 /// migration.
 const DEFAULT_RESOURCE: &str = "rutracker";
 
-/// The resource ids the login modal manages, in tab order.
-pub const LOGIN_RESOURCES: &[&str] = &[DEFAULT_RESOURCE];
+/// The resource ids the login modal manages, in tab order -- one per source
+/// that needs an account, and keyed the same way the credential store is, so
+/// the tab a credential is typed into is the source that gets it.
+pub const LOGIN_RESOURCES: &[&str] = &[DEFAULT_RESOURCE, "ext"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Credential {

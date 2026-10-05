@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::browser::cdp::Browser;
 use tokio::sync::Mutex;
 
+use super::ext::ExtSearcher;
 use super::models::{FileEntry, TorrentItem};
 use super::nnmclub::NnmclubSearcher;
 use super::nyaa::NyaaSearcher;
@@ -395,6 +396,19 @@ pub const KNOWN_SOURCES: &[SourceInfo] = &[
         home_url: NyaaSearcher::HOME_URL,
     },
     SourceInfo {
+        id: "ext",
+        label: "EXT",
+        implemented: true,
+        groups: crate::sources::ext::EXT_GROUPS,
+        // Its browse URL is `?cat=1..8`, and the row's own category link says
+        // which one a row came from when the page was asked without one.
+        category_filter: true,
+        supports_browse: true,
+        requires_browser: true,
+        block_hosts: &[],
+        home_url: super::ext::HOME_URL,
+    },
+    SourceInfo {
         id: "nnmclub",
         label: "NNM-Club",
         implemented: true,
@@ -448,6 +462,12 @@ pub fn build_source(id: &str, env: SourceEnv) -> Result<Arc<dyn Source>> {
                 .browser
                 .ok_or_else(|| anyhow!("source '{}' needs a running browser session", id))?;
             Ok(Arc::new(RutrackerSearcher::new(browser)))
+        }
+        "ext" => {
+            let browser = env
+                .browser
+                .ok_or_else(|| anyhow!("source '{}' needs a running browser session", id))?;
+            Ok(Arc::new(ExtSearcher::new(browser)))
         }
         "rutor" => Ok(Arc::new(RutorSearcher::new())),
         "yts" => Ok(Arc::new(YtsSearcher::new())),
