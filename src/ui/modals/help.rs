@@ -22,14 +22,15 @@ use crate::ui::view::{centered_rect, App, Modal};
 /// exactly that reason.
 const KEY_WIDTH: usize = 20;
 
-/// Movement, zones, the three full-frame views, and getting out.
+/// Movement, zones, the four full-frame views, and getting out.
 ///
 /// The pages are split by what a key is *for*, not by how many rows fit:
 /// a table of thirty-four rows is a list to scroll, and a list that scrolls
 /// is the heap this replaces. Anything about searching is on `2:search`,
-/// anything about a torrent is on `4:torrents`.
+/// anything about a download is on `4:downloads`.
 pub const NAV_KEYS: &[(&str, &str)] = &[
-    ("1, 2, 3, 4", "Focuses that zone; again hides it."),
+    ("1-5", "Focuses that panel; again hides it."),
+    ("Shift+1 to 5", "Draws that panel over the tiling; toggles."),
     ("Tab, Shift+Tab", "Cycles focus between the visible zones."),
     ("ctrl + arrows", "Moves focus to the panel that way."),
     (
@@ -48,17 +49,18 @@ pub const NAV_KEYS: &[(&str, &str)] = &[
         "Pages the results, the downloads or the log.",
     ),
     ("L", "Full-frame log."),
-    ("T", "Full-frame downloads: cursor, controls, files."),
+    ("D", "Full-frame downloads: cursor, controls, files."),
+    ("5, T", "TorrServer's own list: play, pause, save."),
     ("R", "Full-frame results, with a preview line."),
     (
-        "any of L, T, R",
+        "any of L, D, T, R",
         "From one, jumps to another; same key closes.",
     ),
     ("Esc", "Closes a modal or a mode; else opens the menu."),
     ("m", "The menu, from anywhere. Options lives in it."),
     ("q, ctrl + c", "Quits."),
     ("? , /, F1", "This window."),
-    ("←, →", "Switches help page. So do 1-4."),
+    ("←, →", "Switches help page. So do 1-5."),
     (
         "Mouse click",
         "Focuses a zone; a frame button does its job.",
@@ -83,8 +85,8 @@ pub const SEARCH_KEYS: &[(&str, &str)] = &[
     ("Enter", "In Trackers, switches the row under it."),
     ("v", "Logs the selected row's details to the Log zone."),
     ("d", "Hands the row to the download daemon; it"),
-    ("", "starts fetching, and shows up in Torrent."),
-    ("Shift+Enter, D", "Row details: magnet, page, file list."),
+    ("", "starts fetching, and shows up in Download."),
+    ("Shift+Enter", "Row details: magnet, page, file list."),
 ];
 
 /// The filter box: what it accepts, and where a row's category comes from
@@ -111,21 +113,24 @@ pub const FILTER_HELP: &[(&str, &str)] = &[
     ("no group", "An untagged row is listed in all only."),
 ];
 
-/// The Torrents panel and its full-frame view.
+/// The Download panel and its full-frame view.
 ///
 /// One page, because these keys only mean anything next to each other: a
 /// key that acts on "the row under the cursor" is meaningless written down
 /// without the cursor being on screen.
-pub const TORRENT_KEYS: &[(&str, &str)] = &[
-    ("2", "The Torrents panel: every download, live."),
+pub const DOWNLOAD_KEYS: &[(&str, &str)] = &[
+    ("2", "The Download panel: every download, live."),
     ("p", "Pauses / resumes the row under the cursor."),
     ("d", "Removes it and what it downloaded."),
     ("d, again", "Confirms the removal; any other key cancels."),
-    ("T", "The full frame: same list, nothing dropped."),
+    ("D", "The full frame: same list, nothing dropped."),
     ("j, k, Up, Down", "Moves the cursor; the marker follows."),
     ("PgUp/PgDn/Home/End", "Moves it a page, to either end."),
-    ("L, R", "From there, jumps to the log or results."),
-    ("Esc", "Opens the menu, leaving the view; T closes it."),
+    (
+        "L, R, T",
+        "From there, jumps to the log, results, or server.",
+    ),
+    ("Esc", "Opens the menu, leaving the view; D closes it."),
     ("---", "In the full frame ---"),
     ("p", "Pause / resume the row under the cursor."),
     ("d", "Remove it and its data (confirm)."),
@@ -155,12 +160,32 @@ pub const TORRENT_KEYS: &[(&str, &str)] = &[
     ("doris torrent", "TorrServer, which is a different thing."),
 ];
 
+/// The streaming server's own list, which is not the download daemon's:
+/// a torrent can be on TorrServer and nowhere else.
+pub const TORRSERVER_KEYS: &[(&str, &str)] = &[
+    ("5", "Tiles the streaming server's torrents."),
+    ("Shift+5", "Draws the same panel over the tiling."),
+    ("T", "The full frame: same list, nothing dropped."),
+    ("j, k, Up, Down", "Moves the cursor; the list wraps."),
+    ("PgUp/PgDn/Home/End", "Moves it a page, to either end."),
+    ("Enter", "Plays the row in the player (mpv)."),
+    ("p", "Pauses / resumes it on the server (drop/get)."),
+    ("d", "Removes it from TorrServer (confirm)."),
+    ("d, again", "Confirms; any other key cancels."),
+    ("s", "Saves the stream to disk: the largest file,"),
+    ("", "or the highlighted one while `v` is open."),
+    ("v", "The file list; j/k walk it, s saves one."),
+    ("a", "Adds a magnet or a .torrent to TorrServer."),
+    ("Esc", "Closes the overlay; a tile stays."),
+];
+
 pub fn sections() -> &'static [(&'static str, &'static [(&'static str, &'static str)])] {
     &[
         ("keys", NAV_KEYS),
         ("search", SEARCH_KEYS),
         ("filter", FILTER_HELP),
-        ("torrents", TORRENT_KEYS),
+        ("downloads", DOWNLOAD_KEYS),
+        ("server", TORRSERVER_KEYS),
     ]
 }
 

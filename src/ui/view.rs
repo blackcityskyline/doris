@@ -9,6 +9,7 @@ use crate::ui::modals::files::FilesState;
 use crate::ui::modals::help::HelpState;
 use crate::ui::modals::login::LoginState;
 use crate::ui::modals::settings::{group_tabs, SettingsState};
+use crate::ui::modals::torrserver::TorrServerState;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -109,7 +110,7 @@ pub struct TorrentStatus {
     pub dir: String,
 }
 
-/// One download the backend already holds, as the Torrents panel lists it.
+/// One download the backend already holds, as the Download panel lists it.
 ///
 /// A list rather than one `TorrentStatus` because a downloader keeps more
 /// than one. The old panel could only ever describe the torrent the last
@@ -206,7 +207,7 @@ pub struct App {
     pub pending_files: Vec<(usize, bool)>,
     pub detail_logs: Vec<String>,
     pub detail_view: Option<ZoneId>,
-    /// Rows the `T` view gives the downloads table, when the user has said
+    /// Rows the `D` view gives the downloads table, when the user has said
     /// so by dragging the border or by key. `None` is the automatic budget.
     ///
     /// Transient, like the zones' weights: a `Shift+P` preset is a new
@@ -233,15 +234,23 @@ pub struct App {
     pub menu: MenuState,
     pub show_menu: bool,
     pub torrent_status: TorrentStatus,
-    /// Hash of the torrent the Torrent panel currently shows/manages.
+    /// Hash of the torrent the Download panel currently shows/manages.
     pub active_torrent_hash: Option<String>,
+    /// Every torrent TorrServer holds, as its poller last reported them.
+    /// The `TorrServer` panel's list; `torrent_status` is only the one the
+    /// streaming panel follows.
+    pub torrserver_torrents: Vec<crate::torrserver::api::TorrentInfo>,
+    /// The TorrServer panel's cursor and open file list. It lives here,
+    /// not in a modal, because the panel is a zone: it has a tile and an
+    /// overlay, and both draw this one state.
+    pub torrserver_state: TorrServerState,
     /// Every download the backend already holds, adopted at startup.
     ///
     /// Keyed by info hash, because that is the only thing a search row and
     /// a download share. Nothing about these is stored in doris: the daemon
     /// is the record, so a list read from it cannot go stale against itself.
     pub downloads: Vec<DownloadRow>,
-    /// Which row of `downloads` the Torrent panel is on.
+    /// Which row of `downloads` the Download panel is on.
     pub download_cursor: usize,
     /// Whether the downloading daemon answered the last poll. `None`
     /// until it has, so the panel does not claim a daemon is down before
@@ -249,7 +258,7 @@ pub struct App {
     pub daemon_reachable: Option<bool>,
     /// Free bytes on the daemon's download volume, when it has said.
     pub free_space: Option<i64>,
-    /// A `d` on the Torrent zone has been pressed once and the removal is waiting for a second
+    /// A `d` on the Download zone has been pressed once and the removal is waiting for a second
     /// one.
     pub remove_armed: bool,
     /// Where the pointer is, when the terminal reports motion (`tui.rs` turns mode 1003 on).
@@ -287,7 +296,7 @@ pub struct App {
     /// Set by `settings_key` right before it returns a cycle-type SettingsAction
     /// (CycleTheme/CyclePreset/etc): +1 for Right/Enter, -1 for Left.
     pub last_cycle_direction: i8,
-    /// Rolling progress history feeding the Torrent panel's sparkline
+    /// Rolling progress history feeding the Download panel's sparkline
     /// Oldest first; capped in app.rs's
     /// TorrentListUpdate handler so a long session doesn't grow this
     /// unboundedly.
@@ -488,6 +497,8 @@ impl App {
             show_menu: false,
             torrent_status: TorrentStatus::default(),
             active_torrent_hash: None,
+            torrserver_torrents: Vec::new(),
+            torrserver_state: TorrServerState::default(),
             downloads: Vec::new(),
             download_cursor: 0,
             daemon_reachable: None,
@@ -593,6 +604,9 @@ impl App {
     /// Open `id`'s detail view, or close it if it is the one already
     /// showing -- the key that opens a takeover is the key that ends it.
     pub fn toggle_detail_view(&mut self, id: ZoneId) {
+        // A full-frame takeover replaces the floating overlay rather than
+        // drawing under it.
+        self.zones.overlay = None;
         self.detail_view = if self.detail_view == Some(id) {
             None
         } else {
@@ -672,7 +686,7 @@ impl App {
         self.sources_cursor = next as usize;
     }
 
-    /// The Torrents panel's cursor, wrapping like the other lists' so that
+    /// The Download panel's cursor, wrapping like the other lists' so that
     /// `j` at the end lands on the first row rather than sticking.
     pub fn navigate_downloads(&mut self, delta: i64) {
         let len = self.downloads.len() as i64;
@@ -805,7 +819,8 @@ impl App {
                     String::new()
                 }
             }
-            ZoneId::Torrent => String::new(),
+            ZoneId::Download => String::new(),
+            ZoneId::TorrServer => format!(" ({})", self.torrserver_torrents.len()),
         }
     }
 
@@ -936,9 +951,9 @@ impl App {
             (ZoneId::Results, '⏎') => Some(UiAction::Play),
             (ZoneId::Results, 'd') => Some(UiAction::Download),
             (ZoneId::Results, 'v') => Some(UiAction::Info),
-            (ZoneId::Torrent, 'p') => Some(UiAction::TogglePause),
-            (ZoneId::Torrent, 'd') => Some(UiAction::Remove),
-            (ZoneId::Torrent, 'a') => Some(UiAction::AddMagnet),
+            (ZoneId::Download, 'p') => Some(UiAction::TogglePause),
+            (ZoneId::Download, 'd') => Some(UiAction::Remove),
+            (ZoneId::Download, 'a') => Some(UiAction::AddMagnet),
             _ => None,
         }
     }
@@ -1010,9 +1025,13 @@ impl App {
                     }
                 }
             }
-            ZoneId::Torrent => {
+            ZoneId::Download => {
                 // Pause and remove live on the frame now (the
                 // terminate/kill row), handled by the legend test above.
+            }
+            ZoneId::TorrServer => {
+                // Its rows are acted on by keys; a click on one is not a
+                // control of its own.
             }
             ZoneId::Log => {}
         }
@@ -1265,7 +1284,7 @@ impl App {
         })
     }
 
-    /// `d` on the Torrent zone.
+    /// `d` on the Download zone.
     pub fn confirm_remove(&mut self) -> bool {
         if self.remove_armed {
             self.remove_armed = false;
@@ -1282,7 +1301,7 @@ impl App {
         self.remove_armed = false;
     }
 
-    /// The question line the Torrent zone shows while a removal is armed.
+    /// The question line the Download zone shows while a removal is armed.
     pub fn remove_prompt(&self) -> Option<String> {
         self.remove_armed
             .then(|| "Remove this torrent? d again to confirm, any other key to cancel".to_string())

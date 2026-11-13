@@ -73,10 +73,10 @@ fn test_zone_at_finds_the_containing_zone() {
         Some(ZoneId::Results)
     );
 
-    let torrent_area = app.zones.get_area(ZoneId::Torrent);
+    let torrent_area = app.zones.get_area(ZoneId::Download);
     assert_eq!(
         app.zone_at(torrent_area.y, torrent_area.x),
-        Some(ZoneId::Torrent)
+        Some(ZoneId::Download)
     );
 }
 
@@ -97,7 +97,7 @@ fn test_zone_at_only_hits_fullscreened_zone() {
     // Every point in the full terminal area should resolve to Log...
     assert_eq!(app.zone_at(10, 10), Some(ZoneId::Log));
     //...since every other zone's area is zeroed out while fullscreened.
-    let torrent_area_before = app.zones.get_area(ZoneId::Torrent);
+    let torrent_area_before = app.zones.get_area(ZoneId::Download);
     assert_eq!(torrent_area_before, Rect::default());
 }
 
@@ -420,7 +420,7 @@ fn test_click_at_returns_none_on_the_zone_title() {
     let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let torrent_area = app.zones.get_area(ZoneId::Torrent);
+    let torrent_area = app.zones.get_area(ZoneId::Download);
     // The top-left corner carries the zone title, not a frame button.
     let action = app.click_at(torrent_area.y, torrent_area.x, &mut config);
     assert_eq!(action, None);
@@ -434,8 +434,8 @@ fn test_click_at_torrent_pause_button_returns_toggle_pause() {
     let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    let layout = app.frame_layout(ZoneId::Torrent, torrent_area, &config);
+    let torrent_area = app.zones.get_area(ZoneId::Download);
+    let layout = app.frame_layout(ZoneId::Download, torrent_area, &config);
     let rect = layout
         .buttons
         .iter()
@@ -459,8 +459,8 @@ fn test_click_at_torrent_delete_button_returns_remove() {
     let mut config = test_config();
     let mut app = make_app();
     app.zones.update_areas(Rect::new(0, 0, 80, 24));
-    let torrent_area = app.zones.get_area(ZoneId::Torrent);
-    let layout = app.frame_layout(ZoneId::Torrent, torrent_area, &config);
+    let torrent_area = app.zones.get_area(ZoneId::Download);
+    let layout = app.frame_layout(ZoneId::Download, torrent_area, &config);
     let rect = layout
         .buttons
         .iter()
@@ -944,24 +944,30 @@ fn test_the_category_button_keeps_its_arrows_in_the_same_columns() {
     }
 }
 
-// --- `D` opens the detail modal (Shift+Enter's fallback) ------------------
+// --- Row details are `Shift+Enter` ----------------------------------------
 
-/// Most terminals send Shift+Enter as a plain Enter with no modifier, so `D` is the same action
-/// on a key every terminal sends distinctly.
+/// `D` used to be the row-details fallback for terminals that send
+/// Shift+Enter as a bare Enter. `D` is the Download panel's full-frame key
+/// now, so the help must call the row details what they are.
 #[test]
-fn test_the_help_page_documents_d_as_the_detail_fallback() {
-    // Every page, not one: the split moved this row onto `2:search`, and a
-    // test still reading the first table would have passed only because the
-    // first table happened to name some other D.
+fn test_the_help_page_names_shift_enter_for_row_details() {
+    // Every page, not one: the split moved this row onto `2:search`.
     let keys: Vec<&str> = sections()
         .iter()
         .flat_map(|(_, table)| table.iter().map(|(k, _)| *k))
         .collect();
     assert!(
-        keys.iter().any(|k| k.contains('D')),
-        "a help page should name 'D' as the detail fallback: {:?}",
+        keys.contains(&"Shift+Enter"),
+        "a help page should name `Shift+Enter` for row details: {:?}",
         keys
     );
+    for key in ["D", "T"] {
+        assert!(
+            keys.contains(&key),
+            "`{key}` is a full-frame key and must be on some page: {:?}",
+            keys
+        );
+    }
 }
 
 /// A click on a border that separates two zones arms the WM-style
@@ -981,9 +987,9 @@ fn test_a_border_click_arms_the_resize_but_a_legend_click_does_not() {
     app.zones.resize_end();
 
     // Torrent's `pause` sits on the same kind of border: it pauses.
-    let area = app.zones.get_area(ZoneId::Torrent);
+    let area = app.zones.get_area(ZoneId::Download);
     let rect = {
-        let layout = app.frame_layout(ZoneId::Torrent, area, &config);
+        let layout = app.frame_layout(ZoneId::Download, area, &config);
         layout
             .buttons
             .iter()

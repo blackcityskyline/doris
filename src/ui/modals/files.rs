@@ -145,7 +145,7 @@ impl App {
         } else {
             format!(
                 " {} — {}/{} files, {} wanted ",
-                crate::ui::torrents_panel::truncate(&state.name, popup.width as usize - 40),
+                crate::ui::downloads_panel::truncate(&state.name, popup.width as usize - 40),
                 state.files.iter().filter(|f| f.wanted).count(),
                 state.files.len(),
                 crate::transmission::human_bytes(state.wanted_total().max(0) as u64),
@@ -210,7 +210,7 @@ impl App {
                     ),
                     Span::styled(format!("  {done:>5}  "), style),
                     Span::styled(
-                        crate::ui::torrents_panel::truncate(&file.name, name_width + 8),
+                        crate::ui::downloads_panel::truncate(&file.name, name_width + 8),
                         style,
                     ),
                 ]));

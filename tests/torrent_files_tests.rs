@@ -1,4 +1,4 @@
-//! What the Torrents detail view and its file list do with a key.
+//! What the Download detail view and its file list do with a key.
 //!
 //! Both were unreachable before: the detail view took the keyboard and did
 //! nothing with it but close, and there was no way to choose which files of

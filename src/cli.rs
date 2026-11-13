@@ -112,7 +112,7 @@ pub enum Command {
     #[command(subcommand)]
     Cookies(CookieCommand),
 
-    /// What the downloading daemon holds -- the Torrents panel's list, on
+    /// What the downloading daemon holds -- the Download panel's list, on
     /// a terminal. This is the one command a script wants that is about
     /// downloads rather than streaming: `torrent` is about TorrServer.
     Downloads(crate::transmission::downloads_cmd::Ask),

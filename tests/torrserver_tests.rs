@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use doris::torrserver::api::{TorrServer, TorrentInfo};
+use doris::torrserver::api::{TorrServer, TorrentFile, TorrentInfo};
 
 // The *older* shape: Go structs with no `json` tags, so the output uses
 const SAMPLE_LIST_JSON: &str = r#"
@@ -439,7 +439,7 @@ const LIVE_LIST_JSON: &str = r#"
 
 /// The bug this sample pins: against a modern (json-tagged) server the
 /// capitalized-only renames matched nothing, `#[serde(default)]` filled
-/// in zeros, and the Torrent zone came back with no name, no hash, no
+/// in zeros, and the Download zone came back with no name, no hash, no
 /// size, no speed and no status -- silently, because nothing errored.
 #[test]
 fn test_parses_the_tagged_shape_a_modern_torrserver_actually_sends() {
@@ -494,6 +494,105 @@ fn test_the_legacy_capitalized_shape_still_parses() {
 use doris::app::torrserver_enable_message;
 
 const URL: &str = "http://127.0.0.1:8090";
+
+// --- Saving a stream to disk ---------------------------------------------
+
+fn temp_dir(tag: &str) -> std::path::PathBuf {
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "doris-download-{}-{}-{}",
+        std::process::id(),
+        tag,
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    dir
+}
+
+/// The body of `/stream` is the file, byte for byte, and it lands whole
+/// under its real name -- not under the `.part` it was written to first.
+#[tokio::test]
+async fn download_file_writes_the_stream_to_the_named_path() {
+    let (url, handle) = spawn_mock_server("HTTP/1.1 200 OK", "the film bytes").await;
+    let client = TorrServer::new(&url);
+    let dir = temp_dir("ok");
+    let dest = dir.join("movie.mkv");
+
+    let written = client
+        .download_file("abc123", 1, "Movie/movie.mkv", &dest)
+        .await
+        .expect("download");
+
+    assert_eq!(written, "the film bytes".len() as u64);
+    assert_eq!(
+        std::fs::read_to_string(&dest).expect("saved file"),
+        "the film bytes"
+    );
+    assert!(
+        !dir.join(".movie.mkv.part").exists(),
+        "the temporary file must be renamed, not left behind"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    handle.abort();
+}
+
+/// A refused stream must not leave a file that looks finished, nor a
+/// temporary it will never clean up.
+#[tokio::test]
+async fn a_refused_download_leaves_nothing_behind() {
+    let (url, handle) = spawn_mock_server("HTTP/1.1 500 Nope", "no such torrent").await;
+    let client = TorrServer::new(&url);
+    let dir = temp_dir("refused");
+    let dest = dir.join("movie.mkv");
+
+    let error = client
+        .download_file("abc123", 1, "movie.mkv", &dest)
+        .await
+        .expect_err("a 500 is an error");
+
+    assert!(error.to_string().contains("500"), "{error}");
+    assert!(!dest.exists(), "nothing to play afterwards");
+    assert!(!dir.join(".movie.mkv.part").exists(), "no temporary left");
+    let _ = std::fs::remove_dir_all(&dir);
+    handle.abort();
+}
+
+/// `index=1` is what the server means for a one-file torrent whatever the
+/// file's own id says; for a multi-file one it is the id from the list.
+#[test]
+fn the_largest_file_is_what_s_saves_when_none_is_picked() {
+    let torrent = TorrentInfo {
+        files: vec![
+            TorrentFile {
+                id: 0,
+                path: "sample.mkv".into(),
+                length: 10,
+            },
+            TorrentFile {
+                id: 3,
+                path: "movie.mkv".into(),
+                length: 1_000,
+            },
+        ],
+        ..Default::default()
+    };
+    assert_eq!(
+        torrent.largest_file().map(|f| f.id),
+        Some(3),
+        "the film, not the sample next to it"
+    );
+}
+
+#[test]
+fn a_closed_torrent_is_the_panel_s_paused_row() {
+    let mut torrent = TorrentInfo {
+        status_string: "Torrent closed".into(),
+        ..Default::default()
+    };
+    assert!(torrent.is_paused());
+    torrent.status_string = "Torrent working".into();
+    assert!(!torrent.is_paused());
+}
 
 #[test]
 fn test_enable_reports_where_the_server_answers() {

@@ -1,4 +1,4 @@
-//! The Torrent panel while a stream is being set up: pressing Enter
+//! The Download panel while a stream is being set up: pressing Enter
 //! starts browser, magnet fetch, TorrServer add and upload, and until
 //! TorrServer answered with a hash the panel used to print
 //! `Hash: Status:` with both values empty -- the most consequential
@@ -52,7 +52,7 @@ fn test_an_idle_panel_does_not_claim_a_stream() {
         !text.contains("stream "),
         "nothing is being launched:\n{text}"
     );
-    assert!(text.contains("Torrent"), "the panel still labels itself");
+    assert!(text.contains("Download"), "the panel still labels itself");
 }
 
 #[test]

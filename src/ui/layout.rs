@@ -86,29 +86,33 @@ pub enum ResizeKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneId {
     Results = 1,
-    Torrent = 2,
+    Download = 2,
     /// The trackers checklist: which sources the search asks.
     Trackers = 3,
     /// The log moved to the last slot so the zone keyboard reads
-    /// Results / Torrent / Trackers / Log in row order.
+    /// Results / Download / Trackers / Log in row order.
     Log = 4,
+    /// The streaming server's own list: play, pause, remove, save.
+    TorrServer = 5,
 }
 
 /// `(digit key, label)` per zone.
 const ZONE_ROWS: &[(ZoneId, char, &str)] = &[
     (ZoneId::Results, '1', "Results"),
-    (ZoneId::Torrent, '2', "Torrent"),
+    (ZoneId::Download, '2', "Download"),
     (ZoneId::Trackers, '3', "Trackers"),
     (ZoneId::Log, '4', "Log"),
+    (ZoneId::TorrServer, '5', "TorrServer"),
 ];
 
 impl ZoneId {
     pub fn all() -> &'static [ZoneId] {
         &[
             ZoneId::Results,
-            ZoneId::Torrent,
+            ZoneId::Download,
             ZoneId::Trackers,
             ZoneId::Log,
+            ZoneId::TorrServer,
         ]
     }
 
@@ -133,12 +137,13 @@ impl ZoneId {
             .map(|&(id, ..)| id)
     }
 
-    /// The key that takes over the frame with this zone's detail view (`L`/`T`/`R`), or `None`
-    /// for a zone that has none.
+    /// The key that takes over the frame with this zone's detail view
+    /// (`L`/`D`/`R`/`T`), or `None` for a zone that has none.
     pub fn detail_key(&self) -> Option<char> {
         match self {
             ZoneId::Results => Some('R'),
-            ZoneId::Torrent => Some('T'),
+            ZoneId::Download => Some('D'),
+            ZoneId::TorrServer => Some('T'),
             ZoneId::Trackers => None,
             ZoneId::Log => Some('L'),
         }
@@ -181,6 +186,10 @@ pub struct ZoneLayout {
     pub filter_input: String,
     /// The tiling: rows of cells, one cell per zone, left to right and top to bottom.
     pub grid: Vec<Vec<ZoneId>>,
+    /// The panel floating over the tiling, toggled by `Shift` + its digit.
+    /// A tile covers its own cell; the overlay draws the same panel over
+    /// all of them.
+    pub overlay: Option<ZoneId>,
     /// The border the pointer is holding, set by [`Self::resize_start`] on a click and cleared
     /// by [`Self::resize_end`] on the release.
     pub resize: Option<ResizeKind>,
@@ -197,13 +206,15 @@ impl ZoneLayout {
         Self {
             zones: vec![
                 Zone::new(ZoneId::Results, true),
-                Zone::new(ZoneId::Torrent, true),
+                Zone::new(ZoneId::Download, true),
                 Zone::new(ZoneId::Trackers, true),
                 Zone::new(ZoneId::Log, true),
+                Zone::new(ZoneId::TorrServer, true),
             ],
             grid: ZoneId::all().iter().map(|&id| vec![id]).collect(),
             focused: ZoneId::Results,
             fullscreen: None,
+            overlay: None,
             filter_mode: false,
             filter_input: String::new(),
             resize: None,
@@ -275,10 +286,37 @@ impl ZoneLayout {
         if !visible && self.fullscreen == Some(id) {
             self.fullscreen = None;
         }
+        if !visible && self.overlay == Some(id) {
+            self.overlay = None;
+        }
+    }
+
+    /// `Shift` + the panel's digit: the same panel drawn over the tiling,
+    /// on and off. A hidden panel can be overlaid without joining the
+    /// tiling -- that is the point of having both.
+    pub fn toggle_overlay(&mut self, id: ZoneId) {
+        if self.overlay == Some(id) {
+            self.close_overlay();
+        } else {
+            self.overlay = Some(id);
+            self.focused = id;
+        }
+    }
+
+    /// Put the overlay away and leave the cursor on a panel that is
+    /// actually on screen.
+    pub fn close_overlay(&mut self) {
+        self.overlay = None;
+        if !self.is_visible(self.focused) {
+            if let Some(first) = self.zones.iter().find(|z| z.visible).map(|z| z.id) {
+                self.focused = first;
+            }
+        }
     }
 
     pub fn apply_preset(&mut self, spec: &str) {
         self.grid = Self::parse_spec(spec);
+        self.overlay = None;
         // A preset is a *new* arrangement, and the weights are a
         for zone in &mut self.zones {
             zone.reset_flex();
@@ -333,6 +371,11 @@ impl ZoneLayout {
     }
 
     pub fn set_fullscreen(&mut self, id: Option<ZoneId>) {
+        // Fullscreen and the overlay are two answers to "show me this
+        // one"; keeping both would leave one covering the other.
+        if id.is_some() && self.fullscreen != id {
+            self.overlay = None;
+        }
         self.fullscreen = id;
     }
 
@@ -1002,7 +1045,7 @@ const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // The bottom action row (`play ⏎` / `download d` / `info v`) is
 ];
 
-const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
+const DOWNLOAD_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::TopRight, 'p', "pause"),
     (FrameSlot::BottomLeft, 'd', "delete"),
     // A magnet the user has in no list at all -- from a message board, a
@@ -1010,7 +1053,18 @@ const TORRENT_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::TopRight, 'a', "add"),
 ];
 
-/// The keys of the Torrent full-frame view (`T`), along its bottom border.
+/// The streaming server's own keys, all on the bottom border: the panel
+/// is a list, and these act on the row under the cursor.
+const TORRSERVER_BUTTONS: &[(FrameSlot, char, &str)] = &[
+    (FrameSlot::BottomLeft, '⏎', "play"),
+    (FrameSlot::BottomLeft, 'p', "pause"),
+    (FrameSlot::BottomLeft, 'd', "delete"),
+    (FrameSlot::BottomLeft, 's', "save"),
+    (FrameSlot::BottomLeft, 'v', "view"),
+    (FrameSlot::BottomLeft, 'a', "add"),
+];
+
+/// The keys of the Download full-frame view (`D`), along its bottom border.
 ///
 /// A table like the zone ones, and for the same reason: these are keys, and
 /// a key that is not written where every other key is written is a key the
@@ -1042,9 +1096,9 @@ pub fn detail_buttons() -> Vec<FrameButton> {
 pub fn zone_buttons(id: ZoneId) -> Vec<FrameButton> {
     let table: &[(FrameSlot, char, &str)] = match id {
         ZoneId::Results => RESULTS_BUTTONS,
-        ZoneId::Torrent => TORRENT_BUTTONS,
-        ZoneId::Log => &[],
-        ZoneId::Trackers => &[],
+        ZoneId::Download => DOWNLOAD_BUTTONS,
+        ZoneId::TorrServer => TORRSERVER_BUTTONS,
+        ZoneId::Log | ZoneId::Trackers => &[],
     };
     table
         .iter()

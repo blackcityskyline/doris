@@ -28,9 +28,12 @@ fn test_the_neighbour_is_the_panel_sharing_that_border() {
     let z = preset("1,2,3,4");
     assert_eq!(
         z.neighbour(ZoneId::Results, Dir::Down),
-        Some(ZoneId::Torrent)
+        Some(ZoneId::Download)
     );
-    assert_eq!(z.neighbour(ZoneId::Torrent, Dir::Up), Some(ZoneId::Results));
+    assert_eq!(
+        z.neighbour(ZoneId::Download, Dir::Up),
+        Some(ZoneId::Results)
+    );
     assert_eq!(z.neighbour(ZoneId::Results, Dir::Left), None);
 }
 
@@ -39,7 +42,7 @@ fn test_focus_moves_to_the_neighbour_and_stops_at_the_edge() {
     let mut z = preset("1,2,3,4");
     z.focused = ZoneId::Results;
     assert!(z.focus_neighbour(Dir::Down));
-    assert_eq!(z.focused, ZoneId::Torrent);
+    assert_eq!(z.focused, ZoneId::Download);
 
     z.focused = ZoneId::Log;
     assert!(!z.focus_neighbour(Dir::Down), "nothing below the last row");
@@ -52,7 +55,7 @@ fn test_focus_moves_to_the_neighbour_and_stops_at_the_edge() {
 fn test_resize_moves_the_border_one_step() {
     let mut z = preset("1,2");
     let before = z.get_area(ZoneId::Results).height;
-    let total = before + z.get_area(ZoneId::Torrent).height;
+    let total = before + z.get_area(ZoneId::Download).height;
 
     z.focused = ZoneId::Results;
     assert!(z.resize_focused(Dir::Down));
@@ -65,7 +68,7 @@ fn test_resize_moves_the_border_one_step() {
         "the named edge travelled downwards by exactly one step"
     );
     assert_eq!(
-        grown + z.get_area(ZoneId::Torrent).height,
+        grown + z.get_area(ZoneId::Download).height,
         total,
         "and the step came out of the neighbour, not out of the frame"
     );
@@ -88,9 +91,9 @@ fn test_resize_stops_at_the_floor() {
             z.get_area(ZoneId::Results).height
         );
         assert!(
-            z.get_area(ZoneId::Torrent).height >= doris::ui::layout::RESIZE_MIN_HEIGHT,
+            z.get_area(ZoneId::Download).height >= doris::ui::layout::RESIZE_MIN_HEIGHT,
             "step {steps} left the neighbour under the floor: {}",
-            z.get_area(ZoneId::Torrent).height
+            z.get_area(ZoneId::Download).height
         );
         assert!(steps < 100, "the resize never reached a floor at all");
     }
@@ -107,13 +110,13 @@ fn test_resize_stops_at_the_floor() {
 fn test_swap_trades_places_and_the_layout_follows() {
     let mut z = preset("1,2,3,4");
     let results_at = z.get_area(ZoneId::Results).y;
-    let torrent_at = z.get_area(ZoneId::Torrent).y;
+    let torrent_at = z.get_area(ZoneId::Download).y;
 
     z.focused = ZoneId::Results;
     assert!(z.swap_focused(Dir::Down));
     z.update_areas(FRAME);
 
-    assert_eq!(z.get_area(ZoneId::Torrent).y, results_at);
+    assert_eq!(z.get_area(ZoneId::Download).y, results_at);
     assert_eq!(z.get_area(ZoneId::Results).y, torrent_at);
 }
 
@@ -159,7 +162,7 @@ fn test_the_layout_survives_a_round_trip_through_the_config() {
     );
     assert_eq!(restored.focused, ZoneId::Trackers, "and the cursor");
     assert!(
-        !restored.is_visible(ZoneId::Torrent),
+        !restored.is_visible(ZoneId::Download),
         "and the hidden panel"
     );
     assert!(restored.is_visible(ZoneId::Trackers), "and the shown one");
@@ -174,7 +177,7 @@ fn test_a_partial_layout_is_refused() {
     short.zones.pop();
     assert!(!z.restore(&short));
     assert!(
-        z.is_visible(ZoneId::Torrent),
+        z.is_visible(ZoneId::Download),
         "nothing was applied to a layout that was refused"
     );
 }
@@ -307,8 +310,9 @@ fn test_a_panel_title_marks_its_keybinds_in_hi_fg() {
 
     for (id, key) in [
         (ZoneId::Results, Some("R")),
-        (ZoneId::Torrent, Some("T")),
+        (ZoneId::Download, Some("D")),
         (ZoneId::Log, Some("L")),
+        (ZoneId::TorrServer, Some("T")),
         (ZoneId::Trackers, None),
     ] {
         let spans = zone_title(id, &theme, true).spans;
@@ -354,7 +358,7 @@ fn test_a_frame_button_marks_its_hotkey_in_hi_fg() {
     let mut seen = 0;
     for id in [
         ZoneId::Results,
-        ZoneId::Torrent,
+        ZoneId::Download,
         ZoneId::Trackers,
         ZoneId::Log,
     ] {
@@ -399,9 +403,9 @@ fn test_the_focused_panel_grows_towards_the_arrow() {
     // `12` is two cells of one row (side by side); `1,2` is two rows.
     let cases: [(ZoneId, &str, Dir); 4] = [
         (ZoneId::Results, "12", Dir::Right),
-        (ZoneId::Torrent, "12", Dir::Left),
+        (ZoneId::Download, "12", Dir::Left),
         (ZoneId::Results, "1,2", Dir::Down),
-        (ZoneId::Torrent, "1,2", Dir::Up),
+        (ZoneId::Download, "1,2", Dir::Up),
     ];
     let mut grew = 0;
 
@@ -460,8 +464,8 @@ fn measure(r: Rect, dir: Dir) -> u32 {
 #[test]
 fn test_an_arrow_at_the_frame_edge_shrinks_the_panel() {
     for (spec, focus, dir, other) in [
-        ("12", ZoneId::Results, Dir::Left, ZoneId::Torrent),
-        ("12", ZoneId::Torrent, Dir::Right, ZoneId::Results),
+        ("12", ZoneId::Results, Dir::Left, ZoneId::Download),
+        ("12", ZoneId::Download, Dir::Right, ZoneId::Results),
     ] {
         let mut z = preset(spec);
         z.focused = focus;
@@ -525,7 +529,7 @@ fn test_a_panel_alone_in_the_frame_has_a_dead_arrow() {
 /// Every arrow on every panel of a two-cell row moves that panel.
 #[test]
 fn test_every_arrow_moves_the_focused_panel() {
-    for focus in [ZoneId::Results, ZoneId::Torrent] {
+    for focus in [ZoneId::Results, ZoneId::Download] {
         for dir in [Dir::Left, Dir::Right] {
             let mut z = preset("12");
             z.focused = focus;
@@ -552,7 +556,7 @@ fn test_the_border_moves_and_the_pair_still_fills_the_frame() {
     assert!(z.resize_focused(Dir::Right));
     z.update_areas(FRAME);
     let mine = z.get_area(ZoneId::Results);
-    let theirs = z.get_area(ZoneId::Torrent);
+    let theirs = z.get_area(ZoneId::Download);
     assert!(
         mine.width > FRAME.width / 2,
         "the left panel did not grow: {mine:?}"
@@ -576,8 +580,8 @@ fn test_the_border_moves_and_the_pair_still_fills_the_frame() {
 #[test]
 fn test_each_panel_grows_on_its_own_side() {
     for (focus, dir, other) in [
-        (ZoneId::Results, Dir::Right, ZoneId::Torrent),
-        (ZoneId::Torrent, Dir::Left, ZoneId::Results),
+        (ZoneId::Results, Dir::Right, ZoneId::Download),
+        (ZoneId::Download, Dir::Left, ZoneId::Results),
     ] {
         let mut z = preset("12");
         let start = z.get_area(focus).width;
@@ -605,7 +609,7 @@ fn test_each_panel_grows_on_its_own_side() {
 fn test_each_row_panel_grows_on_its_own_side() {
     let mut z = preset("1,2");
     for _ in 0..3 {
-        for (focus, dir) in [(ZoneId::Results, Dir::Down), (ZoneId::Torrent, Dir::Up)] {
+        for (focus, dir) in [(ZoneId::Results, Dir::Down), (ZoneId::Download, Dir::Up)] {
             z.focused = focus;
             z.update_areas(FRAME);
             assert!(z.resize_focused(dir), "{focus:?} {dir:?}");
@@ -613,7 +617,7 @@ fn test_each_row_panel_grows_on_its_own_side() {
         }
     }
     let top = z.get_area(ZoneId::Results).height;
-    let bottom = z.get_area(ZoneId::Torrent).height;
+    let bottom = z.get_area(ZoneId::Download).height;
     assert!(
         top > bottom,
         "the top panel should be ahead: {top} / {bottom}"

@@ -2,7 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use doris::config::Config;
-use doris::ui::modals::help::{sections, FILTER_HELP, NAV_KEYS, SEARCH_KEYS, TORRENT_KEYS};
+use doris::ui::modals::help::{sections, DOWNLOAD_KEYS, FILTER_HELP, NAV_KEYS, SEARCH_KEYS};
 
 /// Every row on every page.
 ///
@@ -53,15 +53,16 @@ fn test_help_text_names_the_documented_keybinds() {
     for expected in [
         "s, i, S",
         "Enter",
-        "Shift+Enter, D",
+        "Shift+Enter",
         "b",
         "L",
+        "D",
         "T",
         "R",
         "F",
         "f",
         "m",
-        "1, 2, 3, 4",
+        "1-5",
         "Shift+P",
         "Tab, Shift+Tab",
         "j, k, Up, Down",
@@ -251,7 +252,7 @@ fn test_help_draws_the_header_and_the_keys() {
     // Page 1 is `keys`, so these are its rows: a key that moved to another
     // page is not missing, and a test that still looked for it here would
     // be pinning the old heap.
-    for expected in ["1, 2, 3, 4", "Esc", "ctrl+shift", "Mouse"] {
+    for expected in ["1-5", "Esc", "ctrl+shift", "Mouse"] {
         let found = page.iter().any(|r| {
             r.chars()
                 .skip(key_col)
@@ -269,7 +270,7 @@ fn test_help_draws_the_header_and_the_keys() {
 fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() {
     // Looked up per page, because the same key means different things in
     // different places: `f` is the filter box in Results and the file list
-    // in the Torrents view, and `Enter` is search, play, a Trackers
+    // in the Download view, and `Enter` is search, play, a Trackers
     // checkbox and a file switch. One table for all of them is the heap
     // this split exists to undo.
     fn desc(table: &[(&'static str, &'static str)], key: &str) -> &'static str {
@@ -286,9 +287,9 @@ fn test_help_text_pairs_the_lower_f_with_filter_and_the_upper_with_fullscreen() 
         "the filter box's syntax is src/filter.rs"
     );
     assert_eq!(
-        desc(TORRENT_KEYS, "Enter"),
+        desc(DOWNLOAD_KEYS, "Enter"),
         "Fetches that file / stops fetching it.",
-        "`f` in the Torrents view is the file list, and Enter is its switch"
+        "`f` in the Download view is the file list, and Enter is its switch"
     );
     assert_eq!(
         desc(SEARCH_KEYS, "Enter"),
@@ -595,7 +596,7 @@ fn the_help_pages_are_split_by_subject_not_by_length() {
     let names: Vec<&str> = sections().iter().map(|(name, _)| *name).collect();
     assert_eq!(
         names,
-        vec!["keys", "search", "filter", "torrents"],
+        vec!["keys", "search", "filter", "downloads", "server"],
         "the pages, in the order the digits give them"
     );
 
@@ -612,32 +613,32 @@ fn the_help_pages_are_split_by_subject_not_by_length() {
     // The torrent keys are on their own page, and every one of them is on
     // it -- `p` and `d` exist in three places in this app and a reader who
     // finds them here must be able to trust that they mean the torrent.
-    for key in ["p", "d", "v", "f", "o", "+", "-", "0", "T"] {
+    for key in ["p", "d", "v", "f", "o", "+", "-", "0", "D"] {
         assert!(
-            TORRENT_KEYS.iter().any(|(k, _)| *k == key),
-            "`{key}` acts on a torrent and must be on the torrents page"
+            DOWNLOAD_KEYS.iter().any(|(k, _)| *k == key),
+            "`{key}` acts on a download and must be on the downloads page"
         );
     }
 
     // And the search keys are not on it: the file list's `Enter` and the
     // search box's `Enter` are the same key pressed in two places.
     assert!(
-        !TORRENT_KEYS
+        !DOWNLOAD_KEYS
             .iter()
             .any(|(k, _)| *k == "s, i, S" || *k == "b"),
         "search belongs on the search page"
     );
 }
 
-/// Every key the Torrents detail view and its file list actually take is
+/// Every key the Download detail view and its file list actually take is
 /// written down.
 ///
 /// The list is checked against the routing rather than against a copy of it:
 /// a key that works and is not on the page is invisible, and a key that is
 /// on the page and does not work is worse.
 #[test]
-fn every_torrent_control_is_on_the_torrents_page() {
-    let written: Vec<&str> = TORRENT_KEYS.iter().map(|(k, _)| *k).collect();
+fn every_download_control_is_on_the_downloads_page() {
+    let written: Vec<&str> = DOWNLOAD_KEYS.iter().map(|(k, _)| *k).collect();
     let joined = written.join(" ");
     for key in [
         "p",     // pause / resume
@@ -658,7 +659,7 @@ fn every_torrent_control_is_on_the_torrents_page() {
     ] {
         assert!(
             joined.contains(key),
-            "`{key}` is in the Torrents view and not on the torrents page"
+            "`{key}` is in the Download view and not on the downloads page"
         );
     }
 }

@@ -4,7 +4,7 @@
 //! TorrServer. They exist for the same reason: a panel that is written
 //! once at startup and never again is not a live panel, it is a
 //! screenshot. TorrServer's list feeds the streaming side and this one's
-//! feeds the Torrents panel.
+//! feeds the Download panel.
 //!
 //! Failure is silent and rate-limited. A daemon that is not running must
 //! not turn into an event every second, and a log line every second is

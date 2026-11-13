@@ -107,7 +107,7 @@ fn test_torrent_labels_are_accented_and_values_are_body_text() {
     // The panel is a table of downloads, so it names no values -- the
     // labels this is about live in the detail view, which is where a
     // torrent's facts are written out.
-    app.detail_view = Some(doris::ui::layout::ZoneId::Torrent);
+    app.detail_view = Some(doris::ui::layout::ZoneId::Download);
 
     let buf = buffer(&mut app, 120, 40);
     let theme = doris::ui::theme::Theme::dark();
@@ -132,7 +132,7 @@ fn test_help_page_accents_the_header_and_the_keybind_column() {
     // A key that is on page 1. The pages are split by subject now, and
     // `s, i, S` is on `2:search` -- a test reading it off page one was
     // pinning the old heap.
-    assert_eq!(fg_at(&buf, "1, 2, 3"), theme.hi_fg.to_color());
+    assert_eq!(fg_at(&buf, "1-5"), theme.hi_fg.to_color());
 }
 
 /// The paging row is the frame rule again: the arrows are the glyphs that act, so they take

@@ -1,6 +1,6 @@
-//! Pulling the border between the `T` view's two boxes.
+//! Pulling the border between the `D` view's two boxes.
 //!
-//! The Torrents full-frame view is two boxes under three summary boxes: the
+//! The Download full-frame view is two boxes under three summary boxes: the
 //! downloads table and the facts of the row under its cursor. Both want more
 //! rows than most terminals show, so the view has to divide what it has --
 //! and a division the user cannot change is a division they have to live
@@ -14,7 +14,7 @@
 //! worse, and a divider that does nothing when pulled is worse than no
 //! divider at all.
 //!
-//! The heights come from [`crate::ui::torrents_panel::detail_budget`] through
+//! The heights come from [`crate::ui::downloads_panel::detail_budget`] through
 //! `App::detail_budget_at`, the same call the renderer makes, so the row that
 //! can be grabbed is the row that is drawn.
 
@@ -28,7 +28,7 @@ impl App {
     /// The row of the border between the two boxes -- the one row that can be
     /// grabbed. `None` when there is nothing to trade rows with.
     pub fn detail_divider_row(&self, area: Rect, config: &Config) -> Option<u16> {
-        if self.detail_view != Some(ZoneId::Torrent) {
+        if self.detail_view != Some(ZoneId::Download) {
             return None;
         }
         let budget = self.detail_budget_at(area, config);
@@ -70,7 +70,7 @@ impl App {
     /// One row of the divider, from the keyboard: the same chord the zones
     /// use, so "what moves a divider" is one thing in doris and not two.
     pub fn detail_resize_key(&mut self, up: bool, area: Rect, config: &Config) {
-        if self.detail_view != Some(ZoneId::Torrent) {
+        if self.detail_view != Some(ZoneId::Download) {
             return;
         }
         let budget = self.detail_budget_at(area, config);

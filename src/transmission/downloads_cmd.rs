@@ -1,4 +1,4 @@
-//! `doris downloads` -- the Torrents panel, on a terminal.
+//! `doris downloads` -- the Download panel, on a terminal.
 //!
 //! `torrent` is about TorrServer, which streams. This is about the daemon
 //! that actually writes to a directory, and it exists because the panel's

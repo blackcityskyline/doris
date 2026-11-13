@@ -71,12 +71,12 @@ fn the_panel_shows_the_question_while_armed() {
     let mut app = app();
     // The first preset hides Torrent, and the question is appended after
     app.zones
-        .focus_or_toggle(doris::ui::layout::ZoneId::Torrent);
+        .focus_or_toggle(doris::ui::layout::ZoneId::Download);
     app.zones.focus_or_toggle(doris::ui::layout::ZoneId::Log);
     app.zones
         .focus_or_toggle(doris::ui::layout::ZoneId::Trackers);
-    app.zones.focused = doris::ui::layout::ZoneId::Torrent;
-    assert!(app.zones.is_visible(doris::ui::layout::ZoneId::Torrent));
+    app.zones.focused = doris::ui::layout::ZoneId::Download;
+    assert!(app.zones.is_visible(doris::ui::layout::ZoneId::Download));
 
     let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
 

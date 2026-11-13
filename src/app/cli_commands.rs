@@ -284,8 +284,9 @@ async fn info(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
     let (mut app, item) = resolve_row(args, a).await?;
     app.ui.selected = 0;
     app.ui.results = vec![item.clone()];
-    // The detail modal is what `D` opens; it asks the row's own source
-    // for the file list, so a CLI `info` reads the same list the TUI shows.
+    // The detail modal is what `Shift+Enter` opens; it asks the row's own
+    // source for the file list, so a CLI `info` reads the same list the TUI
+    // shows.
     app.open_detail_modal().await;
     app.pump_until(
         std::time::Duration::from_millis(a.search.deadline_ms),

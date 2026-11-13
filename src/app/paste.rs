@@ -56,12 +56,12 @@ impl App {
 
         crate::log::log(
             "paste",
-            &crate::ui::torrents_panel::truncate(text.trim(), 200),
+            &crate::ui::downloads_panel::truncate(text.trim(), 200),
         );
         if let Some(link) = dropped_torrent(text) {
             self.ui.add_log(&format!(
                 "Dropped: {}",
-                crate::ui::torrents_panel::truncate(&link, 80)
+                crate::ui::downloads_panel::truncate(&link, 80)
             ));
             self.add_link_to_daemon(&link).await;
             return Ok(());

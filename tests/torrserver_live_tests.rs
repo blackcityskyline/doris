@@ -81,7 +81,7 @@ async fn live_add_by_link_adds_lists_and_forgets_a_real_magnet() {
 
 /// The regression the B7 verification exposed: `TorrentInfo` only knew the capitalized Go
 /// names, while a modern TorrServer answers with json-tagged ones -- and `#[serde(default)]`
-/// turned that mismatch into *empty* fields instead of an error, leaving the Torrent zone
+/// turned that mismatch into *empty* fields instead of an error, leaving the Download zone
 /// without a hash, name, size or speed.
 #[tokio::test]
 #[ignore = "needs a local TorrServer"]

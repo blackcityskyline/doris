@@ -768,9 +768,9 @@ fn test_the_downloads_header_lines_up_with_the_rows_under_it() {
         downloaded: 840_000_000,
         ..Default::default()
     }];
-    // The `T` view, where the cursor marker is drawn: the panel has none, so
+    // The `D` view, where the cursor marker is drawn: the panel has none, so
     // the gutter only exists here.
-    let buf = render_detail(&mut app, ZoneId::Torrent, 120, 30);
+    let buf = render_detail(&mut app, ZoneId::Download, 120, 30);
     let rows: Vec<String> = (0..buf.area.height)
         .map(|y| {
             (0..buf.area.width)
@@ -875,13 +875,13 @@ fn test_frame_legend_is_drawn_on_the_zone_borders() {
         bottom
     );
 
-    let torrent = app.zones.get_area(ZoneId::Torrent);
+    let torrent = app.zones.get_area(ZoneId::Download);
     let t_top = row_text(&terminal, torrent.y);
-    assert!(t_top.contains("pause"), "Torrent top border: {}", t_top);
+    assert!(t_top.contains("pause"), "Download top border: {}", t_top);
     let t_bottom = row_text(&terminal, torrent.y + torrent.height - 1);
     assert!(
         t_bottom.contains("delete"),
-        "Torrent bottom border: {}",
+        "Download bottom border: {}",
         t_bottom
     );
 }
@@ -907,7 +907,7 @@ fn test_keybind_text_is_gone_from_the_panel_bodies() {
     assert!(!body.contains("Enter: play"), "old hint row is back");
     assert!(!body.contains("d: download"), "old hint row is back");
 
-    let torrent = app.zones.get_area(ZoneId::Torrent);
+    let torrent = app.zones.get_area(ZoneId::Download);
     let mut body = String::new();
     for y in (torrent.y + 1)..(torrent.y + torrent.height - 1) {
         body.push_str(&row_text(&terminal, y));
@@ -1051,7 +1051,7 @@ fn test_the_default_tiling_draws_two_columns() {
     assert_eq!(trackers.width, 50);
     assert_eq!(log.x, 50);
     assert_eq!(log.y, trackers.y, "the two cells share one row");
-    assert_eq!(app.zones.get_area(ZoneId::Torrent), Rect::default());
+    assert_eq!(app.zones.get_area(ZoneId::Download), Rect::default());
 
     // And each of them actually drew its own frame where it was placed.
     assert!(
@@ -1063,7 +1063,7 @@ fn test_the_default_tiling_draws_two_columns() {
 
 // --- detail views (T / R) ----------------------------------------------------
 
-/// The Torrent detail view is a full-frame takeover: it prints every
+/// The Download detail view is a full-frame takeover: it prints every
 /// fact the panel knows -- name, hash, status, progress, speeds,
 /// totals, seeds, peers -- where the panel itself only has room for
 /// some of them.
@@ -1087,7 +1087,7 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
     };
     app.torrent_paused = true;
 
-    let buf = render_detail(&mut app, ZoneId::Torrent, 100, 30);
+    let buf = render_detail(&mut app, ZoneId::Download, 100, 30);
     let text = all_text(&buf);
 
     for expected in [
@@ -1109,7 +1109,7 @@ fn test_the_torrent_detail_view_prints_every_known_field() {
     assert!(text.contains("50%"), "the progress percentage is printed");
 }
 
-/// The Torrent panel draws its numbers the way the `T` view draws them.
+/// The Download panel draws its numbers the way the `D` view draws them.
 ///
 /// The panel had them flat on one line while the full view boxed the same
 /// three sets of numbers in three frames -- one set of numbers, two designs,
@@ -1133,7 +1133,7 @@ fn test_the_torrent_panel_frames_its_numbers_like_the_detail_view() {
         show_boxes: true,
         ..Config::default()
     };
-    // Results over Torrent, so the panel is tall enough for three boxes: a
+    // Results over Download, so the panel is tall enough for three boxes: a
     // panel too short for them falls back to the one line, which is a
     // different claim and has its own check below.
     app.zones.apply_preset("1,2");
@@ -1151,7 +1151,7 @@ fn test_the_torrent_panel_frames_its_numbers_like_the_detail_view() {
     for expected in ["╭ status", "╭ active", "╭ free space"] {
         assert!(
             rows.iter().any(|r| r.contains(expected)),
-            "the Torrent panel does not box its numbers: `{expected}` is missing"
+            "the Download panel does not box its numbers: `{expected}` is missing"
         );
     }
     // And the table starts below the boxes, not across them: until the
@@ -1194,7 +1194,7 @@ fn test_the_torrent_panel_frames_its_numbers_like_the_detail_view() {
 #[test]
 fn test_the_torrent_keybinds_are_written_on_the_downloads_box_border() {
     let mut app = make_test_app();
-    let buf = render_detail_framed(&mut app, ZoneId::Torrent, 100, 30);
+    let buf = render_detail_framed(&mut app, ZoneId::Download, 100, 30);
 
     let row_text = |y: u16| -> String {
         (0..buf.area.width)
@@ -1253,7 +1253,7 @@ fn test_the_torrent_keybinds_are_written_on_the_downloads_box_border() {
     );
 }
 
-/// The Torrent detail view describes the row under the downloads cursor,
+/// The Download detail view describes the row under the downloads cursor,
 /// because that is what the panel shows.
 ///
 /// It used to describe `torrent_status` unconditionally -- the *streaming*
@@ -1305,7 +1305,7 @@ fn test_the_torrent_detail_view_describes_the_selected_download() {
     ];
     app.download_cursor = 1;
 
-    let buf = render_detail(&mut app, ZoneId::Torrent, 100, 30);
+    let buf = render_detail(&mut app, ZoneId::Download, 100, 30);
     let text = all_text(&buf);
 
     assert!(
@@ -1364,9 +1364,9 @@ fn test_the_torrent_detail_view_keeps_every_column_the_zone_had_to_drop() {
     }];
 
     // The same app at a zone's width, and at the frame's.
-    let narrow = render_detail(&mut app, ZoneId::Torrent, 46, 20);
-    let wide_text = all_text(&render_detail(&mut app, ZoneId::Torrent, 120, 30));
-    let wide = render_detail(&mut app, ZoneId::Torrent, 120, 30);
+    let narrow = render_detail(&mut app, ZoneId::Download, 46, 20);
+    let wide_text = all_text(&render_detail(&mut app, ZoneId::Download, 120, 30));
+    let wide = render_detail(&mut app, ZoneId::Download, 120, 30);
 
     // Everything the plan can offer, at 120 columns.
     for column in [
@@ -1410,7 +1410,7 @@ fn test_the_torrent_detail_view_divides_itself_into_boxes() {
         ..Default::default()
     }];
 
-    let text = all_text(&render_detail_framed(&mut app, ZoneId::Torrent, 120, 30));
+    let text = all_text(&render_detail_framed(&mut app, ZoneId::Download, 120, 30));
 
     // Four titled boxes: the three summary questions, the table, the facts.
     for title in [" status ", " active ", " free space ", " downloads "] {
@@ -1448,7 +1448,7 @@ fn test_a_short_detail_view_draws_what_fits_without_boxes_it_cannot_hold() {
     // honest answer at six rows -- but it must still be a frame, drawn
     // whole, rather than a rect that ran past the bottom.
     for (w, h) in [(120u16, 6u16), (30, 5), (30, 8)] {
-        let text = all_text(&render_detail_framed(&mut app, ZoneId::Torrent, w, h));
+        let text = all_text(&render_detail_framed(&mut app, ZoneId::Download, w, h));
         assert!(text.starts_with('╭'), "{w}x{h} lost its own frame");
         assert!(text.contains("torrents"), "{w}x{h} drew no summary\n{text}");
     }
@@ -1457,7 +1457,7 @@ fn test_a_short_detail_view_draws_what_fits_without_boxes_it_cannot_hold() {
     // the facts or in the table. A frame that could name nothing would be
     // drawing numbers with no way to tell whose they are.
     for (w, h) in [(40u16, 10u16), (46, 20), (52, 12)] {
-        let text = all_text(&render_detail_framed(&mut app, ZoneId::Torrent, w, h));
+        let text = all_text(&render_detail_framed(&mut app, ZoneId::Download, w, h));
         assert!(text.contains("Short."), "{w}x{h} named no torrent\n{text}");
         assert!(text.starts_with('╭'), "{w}x{h} lost its own frame");
     }
@@ -1476,7 +1476,7 @@ fn test_the_torrent_detail_view_falls_back_to_the_stream_when_nothing_downloads(
         ..Default::default()
     };
 
-    let buf = render_detail(&mut app, ZoneId::Torrent, 100, 30);
+    let buf = render_detail(&mut app, ZoneId::Download, 100, 30);
     let text = all_text(&buf);
 
     assert!(text.contains("Streamed.Something"));
@@ -1517,7 +1517,7 @@ fn test_a_detail_view_covers_the_search_bar() {
     let mut app = make_test_app();
     app.search_input = "typing in the box".into();
 
-    let buf = render_detail(&mut app, ZoneId::Torrent, 80, 24);
+    let buf = render_detail(&mut app, ZoneId::Download, 80, 24);
     let text = all_text(&buf);
     assert!(
         !text.contains("typing in the box"),

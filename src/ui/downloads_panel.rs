@@ -1,4 +1,4 @@
-//! The Torrents panel's columns, and how many of them fit.
+//! The Download panel's columns, and how many of them fit.
 //!
 //! Borrowed from qbittorrent-tui's list, which carries the one idea worth
 //! copying whole: **every column has a minimum, a maximum and a priority**,
@@ -410,7 +410,7 @@ pub const SECTION_HEIGHT: u16 = 4;
 /// The smallest box that is still a box: a frame with one line inside it.
 const MIN_BOX: u16 = 3;
 
-/// The `T` view's vertical budget: the summary boxes, the downloads table and
+/// The `D` view's vertical budget: the summary boxes, the downloads table and
 /// the facts box.
 ///
 /// One pure function because two things need the same answer -- the renderer,

@@ -49,6 +49,20 @@ impl TorrentInfo {
     pub fn data_as_files(&self) -> Vec<TorrentFile> {
         parse_file_list(&self.data)
     }
+
+    /// Whether the server has this torrent closed (what its panel calls
+    /// paused). `drop` closes it and `get` opens it again; the status word
+    /// is the only thing that says which of the two happened.
+    pub fn is_paused(&self) -> bool {
+        self.status_string.to_lowercase().contains("closed")
+    }
+
+    /// The file a "save this stream" means when the user has not picked
+    /// one: the largest, which is the video in anything with a sample or a
+    /// subtitle track next to it.
+    pub fn largest_file(&self) -> Option<&TorrentFile> {
+        self.files.iter().max_by_key(|file| file.length)
+    }
 }
 
 /// Fill in the file list of every row the server sent.
@@ -379,8 +393,15 @@ impl TorrServer {
 
         let player_name = player.unwrap_or("mpv");
         let mut cmd = tokio::process::Command::new(player_name);
+        // stdout is not read by anyone: `spawn_stream` only follows stderr
+        // for the messages worth logging. A piped stdout nobody drains
+        // fills its pipe buffer and blocks the player mid-stream, which is
+        // exactly what mpv then looks like -- stuttering on a source that
+        // plays fine when started by hand. A player writes nothing useful
+        // to stdout anyway, so it goes to the terminal's null device.
         cmd.arg(&stream_url)
-            .stdout(std::process::Stdio::piped())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
 
         // Start the player in its own process group so it survives doris
@@ -392,5 +413,71 @@ impl TorrServer {
             .map_err(|e| anyhow::anyhow!("Failed to launch {}: {}", player_name, e))?;
 
         Ok(child)
+    }
+
+    /// Write one file of a torrent to `dest`, straight from the stream the
+    /// player would have read.
+    ///
+    /// `index` is what `/stream` calls the file index: the id out of the
+    /// file list, except for a one-file torrent, where the server ignores
+    /// whatever is passed and always means that file (`index=1`).
+    ///
+    /// The response is copied chunk by chunk, so a film is never held in
+    /// memory, and it lands under a temporary name first: a save cut off
+    /// half way leaves a `.part` rather than a file that looks finished.
+    pub async fn download_file(
+        &self,
+        hash: &str,
+        index: u64,
+        name: &str,
+        dest: &std::path::Path,
+    ) -> Result<u64> {
+        let base = std::path::Path::new(name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("stream");
+        let url = format!(
+            "{}/stream/{}?link={}&index={}&play",
+            self.base_url,
+            urlencoding::encode(base),
+            urlencoding::encode(hash),
+            index
+        );
+        let mut response = self.client.get(&url).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let body = body.trim();
+            anyhow::bail!("TorrServer refused the download: {status} {body}");
+        }
+
+        let tmp = dest.with_file_name(format!(
+            ".{}.part",
+            dest.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("stream")
+        ));
+        let copied = async {
+            use tokio::io::AsyncWriteExt;
+            let mut out = tokio::fs::File::create(&tmp).await?;
+            let mut written = 0u64;
+            while let Some(chunk) = response.chunk().await? {
+                out.write_all(&chunk).await?;
+                written += chunk.len() as u64;
+            }
+            out.flush().await?;
+            Ok::<u64, anyhow::Error>(written)
+        }
+        .await;
+        match copied {
+            Ok(written) => {
+                tokio::fs::rename(&tmp, dest).await?;
+                Ok(written)
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                Err(e)
+            }
+        }
     }
 }

@@ -1,4 +1,4 @@
-//! Background polling for live torrent status. It exists because the Torrent panel used to be
+//! Background polling for live torrent status. It exists because the Download panel used to be
 //! permanently frozen at its default values: nothing ever polled TorrServer for status.
 
 use crate::event::Event;

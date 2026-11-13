@@ -19,7 +19,7 @@ use ratatui::widgets::*;
 impl App {
     /// The block every zone frame is built from: themed, bordered, and titled with the zone's
     /// own number and label.
-    fn zone_block(&self, id: ZoneId, config: &Config) -> Block<'static> {
+    pub(crate) fn zone_block(&self, id: ZoneId, config: &Config) -> Block<'static> {
         self.themed_block(
             super::layout::zone_border_color(id, self.zones.focused, &self.theme),
             config,
@@ -103,7 +103,10 @@ impl App {
         if let Some(view) = detail {
             match view {
                 ZoneId::Log => self.render_full_log(frame, area, config),
-                ZoneId::Torrent => self.render_detail_torrent(frame, area, config),
+                ZoneId::Download => self.render_detail_download(frame, area, config),
+                ZoneId::TorrServer => {
+                    self.render_torrserver_zone(frame, area, ZoneId::TorrServer, config)
+                }
                 _ => self.render_detail_results(frame, area, config),
             }
         } else {
@@ -115,20 +118,38 @@ impl App {
                     continue;
                 }
 
-                match zone_id {
-                    ZoneId::Results => self.render_results_zone(frame, zone_area, *zone_id, config),
-                    ZoneId::Torrent => self.render_torrent_zone(frame, zone_area, *zone_id, config),
-                    ZoneId::Log => self.render_log_zone(frame, zone_area, *zone_id, config),
-                    ZoneId::Trackers => {
-                        self.render_trackers_zone(frame, zone_area, *zone_id, config)
-                    }
-                }
+                self.render_zone(frame, zone_area, *zone_id, config);
+            }
+
+            if let Some(id) = self.zones.overlay {
+                self.render_zone_overlay(frame, area, id, config);
             }
         }
 
         if self.modal != Modal::None {
             self.render_modal(frame, area, config);
         }
+    }
+
+    /// One panel's content, into whatever rectangle it has been given:
+    /// its tile in the tiling, or the overlay's popup.
+    fn render_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+        match id {
+            ZoneId::Results => self.render_results_zone(frame, area, id, config),
+            ZoneId::Download => self.render_download_zone(frame, area, id, config),
+            ZoneId::Log => self.render_log_zone(frame, area, id, config),
+            ZoneId::Trackers => self.render_trackers_zone(frame, area, id, config),
+            ZoneId::TorrServer => self.render_torrserver_zone(frame, area, id, config),
+        }
+    }
+
+    /// `Shift` + the panel's digit: the same panel, drawn over the
+    /// tiling. The keys act on the focused zone as usual, because opening
+    /// the overlay moves the focus to it.
+    fn render_zone_overlay(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+        let popup = super::view::centered_rect(90, 80, area);
+        frame.render_widget(Clear, popup);
+        self.render_zone(frame, popup, id, config);
     }
 
     fn render_search_bar(&self, frame: &mut Frame, area: Rect, config: &Config) {
@@ -301,7 +322,7 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    fn render_torrent_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
+    fn render_download_zone(&self, frame: &mut Frame, area: Rect, id: ZoneId, config: &Config) {
         // The panel is the list, always. It used to fall back to a
         // single-torrent readout when the daemon held nothing, so the
         // panel's identity depended on whether a download happened to
@@ -359,7 +380,7 @@ impl App {
         if !s.hash.is_empty() && room >= 12 {
             spans.push(Span::styled("  ", value));
             spans.push(Span::styled(
-                super::torrents_panel::truncate(&s.hash, room),
+                super::downloads_panel::truncate(&s.hash, room),
                 value,
             ));
         }
@@ -462,7 +483,7 @@ impl App {
         self.render_frame(frame, id, area, config);
     }
 
-    /// The Torrents panel: a one-line summary over a table of downloads,
+    /// The Download panel: a one-line summary over a table of downloads,
     /// both borrowed from qbittorrent-tui's arrangement -- three summary
     /// sections squashed into the one row a zone usually has room for, and
     /// a table whose columns are dropped from the tail when the panel is
@@ -473,7 +494,7 @@ impl App {
         let inner_width = inner.width as usize;
         let prompt = self.remove_prompt_line();
 
-        // The same three boxes the `T` view draws, by the same call, with the
+        // The same three boxes the `D` view draws, by the same call, with the
         // same fallback to a single line when there is no room for them.
         //
         // The panel had the numbers flat on one line while the full view boxed
@@ -488,11 +509,11 @@ impl App {
         // push the question off the screen is worse than a panel with its
         // numbers on one line.
         let overhead = 2 + usize::from(prompt.is_some()); // header + stream line
-        let widths = super::torrents_panel::section_widths(inner_width);
+        let widths = super::downloads_panel::section_widths(inner_width);
         let framed = widths.is_some()
-            && (inner.height as usize) > super::torrents_panel::SECTION_HEIGHT as usize + overhead;
+            && (inner.height as usize) > super::downloads_panel::SECTION_HEIGHT as usize + overhead;
         let sections_height = if framed {
-            super::torrents_panel::SECTION_HEIGHT
+            super::downloads_panel::SECTION_HEIGHT
         } else {
             0
         };
@@ -533,7 +554,7 @@ impl App {
                     x: inner.x,
                     y: inner.y,
                     width: inner.width,
-                    height: super::torrents_panel::SECTION_HEIGHT,
+                    height: super::downloads_panel::SECTION_HEIGHT,
                 },
                 &parts.summary,
                 &widths,
@@ -547,13 +568,13 @@ impl App {
     /// is being streamed, and the table.
     ///
     /// One function, two renderers. The zone has one line for the numbers
-    /// and no room for frames inside its own; the `T` view has the whole
+    /// and no room for frames inside its own; the `D` view has the whole
     /// terminal and draws the same numbers as three boxes and the same
     /// table as a fourth. Sharing them is what keeps the two from drifting
     /// into showing different things -- which is how the detail view came
     /// to be a list of `Label: value` lines beside a table.
     fn downloads_parts(&self, inner_width: usize, visible: usize, marker: bool) -> Downloads<'_> {
-        use super::torrents_panel as panel;
+        use super::downloads_panel as panel;
 
         let label = Style::default().fg(self.theme.secondary_color());
         let summary = panel::summary(&self.downloads, self.free_space, self.daemon_reachable);
@@ -691,30 +712,30 @@ impl App {
         frame.render_widget(log_panel, area);
     }
 
-    /// The Torrent detail view (`T`): every fact about one download,
+    /// The Download detail view (`D`): every fact about one download,
     /// given the whole frame.
     ///
-    /// It describes the row under the Torrents panel's cursor, because that
+    /// It describes the row under the Download panel's cursor, because that
     /// is what the panel shows. It used to describe `torrent_status`, which
     /// is the *streaming* server's one torrent -- so the panel became a
-    /// list and `T` kept opening a different service's view of something
+    /// list and `D` kept opening a different service's view of something
     /// else entirely, under the same key. The streaming state still has
     /// its place: it is the `stream` line on the panel, and this view falls
     /// back to it when nothing is being downloaded, which is the only case
     /// where it is the subject rather than a footnote.
-    fn render_detail_torrent(&self, frame: &mut Frame, area: Rect, config: &Config) {
+    fn render_detail_download(&self, frame: &mut Frame, area: Rect, config: &Config) {
         let inner = self.detail_inner(area);
         let facts = self.detail_facts(config);
-        let budget = super::torrents_panel::detail_budget(
+        let budget = super::downloads_panel::detail_budget(
             inner.height,
             inner.width as usize,
             facts.len(),
             self.detail_split,
         );
-        self.render_detail_torrent_parts(frame, inner, facts, budget, config);
+        self.render_detail_download_parts(frame, inner, facts, budget, config);
     }
 
-    /// The facts the `T` view lists: the row under the cursor, or the
+    /// The facts the `D` view lists: the row under the cursor, or the
     /// streaming server's own torrent when nothing is being downloaded.
     pub(crate) fn detail_facts(&self, config: &Config) -> Vec<Line<'_>> {
         match self.downloads.get(self.download_cursor) {
@@ -744,9 +765,9 @@ impl App {
         &self,
         area: Rect,
         config: &Config,
-    ) -> super::torrents_panel::DetailBudget {
+    ) -> super::downloads_panel::DetailBudget {
         let inner = self.detail_inner(area);
-        super::torrents_panel::detail_budget(
+        super::downloads_panel::detail_budget(
             inner.height,
             inner.width as usize,
             self.detail_facts(config).len(),
@@ -754,18 +775,18 @@ impl App {
         )
     }
 
-    fn render_detail_torrent_parts(
+    fn render_detail_download_parts(
         &self,
         frame: &mut Frame,
         inner: Rect,
         facts: Vec<Line<'_>>,
-        budget: super::torrents_panel::DetailBudget,
+        budget: super::downloads_panel::DetailBudget,
         config: &Config,
     ) {
         let title = Span::styled(
-            // `T` and not `T/Esc`: Esc opens the menu over this view, so
+            // `D` and not `D/Esc`: Esc opens the menu over this view, so
             // promising to close it here would be a lie about the key.
-            " Torrent detail [T close, Esc menu] ",
+            " Download detail [D close, Esc menu] ",
             Style::default().fg(self.theme.primary_color()),
         );
         let block = self
@@ -789,7 +810,7 @@ impl App {
         // The boxes are the whole difference -- qbittorrent-tui draws the
         // same four and its numbers are the same numbers.
         let inner_width = inner.width as usize;
-        let sections = super::torrents_panel::section_widths(inner_width);
+        let sections = super::downloads_panel::section_widths(inner_width);
         let prompt = self.remove_prompt_line();
 
         // `budget` came from the caller, who took it from the same pure
@@ -822,20 +843,20 @@ impl App {
                         x: inner.x,
                         y,
                         width: inner.width,
-                        height: super::torrents_panel::SECTION_HEIGHT,
+                        height: super::downloads_panel::SECTION_HEIGHT,
                     },
                     &parts.summary,
                     &widths,
                     config,
                 );
-                y += super::torrents_panel::SECTION_HEIGHT;
+                y += super::downloads_panel::SECTION_HEIGHT;
             }
             _ => {
                 // Truncated rather than clipped: a line cut at the border
                 // ends mid-word with nothing saying anything was lost.
                 let body = Style::default().fg(self.theme.main_fg.to_color());
                 table_lines.push(Line::from(Span::styled(
-                    super::torrents_panel::truncate(&parts.summary.one_line(), inner_width),
+                    super::downloads_panel::truncate(&parts.summary.one_line(), inner_width),
                     body,
                 )));
             }
@@ -893,7 +914,7 @@ impl App {
         &self,
         frame: &mut Frame,
         area: Rect,
-        summary: &super::torrents_panel::Summary,
+        summary: &super::downloads_panel::Summary,
         widths: &[usize; 3],
         config: &Config,
     ) {
@@ -941,7 +962,7 @@ impl App {
                         .map(|span| {
                             let style = span.style;
                             Span::styled(
-                                super::torrents_panel::truncate(&span.content, w as usize - 2),
+                                super::downloads_panel::truncate(&span.content, w as usize - 2),
                                 style,
                             )
                         })
@@ -1365,9 +1386,9 @@ impl App {
 /// `Src` sits between the metadata and the title: on the `all` tab a
 /// single page mixes trackers, and the row is the only place that says
 /// who returned it.
-/// The Torrents panel's content, split the way its two renderers want it.
+/// The Download panel's content, split the way its two renderers want it.
 struct Downloads<'a> {
-    summary: super::torrents_panel::Summary,
+    summary: super::downloads_panel::Summary,
     stream: Option<Line<'a>>,
     table: Vec<Line<'a>>,
 }
@@ -1435,13 +1456,13 @@ impl App {
     fn frame_button_active(&self, id: ZoneId, button: &FrameButton) -> bool {
         match (id, button.key) {
             (ZoneId::Results, 'f') => self.zones.filter_mode || !self.zones.filter_input.is_empty(),
-            (ZoneId::Torrent, 'p') => self.torrent_paused,
+            (ZoneId::Download, 'p') => self.torrent_paused,
             _ => false,
         }
     }
     /// Draw `id`'s frame legend -- the buttons and the info text, on top
     /// of the border the panel's block has just drawn.
-    fn render_frame(&self, frame: &mut Frame, id: ZoneId, area: Rect, config: &Config) {
+    pub(crate) fn render_frame(&self, frame: &mut Frame, id: ZoneId, area: Rect, config: &Config) {
         let layout = self.frame_layout(id, area, config);
         if layout.info.width > 0 {
             let info = Span::styled(

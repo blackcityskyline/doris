@@ -4,7 +4,7 @@ use super::*;
 
 impl App {
     /// Pause (drop) or resume (re-get) the torrent the panel is currently showing.
-    /// Pause or resume the download under the Torrents panel's cursor.
+    /// Pause or resume the download under the Download panel's cursor.
     ///
     /// The panel is a list of what the daemon is fetching, so this acts on
     /// that list and not on `active_torrent_hash` -- which is the streaming
@@ -59,7 +59,7 @@ impl App {
         }
     }
 
-    /// The Torrents detail view's keys, on the row under its cursor.
+    /// The Download detail view's keys, on the row under its cursor.
     ///
     /// The zone version of `p` and `d` already existed; the rest are what a
     /// full-frame list of downloads is missing to be a client rather than a
@@ -298,7 +298,7 @@ impl App {
     /// It used to save the `.torrent` (or a `.magnet`) next to the other
     /// downloads and stop there, which is a file nobody opens: the key is
     /// called *download*, and what it downloaded was the recipe, not the
-    /// film. The daemon is already there -- the Torrent panel is its list --
+    /// film. The daemon is already there -- the Download panel is its list --
     /// so a row goes in as a magnet where the row has one and as the fetched
     /// bytes where it does not, and the panel picks it up within a poll.
     ///
@@ -363,7 +363,7 @@ impl App {
         let answer = match transmission.add(&link, Some(&dir)).await {
             Ok(crate::transmission::Added::Fresh(id)) => {
                 self.ui.add_log(&format!(
-                    "Added to the download daemon as #{id} -- it is in the Torrent zone now."
+                    "Added to the download daemon as #{id} -- it is in the Download zone now."
                 ));
                 Some(id)
             }
@@ -416,7 +416,7 @@ impl App {
         match transmission.add(link, Some(&dir)).await {
             Ok(crate::transmission::Added::Fresh(id)) => {
                 self.ui.add_log(&format!(
-                    "Added to the download daemon as #{id} -- it is in the Torrent zone now."
+                    "Added to the download daemon as #{id} -- it is in the Download zone now."
                 ));
                 self.ui.magnet_done();
             }
@@ -638,30 +638,7 @@ impl App {
             };
 
             let _ = event_tx.send(Event::TorrentActive(hash.clone()));
-            match torrserver.play(&hash, &item.title, None).await {
-                Ok(mut child) => {
-                    let stream_url = format!("{}/stream/{}", torrserver.base_url(), hash);
-                    let _ = event_tx.send(Event::StreamComplete(stream_url));
-
-                    if let Some(stderr) = child.stderr.take() {
-                        use tokio::io::{AsyncBufReadExt, BufReader};
-                        let mut reader = BufReader::new(stderr).lines();
-                        while let Ok(Some(line)) = reader.next_line().await {
-                            let l = line.trim();
-                            if l.is_empty() {
-                                continue;
-                            }
-                            if crate::player_log::should_log(l) {
-                                log(&format!("MPV: {}", l));
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    log(&format!("Player error: {}", e));
-                    let _ = event_tx.send(Event::StreamError(e.to_string()));
-                }
-            }
+            spawn_player(torrserver, hash, item.title.clone(), event_tx.clone());
         });
     }
 
@@ -720,4 +697,48 @@ impl App {
     pub(super) fn resolve_download_dir(&self) -> String {
         resolve_download_dir(&self.config)
     }
+}
+
+/// Start a torrent's player and follow its stderr, off the key path.
+///
+/// One function for both ways into mpv -- a search row after the upload,
+/// and a row the TorrServer modal already holds. The error and the
+/// "launched" answer come back over the event channel so the caller never
+/// waits on a player that may run for two hours.
+pub(super) fn spawn_player(
+    torrserver: TorrServer,
+    hash: String,
+    title: String,
+    event_tx: tokio::sync::mpsc::UnboundedSender<Event>,
+) {
+    tokio::spawn(async move {
+        match torrserver.play(&hash, &title, None).await {
+            Ok(mut child) => {
+                let stream_url = format!("{}/stream/{}", torrserver.base_url(), hash);
+                let _ = event_tx.send(Event::StreamComplete(stream_url));
+
+                if let Some(stderr) = child.stderr.take() {
+                    use tokio::io::{AsyncBufReadExt, BufReader};
+                    let mut reader = BufReader::new(stderr).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        let l = line.trim();
+                        if l.is_empty() {
+                            continue;
+                        }
+                        if crate::player_log::should_log(l) {
+                            let _ = event_tx.send(Event::StreamLog(format!("MPV: {l}")));
+                        }
+                    }
+                    // stderr closes when the player exits; waiting here
+                    // reaps it instead of leaving a zombie behind for the
+                    // rest of the session.
+                    let _ = child.wait().await;
+                }
+            }
+            Err(e) => {
+                let _ = event_tx.send(Event::StreamLog(format!("Player error: {e}")));
+                let _ = event_tx.send(Event::StreamError(e.to_string()));
+            }
+        }
+    });
 }

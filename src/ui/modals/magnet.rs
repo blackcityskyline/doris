@@ -1,6 +1,6 @@
 //! One line of typing and a magnet in it.
 //!
-//! The Torrents panel is a list of what the daemon already holds, and `d`
+//! The Download panel is a list of what the daemon already holds, and `d`
 //! on a search row puts a row there. Neither can start a torrent the user
 //! has in no list at all: a magnet link from a message board, a `.torrent`
 //! file somebody sent them. So there is a field for it, and a button on the
@@ -14,9 +14,19 @@ use ratatui::widgets::*;
 use crate::config::Config;
 use crate::ui::view::{App, Modal};
 
+/// Where an added link goes: the download daemon (the default) or the
+/// streaming server the TorrServer modal lists.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MagnetTarget {
+    #[default]
+    Transmission,
+    TorrServer,
+}
+
 /// What the field holds, and what the daemon said about it last time.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct MagnetState {
+    pub target: MagnetTarget,
     pub input: String,
     /// In characters, not bytes: a magnet is ASCII but a pasted path may not
     /// be, and the field measures its text the way the search box does.
@@ -110,6 +120,21 @@ impl App {
         self.modal = Modal::Magnet(Box::new(MagnetState::new()));
     }
 
+    pub fn open_torrserver_magnet_modal(&mut self) {
+        self.modal = Modal::Magnet(Box::new(MagnetState {
+            target: MagnetTarget::TorrServer,
+            ..MagnetState::default()
+        }));
+    }
+
+    /// Where the link being typed goes; `None` when no field is open.
+    pub fn magnet_target(&self) -> Option<MagnetTarget> {
+        match &self.modal {
+            Modal::Magnet(state) => Some(state.target),
+            _ => None,
+        }
+    }
+
     pub fn close_magnet_modal(&mut self) {
         if matches!(self.modal, Modal::Magnet(_)) {
             self.modal = Modal::None;
@@ -193,10 +218,14 @@ impl App {
             width,
             height,
         };
+        let title = match state.target {
+            MagnetTarget::Transmission => " Add a magnet ",
+            MagnetTarget::TorrServer => " Add to TorrServer ",
+        };
         let block = self
             .modal_block(theme.primary_color(), config)
             .title(Span::styled(
-                " Add a magnet ",
+                title,
                 Style::default().fg(theme.primary_color()),
             ));
         let inner = block.inner(popup);
@@ -216,7 +245,7 @@ impl App {
             )
         } else {
             (
-                crate::ui::torrents_panel::truncate(&state.input, inner.width as usize),
+                crate::ui::downloads_panel::truncate(&state.input, inner.width as usize),
                 body,
             )
         };
@@ -233,7 +262,7 @@ impl App {
         if let Some(error) = &state.error {
             frame.render_widget(
                 Paragraph::new(Span::styled(
-                    crate::ui::torrents_panel::truncate(error, inner.width as usize),
+                    crate::ui::downloads_panel::truncate(error, inner.width as usize),
                     Style::default().fg(theme.error_color()),
                 )),
                 Rect {

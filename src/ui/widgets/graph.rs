@@ -1,5 +1,5 @@
 //! History sparklines. Replaces the old static `[#### ] 0%` progress bar in the
-//! Torrent panel with a compact graph of *recent* progress
+//! Download panel with a compact graph of *recent* progress
 //! instead of a plain fill bar.
 
 /// Render one line of a history sparkline, `width` characters wide, from `history` (values

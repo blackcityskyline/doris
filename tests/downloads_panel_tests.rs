@@ -1,4 +1,4 @@
-use doris::ui::torrents_panel::{self, detail_budget, plan};
+use doris::ui::downloads_panel::{self, detail_budget, plan};
 use doris::ui::view::DownloadRow;
 
 /// The panel is asked "what fits?" on every resize and every terminal, so
@@ -45,7 +45,7 @@ fn test_the_row_fills_the_width_exactly_and_the_name_keeps_its_minimum() {
         // Exactly, not "no more than": the panel used to reserve two columns
         // per column that the drawing never spent, which is where the empty
         // sixth of the screen on the right came from.
-        let drawn = torrents_panel::row(&row("something"), &plan);
+        let drawn = downloads_panel::row(&row("something"), &plan);
         assert_eq!(
             drawn.chars().count(),
             width,
@@ -53,7 +53,7 @@ fn test_the_row_fills_the_width_exactly_and_the_name_keeps_its_minimum() {
             drawn.chars().count()
         );
         assert_eq!(
-            torrents_panel::header(&plan).chars().count(),
+            downloads_panel::header(&plan).chars().count(),
             width,
             "at {width} the header does not match the row: {plan:?}"
         );
@@ -82,7 +82,7 @@ fn test_the_row_fills_the_width_exactly_and_the_name_keeps_its_minimum() {
 #[test]
 fn test_the_columns_are_grouped_and_the_gaps_say_so() {
     let wide = plan(160).expect("a plan");
-    let header = torrents_panel::header(&wide);
+    let header = downloads_panel::header(&wide);
     let keys: Vec<&str> = wide.iter().map(|(k, _)| *k).collect();
     assert_eq!(
         keys,
@@ -97,7 +97,7 @@ fn test_the_columns_are_grouped_and_the_gaps_say_so() {
             .unwrap_or_else(|| panic!("{key} is not in the plan"))
     };
     let title_of = |key: &str| {
-        torrents_panel::COLUMNS
+        downloads_panel::COLUMNS
             .iter()
             .find(|c| c.key == key)
             .map(|c| c.title)
@@ -160,8 +160,8 @@ fn test_the_columns_are_grouped_and_the_gaps_say_so() {
 #[test]
 fn test_two_different_downloads_never_render_as_one_line() {
     let plan = plan(120).expect("a plan");
-    let a = torrents_panel::row(&row("Oblivion (2013) [1080p]"), &plan);
-    let b = torrents_panel::row(&row("Predator (1987)"), &plan);
+    let a = downloads_panel::row(&row("Oblivion (2013) [1080p]"), &plan);
+    let b = downloads_panel::row(&row("Predator (1987)"), &plan);
     assert_ne!(a, b);
 }
 
@@ -169,8 +169,8 @@ fn test_two_different_downloads_never_render_as_one_line() {
 #[test]
 fn test_the_header_lines_up_with_the_rows() {
     let plan = plan(120).expect("a plan");
-    let header = torrents_panel::header(&plan);
-    let body = torrents_panel::row(&row("x"), &plan);
+    let header = downloads_panel::header(&plan);
+    let body = downloads_panel::row(&row("x"), &plan);
     // In characters, not bytes: the ellipsis that marks a shortened cell is
     // one column and three bytes, and a panel is measured in columns.
     assert_eq!(
@@ -179,7 +179,7 @@ fn test_the_header_lines_up_with_the_rows() {
         "header and body must be the same width"
     );
     for (key, _) in &plan {
-        let title = doris::ui::torrents_panel::COLUMNS
+        let title = doris::ui::downloads_panel::COLUMNS
             .iter()
             .find(|c| c.key == *key)
             .map(|c| c.title)
@@ -202,7 +202,7 @@ fn test_the_summary_totals_the_list_and_stays_one_line() {
             ..row("two")
         },
     ];
-    let summary = torrents_panel::summary(&rows, Some(128_000_000_000), Some(true));
+    let summary = downloads_panel::summary(&rows, Some(128_000_000_000), Some(true));
     let line = summary.one_line();
     assert!(!line.contains('\n'), "the summary is one row: {line:?}");
     assert!(summary.active.contains("2 torrents"), "{line}");
@@ -226,7 +226,7 @@ fn test_the_summary_totals_the_list_and_stays_one_line() {
 /// panel claiming something it does not know.
 #[test]
 fn test_an_unasked_daemon_is_not_called_unreachable() {
-    let line = torrents_panel::summary(&[], None, None).one_line();
+    let line = downloads_panel::summary(&[], None, None).one_line();
     assert!(!line.contains("unreachable"), "{line}");
     assert!(!line.contains("connected"), "{line}");
 }
@@ -235,7 +235,7 @@ fn test_an_unasked_daemon_is_not_called_unreachable() {
 /// a row of zeros and no way to tell it from a stalled download.
 #[test]
 fn test_an_unreachable_daemon_says_so() {
-    let line = torrents_panel::summary(&[], None, Some(false)).one_line();
+    let line = downloads_panel::summary(&[], None, Some(false)).one_line();
     assert!(line.contains("[daemon unreachable]"), "{line}");
     assert!(line.contains("0 torrents"), "{line}");
 }
@@ -257,13 +257,13 @@ fn test_an_unmeasured_ratio_prints_as_two_dashes() {
     let plan = plan(120).expect("a plan");
     let mut fresh = row("fresh");
     fresh.downloaded = 0;
-    assert!(torrents_panel::row(&fresh, &plan).contains("--"));
+    assert!(downloads_panel::row(&fresh, &plan).contains("--"));
     fresh.downloaded = 800;
     fresh.uploaded = 200;
-    assert!(torrents_panel::row(&fresh, &plan).contains("0.25"));
+    assert!(downloads_panel::row(&fresh, &plan).contains("0.25"));
 }
 
-/// The `T` view's rows, divided three ways.
+/// The `D` view's rows, divided three ways.
 ///
 /// One pure function because two callers need the same answer -- the
 /// renderer, and the pointer, which has to know which row separates the two

@@ -12,7 +12,11 @@ use ratatui::Terminal;
 mod common;
 
 fn make_app() -> UiApp {
-    common::make_app()
+    let mut app = common::make_app();
+    // The panel under test gets the whole frame, so the source roster is
+    // not cut off by whatever else the default tiling shows.
+    app.zones.apply_preset("3");
+    app
 }
 
 fn render(app: &mut UiApp, w: u16, h: u16) -> String {

@@ -38,6 +38,12 @@ impl App {
             return;
         }
 
+        // An overlay floats over the tiling; a click on it must not
+        // reach the panel underneath. Its keys are the keyboard's.
+        if self.ui.zones.overlay.is_some() {
+            return;
+        }
+
         match mouse.kind {
             MouseEventKind::Moved => {
                 // Redrawn only when the hovered cell actually changed:
@@ -64,8 +70,8 @@ impl App {
                                     self.handle_nav_up()
                                 }
                             }
-                            // Torrent is a single status readout and
-                            ZoneId::Torrent | ZoneId::Trackers => {}
+                            // Download is a single status readout and
+                            ZoneId::Download | ZoneId::Trackers | ZoneId::TorrServer => {}
                         }
                     }
                 }
@@ -159,8 +165,9 @@ impl App {
             ZoneId::Log => self.ui.scroll_logs(1),
             // The Trackers panel is a list like the others, so the same
             ZoneId::Trackers => self.ui.navigate_trackers(1),
-            // And so is the Torrents panel now that it is a list.
-            ZoneId::Torrent => self.ui.navigate_downloads(1),
+            // And so is the Download panel now that it is a list.
+            ZoneId::Download => self.ui.navigate_downloads(1),
+            ZoneId::TorrServer => {}
         }
     }
 
@@ -173,7 +180,8 @@ impl App {
             }
             ZoneId::Log => self.ui.scroll_logs(-1),
             ZoneId::Trackers => self.ui.navigate_trackers(-1),
-            ZoneId::Torrent => self.ui.navigate_downloads(-1),
+            ZoneId::Download => self.ui.navigate_downloads(-1),
+            ZoneId::TorrServer => {}
         }
     }
 
@@ -189,7 +197,7 @@ impl App {
                     -self.result_page()
                 });
             }
-            ZoneId::Torrent | ZoneId::Trackers => {}
+            ZoneId::Download | ZoneId::Trackers | ZoneId::TorrServer => {}
         }
     }
 
@@ -413,7 +421,7 @@ impl App {
         Some(step)
     }
 
-    /// How far a Torrents detail key should move the cursor.
+    /// How far a Download detail key should move the cursor.
     ///
     /// A distance, not a destination, so `Home` and `End` are not here:
     /// they name a place, and adding one to a cursor that wraps does not
@@ -465,7 +473,12 @@ impl App {
             // The field owns the keyboard: a dialog the user is typing a
             // magnet into must not read `p` as pause or `d` as remove.
             if let Some(link) = self.ui.magnet_key(key) {
-                self.add_link_to_daemon(&link).await;
+                match self.ui.magnet_target() {
+                    Some(crate::ui::modals::magnet::MagnetTarget::TorrServer) => {
+                        self.add_link_to_torrserver(&link).await;
+                    }
+                    _ => self.add_link_to_daemon(&link).await,
+                }
             }
             return Ok(Some(()));
         }
@@ -539,11 +552,11 @@ impl App {
                         self.ui.scroll_detail_log(step);
                     }
                 }
-                // The Torrents view is a list, so it moves a cursor and acts
+                // The Download view is a list, so it moves a cursor and acts
                 // on the row under it. It used to take the keyboard and do
                 // nothing with it but close: a full-frame list of downloads
                 // with no way to choose one of them.
-                _ if view == ZoneId::Torrent => {
+                _ if view == ZoneId::Download => {
                     // The divider between its two boxes, on the same chord
                     // the zones move their own: `ctrl+shift` and an arrow.
                     // Read before the plain arrows below, which move the
@@ -566,6 +579,14 @@ impl App {
                             }
                         }
                         _ => self.torrent_detail_key(key.code).await?,
+                    }
+                }
+                // The streaming server's takeover is its own panel drawn
+                // full frame, so its keys are the panel's keys -- plus
+                // `T` above, which closes it again.
+                _ if view == ZoneId::TorrServer => {
+                    if let Some(action) = self.ui.torrserver_key(key, self.config.vim_keys) {
+                        self.apply_torrserver_action(action).await;
                     }
                 }
                 _ => {}
@@ -602,6 +623,15 @@ impl App {
             self.handle_input_key(key).await?;
             return Ok(Some(()));
         }
+
+        // An overlay is the focused panel drawn over the tiling. Its own
+        // key is Esc -- answered here, after the boxes above, so a filter
+        // or a query typed over it still takes its Esc first. The chord
+        // that opened it, and every other key, is the panel's.
+        if self.ui.zones.overlay.is_some() && key.code == KeyCode::Esc {
+            self.ui.zones.close_overlay();
+            return Ok(Some(()));
+        }
         Ok(None)
     }
 
@@ -625,6 +655,35 @@ impl App {
             return Ok(());
         }
 
+        // `Shift` + a panel's digit: that panel over the tiling, on and
+        // off. A bare digit stays the tiler's.
+        if let Some(id) = Self::overlay_digit(&key) {
+            self.ui.zones.toggle_overlay(id);
+            return Ok(());
+        }
+
+        // The TorrServer panel's own keys. The rest -- `m`, the digits,
+        // help, the detail views -- still fall through to the global
+        // bindings below.
+        if self.ui.zones.focused == ZoneId::TorrServer {
+            match key.code {
+                KeyCode::Char('v' | 'j' | 'k' | 'p' | 'd' | 's' | 'a')
+                | KeyCode::Down
+                | KeyCode::Up
+                | KeyCode::PageDown
+                | KeyCode::PageUp
+                | KeyCode::Home
+                | KeyCode::End
+                | KeyCode::Enter => {
+                    if let Some(action) = self.ui.torrserver_key(key, self.config.vim_keys) {
+                        self.apply_torrserver_action(action).await;
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
             KeyCode::Char('m') => {
                 self.ui.show_menu = !self.ui.show_menu;
@@ -639,18 +698,27 @@ impl App {
                     self.ui.zones.set_fullscreen(Some(self.ui.zones.focused));
                 }
             }
-            // `1`-`4`, read through the same table the frame and the
-            KeyCode::Char(c @ '1'..='4') => {
+            // `1`-`5`, read through the same table the frame and the
+            // preset spec read. A bare digit while an overlay is up
+            // closes it and puts the panel back in the tiling, which is
+            // what a digit means: the panel in its own cell.
+            KeyCode::Char(c @ '1'..='5') => {
                 if let Some(id) = ZoneId::from_key(c) {
-                    self.ui.zones.focus_or_toggle(id);
+                    if self.ui.zones.overlay.is_some() {
+                        self.ui.zones.close_overlay();
+                        self.ui.zones.set_visible(id, true);
+                        self.ui.zones.focused = id;
+                    } else {
+                        self.ui.zones.focus_or_toggle(id);
+                    }
                 }
             }
             // Shift+P: cycle the layout presets, the same list the
             KeyCode::Char('P') => {
                 self.cycle_layout_preset(1);
             }
-            KeyCode::Char('p') if self.ui.zones.focused == ZoneId::Torrent => {
-                // The Torrents panel is a list of what is being fetched, so
+            KeyCode::Char('p') if self.ui.zones.focused == ZoneId::Download => {
+                // The Download panel is a list of what is being fetched, so
                 // `p` and `d` act on that list. `active_torrent_hash` is
                 // the streaming server's single torrent and stays where it
                 // was, reached through the detail view.
@@ -660,7 +728,7 @@ impl App {
                     self.toggle_pause_download().await;
                 }
             }
-            KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Torrent => {
+            KeyCode::Char('d') if self.ui.zones.focused == ZoneId::Download => {
                 if !self.ui.downloads.is_empty() {
                     // Two presses, like the streaming panel's removal: the
                     // second one is what deletes what was fetched.
@@ -680,7 +748,7 @@ impl App {
             // The frame's `add` button, by key as well as by click: a magnet
             // the user has in no list at all is the one download there is no
             // row to press `d` on.
-            KeyCode::Char('a') if self.ui.zones.focused == ZoneId::Torrent => {
+            KeyCode::Char('a') if self.ui.zones.focused == ZoneId::Download => {
                 self.ui.open_magnet_modal();
             }
             // The category row's keys, next to `g`/`G` and gated the same
@@ -707,10 +775,8 @@ impl App {
                 self.ui.toggle_source(&mut self.config);
                 self.persist_config();
             }
-            // Shift+Enter: the selected row's details. Separate
-            KeyCode::Char('D') => {
-                self.open_detail_modal().await;
-            }
+            // Shift+Enter only: `D` is the Download panel's full-frame
+            // key now, and one key cannot be two.
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.open_detail_modal().await;
             }
@@ -751,9 +817,13 @@ impl App {
             KeyCode::Char('L') => {
                 self.ui.toggle_detail_view(ZoneId::Log);
             }
-            // The other two detail views: `T` the torrent's full
+            // The other three detail views: `D` the downloads, `T` the
+            // streaming server's list, `R` the results.
+            KeyCode::Char('D') => {
+                self.ui.toggle_detail_view(ZoneId::Download);
+            }
             KeyCode::Char('T') => {
-                self.ui.toggle_detail_view(ZoneId::Torrent);
+                self.ui.toggle_detail_view(ZoneId::TorrServer);
             }
             KeyCode::Char('R') => {
                 self.ui.toggle_detail_view(ZoneId::Results);
@@ -773,7 +843,19 @@ impl App {
     }
     pub(super) async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // An armed removal is a question waiting for an answer, and every
-        self.ui.disarm_remove();
+        // key but the `d` that answers it says no. Disarming on that `d`
+        // too made the second press arm again instead of removing, which
+        // is a two-press confirmation that never confirms.
+        let confirms_removal = matches!(key.code, KeyCode::Char('d'))
+            && !self.ui.show_menu
+            && self.ui.modal == Modal::None
+            && (self.ui.zones.focused == ZoneId::Download
+                || self.ui.zones.focused == ZoneId::TorrServer
+                || self.ui.detail_view == Some(ZoneId::Download)
+                || self.ui.detail_view == Some(ZoneId::TorrServer));
+        if !confirms_removal {
+            self.ui.disarm_remove();
+        }
         // Quit first, always. Every mode below answers and returns
         if matches!(key.code, KeyCode::Char('q') | KeyCode::Char('c'))
             && key.modifiers.contains(KeyModifiers::CONTROL)
@@ -937,6 +1019,22 @@ impl App {
             }
             MenuItem::Quit => self.ui.quit(),
         }
+    }
+
+    /// The panel a `Shift` + digit chord names. Both spellings arrive:
+    /// with the keyboard protocol it is the digit plus `SHIFT`, without
+    /// it the layout's own shifted character (`%` for `5`).
+    fn overlay_digit(key: &KeyEvent) -> Option<ZoneId> {
+        let digit = match key.code {
+            KeyCode::Char(c @ '1'..='5') if key.modifiers.contains(KeyModifiers::SHIFT) => c,
+            KeyCode::Char('!') => '1',
+            KeyCode::Char('@') => '2',
+            KeyCode::Char('#') => '3',
+            KeyCode::Char('$') => '4',
+            KeyCode::Char('%') => '5',
+            _ => return None,
+        };
+        ZoneId::from_key(digit)
     }
 
     /// Whether `key` is an arrow carrying a layout modifier -- one of

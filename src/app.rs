@@ -14,6 +14,7 @@ mod search;
 mod session;
 mod settings;
 mod stream;
+mod torrserver_panel;
 
 #[cfg(test)]
 mod tests;
@@ -557,7 +558,7 @@ impl App {
             }
         }
 
-        // Take over whatever the daemon is already doing, so the Torrent
+        // Take over whatever the daemon is already doing, so the Download
         // panel is not blank until the user presses play on something they
         // are already downloading. Only in the TUI: a one-shot command
         // should not wait on a daemon it may not even need, and the
@@ -737,15 +738,27 @@ impl App {
                 }
             }
             Event::TorrentListUpdate(list) => {
+                // The whole list is kept as well as the one row: the
+                // TorrServer modal is a list, and reading it off
+                // `torrent_status` would show exactly one torrent while
+                // the server holds twenty.
+                self.ui.torrserver_torrents = list;
+                self.ui.torrserver_state.cursor = self
+                    .ui
+                    .torrserver_state
+                    .cursor
+                    .min(self.ui.torrserver_torrents.len().saturating_sub(1));
                 // Prefer the torrent we're actively
                 let chosen = match &self.ui.active_torrent_hash {
-                    Some(hash) => list
+                    Some(hash) => self
+                        .ui
+                        .torrserver_torrents
                         .iter()
                         .find(|t| &t.hash == hash)
-                        .or_else(|| list.first()),
-                    None => list.first(),
+                        .or_else(|| self.ui.torrserver_torrents.first()),
+                    None => self.ui.torrserver_torrents.first(),
                 };
-                if let Some(t) = chosen {
+                if let Some(t) = chosen.cloned() {
                     self.ui.torrent_status = TorrentStatus {
                         hash: t.hash.clone(),
                         title: if t.name.is_empty() {

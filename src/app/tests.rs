@@ -163,7 +163,7 @@ async fn startup_applies_the_first_config_preset() {
     let app = app_focused_on_sources(Some(throwaway_config())).await;
     assert!(app.ui.zones.is_visible(ZoneId::Results));
     assert!(
-        !app.ui.zones.is_visible(ZoneId::Torrent),
+        !app.ui.zones.is_visible(ZoneId::Download),
         "the default preset has no Torrent"
     );
     assert!(app.ui.zones.is_visible(ZoneId::Trackers));
@@ -182,7 +182,7 @@ async fn shift_p_cycles_the_configured_presets() {
 
     assert_eq!(app.config.preset_index, 1, "`P` moves the index");
     assert!(
-        app.ui.zones.is_visible(ZoneId::Torrent),
+        app.ui.zones.is_visible(ZoneId::Download),
         "preset 2 is `1,2,3,4`, every zone back on"
     );
 }
@@ -199,7 +199,7 @@ async fn shift_p_is_a_no_op_when_presets_are_disabled() {
 
     assert_eq!(app.config.preset_index, before, "`P` must not move");
     assert!(
-        !app.ui.zones.is_visible(ZoneId::Torrent),
+        !app.ui.zones.is_visible(ZoneId::Download),
         "the tiling must stay the default one"
     );
 }
@@ -648,7 +648,7 @@ async fn ctrl_c_quits_from_every_mode() {
         match mode {
             "search" => app.ui.input_mode = true,
             "menu" => app.ui.show_menu = true,
-            "detail" => app.ui.detail_view = Some(ZoneId::Torrent),
+            "detail" => app.ui.detail_view = Some(ZoneId::Download),
             _ => {}
         }
 
@@ -664,11 +664,12 @@ async fn ctrl_c_quits_from_every_mode() {
 }
 
 #[tokio::test]
-async fn l_t_and_r_open_and_close_their_detail_views() {
+async fn l_d_r_and_t_open_and_close_their_detail_views() {
     for (code, view) in [
         (KeyCode::Char('L'), ZoneId::Log),
-        (KeyCode::Char('T'), ZoneId::Torrent),
+        (KeyCode::Char('D'), ZoneId::Download),
         (KeyCode::Char('R'), ZoneId::Results),
+        (KeyCode::Char('T'), ZoneId::TorrServer),
     ] {
         let mut app = app_focused_on_sources(None).await;
 
@@ -709,13 +710,13 @@ async fn l_t_and_r_open_and_close_their_detail_views() {
 #[tokio::test]
 async fn a_detail_view_owns_the_keyboard() {
     let mut app = app_focused_on_sources(None).await;
-    app.handle_key(press(KeyCode::Char('T'))).await.expect("T");
+    app.handle_key(press(KeyCode::Char('D'))).await.expect("D");
 
     app.handle_key(press(KeyCode::Char('1'))).await.expect("1");
 
     assert_eq!(
         app.ui.detail_view,
-        Some(ZoneId::Torrent),
+        Some(ZoneId::Download),
         "the digit must not reach the zone toggles"
     );
     assert!(
@@ -965,7 +966,7 @@ async fn any_key_other_than_d_cancels_an_armed_removal() {
         KeyCode::Esc,
     ] {
         let mut app = app_focused_on_sources(None).await;
-        app.ui.zones.focused = ZoneId::Torrent;
+        app.ui.zones.focused = ZoneId::Download;
         app.ui.active_torrent_hash = Some("deadbeef".into());
 
         app.ui.confirm_remove();
@@ -988,7 +989,7 @@ async fn any_key_other_than_d_cancels_an_armed_removal() {
 #[tokio::test]
 async fn d_arms_then_removes_and_a_cancelled_d_asks_again() {
     let mut app = app_focused_on_sources(None).await;
-    app.ui.zones.focused = ZoneId::Torrent;
+    app.ui.zones.focused = ZoneId::Download;
     app.ui.active_torrent_hash = Some("deadbeef".into());
 
     app.handle_key(press(KeyCode::Char('d'))).await.expect("d");
@@ -1008,6 +1009,137 @@ async fn d_arms_then_removes_and_a_cancelled_d_asks_again() {
         "after a cancel the next d asks again, it does not remove"
     );
     assert!(app.ui.active_torrent_hash.is_some());
+}
+
+/// A bare digit is the tiler's: `5` puts the streaming server's list in
+/// its own cell, like `1`-`4` do for their panels.
+#[tokio::test]
+async fn a_bare_5_tiles_the_torrserver_panel() {
+    let mut app = app_focused_on_sources(None).await;
+
+    app.handle_key(press(KeyCode::Char('5'))).await.expect("5");
+
+    assert!(
+        app.ui.zones.is_visible(ZoneId::TorrServer),
+        "the digit shows the panel"
+    );
+    assert_eq!(app.ui.zones.focused, ZoneId::TorrServer);
+    assert_eq!(app.ui.zones.overlay, None, "and not as an overlay");
+}
+
+/// `Shift` + a panel's digit is that panel over the tiling, for all five.
+/// Both spellings of the chord arrive: with the keyboard protocol it is
+/// the digit plus `SHIFT`, without it the layout's shifted character.
+#[tokio::test]
+async fn shift_digit_opens_the_overlay_for_every_panel() {
+    for id in ZoneId::all() {
+        let mut app = app_focused_on_sources(None).await;
+        let chord = KeyEvent::new(KeyCode::Char(id.key_char()), KeyModifiers::SHIFT);
+
+        app.handle_key(chord).await.expect("Shift + digit");
+        assert_eq!(app.ui.zones.overlay, Some(*id), "{id:?} opens");
+        assert_eq!(app.ui.zones.focused, *id, "and owns the keys");
+
+        app.handle_key(chord).await.expect("Shift + digit");
+        assert_eq!(
+            app.ui.zones.overlay, None,
+            "{id:?} closes on the same chord"
+        );
+    }
+}
+
+/// The `%` spelling of Shift+5 works too, for terminals without the
+/// keyboard protocol.
+#[tokio::test]
+async fn the_shifted_character_opens_the_overlay_too() {
+    let mut app = app_focused_on_sources(None).await;
+
+    app.handle_key(press(KeyCode::Char('%'))).await.expect("%");
+
+    assert_eq!(app.ui.zones.overlay, Some(ZoneId::TorrServer));
+}
+
+/// Esc puts the overlay away; the panel stays in the tiling.
+#[tokio::test]
+async fn escape_closes_the_overlay() {
+    let mut app = app_focused_on_sources(None).await;
+    let chord = KeyEvent::new(KeyCode::Char('5'), KeyModifiers::SHIFT);
+    app.handle_key(chord).await.expect("Shift+5");
+    assert_eq!(app.ui.zones.overlay, Some(ZoneId::TorrServer));
+
+    app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+
+    assert_eq!(app.ui.zones.overlay, None);
+}
+
+/// A shifted character is a letter in the boxes. `%` is also the
+/// without-the-protocol spelling of Shift+5, so a query typed over an
+/// overlay used to lose it to the chord -- and `!`, `@`, `#`, `$` the same.
+#[tokio::test]
+async fn a_shifted_character_in_the_boxes_is_not_the_overlay_chord() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.zones.toggle_overlay(ZoneId::Results);
+
+    app.ui.enter_input_mode();
+    app.handle_key(press(KeyCode::Char('%'))).await.expect("%");
+    assert_eq!(app.ui.search_input, "%");
+    assert_eq!(
+        app.ui.zones.overlay,
+        Some(ZoneId::Results),
+        "typing a query must not close the panel it is typed over"
+    );
+    app.ui.exit_input_mode();
+
+    app.ui.zones.filter_mode = true; // `f` on Results does this
+    app.handle_key(press(KeyCode::Char('$'))).await.expect("$");
+    assert_eq!(app.ui.zones.filter_input, "$");
+    assert_eq!(app.ui.zones.overlay, Some(ZoneId::Results));
+}
+
+/// The two-press removal in the TorrServer panel: the first `d` asks, the
+/// second answers, and the answer is not turned back into a fresh question
+/// by the disarm every other key does.
+#[tokio::test]
+async fn d_in_the_torrserver_panel_arms_then_confirms() {
+    let mut app = app_focused_on_sources(None).await;
+    app.torrserver = TorrServer::new("http://127.0.0.1:1");
+    app.ui.torrserver_torrents = vec![crate::torrserver::api::TorrentInfo {
+        name: "a torrent".into(),
+        hash: "deadbeef".into(),
+        ..Default::default()
+    }];
+    app.ui.zones.set_visible(ZoneId::TorrServer, true);
+    app.ui.zones.focused = ZoneId::TorrServer;
+
+    app.handle_key(press(KeyCode::Char('d'))).await.expect("d");
+    assert!(app.ui.remove_armed, "the first d must ask");
+    assert_eq!(app.ui.torrserver_torrents.len(), 1, "and not remove");
+
+    app.handle_key(press(KeyCode::Char('d'))).await.expect("d");
+    assert!(
+        !app.ui.remove_armed,
+        "the second d must be the answer, not a new question"
+    );
+}
+
+/// And a key that is not the answer cancels it, even in this panel.
+#[tokio::test]
+async fn any_other_key_cancels_an_armed_torrserver_removal() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.torrserver_torrents = vec![crate::torrserver::api::TorrentInfo {
+        name: "a torrent".into(),
+        hash: "deadbeef".into(),
+        ..Default::default()
+    }];
+    app.ui.zones.set_visible(ZoneId::TorrServer, true);
+    app.ui.zones.focused = ZoneId::TorrServer;
+    app.handle_key(press(KeyCode::Char('d'))).await.expect("d");
+    assert!(app.ui.remove_armed, "setup: armed");
+
+    app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
+
+    assert!(!app.ui.remove_armed, "j answered no");
+    assert_eq!(app.ui.torrserver_torrents.len(), 1);
 }
 
 /// The full Log view scrolls by line and by page, in the direction the key names.
@@ -1206,7 +1338,7 @@ async fn the_three_arrow_bindings_are_told_apart_by_their_modifiers() {
         .expect("Ctrl+Down");
     assert_eq!(
         app.ui.zones.focused,
-        ZoneId::Torrent,
+        ZoneId::Download,
         "the focus moved down"
     );
     assert_eq!(
@@ -1224,13 +1356,13 @@ async fn the_three_arrow_bindings_are_told_apart_by_their_modifiers() {
         .zones
         .update_areas(ratatui::layout::Rect::new(0, 0, 120, 40));
     assert_eq!(
-        app.ui.zones.get_area(ZoneId::Torrent).y,
+        app.ui.zones.get_area(ZoneId::Download).y,
         trackers_at,
         "the focused panel took the neighbour's place"
     );
     assert_eq!(
         app.ui.zones.focused,
-        ZoneId::Torrent,
+        ZoneId::Download,
         "and the focus is still on the panel the user was on"
     );
 }
@@ -1340,15 +1472,15 @@ async fn a_click_beside_the_menu_items_does_nothing() {
     assert!(app.ui.show_menu, "and must leave the menu open");
 }
 
-/// `a` on the Torrents panel opens the magnet field.
+/// `a` on the Download panel opens the magnet field.
 ///
 /// A torrent the user has in no list is the one download there is no row to
 /// press `d` on, and `p`/`d` are taken by the row under the cursor. The key
 /// is on the frame as `┌add┐` too, so the mouse reaches the same thing.
 #[tokio::test]
-async fn a_on_the_torrents_panel_opens_the_magnet_field() {
+async fn a_on_the_downloads_panel_opens_the_magnet_field() {
     let mut app = app_focused_on_sources(None).await;
-    app.ui.zones.focused = ZoneId::Torrent;
+    app.ui.zones.focused = ZoneId::Download;
 
     app.handle_key(press(KeyCode::Char('a'))).await.expect("a");
 
@@ -1364,14 +1496,14 @@ async fn a_on_the_torrents_panel_opens_the_magnet_field() {
 async fn a_in_the_torrents_full_frame_also_opens_the_field() {
     let mut app = app_focused_on_sources(None).await;
     app.ui
-        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+        .toggle_detail_view(crate::ui::layout::ZoneId::Download);
 
     app.handle_key(press(KeyCode::Char('a'))).await.expect("a");
 
     assert!(matches!(app.ui.modal, crate::ui::view::Modal::Magnet(_)));
 }
 
-/// The divider between the `T` view's two boxes moves on
+/// The divider between the `D` view's two boxes moves on
 /// `ctrl+shift+arrows` -- the same chord the zones move their own dividers
 /// on -- and the plain arrows still move the cursor.
 ///
@@ -1395,7 +1527,7 @@ async fn ctrl_shift_arrows_resize_the_torrents_full_frame_divider() {
         },
     ];
     app.ui
-        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+        .toggle_detail_view(crate::ui::layout::ZoneId::Download);
     let screen = app.screen();
     let before = app.ui.detail_split;
 
@@ -1455,7 +1587,7 @@ async fn dragging_the_border_between_the_torrents_boxes_resizes_them() {
         ..Default::default()
     }];
     app.ui
-        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+        .toggle_detail_view(crate::ui::layout::ZoneId::Download);
     let screen = app.screen();
     let config = Config::default();
     let table_before = app.ui.detail_budget_at(screen, &config).downloads_height;
@@ -1537,7 +1669,7 @@ async fn a_paste_goes_to_a_box_or_to_the_daemon_and_not_both() {
     }
 }
 
-/// The Torrents detail view is a list, so it moves a cursor. It used to take
+/// The Download detail view is a list, so it moves a cursor. It used to take
 /// the keyboard and do nothing with it but close: a full-frame table of
 /// every download in the daemon, with no way to pick one of them.
 #[tokio::test]
@@ -1561,7 +1693,7 @@ async fn the_torrent_detail_view_moves_its_cursor() {
         },
     ];
     app.ui
-        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+        .toggle_detail_view(crate::ui::layout::ZoneId::Download);
 
     app.handle_key(press(KeyCode::Char('j'))).await.expect("j");
     assert_eq!(app.ui.download_cursor, 1, "j moves down");
@@ -1596,7 +1728,7 @@ async fn a_modal_over_a_detail_view_gets_the_keyboard_first() {
         ..Default::default()
     }];
     app.ui
-        .toggle_detail_view(crate::ui::layout::ZoneId::Torrent);
+        .toggle_detail_view(crate::ui::layout::ZoneId::Download);
     app.ui.open_files_modal(1, "one".into());
 
     app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
@@ -1618,14 +1750,14 @@ async fn a_modal_over_a_detail_view_gets_the_keyboard_first() {
 #[tokio::test]
 async fn escape_in_a_detail_view_opens_the_menu_and_keeps_the_view() {
     let mut app = app_focused_on_sources(None).await;
-    app.ui.toggle_detail_view(ZoneId::Torrent);
+    app.ui.toggle_detail_view(ZoneId::Download);
 
     app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
 
     assert!(app.ui.show_menu, "the menu is what Esc opens here");
     assert_eq!(
         app.ui.detail_view,
-        Some(ZoneId::Torrent),
+        Some(ZoneId::Download),
         "and the view is still there behind it"
     );
 
@@ -1634,20 +1766,26 @@ async fn escape_in_a_detail_view_opens_the_menu_and_keeps_the_view() {
     assert!(!app.ui.show_menu);
     assert_eq!(
         app.ui.detail_view,
-        Some(ZoneId::Torrent),
+        Some(ZoneId::Download),
         "the view was never what Esc was closing"
     );
 }
 
-/// The view's own key still closes it, and its own key is still `T`.
+/// The view's own key still closes it: `D` for the downloads, `T` for the
+/// streaming server.
 #[tokio::test]
 async fn the_detail_views_own_key_still_closes_it() {
-    let mut app = app_focused_on_sources(None).await;
-    app.ui.toggle_detail_view(ZoneId::Torrent);
+    for (code, view) in [
+        (KeyCode::Char('D'), ZoneId::Download),
+        (KeyCode::Char('T'), ZoneId::TorrServer),
+    ] {
+        let mut app = app_focused_on_sources(None).await;
+        app.ui.toggle_detail_view(view);
 
-    app.handle_key(press(KeyCode::Char('T'))).await.expect("T");
+        app.handle_key(press(code)).await.expect("its own key");
 
-    assert_eq!(app.ui.detail_view, None, "T is still the way out");
+        assert_eq!(app.ui.detail_view, None, "{code:?} is the way out");
+    }
 }
 
 /// A bridge that lost its port has to say so where the user is looking.

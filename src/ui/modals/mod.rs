@@ -6,3 +6,4 @@ pub mod login;
 pub mod magnet;
 pub mod settings;
 pub mod settings_items;
+pub mod torrserver;

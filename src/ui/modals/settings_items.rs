@@ -136,7 +136,7 @@ pub(super) fn settings_categories(
                     label: "Update ms".into(),
                     value: config.update_ms.to_string(),
                     description: vec![
-                        "Torrent panel refresh".into(),
+                        "Download panel refresh".into(),
                         "interval, in milliseconds.".into(),
                         "".into(),
                         "Min value: 100 ms".into(),

@@ -165,7 +165,7 @@ struct ExtFile {
     size: String,
 }
 
-/// The file list, as [`FILES_SCRIPT`] hands it over. Pure, so the shape of the
+/// The file list, as `FILES_SCRIPT` hands it over. Pure, so the shape of the
 /// page can be checked without a browser.
 pub fn parse_files(body: &str) -> Result<Vec<FileEntry>> {
     let rows: Vec<ExtFile> =
@@ -182,7 +182,7 @@ impl From<ExtFile> for FileEntry {
     }
 }
 
-/// The rows off one page, as [`ROWS_SCRIPT`] hands them over. Pure, so the
+/// The rows off one page, as `ROWS_SCRIPT` hands them over. Pure, so the
 /// shape of the page can be checked without a browser: the numbers come off
 /// labelled cells, and a label the site renames shows up here as a row with an
 /// empty size rather than as a crash.
@@ -648,7 +648,7 @@ impl ExtSearcher {
     }
 }
 
-/// The magnet out of what [`MAGNET_SCRIPT`] brought back.
+/// The magnet out of what `MAGNET_SCRIPT` brought back.
 ///
 /// The shape is awkward and worth pinning down in one place: the site answers
 /// the POST with JSON, and the script kept the *text* of that answer, so there

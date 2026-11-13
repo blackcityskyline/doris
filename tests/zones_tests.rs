@@ -61,9 +61,10 @@ fn test_every_zone_has_one_complete_row() {
 fn test_default_layout_visibility() {
     let zones = ZoneLayout::new();
     assert!(zones.is_visible(ZoneId::Results));
-    assert!(zones.is_visible(ZoneId::Torrent));
+    assert!(zones.is_visible(ZoneId::Download));
     assert!(zones.is_visible(ZoneId::Log));
     assert!(zones.is_visible(ZoneId::Trackers));
+    assert!(zones.is_visible(ZoneId::TorrServer));
     assert_eq!(zones.focused, ZoneId::Results);
     assert_eq!(zones.fullscreen, None);
 }
@@ -82,26 +83,28 @@ fn test_toggle_flips_visibility_and_focuses_when_shown() {
     assert!(!zones.is_visible(ZoneId::Log));
 }
 
-/// The panel renamed to Trackers sits at `3` and Log moved to the last slot `4`, so the zone
-/// keyboard reads Results / Torrent / Trackers / Log in order.
+/// The panels the keyboard counts: Results / Torrent / Trackers / Log /
+/// TorrServer, in digit order.
 #[test]
-fn test_trackers_is_three_and_log_is_four() {
+fn test_every_panel_has_its_own_digit() {
     assert_eq!(ZoneId::Trackers.label(), "Trackers");
     assert_eq!(ZoneId::from_key('3'), Some(ZoneId::Trackers));
     assert_eq!(ZoneId::from_key('4'), Some(ZoneId::Log));
-    assert_eq!(ZoneId::from_key('5'), None);
+    assert_eq!(ZoneId::from_key('5'), Some(ZoneId::TorrServer));
     assert_eq!(
         ZoneId::all(),
         &[
             ZoneId::Results,
-            ZoneId::Torrent,
+            ZoneId::Download,
             ZoneId::Trackers,
-            ZoneId::Log
+            ZoneId::Log,
+            ZoneId::TorrServer
         ]
     );
     // The superscript in the frame title is `id as u8`, so the
     assert_eq!(ZoneId::Trackers as u8, 3);
     assert_eq!(ZoneId::Log as u8, 4);
+    assert_eq!(ZoneId::TorrServer as u8, 5);
 }
 
 #[test]
@@ -137,7 +140,7 @@ fn test_apply_preset_shows_exactly_the_named_zones() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,4");
     assert!(zones.is_visible(ZoneId::Results));
-    assert!(!zones.is_visible(ZoneId::Torrent));
+    assert!(!zones.is_visible(ZoneId::Download));
     assert!(zones.is_visible(ZoneId::Log));
     assert!(!zones.is_visible(ZoneId::Trackers));
 }
@@ -157,20 +160,20 @@ fn test_apply_preset_ignores_unknown_characters() {
     zones.apply_preset("1,4,9,x");
     assert!(zones.is_visible(ZoneId::Results));
     assert!(zones.is_visible(ZoneId::Log));
-    assert!(!zones.is_visible(ZoneId::Torrent));
+    assert!(!zones.is_visible(ZoneId::Download));
     assert!(!zones.is_visible(ZoneId::Trackers));
 }
 
 #[test]
 fn test_apply_preset_moves_focus_off_a_now_hidden_zone() {
     let mut zones = ZoneLayout::new();
-    zones.focused = ZoneId::Torrent;
+    zones.focused = ZoneId::Download;
     zones.apply_preset("1,4"); // hides Torrent
     assert!(
         zones.is_visible(zones.focused),
         "focus must land on a visible zone"
     );
-    assert_ne!(zones.focused, ZoneId::Torrent);
+    assert_ne!(zones.focused, ZoneId::Download);
 }
 
 #[test]
@@ -184,14 +187,16 @@ fn test_apply_preset_keeps_focus_if_still_visible() {
 #[test]
 fn test_focus_next_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
-    // Default visible order: Results, Torrent, Trackers, Log.
+    // Default visible order: Results, Torrent, Trackers, Log, TorrServer.
     zones.focused = ZoneId::Results;
     zones.focus_next();
-    assert_eq!(zones.focused, ZoneId::Torrent);
+    assert_eq!(zones.focused, ZoneId::Download);
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Trackers);
     zones.focus_next();
     assert_eq!(zones.focused, ZoneId::Log);
+    zones.focus_next();
+    assert_eq!(zones.focused, ZoneId::TorrServer);
     zones.focus_next(); // wraps back to Results
     assert_eq!(zones.focused, ZoneId::Results);
 }
@@ -200,8 +205,8 @@ fn test_focus_next_skips_hidden_zones_and_wraps() {
 fn test_focus_prev_skips_hidden_zones_and_wraps() {
     let mut zones = ZoneLayout::new();
     zones.focused = ZoneId::Results;
-    zones.focus_prev(); // wraps to the last visible zone (Log)
-    assert_eq!(zones.focused, ZoneId::Log);
+    zones.focus_prev(); // wraps to the last visible zone (TorrServer)
+    assert_eq!(zones.focused, ZoneId::TorrServer);
 }
 
 #[test]
@@ -337,8 +342,9 @@ fn test_zone_title_marks_the_detail_key_of_each_zone_that_has_one() {
     let theme = Theme::dark();
     for (id, key) in [
         (ZoneId::Log, "L"),
-        (ZoneId::Torrent, "T"),
+        (ZoneId::Download, "D"),
         (ZoneId::Results, "R"),
+        (ZoneId::TorrServer, "T"),
     ] {
         let spans = zone_title(id, &theme, false).spans;
         assert_eq!(spans.len(), 6, "{:?} splits its label", id);
@@ -525,7 +531,7 @@ fn test_the_category_button_highlights_both_arrows() {
 #[test]
 fn test_active_button_bolds_the_whole_word() {
     let theme = Theme::dark();
-    let buttons = zone_buttons(ZoneId::Torrent);
+    let buttons = zone_buttons(ZoneId::Download);
     let button = buttons
         .iter()
         .find(|b| b.key == 'p')
@@ -551,8 +557,8 @@ fn test_primary_buttons_lead_with_their_hotkey() {
     let primary = [
         (ZoneId::Results, 'f'),
         (ZoneId::Results, 'g'),
-        (ZoneId::Torrent, 'p'),
-        (ZoneId::Torrent, 'd'),
+        (ZoneId::Download, 'p'),
+        (ZoneId::Download, 'd'),
     ];
     for (id, key) in primary {
         let buttons = zone_buttons(id);
@@ -581,7 +587,7 @@ fn test_a_preset_spec_writes_rows_and_columns() {
     assert!(zones.is_visible(ZoneId::Results));
     assert!(zones.is_visible(ZoneId::Trackers));
     assert!(zones.is_visible(ZoneId::Log));
-    assert!(!zones.is_visible(ZoneId::Torrent), "row 2 is `3|4`");
+    assert!(!zones.is_visible(ZoneId::Download), "row 2 is `3|4`");
 
     assert_eq!(
         zones.grid,
@@ -604,7 +610,7 @@ fn test_the_default_tiling_is_results_over_trackers_and_log() {
     assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Trackers), cell(r[1], 0, 50));
     assert_eq!(zones.get_area(ZoneId::Log), cell(r[1], 50, 50));
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::default());
+    assert_eq!(zones.get_area(ZoneId::Download), Rect::default());
 }
 
 /// An old flat spec still stacks every zone at full width, which is
@@ -619,7 +625,7 @@ fn test_a_flat_spec_still_stacks_zones_full_width() {
     // One full-width row each, the remainder to the first rows, so no
     let r = rows(area, 4);
     assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
-    assert_eq!(zones.get_area(ZoneId::Torrent), cell(r[1], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Download), cell(r[1], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Trackers), cell(r[2], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Log), cell(r[3], 0, 100));
 }
@@ -661,7 +667,7 @@ fn test_hiding_a_row_gives_its_height_to_the_rest() {
 fn test_a_zone_shown_by_hand_gets_its_own_row() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,3|4");
-    zones.toggle(ZoneId::Torrent);
+    zones.toggle(ZoneId::Download);
     let area = Rect::new(0, 0, 100, 30);
     zones.update_areas(area);
 
@@ -670,7 +676,7 @@ fn test_a_zone_shown_by_hand_gets_its_own_row() {
     assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Trackers), cell(r[1], 0, 50));
     assert_eq!(zones.get_area(ZoneId::Log), cell(r[1], 50, 50));
-    assert_eq!(zones.get_area(ZoneId::Torrent), cell(r[2], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::Download), cell(r[2], 0, 100));
 }
 
 /// A terminal too short for the tiling still gets a layout: nothing
@@ -725,10 +731,10 @@ fn test_the_search_bar_is_outside_every_spec() {
 fn test_fullscreen_overrides_the_tiling() {
     let mut zones = ZoneLayout::new();
     zones.apply_preset("1,3|4");
-    zones.set_fullscreen(Some(ZoneId::Torrent));
+    zones.set_fullscreen(Some(ZoneId::Download));
     zones.update_areas(Rect::new(0, 0, 100, 30));
 
-    assert_eq!(zones.get_area(ZoneId::Torrent), Rect::new(0, 0, 100, 30));
+    assert_eq!(zones.get_area(ZoneId::Download), Rect::new(0, 0, 100, 30));
     assert_eq!(zones.get_area(ZoneId::Results), Rect::default());
     assert_eq!(zones.get_area(ZoneId::Log), Rect::default());
 }
@@ -742,10 +748,11 @@ fn test_a_fresh_layout_stacks_every_zone() {
     let area = Rect::new(0, 0, 100, 30);
     zones.update_areas(area);
 
-    assert!(zones.is_visible(ZoneId::Torrent), "all four start on");
-    let r = rows(area, 4);
+    assert!(zones.is_visible(ZoneId::Download), "all five start on");
+    let r = rows(area, 5);
     assert_eq!(zones.get_area(ZoneId::Results), cell(r[0], 0, 100));
     assert_eq!(zones.get_area(ZoneId::Log), cell(r[3], 0, 100));
+    assert_eq!(zones.get_area(ZoneId::TorrServer), cell(r[4], 0, 100));
 }
 
 /// The digit key's three answers, on the layout state alone: show it,
@@ -784,9 +791,10 @@ fn focus_or_toggle_walks_the_three_states_in_order() {
 #[test]
 fn hiding_a_zone_parks_the_focus_on_the_next_visible_one() {
     let mut zones = ZoneLayout::new();
-    // Results, Trackers visible; Torrent and Log hidden.
-    zones.set_visible(ZoneId::Torrent, false);
+    // Results, Trackers visible; Torrent, Log and TorrServer hidden.
+    zones.set_visible(ZoneId::Download, false);
     zones.set_visible(ZoneId::Log, false);
+    zones.set_visible(ZoneId::TorrServer, false);
     zones.focused = ZoneId::Trackers;
 
     zones.focus_or_toggle(ZoneId::Trackers);
@@ -810,13 +818,14 @@ fn test_equal_weights_reproduce_the_untouched_grid() {
     let area = Rect::new(0, 0, 80, 24);
     zones.update_areas(area);
 
-    // The whole tiling restated as the rule it must obey: four equal
-    let r = rows(area, 4);
+    // The whole tiling restated as the rule it must obey: five equal
+    let r = rows(area, 5);
     for (id, row) in [
         (ZoneId::Results, &r[0]),
-        (ZoneId::Torrent, &r[1]),
+        (ZoneId::Download, &r[1]),
         (ZoneId::Trackers, &r[2]),
         (ZoneId::Log, &r[3]),
+        (ZoneId::TorrServer, &r[4]),
     ] {
         assert_eq!(zones.get_area(id), cell(*row, 0, 80), "{id:?}");
     }
@@ -832,7 +841,7 @@ fn test_dragging_the_row_border_splits_that_pair_only() {
     let area = Rect::new(0, 0, 80, 24);
     zones.update_areas(area);
     let results = zones.get_area(ZoneId::Results);
-    let torrent = zones.get_area(ZoneId::Torrent);
+    let torrent = zones.get_area(ZoneId::Download);
     let trackers_h = zones.get_area(ZoneId::Trackers).height;
     let log_h = zones.get_area(ZoneId::Log).height;
 
@@ -850,7 +859,7 @@ fn test_dragging_the_row_border_splits_that_pair_only() {
         "pulled down one row"
     );
     assert_eq!(
-        zones.get_area(ZoneId::Torrent),
+        zones.get_area(ZoneId::Download),
         Rect::new(0, torrent.y + 1, area.width, torrent.height - 1)
     );
     assert_eq!(
@@ -860,9 +869,9 @@ fn test_dragging_the_row_border_splits_that_pair_only() {
     );
     assert_eq!(zones.get_area(ZoneId::Log).height, log_h, "untouched");
     // The rows still tile: no gap, no overlap, nothing off screen.
-    let log = zones.get_area(ZoneId::Log);
+    let last = zones.get_area(ZoneId::TorrServer);
     assert_eq!(
-        log.y + log.height,
+        last.y + last.height,
         area.height,
         "the last row still ends at the bottom"
     );
@@ -876,7 +885,7 @@ fn test_a_drag_stops_at_the_minimum_zone() {
     let area = Rect::new(0, 0, 80, 24);
     zones.update_areas(area);
     let results = zones.get_area(ZoneId::Results);
-    let torrent = zones.get_area(ZoneId::Torrent);
+    let torrent = zones.get_area(ZoneId::Download);
     // The rows the two of them share, wherever the divider starts.
     let pair = torrent.y + torrent.height - results.y;
 
@@ -890,13 +899,13 @@ fn test_a_drag_stops_at_the_minimum_zone() {
     );
     // The pair only has `pair` rows between them, so the row under the
     assert_eq!(
-        zones.get_area(ZoneId::Torrent).height,
+        zones.get_area(ZoneId::Download).height,
         pair - doris::ui::layout::RESIZE_MIN_HEIGHT
     );
 
     // And far below it: the lower row keeps its floor too. The divider
     zones.resize_end();
-    let torrent = zones.get_area(ZoneId::Torrent);
+    let torrent = zones.get_area(ZoneId::Download);
     assert!(
         zones.resize_start(torrent.y, 40),
         "the divider is where the last drag left it"
@@ -904,7 +913,7 @@ fn test_a_drag_stops_at_the_minimum_zone() {
     zones.resize_drag(area.height + 1, 40);
     zones.update_areas(area);
     assert_eq!(
-        zones.get_area(ZoneId::Torrent).height,
+        zones.get_area(ZoneId::Download).height,
         doris::ui::layout::RESIZE_MIN_HEIGHT
     );
 }
@@ -951,7 +960,7 @@ fn test_only_the_borders_between_zones_are_handles() {
     let area = Rect::new(0, 0, 80, 24);
     zones.update_areas(area);
     let results = zones.get_area(ZoneId::Results);
-    let torrent = zones.get_area(ZoneId::Torrent);
+    let torrent = zones.get_area(ZoneId::Download);
     let log = zones.get_area(ZoneId::Log);
 
     assert!(!zones.resize_start(results.y + 2, 40), "inside Results");
@@ -981,7 +990,7 @@ fn test_applying_a_preset_resets_the_weights() {
     let area = Rect::new(0, 0, 80, 24);
     zones.update_areas(area);
     let before = zones.get_area(ZoneId::Results).height;
-    let torrent = zones.get_area(ZoneId::Torrent);
+    let torrent = zones.get_area(ZoneId::Download);
     zones.resize_start(torrent.y, 40);
     zones.resize_drag(torrent.y + 1, 40);
     zones.update_areas(area);
