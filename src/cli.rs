@@ -266,7 +266,7 @@ pub enum StorageCommand {
     /// Show the download path and the cache policy.
     Show,
 
-    /// Point the server at a directory and turn disk caching on.
+    /// Cache what is fetched to this directory.
     Set {
         path: std::path::PathBuf,
         /// Also keep the cache after a reader disconnects. Without this
@@ -275,6 +275,10 @@ pub enum StorageCommand {
         #[arg(long)]
         keep_cache: bool,
     },
+
+    /// Stop caching to disk. TorrServer clears the save path with it, and
+    /// what is already fetched is dropped as its readers leave.
+    Off,
 }
 
 #[derive(Subcommand, Debug, Clone)]

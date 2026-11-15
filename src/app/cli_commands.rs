@@ -29,7 +29,7 @@ use crate::filter::Filter;
 use crate::sources::models::TorrentItem;
 use crate::sources::orchestrator::{self, SourceStatus};
 use crate::sources::source::{Group, KNOWN_SOURCES};
-use crate::torrserver::api::TorrServer;
+use crate::torrserver::api::{StoragePolicy, TorrServer};
 use crate::ui::view::Modal;
 
 /// Run one `doris <subcommand>`.
@@ -506,44 +506,30 @@ async fn torrent(args: &Args, command: &TorrentCommand, json: bool) -> Result<i3
         }
         TorrentCommand::Storage(sub) => match sub {
             crate::cli::StorageCommand::Show => {
-                let (path, use_disk) = torrserver.storage().await?;
-                if json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "path": path, "use_disk": use_disk
-                        }))?
-                    );
-                } else {
-                    println!(
-                        "path:     {}",
-                        if path.is_empty() { "(unset)" } else { &path }
-                    );
-                    println!("use_disk: {use_disk}");
-                }
+                say_storage(&torrserver.storage().await?, json)?;
                 Ok(0)
             }
             crate::cli::StorageCommand::Set { path, keep_cache } => {
-                let mut sets = serde_json::json!({
-                    "UseDisk": true,
-                    "TorrentsSavePath": path.display().to_string(),
-                });
-                if *keep_cache {
-                    sets["RemoveCacheOnDrop"] = serde_json::Value::Bool(false);
-                }
-                torrserver.set_settings(sets).await?;
-                let (now, disk) = torrserver.storage().await?;
-                if json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "path": now, "use_disk": disk
-                        }))?
-                    );
-                } else {
-                    println!("path:     {now}");
-                    println!("use_disk: {disk}");
-                }
+                // Both halves are written every time: a `--keep-cache` that
+                // no later plain `set` could undo was a one-way door.
+                torrserver
+                    .set_settings(serde_json::json!({
+                        "UseDisk": true,
+                        "TorrentsSavePath": path.display().to_string(),
+                        "RemoveCacheOnDrop": !keep_cache,
+                    }))
+                    .await?;
+                say_storage(&torrserver.storage().await?, json)?;
+                Ok(0)
+            }
+            crate::cli::StorageCommand::Off => {
+                torrserver
+                    .set_settings(serde_json::json!({
+                        "UseDisk": false,
+                        "RemoveCacheOnDrop": true,
+                    }))
+                    .await?;
+                say_storage(&torrserver.storage().await?, json)?;
                 Ok(0)
             }
         },
@@ -608,6 +594,34 @@ async fn torrent(args: &Args, command: &TorrentCommand, json: bool) -> Result<i3
             Ok(0)
         }
     }
+}
+
+/// What the server does with what it fetches, in one place: `show`, `set` and
+/// `off` all answer with the state that is now true, not with what was asked
+/// for.
+fn say_storage(policy: &StoragePolicy, json: bool) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "path": policy.path,
+                "use_disk": policy.use_disk,
+                "keep_cache": policy.keep_cache(),
+            }))?
+        );
+    } else {
+        println!(
+            "path:       {}",
+            if policy.path.is_empty() {
+                "(unset)"
+            } else {
+                &policy.path
+            }
+        );
+        println!("use_disk:   {}", policy.use_disk);
+        println!("keep_cache: {}", policy.keep_cache());
+    }
+    Ok(())
 }
 
 async fn one_torrent(

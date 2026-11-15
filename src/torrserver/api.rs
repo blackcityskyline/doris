@@ -4,6 +4,26 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_URL: &str = "http://127.0.0.1:8090";
 
+/// What the server does with what it fetches: where it puts it, and whether it
+/// is still there after the last reader leaves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoragePolicy {
+    /// `TorrentsSavePath`: empty means the server's own default.
+    pub path: String,
+    /// `UseDisk`: cache to disk at all.
+    pub use_disk: bool,
+    /// `RemoveCacheOnDrop`: drop what was fetched 30 s after the last reader.
+    pub remove_cache_on_drop: bool,
+}
+
+impl StoragePolicy {
+    /// The same fact said the way a person asks it, which is how the CLI and
+    /// the extension's checkbox both spell it.
+    pub fn keep_cache(&self) -> bool {
+        !self.remove_cache_on_drop
+    }
+}
+
 /// One torrent's live status, as reported by TorrServer's `/torrents` endpoint (`{"action":
 /// "list"}` or `{"action": "get", "hash":...}`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -238,7 +258,7 @@ impl TorrServer {
             .client
             .post(&url)
             .json(&serde_json::json!({ "action": "get" }))
-            .timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(15))
             .send()
             .await?;
         Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
@@ -251,14 +271,16 @@ impl TorrServer {
             .client
             .post(&url)
             .json(&serde_json::json!({ "action": "set", "sets": sets }))
-            .timeout(std::time::Duration::from_secs(5))
+            // Measured: one write plus its read-back takes ~3.5 s here, and a
+            // 5 s ceiling refused a write that did apply.
+            .timeout(std::time::Duration::from_secs(15))
             .send()
             .await?;
         ensure_ok(resp, "change the server settings").await
     }
 
     /// Where the server puts what it fetches, and whether it keeps it.
-    pub async fn storage(&self) -> Result<(String, bool)> {
+    pub async fn storage(&self) -> Result<StoragePolicy> {
         let settings = self.settings().await?;
         let path = settings
             .get("TorrentsSavePath")
@@ -269,7 +291,18 @@ impl TorrServer {
             .get("UseDisk")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        Ok((path, use_disk))
+        // TorrServer drops what it fetched 30 s after the last reader leaves
+        // unless this is turned off; an absent key means the default, which is
+        // to drop it.
+        let remove_cache_on_drop = settings
+            .get("RemoveCacheOnDrop")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        Ok(StoragePolicy {
+            path,
+            use_disk,
+            remove_cache_on_drop,
+        })
     }
 
     /// Read a torrent until it is finished, `stop` says otherwise, or
