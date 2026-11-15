@@ -227,6 +227,14 @@ impl RutrackerSearcher {
             log("AUTH: no cookie file specified");
         }
 
+        // The home page was fetched *before* those cookies went in, so it still
+        // draws the guest header. Re-read it: a stale `bb_session` in the jar is
+        // still a cookie, and asking the cookie jar whether it is logged in can
+        // only ever answer "yes" -- that answer cost a `login` command that
+        // wrote nothing and a search that landed on login.php (15.11.2026).
+        browser.navigate(Self::HOME_URL).await.ok();
+        Self::wait_cloudflare(&browser).await;
+
         let current_url = browser
             .eval_js("location.href")
             .await
@@ -263,7 +271,21 @@ impl RutrackerSearcher {
                         if let Some(cf) = cookie_file {
                             match self.get_cookies().await {
                                 Ok(c) => {
-                                    let _ = cookies::save_for_domain(cf, "rutracker.org", &c);
+                                    let saved = cookies::save_for_domain(cf, "rutracker.org", &c);
+                                    // A login that is not written down is a login the next
+                                    // run pays for again, so say where it went.
+                                    crate::log::log(
+                                        "rutracker",
+                                        &format!(
+                                            "AUTH: {} browser cookies, save to {}: {}",
+                                            c.len(),
+                                            cf.display(),
+                                            match &saved {
+                                                Ok(()) => "ok".to_string(),
+                                                Err(e) => e.to_string(),
+                                            },
+                                        ),
+                                    );
                                     log(&format!(
                                         "AUTH: saved {} cookies to {}",
                                         c.len(),
@@ -595,20 +617,10 @@ impl RutrackerSearcher {
     }
 
     async fn verify_login(&self, browser: &Browser) -> bool {
-        if let Ok(cookies) = browser.get_cookies().await {
-            let has_session = cookies.iter().any(|c| {
-                let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                let domain = c.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-                domain.contains("rutracker")
-                    && (name == "bb_data" || name == "bb_session")
-                    && !value.is_empty()
-            });
-            if has_session {
-                return true;
-            }
-        }
-
+        // Read the page, not the cookie jar: a cookie is proof that a jar has
+        // something in it, not that rutracker still accepts it. An expired
+        // `bb_session` used to answer "logged in" here, so `login` returned
+        // success without logging in and every search landed on login.php.
         if let Ok(html) = browser.get_page_source().await {
             if html.contains("logout.php") {
                 return true;
@@ -657,6 +669,12 @@ impl RutrackerSearcher {
             .unwrap_or_default();
 
         if url.contains("login.php") {
+            // A session rutracker will not accept and a search with no hits look
+            // the same to the caller, so say which one this was.
+            crate::log::log(
+                "rutracker",
+                &format!("GET {} -> login page (not logged in), 0 rows", search_url),
+            );
             return Ok(vec![]);
         }
 
@@ -691,6 +709,19 @@ impl RutrackerSearcher {
         let result = browser.eval_js(parse_script).await?;
         let json_str = result.as_str().unwrap_or("[]");
         let mut items: Vec<TorrentItem> = serde_json::from_str(json_str)?;
+        crate::log::log(
+            "rutracker",
+            &format!(
+                "GET {} -> landed on {} with {} row(s)",
+                search_url,
+                if url.is_empty() {
+                    "an unknown url"
+                } else {
+                    &url
+                },
+                items.len(),
+            ),
+        );
         for item in &mut items {
             item.source = "rutracker".to_string();
             // The row carries no forum of its own to read a group off

@@ -102,7 +102,7 @@ impl RutorSearcher {
             );
             return Ok(SearchPage::default());
         }
-        let page = (offset / Self::PAGE_SIZE) + 1;
+        let page = page_for(offset);
 
         let ids: &[i64] = match category {
             Some(group) => group_ids(group),
@@ -579,4 +579,34 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let doy = (153 * mp + 2) / 5 + day - 1; // [0, 365]
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
     era * 146_097 + doe - 719_468
+}
+
+/// Which search page an offset lands on. Rutor counts its pages from 0 --
+/// `/search/0/0/000/0/dune` is the *first* page -- so `offset / PAGE_SIZE` is the
+/// whole map. Asking for page 1 instead, as this did until 15.11.2026, answers a
+/// table with the header row and nothing under it for any query of 100 rows or
+/// fewer: "вышка" is 56 results, page 0 is 58 KB of rows, page 1 is 10 KB and
+/// empty, and the search looked like a tracker with nothing on it.
+fn page_for(offset: usize) -> usize {
+    offset / RutorSearcher::PAGE_SIZE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_first_offset_is_rutors_page_zero() {
+        assert_eq!(page_for(0), 0);
+        assert_eq!(
+            RutorSearcher::search_url(page_for(0), 0, "вышка"),
+            "https://rutor.info/search/0/0/000/0/%D0%B2%D1%8B%D1%88%D0%BA%D0%B0"
+        );
+    }
+
+    #[test]
+    fn the_second_offset_is_the_page_after_it() {
+        assert_eq!(page_for(RutorSearcher::PAGE_SIZE), 1);
+        assert_eq!(page_for(RutorSearcher::PAGE_SIZE * 3 + 7), 3);
+    }
 }

@@ -374,7 +374,10 @@ async fn login(args: &Args, a: &LoginArgs, json: bool) -> Result<i32> {
         .or_else(|| args.password.clone())
         .ok_or_else(|| anyhow!("a password is required: --password or RUTRACKER_PASS"))?;
     app.do_login(&a.resource, &username, &password).await;
-    app.pump_until(std::time::Duration::from_millis(60_000), |app| {
+    // A login is three Cloudflare round trips (home, cookie-inject reload,
+    // login.php) and each one measured tens of seconds on 15.11.2026, so the
+    // 60 s that used to be here cut the attempt off before the form was posted.
+    app.pump_until(std::time::Duration::from_millis(300_000), |app| {
         app.ui
             .logs
             .iter()

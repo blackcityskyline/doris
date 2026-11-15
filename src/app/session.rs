@@ -111,6 +111,9 @@ impl App {
         let event_tx_login = self.event_handler.sender();
         let event_tx_result = self.event_handler.sender();
         let log: LogFn = Arc::new(move |msg: &str| {
+            // The Log zone only lives as long as the TUI; a login that failed
+            // twice in a row is something to read about afterwards.
+            crate::log::log("auth", msg);
             let _ = event_tx_login.send(Event::StreamLog(msg.to_string()));
         });
 
