@@ -1377,6 +1377,8 @@ impl App {
             self.render_help_modal(frame, area, config);
         } else if matches!(self.modal, Modal::TorrentDetail(_)) {
             self.render_detail_modal(frame, area, config);
+        } else if matches!(self.modal, Modal::TorrServerDetail(_)) {
+            self.render_torrserver_detail_modal(frame, area, config);
         } else if matches!(self.modal, Modal::Magnet(_)) {
             self.render_magnet_modal(frame, area, config);
         }
@@ -1421,7 +1423,7 @@ fn speed(n: i64) -> String {
 }
 
 /// When a torrent was added, from the daemon's epoch seconds.
-fn added(epoch: i64) -> String {
+pub(crate) fn added(epoch: i64) -> String {
     if epoch <= 0 {
         return "--".to_string();
     }

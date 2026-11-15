@@ -508,6 +508,16 @@ impl App {
             return Ok(Some(()));
         }
 
+        if let Modal::TorrServerDetail(_) = self.ui.modal {
+            // A page of facts: nothing in it acts, so Esc (or `q`, which is
+            // how every other small dialog closes) is the whole keyboard.
+            if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                self.ui.modal = Modal::None;
+                self.ui.poster_protocol = None;
+            }
+            return Ok(Some(()));
+        }
+
         if let Modal::Settings(_) = self.ui.modal {
             self.handle_settings_key(key).await;
         }
@@ -667,7 +677,7 @@ impl App {
         // bindings below.
         if self.ui.zones.focused == ZoneId::TorrServer {
             match key.code {
-                KeyCode::Char('v' | 'j' | 'k' | 'p' | 'd' | 's' | 'a')
+                KeyCode::Char('v' | 'j' | 'k' | 'p' | 'd' | 's' | 'a' | 'l' | 'i')
                 | KeyCode::Down
                 | KeyCode::Up
                 | KeyCode::PageDown
@@ -750,6 +760,15 @@ impl App {
             // row to press `d` on.
             KeyCode::Char('a') if self.ui.zones.focused == ZoneId::Download => {
                 self.ui.open_magnet_modal();
+            }
+            // `o`: the other arrangement of the same rows. Sorting is a
+            // reading preference, so it re-orders what is on screen instead
+            // of asking the trackers again.
+            KeyCode::Char('o') if self.ui.zones.focused == ZoneId::Results => {
+                self.ui.cycle_sort();
+                crate::results::resort_results(&mut self.ui);
+                self.ui
+                    .add_log(&format!("Sorted by {}", self.ui.sort.label()));
             }
             // The category row's keys, next to `g`/`G` and gated the same
             KeyCode::Char('g') if self.ui.zones.focused == ZoneId::Results => {

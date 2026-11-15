@@ -801,6 +801,20 @@ impl App {
             } => {
                 apply_detail_loaded(&mut self.ui, &page_url, files, error.as_deref());
             }
+            Event::TorrServerPoster { hash, poster } => {
+                // Only the modal that is up: a slow poster for a details
+                // page the user has already closed must not keep the bytes
+                // (or worse, paint itself over the next one).
+                if let Modal::TorrServerDetail(state) = &mut self.ui.modal {
+                    if state.torrent.hash == hash {
+                        state.poster.pending = false;
+                        match poster {
+                            Ok(bytes) => state.poster.bytes = Some(bytes),
+                            Err(e) => state.poster.error = Some(e),
+                        }
+                    }
+                }
+            }
             // Keys, mouse, ticks and resizes belong to `run`, the only
             // thing with a terminal to draw them on.
             _ => {}
@@ -853,6 +867,16 @@ impl App {
             .size()
             .map(|s| (s.width, s.height))
             .unwrap_or((80, 24));
+
+        // The terminal's graphics protocol and font size, asked once, here:
+        // the query writes escape sequences and reads the answers from
+        // stdin, so it belongs after the alternate screen and before the
+        // event loop starts reading keys. A terminal that answers nothing
+        // falls back to halfblocks, which is still a picture. A "false tty"
+        // is a pipe: image escape sequences there are noise in a log.
+        if !self.config.false_tty {
+            self.ui.picker = ratatui_image::picker::Picker::from_query_stdio().ok();
+        }
 
         Self::spawn_termination_watch(Arc::clone(&self.exit_signal));
 

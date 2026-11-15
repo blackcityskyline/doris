@@ -485,6 +485,72 @@ async fn g_cycles_the_category_and_types_when_the_box_is_open() {
     assert_eq!(app.ui.search_input, "g", "the letter belongs to the query");
 }
 
+/// `o` is a Results key: it puts the same rows in the other order, and it
+/// is a letter of the query while the box is being typed into.
+#[tokio::test]
+async fn o_sorts_the_table_and_types_when_the_box_is_open() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.zones.focused = ZoneId::Results;
+    app.ui.results = vec![
+        crate::sources::models::TorrentItem {
+            title: "small but healthy".into(),
+            page_url: "p1".into(),
+            size: "1 GB".into(),
+            size_bytes: 1_000_000_000,
+            seeds: "500".into(),
+            seeds_n: 500,
+            ..Default::default()
+        },
+        crate::sources::models::TorrentItem {
+            title: "big and cold".into(),
+            page_url: "p2".into(),
+            size: "20 GB".into(),
+            size_bytes: 20_000_000_000,
+            seeds: "1".into(),
+            seeds_n: 1,
+            ..Default::default()
+        },
+    ];
+    app.ui.update_filter();
+
+    app.handle_key(press(KeyCode::Char('o'))).await.expect("o");
+
+    assert_eq!(
+        app.ui.sort,
+        crate::sources::ordering::SortBy::Size,
+        "the key moved it"
+    );
+    assert_eq!(
+        app.ui.results[0].title, "big and cold",
+        "biggest first once it is asked for"
+    );
+    let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+    assert!(
+        logs.contains("Sorted by size"),
+        "the key says what it did:\n{logs}"
+    );
+
+    app.handle_key(press(KeyCode::Char('o'))).await.expect("o");
+    assert_eq!(
+        app.ui.sort,
+        crate::sources::ordering::SortBy::Seeds,
+        "and back again"
+    );
+    assert_eq!(
+        app.ui.results[0].title, "small but healthy",
+        "seeds are the default arrangement"
+    );
+
+    app.ui.enter_input_mode();
+    app.handle_key(press(KeyCode::Char('o'))).await.expect("o");
+    assert_eq!(app.ui.search_input, "o", "the letter belongs to the query");
+    assert_eq!(
+        app.ui.sort,
+        crate::sources::ordering::SortBy::Seeds,
+        "typing must not sort"
+    );
+}
+
 /// A category is a request, not only a view.
 #[tokio::test]
 async fn switching_the_category_reasks_the_sources() {
@@ -1140,6 +1206,63 @@ async fn any_other_key_cancels_an_armed_torrserver_removal() {
 
     assert!(!app.ui.remove_armed, "j answered no");
     assert_eq!(app.ui.torrserver_torrents.len(), 1);
+}
+
+/// `i` opens the server's own page for the row, and Esc closes it.
+#[tokio::test]
+async fn i_opens_the_torrserver_details_and_esc_closes_them() {
+    let mut app = app_focused_on_sources(None).await;
+    app.ui.torrserver_torrents = vec![crate::torrserver::api::TorrentInfo {
+        name: "a torrent".into(),
+        hash: "deadbeef".into(),
+        total_size: 1_000_000,
+        ..Default::default()
+    }];
+    app.ui.zones.set_visible(ZoneId::TorrServer, true);
+    app.ui.zones.focused = ZoneId::TorrServer;
+
+    app.handle_key(press(KeyCode::Char('i'))).await.expect("i");
+
+    match &app.ui.modal {
+        Modal::TorrServerDetail(state) => {
+            assert_eq!(state.torrent.hash, "deadbeef");
+            assert!(
+                !state.poster.pending,
+                "no poster URL means nothing to wait for"
+            );
+        }
+        other => panic!("expected the details modal, got {other:?}"),
+    }
+    assert!(
+        !app.ui.input_mode,
+        "`i` is the panel's key here, not search's"
+    );
+
+    app.handle_key(press(KeyCode::Esc)).await.expect("Esc");
+    assert_eq!(app.ui.modal, Modal::None);
+}
+
+/// `l` saves the playlist and never becomes a letter of the query.
+#[tokio::test]
+async fn l_saves_the_playlist_instead_of_typing() {
+    let mut app = app_focused_on_sources(None).await;
+    app.torrserver = TorrServer::new("http://127.0.0.1:1");
+    app.ui.torrserver_torrents = vec![crate::torrserver::api::TorrentInfo {
+        name: "a torrent".into(),
+        hash: "deadbeef".into(),
+        ..Default::default()
+    }];
+    app.ui.zones.set_visible(ZoneId::TorrServer, true);
+    app.ui.zones.focused = ZoneId::TorrServer;
+
+    app.handle_key(press(KeyCode::Char('l'))).await.expect("l");
+
+    assert!(!app.ui.input_mode, "`l` did not open the search box");
+    let logs = app.ui.logs.iter().cloned().collect::<Vec<_>>().join("\n");
+    assert!(
+        logs.contains("Saving the playlist"),
+        "the key says what it started:\n{logs}"
+    );
 }
 
 /// The full Log view scrolls by line and by page, in the direction the key names.

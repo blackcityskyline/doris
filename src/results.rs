@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::config::Config;
-use crate::sources::ordering::{dedupe_by_hash, default_order};
+use crate::sources::models::TorrentItem;
+use crate::sources::ordering::{dedupe_by_hash, order};
 use crate::ui::view::{App as UiApp, AppState};
 
 /// The single log line describing how one source's dispatch ended: `rutor: 42 results` /
@@ -62,16 +63,35 @@ pub fn finish_search(
 /// still arriving would move rows out from under the user's selection.
 pub fn present_results(ui: &mut UiApp) {
     let before = ui.results.len();
-    let anchor = ui.results.get(ui.selected).cloned();
-
-    ui.results = default_order(&dedupe_by_hash(&ui.results), ui.browsing);
-    // Reordering moves rows under every saved index, the filter anchor
-    ui.filter_anchor = None;
-
-    let removed = before - ui.results.len();
+    let ordered = order(&dedupe_by_hash(&ui.results), ui.sort, ui.browsing);
+    let removed = before - ordered.len();
+    install_order(ui, ordered);
     if removed > 0 {
         ui.add_log(&format!("Removed {} duplicate results", removed));
     }
+}
+
+/// Re-order the rows already on screen, for the `o` key that changed
+/// `sort` and nothing else. Same path as [`present_results`] minus the
+/// dedupe: the list has been deduped once already, and running it again
+/// would log a second "Removed 0 duplicates" line nobody asked for.
+pub fn resort_results(ui: &mut UiApp) {
+    let ordered = order(&ui.results, ui.sort, ui.browsing);
+    install_order(ui, ordered);
+}
+
+/// Put `ordered` in place of the current rows and keep the cursor on the row
+/// the user was reading, wherever it ended up.
+///
+/// One function, because both callers need exactly this and the anchor rule
+/// is the part that is easy to get wrong twice.
+fn install_order(ui: &mut UiApp, ordered: Vec<TorrentItem>) {
+    let anchor = ui.results.get(ui.selected).cloned();
+
+    ui.results = ordered;
+    // Reordering moves rows under every saved index, the filter anchor
+    ui.filter_anchor = None;
+
     if let Some(anchor) = anchor {
         let keep = ui
             .results

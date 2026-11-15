@@ -632,3 +632,80 @@ fn test_enable_reports_why_the_unit_would_not_start() {
     );
     assert!(msg.contains(URL), "{msg}");
 }
+
+// --- the details fields and the endpoints its panel's `l` and `i` use -----
+
+/// The live list carries the three fields the details modal reads, under
+/// the lowercase names the running server actually sent.
+#[test]
+fn test_live_list_rows_carry_the_details_fields() {
+    let list: Vec<TorrentInfo> = serde_json::from_str(LIVE_LIST_JSON).unwrap();
+
+    assert_eq!(list[0].category, "");
+    assert_eq!(list[0].poster, "");
+    assert_eq!(list[0].timestamp, 1789839446);
+}
+
+/// `l` downloads the same document the web UI's playlist button does:
+/// `GET /playlist?hash=...`, with the body passed through untouched.
+#[tokio::test]
+async fn test_playlist_asks_for_the_hash_and_returns_the_m3u() {
+    const M3U: &str =
+        "#EXTM3U\n#EXTINF:0,file.mkv\nhttp://host/stream/file.mkv?link=abc&index=1&play\n";
+    let (url, record, handle) = spawn_recording_server("HTTP/1.1 200 OK", M3U).await;
+    let torrserver = TorrServer::new(&url);
+
+    let body = torrserver.playlist("abc").await.expect("a 200 is the m3u");
+
+    assert_eq!(body, M3U, "the playlist is not rewritten on the way out");
+    let recorded = record
+        .lock()
+        .expect("record lock")
+        .clone()
+        .expect("one request");
+    let (request_line, _) = recorded.split_once('\n').expect("head + body");
+    assert_eq!(request_line, "GET /playlist?hash=abc HTTP/1.1");
+    handle.abort();
+}
+
+/// A server that cannot make the playlist says so; the log line is the only
+/// place the user will see it.
+#[tokio::test]
+async fn test_playlist_surfaces_a_refusal() {
+    let (url, _record, handle) =
+        spawn_recording_server("HTTP/1.1 500 Internal Server Error", "no torrent").await;
+    let torrserver = TorrServer::new(&url);
+
+    let err = torrserver
+        .playlist("abc")
+        .await
+        .expect_err("a 500 is not a playlist");
+
+    assert!(err.to_string().contains("500"), "{err}");
+    assert!(err.to_string().contains("no torrent"), "{err}");
+    handle.abort();
+}
+
+/// The poster is an ordinary link on another host, so this is a plain GET
+/// and the bytes are returned as they came.
+#[tokio::test]
+async fn test_fetch_poster_returns_the_bytes_from_the_url() {
+    let (url, record, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", "PNG-not-really-an-image").await;
+    let torrserver = TorrServer::new(&url);
+
+    let bytes = torrserver
+        .fetch_poster(&format!("{url}/cover.png"))
+        .await
+        .expect("a 200 is a poster");
+
+    assert_eq!(bytes, b"PNG-not-really-an-image");
+    let recorded = record
+        .lock()
+        .expect("record lock")
+        .clone()
+        .expect("one request");
+    let (request_line, _) = recorded.split_once('\n').expect("head + body");
+    assert_eq!(request_line, "GET /cover.png HTTP/1.1");
+    handle.abort();
+}

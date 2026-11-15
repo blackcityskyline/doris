@@ -1,7 +1,7 @@
-//! Ordering tests: the dedup rules and the two default orders.
+//! Ordering tests: the dedup rules, the two default orders, and the `o` key's.
 
 use doris::sources::models::TorrentItem;
-use doris::sources::ordering::{dedupe_by_hash, default_order};
+use doris::sources::ordering::{dedupe_by_hash, default_order, order, SortBy};
 
 /// A row with just the fields an order actually reads.
 fn row(hash: &str) -> TorrentItem {
@@ -106,4 +106,53 @@ fn test_browse_order_ranks_the_registered_providers_first() {
         ["nnm", "rutor-newer", "rutor-new", "other"],
         "nnmclub, then rutor newest-first, then everything else"
     );
+}
+
+// --- the `o` key: SortBy -----------------------------------------------------
+
+#[test]
+fn test_size_order_is_biggest_first_then_healthiest() {
+    let list = vec![
+        with(row("small"), "rutor", 700_000_000, 90, 1000),
+        // Same size as `big-cold`: the tie is broken by seeds, which is
+        // what makes two 20 GB releases answer in a stable order.
+        with(row("big-cold"), "rutor", 20_000_000_000, 2, 1000),
+        with(row("big-healthy"), "rutracker", 20_000_000_000, 40, 1000),
+    ];
+
+    let out = order(&list, SortBy::Size, false);
+
+    assert_eq!(
+        hashes(&out),
+        ["big-healthy", "big-cold", "small"],
+        "size desc, then seeds desc"
+    );
+}
+
+#[test]
+fn test_size_order_still_answers_in_browse_mode() {
+    // Browse mode ranks sources for the *default* arrangement; asking for
+    // size is a different question and has one answer on every list.
+    let list = vec![
+        with(row("nnm-small"), "nnmclub", 1_000_000_000, 0, 500),
+        with(row("rutor-big"), "rutor", 9_000_000_000, 0, 1000),
+    ];
+
+    let out = order(&list, SortBy::Size, true);
+
+    assert_eq!(hashes(&out), ["rutor-big", "nnm-small"]);
+    assert_eq!(
+        hashes(&order(&list, SortBy::Seeds, true)),
+        ["nnm-small", "rutor-big"],
+        "the default still ranks the providers"
+    );
+}
+
+#[test]
+fn test_the_sort_key_cycles_both_ways_and_names_itself() {
+    assert_eq!(SortBy::default(), SortBy::Seeds);
+    assert_eq!(SortBy::Seeds.next(), SortBy::Size);
+    assert_eq!(SortBy::Size.next(), SortBy::Seeds);
+    assert_eq!(SortBy::Seeds.label(), "seeds");
+    assert_eq!(SortBy::Size.label(), "size");
 }

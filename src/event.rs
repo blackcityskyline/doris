@@ -80,6 +80,13 @@ pub enum Event {
         files: Vec<crate::sources::models::FileEntry>,
         error: Option<String>,
     },
+    /// The poster of the torrent TorrServer's details modal is showing, or
+    /// why it could not be fetched. `hash` is the torrent it belongs to,
+    /// so a slow answer for a modal the user has since replaced is dropped.
+    TorrServerPoster {
+        hash: String,
+        poster: Result<Vec<u8>, String>,
+    },
 }
 
 pub struct EventHandler {

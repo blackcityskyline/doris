@@ -1042,6 +1042,10 @@ const RESULTS_BUTTONS: &[(FrameSlot, char, &str)] = &[
     // Lowercase `f`: the filter is the Results panel's primary function,
     (FrameSlot::TopRight, 'f', "filter"),
     (FrameSlot::TopRight, 'g', "group"),
+    // `o` (order): the same rows, healthiest or biggest first. Next to `f`
+    // and `g` because it is the third question one asks of a list --
+    // narrow it, group it, arrange it.
+    (FrameSlot::TopRight, 'o', "sort"),
     // The bottom action row (`play ⏎` / `download d` / `info v`) is
 ];
 
@@ -1060,7 +1064,9 @@ const TORRSERVER_BUTTONS: &[(FrameSlot, char, &str)] = &[
     (FrameSlot::BottomLeft, 'p', "pause"),
     (FrameSlot::BottomLeft, 'd', "delete"),
     (FrameSlot::BottomLeft, 's', "save"),
+    (FrameSlot::BottomLeft, 'l', "playlist"),
     (FrameSlot::BottomLeft, 'v', "view"),
+    (FrameSlot::BottomLeft, 'i', "info"),
     (FrameSlot::BottomLeft, 'a', "add"),
 ];
 

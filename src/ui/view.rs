@@ -57,6 +57,9 @@ pub enum Modal {
     Files(Box<FilesState>),
     /// A magnet link being typed, for a torrent that is in no list yet.
     Magnet(Box<crate::ui::modals::magnet::MagnetState>),
+    /// One TorrServer torrent as the server sees it: the fields its web UI
+    /// shows, the poster, and the file list it holds.
+    TorrServerDetail(Box<crate::ui::modals::torrserver::TorrServerDetailState>),
 }
 
 /// What a key in the detail modal asks the orchestrator for.
@@ -244,6 +247,14 @@ pub struct App {
     /// not in a modal, because the panel is a zone: it has a tile and an
     /// overlay, and both draw this one state.
     pub torrserver_state: TorrServerState,
+    /// The terminal's graphics protocol and font size, asked once when the
+    /// TUI starts. `None` in a CLI run and in tests, which have no terminal
+    /// to answer -- and no poster to draw.
+    pub picker: Option<ratatui_image::picker::Picker>,
+    /// The decoded poster of the TorrServer details modal, with the hash it
+    /// belongs to. Kept here rather than in the modal's state for the same
+    /// reason the picker is on `App`: it is render state, not data.
+    pub poster_protocol: Option<(String, ratatui_image::protocol::StatefulProtocol)>,
     /// Every download the backend already holds, adopted at startup.
     ///
     /// Keyed by info hash, because that is the only thing a search row and
@@ -291,6 +302,10 @@ pub struct App {
     /// Browse mode: the current search is an empty query asking browse-capable sources for
     /// their freshest rows.
     pub browsing: bool,
+    /// Which arrangement the Results table is in: `o` cycles it, and it
+    /// survives a new search because it is a reading preference rather than
+    /// a property of the answer.
+    pub sort: crate::sources::ordering::SortBy,
     /// Set whenever the user switches the active source tab (via `]` key or mouse click).
     pub source_changed: bool,
     /// Set by `settings_key` right before it returns a cycle-type SettingsAction
@@ -499,6 +514,8 @@ impl App {
             active_torrent_hash: None,
             torrserver_torrents: Vec::new(),
             torrserver_state: TorrServerState::default(),
+            picker: None,
+            poster_protocol: None,
             downloads: Vec::new(),
             download_cursor: 0,
             daemon_reachable: None,
@@ -522,6 +539,7 @@ impl App {
             group_tabs: group_tabs(&crate::sources::source::first_run()),
             group_changed: false,
             browsing: false,
+            sort: crate::sources::ordering::SortBy::default(),
             source_changed: false,
             last_cycle_direction: 1,
             progress_history: std::collections::VecDeque::new(),
@@ -651,6 +669,13 @@ impl App {
             (pos + len - 1) % len
         };
         self.set_group(self.group_tabs[next]);
+    }
+
+    /// `o`: the next arrangement of the Results table. The caller re-orders
+    /// the rows afterwards -- this only moves the state, so the rule about
+    /// which key sorts what lives in one place (`ordering::order`).
+    pub fn cycle_sort(&mut self) {
+        self.sort = self.sort.next();
     }
 
     /// [`App::new`] takes no config, so the caller that *does* have
@@ -790,10 +815,19 @@ impl App {
                 // redrawn on every keypress, so the twitch it was
                 // preventing was not there to begin with.
                 let counts = format!("({}/{})", self.filtered_indices.len(), self.results.len());
-                if self.zones.filter_input.is_empty() {
+                // The arrangement trails the filter, and only when it is not
+                // the one every search already sorts by: a frame that always
+                // printed a word would push the counter and the filter off
+                // the narrow panels this is measured on.
+                let info = if self.zones.filter_input.is_empty() {
                     counts
                 } else {
                     format!("{} [F: {}]", counts, self.zones.filter_input)
+                };
+                if self.sort == crate::sources::ordering::SortBy::default() {
+                    info
+                } else {
+                    format!("{} [O: {}]", info, self.sort.label())
                 }
             }
             ZoneId::Trackers => {

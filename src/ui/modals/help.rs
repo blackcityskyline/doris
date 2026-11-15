@@ -80,6 +80,7 @@ pub const SEARCH_KEYS: &[(&str, &str)] = &[
     ("Enter", "Searches, or plays the selected row."),
     ("Esc", "Leaves input mode, keeping the query."),
     ("b", "Browse: freshest rows from every source."),
+    ("o", "Sorts the table: seeds first, then size."),
     ("g, G", "Cycles the category forward / back, and"),
     ("", "re-asks the checked sources for it."),
     ("Enter", "In Trackers, switches the row under it."),
@@ -174,7 +175,9 @@ pub const TORRSERVER_KEYS: &[(&str, &str)] = &[
     ("d, again", "Confirms; any other key cancels."),
     ("s", "Saves the stream to disk: the largest file,"),
     ("", "or the highlighted one while `v` is open."),
+    ("l", "Saves its m3u playlist, every file listed."),
     ("v", "The file list; j/k walk it, s saves one."),
+    ("i", "The server's details: size, peers, poster."),
     ("a", "Adds a magnet or a .torrent to TorrServer."),
     ("Esc", "Closes the overlay; a tile stays."),
 ];

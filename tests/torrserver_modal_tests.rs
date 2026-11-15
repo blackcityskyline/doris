@@ -121,3 +121,44 @@ fn t_takes_the_frame_over_with_the_list() {
         "a takeover is not the tiling plus a search bar:\n{text}"
     );
 }
+
+/// `i`'s page: the server's own fields and the file list, inside a modal
+/// of its own rather than a second pane in the panel.
+#[test]
+fn the_details_modal_shows_the_server_fields_and_files() {
+    use doris::ui::modals::torrserver::TorrServerDetailState;
+    use doris::ui::view::Modal;
+
+    let mut app = app_with_one_torrent();
+    let torrent = app.torrserver_torrents[0].clone();
+    app.modal = Modal::TorrServerDetail(Box::new(TorrServerDetailState::new(torrent)));
+
+    let text = render(&mut app, 120, 40);
+
+    assert!(text.contains("TorrServer details"), "{text}");
+    assert!(
+        text.contains("dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"),
+        "{text}"
+    );
+    assert!(text.contains("Torrent working"), "{text}");
+    assert!(text.contains("Files (2):"), "{text}");
+    assert!(text.contains("bunny.mkv"), "{text}");
+    assert!(text.contains("Esc: close"), "{text}");
+}
+
+/// A poster URL with no terminal to draw it on (the test backend has no
+/// picker) says it is waiting instead of leaving a silent empty column.
+#[test]
+fn the_details_modal_says_the_poster_is_loading() {
+    use doris::ui::modals::torrserver::TorrServerDetailState;
+    use doris::ui::view::Modal;
+
+    let mut app = app_with_one_torrent();
+    let mut torrent = app.torrserver_torrents[0].clone();
+    torrent.poster = "http://example.invalid/cover.jpg".into();
+    app.modal = Modal::TorrServerDetail(Box::new(TorrServerDetailState::new(torrent)));
+
+    let text = render(&mut app, 120, 40);
+
+    assert!(text.contains("loading poster"), "{text}");
+}

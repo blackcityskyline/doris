@@ -5,7 +5,7 @@
 //! live with the app rather than with the view.
 
 use super::*;
-use crate::ui::modals::torrserver::TorrServerAction;
+use crate::ui::modals::torrserver::{TorrServerAction, TorrServerDetailState};
 
 impl App {
     pub(super) async fn apply_torrserver_action(&mut self, action: TorrServerAction) {
@@ -16,6 +16,10 @@ impl App {
             }
             TorrServerAction::Remove { hash, name } => self.remove_torrserver(&hash, &name).await,
             TorrServerAction::Save { torrent, file } => self.save_torrserver_file(&torrent, &file),
+            TorrServerAction::SavePlaylist { hash, name } => {
+                self.save_torrserver_playlist(&hash, &name)
+            }
+            TorrServerAction::Details { torrent } => self.open_torrserver_details(torrent),
         }
     }
 
@@ -143,6 +147,66 @@ impl App {
         });
     }
 
+    /// Write the torrent's m3u next to the files `s` saves: the same
+    /// document the web UI's playlist button downloads, and the one thing
+    /// on this panel that is still useful when the server is not running.
+    fn save_torrserver_playlist(&mut self, hash: &str, name: &str) {
+        let file = playlist_file_name(name);
+        let dir = self.resolve_download_dir();
+        let dest = std::path::Path::new(&dir).join(&file);
+        if dest.exists() {
+            self.ui.add_log(&format!(
+                "{} is already there; not overwriting",
+                dest.display()
+            ));
+            return;
+        }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.ui.add_log(&format!("Could not create {dir}: {e}"));
+            return;
+        }
+        let torrserver = self.torrserver.clone();
+        let hash = hash.to_string();
+        let shown = dest.display().to_string();
+        let event_tx = self.event_handler.sender();
+        self.ui
+            .add_log(&format!("Saving the playlist of {name} to {dir}"));
+        tokio::spawn(async move {
+            let event = match torrserver.playlist(&hash).await {
+                Ok(m3u) => match tokio::fs::write(&dest, m3u).await {
+                    Ok(()) => Event::StreamLog(format!("Saved playlist {shown}")),
+                    Err(e) => Event::StreamLog(format!("Could not write {shown}: {e}")),
+                },
+                Err(e) => Event::StreamLog(format!("Could not save playlist {shown}: {e}")),
+            };
+            let _ = event_tx.send(event);
+        });
+    }
+
+    /// `i`: the server's own row, in a modal. The poster is fetched here
+    /// rather than by the renderer because the renderer cannot await -- and
+    /// because a modal for a torrent without artwork should not spawn a
+    /// request at all.
+    fn open_torrserver_details(&mut self, torrent: crate::torrserver::api::TorrentInfo) {
+        let poster_url = torrent.poster.trim().to_string();
+        let hash = torrent.hash.clone();
+        // A picture from the last details page is not this one's.
+        self.ui.poster_protocol = None;
+        self.ui.modal = Modal::TorrServerDetail(Box::new(TorrServerDetailState::new(torrent)));
+        if poster_url.is_empty() {
+            return;
+        }
+        let torrserver = self.torrserver.clone();
+        let event_tx = self.event_handler.sender();
+        tokio::spawn(async move {
+            let poster = torrserver
+                .fetch_poster(&poster_url)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = event_tx.send(Event::TorrServerPoster { hash, poster });
+        });
+    }
+
     /// Hand a typed magnet or `.torrent` path to TorrServer, the counterpart
     /// of `add_link_to_daemon` for the streaming server.
     pub(super) async fn add_link_to_torrserver(&mut self, link: &str) {
@@ -172,6 +236,18 @@ impl App {
                 self.ui.magnet_says(message);
             }
         }
+    }
+}
+
+/// The name the playlist is written under: the torrent's own, never a
+/// path, and always with the extension a player recognises.
+fn playlist_file_name(name: &str) -> String {
+    let base = name.trim().replace(['/', '\\'], "_");
+    let base = base.trim();
+    if base.is_empty() {
+        "playlist.m3u".to_string()
+    } else {
+        format!("{base}.m3u")
     }
 }
 
@@ -227,6 +303,16 @@ mod tests {
     #[test]
     fn an_empty_path_falls_back_to_the_torrent_name() {
         assert_eq!(safe_file_name("", "Some Torrent"), "Some Torrent.bin");
+    }
+
+    #[test]
+    fn a_playlist_keeps_the_title_and_never_a_path() {
+        assert_eq!(
+            playlist_file_name("Остров проклятых (2010)"),
+            "Остров проклятых (2010).m3u"
+        );
+        assert_eq!(playlist_file_name("Show/Season 1"), "Show_Season 1.m3u");
+        assert_eq!(playlist_file_name("   "), "playlist.m3u");
     }
 
     #[test]

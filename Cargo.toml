@@ -44,6 +44,11 @@ regex = "1"
 # object-safe on its own, this crate boxes the futures so it is. Small,
 # widely-used, proc-macro only (no extra runtime dependencies pulled in).
 async-trait = "0.1"
+ratatui-image = { version = "5", default-features = false }
+# ratatui-image decodes through `image` with all formats off; these are the
+# three a tracker's or TMDB's cover actually comes in. Enabling them here is
+# feature unification doing the work, not a second decode path.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # 71 integration-test binaries, each linked from scratch after a change to
 # anything shared (`src/lib.rs` alone invalidates every one of them). Debug

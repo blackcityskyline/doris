@@ -28,6 +28,18 @@ pub struct TorrentInfo {
     pub connected_seeders: i64,
     #[serde(rename = "TorrentStatusString", alias = "stat_string", default)]
     pub status_string: String,
+    /// A picture URL the server remembered when the torrent was added
+    /// (`TorrentSpec.Poster`, often a TMDB or a tracker's own cover). Empty
+    /// is the normal case: a magnet carries no artwork, and the panel's
+    /// details then simply have no image to show.
+    #[serde(rename = "Poster", alias = "poster", default)]
+    pub poster: String,
+    /// The server's category string, which is what its web UI groups by.
+    #[serde(rename = "Category", alias = "category", default)]
+    pub category: String,
+    /// When the torrent was added, as a Unix timestamp.
+    #[serde(rename = "Timestamp", alias = "timestamp", default)]
+    pub timestamp: i64,
     /// TorrServer answers with no file list of its own; the names live in
     /// this field, as a JSON document inside a JSON document:
     /// `{"TorrServer":{"Files":[{"id":1,"path":"Movie/movie.mkv","length":N}]}}`.
@@ -305,6 +317,55 @@ impl TorrServer {
         let body = serde_json::json!({ "action": "rem", "hash": hash });
         let resp = self.torrents_action(body).await?;
         ensure_ok(resp, "remove the torrent").await
+    }
+
+    /// The m3u playlist of one torrent, exactly the bytes its web UI's
+    /// "playlist" button downloads: one `#EXTINF` + `/stream` URL per file.
+    ///
+    /// A playlist is how a whole season is handed to a player at once, and
+    /// it is also the only API answer that can be kept on disk without the
+    /// server running.
+    pub async fn playlist(&self, hash: &str) -> Result<String> {
+        let url = format!(
+            "{}/playlist?hash={}",
+            self.base_url,
+            urlencoding::encode(hash)
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("TorrServer refused the playlist: {status} {}", body.trim());
+        }
+        Ok(resp.text().await?)
+    }
+
+    /// Fetch a poster the server holds a URL for. It is an ordinary link
+    /// (`TorrentSpec.Poster`), often on another host, so this is a plain
+    /// GET and a size cap: an oversized answer is a broken link or an HTML
+    /// error page, not artwork.
+    pub async fn fetch_poster(&self, url: &str) -> Result<Vec<u8>> {
+        const MAX_POSTER: usize = 16 * 1024 * 1024;
+        let resp = self
+            .client
+            .get(url)
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            anyhow::bail!("poster answered {status}");
+        }
+        let bytes = resp.bytes().await?;
+        if bytes.len() > MAX_POSTER {
+            anyhow::bail!("poster is {} bytes, too large", bytes.len());
+        }
+        Ok(bytes.to_vec())
     }
 
     /// Hand TorrServer a magnet link instead of a `.torrent` file: no download round trip, and
