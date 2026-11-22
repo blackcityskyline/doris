@@ -5,6 +5,7 @@
 //! landing on top of the new one.
 
 use super::*;
+use crate::app::session::browser_for;
 
 impl App {
     /// A category switch asks again rather than re-labelling what is already on screen.
@@ -99,16 +100,24 @@ impl App {
                 continue;
             }
 
-            let source = match self.get_source(info.id).await {
-                Ok(s) => s,
-                Err(e) => {
-                    // This source can't run at all, and with no task
-                    self.ui
-                        .add_log(&source_outcome_line(info.id, &Err(e.to_string())));
-                    self.ui
-                        .source_status
-                        .insert(info.id.to_string(), SourceStatus::Error(e.to_string()));
-                    continue;
+            // A browser-backed source is built inside its task, after the
+            // browser is up: launching that browser takes seconds, and
+            // doing it here meant the four trackers that answer in 70 ms
+            // were dispatched four seconds late, all of them behind it.
+            let source = if info.requires_browser {
+                None
+            } else {
+                match self.get_source(info.id).await {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        // This source can't run at all, and with no task
+                        self.ui
+                            .add_log(&source_outcome_line(info.id, &Err(e.to_string())));
+                        self.ui
+                            .source_status
+                            .insert(info.id.to_string(), SourceStatus::Error(e.to_string()));
+                        continue;
+                    }
                 }
             };
 
@@ -130,11 +139,35 @@ impl App {
                 // tracker is down".
                 let saved_creds = crate::credentials::load_credential(info.id);
                 let event_tx_log = self.event_handler.sender();
+                let browser_cell = Arc::clone(&self.browser);
+                let app_args = self.args.clone();
+                let app_config = self.config.clone();
+                let visibility = self.browser_visibility;
                 let fetch = async move {
+                    let log: LogFn = Arc::new(move |msg: &str| {
+                        let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
+                    });
+                    let source = match source {
+                        Some(source) => source,
+                        None => {
+                            let browser = browser_for(
+                                &browser_cell,
+                                &app_args,
+                                &app_config,
+                                visibility,
+                                info.home_url,
+                                &log,
+                            )
+                            .await?;
+                            source::build_source(
+                                info.id,
+                                SourceEnv {
+                                    browser: Some(browser),
+                                },
+                            )?
+                        }
+                    };
                     if info.requires_browser {
-                        let log: LogFn = Arc::new(move |msg: &str| {
-                            let _ = event_tx_log.send(Event::StreamLog(msg.to_string()));
-                        });
                         let (cred_user, cred_pass) = match (username, password) {
                             (Some(u), Some(p)) => (Some(u), Some(p)),
                             _ => match saved_creds {

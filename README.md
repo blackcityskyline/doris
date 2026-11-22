@@ -37,6 +37,38 @@ doris --source rutor       # one tracker instead of the checked ones
 Options live in `~/.config/doris/config.toml`; `config.toml` in this
 repository is the annotated example.
 
+## Command line
+
+The TUI's keys have commands behind them, and a front end drives those
+instead of reimplementing a search. `--json` is global, and so are the
+session flags (`--browser`, `--browser-visibility`, `--cookie-file`,
+`--username`, `--password`), so they read the same before or after the
+subcommand.
+
+```
+doris --json search "the matrix 1999"
+doris --json search --stream "the matrix 1999"
+doris --json play --row '<a row as search printed it>'
+doris --json download --row '<the same row>'
+```
+
+`--stream` prints one JSON array per line as each source answers, instead of
+one array when the last one is through. A front end draws the fast trackers'
+rows in the first second instead of an empty window until rutracker's
+Cloudflare challenge clears — measured 22.11.2026: four answers in 0.6 s, the
+fifth at 35 s. A batch is ordered among itself; the merged order is what the
+one-array form sorts. `--pages` beyond the first means nothing here.
+
+`--row` is the contract: the row goes back exactly as it was printed, and
+the command acts on that row — its magnet, its `.torrent` link, its page,
+its source — with no second search and no index into a list whose order
+may have moved. A tracker that needs a browser gets its session opened by
+the command; on rutracker the first `.torrent` fetch answers 403 until the
+topic page has been opened, so the command opens it and retries once.
+
+The rest is in `doris --help`: `sources`, `torrent` (list, status, pause,
+resume, remove, files, storage), `health`, `logs`, `config`, `login`.
+
 ## Keys
 
 `?` opens the help page, which is the full list, in five pages split by

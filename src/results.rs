@@ -63,7 +63,12 @@ pub fn finish_search(
 /// still arriving would move rows out from under the user's selection.
 pub fn present_results(ui: &mut UiApp) {
     let before = ui.results.len();
-    let ordered = order(&dedupe_by_hash(&ui.results), ui.sort, ui.browsing);
+    let ordered = order(
+        &dedupe_by_hash(&ui.results),
+        ui.sort,
+        ui.browsing,
+        ui.search_query.as_deref(),
+    );
     let removed = before - ordered.len();
     install_order(ui, ordered);
     if removed > 0 {
@@ -76,7 +81,12 @@ pub fn present_results(ui: &mut UiApp) {
 /// dedupe: the list has been deduped once already, and running it again
 /// would log a second "Removed 0 duplicates" line nobody asked for.
 pub fn resort_results(ui: &mut UiApp) {
-    let ordered = order(&ui.results, ui.sort, ui.browsing);
+    let ordered = order(
+        &ui.results,
+        ui.sort,
+        ui.browsing,
+        ui.search_query.as_deref(),
+    );
     install_order(ui, ordered);
 }
 

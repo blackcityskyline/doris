@@ -196,6 +196,32 @@ fn test_a_leading_dot_still_matches_a_subdomain() {
     );
 }
 
+/// A jar that predates `save_for_domain`'s dedupe holds two `cf_clearance`
+/// rows for one site -- this machine's did on 22.11.2026, captured below --
+/// and `add_cookie` keeps whichever came last. A stale clearance makes
+/// Cloudflare challenge every page, which cost thirteen seconds per search
+/// and read as a slow tracker rather than as a bad jar.
+#[test]
+fn test_one_cookie_per_name_survives_a_jar_that_holds_two() {
+    let jar = parse_netscape(
+        "# Netscape HTTP Cookie File\n\
+         .rutracker.org\tTRUE\t/\tTRUE\t0\tcf_clearance\tstale-from-october\n\
+         .rutracker.org\tTRUE\t/forum/\tTRUE\t0\tbb_guid\t2cOlscq1ZOyr\n\
+         .rutracker.org\tTRUE\t/\tTRUE\t0\tcf_clearance\tfresh-written-last\n",
+    );
+
+    let kept: Vec<&str> = for_domain(&jar, "rutracker.org")
+        .iter()
+        .map(|c| c.value.as_str())
+        .collect();
+
+    assert_eq!(
+        kept,
+        ["2cOlscq1ZOyr", "fresh-written-last"],
+        "the last clearance wins, and the other names are untouched"
+    );
+}
+
 /// One jar, several trackers: writing one site's cookies must not take the
 /// others' away. It did, on 05.10.2026 -- signing into ext replaced the file
 /// with ext's six cookies and took rutracker's four with them, so the next

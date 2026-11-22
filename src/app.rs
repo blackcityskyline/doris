@@ -411,9 +411,15 @@ pub struct App {
     /// The downloading daemon. Separate from `torrserver` because it is a
     /// different job: TorrServer streams, this writes to a directory.
     transmission: crate::transmission::Transmission,
-    browser: Option<Arc<Mutex<Browser>>>,
+    /// Launched by whichever path needs it first -- a browser-backed
+    /// source's own search task, or a command opening a row's session -- and
+    /// then shared, so the second caller reuses the session.
+    browser: Arc<tokio::sync::OnceCell<Arc<Mutex<Browser>>>>,
     /// Live sources keyed by id, built once via `source::build_source` and reused across
-    /// start_search/load_more/do_login (all run in spawned tasks).
+    /// start_search/load_more/do_login (all run in spawned tasks). A
+    /// browser-backed source built by a search is not put here: it belongs to
+    /// that search's task, and the browser it shares with every later use is
+    /// in `browser`.
     sources: HashMap<&'static str, Arc<dyn Source>>,
     /// Each source's last "has another page" verdict: consulted
     /// by "Load more" and turned into `ui.all_loaded` by
@@ -590,7 +596,7 @@ impl App {
             ui,
             event_handler,
             torrserver,
-            browser: None,
+            browser: Arc::new(tokio::sync::OnceCell::new()),
             transmission,
             sources: HashMap::new(),
             source_has_more: HashMap::new(),
@@ -951,7 +957,7 @@ impl App {
         }
 
         // End the WebDriver session while the runtime is still alive: the
-        if let Some(browser) = self.browser.take() {
+        if let Some(browser) = self.browser.get() {
             let mut browser = browser.lock().await;
             browser.shutdown().await;
         }

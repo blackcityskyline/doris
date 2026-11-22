@@ -201,26 +201,23 @@ impl RutorSearcher {
 
     /// The search URL for one rubric id: `/search/{page}/{cat}/000/0/ {query}` -- `cat` is
     /// rutor's own rubric slot, `0` meaning "all categories" (its spelling, not ours).
-    /// Rutor's search path takes **one word per segment**.
     ///
-    /// Measured live: `.../000/0/dune/2021` answers 91 KB with a hundred
-    /// magnet links, and `.../000/0/dune%202021` -- the same two words, space
-    /// encoded -- answers 200 with an empty page and no magnets at all. So a
-    /// multi-word query asked the old way returned nothing and looked like a
-    /// tracker with no results: one word worked, two did not, and there was
-    /// nothing in the answer to say which.
+    /// The query is one path segment, its words space-encoded, because that is
+    /// what the site's own form sends and it means **phrase**: `dune 2021`
+    /// matched 100 magnet links. Spelled as one segment per word
+    /// (`/dune/2021`) the words are ORed, and the answer looks like a
+    /// successful search: measured 22.11.2026, `the matrix 1999` written that
+    /// way returned a hundred fresh 2026 releases that merely contain "the",
+    /// with nothing in the answer to say the query was read another way.
     pub fn search_url(page: usize, category: i64, query: &str) -> String {
-        let words: Vec<String> = query
-            .split_whitespace()
-            .map(urlencoding::encode)
-            .map(|word| word.into_owned())
-            .collect();
+        let phrase = query.split_whitespace().collect::<Vec<_>>().join(" ");
+        let encoded = urlencoding::encode(&phrase);
         format!(
             "{}/search/{}/{}/000/0/{}",
             Self::BASE,
             page,
             category,
-            words.join("/")
+            encoded
         )
     }
 

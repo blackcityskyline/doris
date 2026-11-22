@@ -205,6 +205,14 @@ impl Browser {
         let chrome_args = build_chrome_args(mode, use_xvfb, temp_profile.as_deref(), block_hosts);
 
         let mut capabilities = serde_json::Map::new();
+        // Nothing here looks at a rendered page: every answer is read out of
+        // the DOM with `querySelectorAll`. "eager" returns from a navigation
+        // at DOMContentLoaded instead of at the load event, so a forum page
+        // does not wait for every subresource the session was told to block
+        // before the next `eval_js` runs. Measured on rutracker: once the
+        // browser was up, a navigation took 0.6-2 s and the 13.8 s that
+        // followed was Cloudflare's challenge, not the page.
+        capabilities.insert("pageLoadStrategy".into(), "eager".into());
         let chrome_opts = serde_json::json!({
             "binary": binary.to_str().unwrap_or_default(),
             "args": chrome_args,

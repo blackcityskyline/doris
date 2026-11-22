@@ -378,7 +378,6 @@ impl RutrackerSearcher {
             .ok();
         log("AUTH LOGIN: waiting for Cloudflare...");
         Self::wait_cloudflare(&browser).await;
-
         let url = browser
             .eval_js("location.href")
             .await
@@ -621,8 +620,22 @@ impl RutrackerSearcher {
         // something in it, not that rutracker still accepts it. An expired
         // `bb_session` used to answer "logged in" here, so `login` returned
         // success without logging in and every search landed on login.php.
+        //
+        // The page is checked for any of the ways this template says "you are
+        // somebody here", not for the one literal it used years ago: the
+        // logged-out header carries a login form, and the logged-in one
+        // carries a profile link and a logout control -- which today is a
+        // `post2url('login.php', {logout: 1})` script call, not `logout.php`.
+        // Testing for `logout.php` alone called a live session a failed login
+        // and made `doris login` submit a form that was not there (22.11.2026).
         if let Ok(html) = browser.get_page_source().await {
-            if html.contains("logout.php") {
+            const MARKERS: [&str; 4] = [
+                "logout.php",
+                "post2url('login.php'",
+                "profile.php?mode=logout",
+                "mode=viewprofile",
+            ];
+            if MARKERS.iter().any(|marker| html.contains(marker)) {
                 return true;
             }
         }
@@ -759,6 +772,51 @@ impl RutrackerSearcher {
         }
 
         // Download through the browser so Cloudflare cookies and JS
+        let outcome = Self::fetch_via_page(&browser, full_url).await;
+        let bytes = match outcome {
+            Ok(bytes) => bytes,
+            // rutracker hands out its `bb_dl` download cookie on the topic
+            // page, and `dl.php` answers 403 to a session that never opened
+            // it. A row acted on straight from a search has not been to its
+            // topic -- the TUI's Enter did, because it read the magnet there
+            // -- so the first fetch is refused and the second, after the
+            // page that sets the cookie, is the download. Measured
+            // 22.11.2026: `play --row` (no topic visit) got 403, the same
+            // row after opening `viewtopic.php?t=...` downloaded 1.6 MB.
+            Err(e) if e.to_string().contains("HTTP 403") => {
+                let topic = full_url.replace("dl.php?", "viewtopic.php?");
+                crate::log::log(
+                    "rutracker",
+                    &format!("dl.php refused; opening the topic first: {topic}"),
+                );
+                browser.navigate(&topic).await?;
+                crate::browser::cloudflare::patch_cdp_detection(&browser)
+                    .await
+                    .ok();
+                Self::wait_cloudflare_if_needed(&browser).await;
+                Self::fetch_via_page(&browser, full_url).await?
+            }
+            Err(e) => return Err(e),
+        };
+
+        if bytes.starts_with(b"<!DOCTYPE")
+            || bytes[..200.min(bytes.len())]
+                .to_ascii_lowercase()
+                .windows(5)
+                .any(|w| w == b"html")
+        {
+            anyhow::bail!("Downloaded HTML instead of .torrent. Session may not be logged in.");
+        }
+
+        Ok(bytes)
+    }
+
+    /// One `fetch` of a `.torrent`, inside the page's own origin.
+    ///
+    /// Through the page so Cloudflare's cookies and JS apply, and as bytes so
+    /// a file that is not a `.torrent` is never written: the HTML guard in the
+    /// caller catches a login page served with 200.
+    async fn fetch_via_page(browser: &Browser, full_url: &str) -> Result<Vec<u8>> {
         let fetch_script = format!(
             r#"
             async function downloadTorrent() {{
@@ -786,19 +844,10 @@ impl RutrackerSearcher {
         let b64 = result
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Browser fetch returned non-string"))?;
-
-        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)?;
-
-        if bytes.starts_with(b"<!DOCTYPE")
-            || bytes[..200.min(bytes.len())]
-                .to_ascii_lowercase()
-                .windows(5)
-                .any(|w| w == b"html")
-        {
-            anyhow::bail!("Downloaded HTML instead of .torrent. Session may not be logged in.");
-        }
-
-        Ok(bytes)
+        Ok(base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            b64,
+        )?)
     }
 
     async fn get_cookies(&self) -> Result<Vec<Cookie>> {
@@ -833,16 +882,41 @@ impl RutrackerSearcher {
         Ok(result)
     }
 
+    /// Wait out a Cloudflare challenge, and not a moment longer than it lasts.
+    ///
+    /// This used to sleep a second before its first look and three more after
+    /// the title changed "to settle", so every call cost four seconds even when
+    /// there was nothing to wait for -- and a search makes the call twice. What
+    /// a caller needs is the page actually loaded: the title is the site's and
+    /// the document is complete. A quarter-second poll is cheap next to a
+    /// browser round trip and stops the wait the moment the page is there.
     async fn wait_cloudflare(browser: &Browser) {
-        for _ in 0..30 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let title = browser.eval_js("document.title").await;
-            if let Ok(serde_json::Value::String(s)) = &title {
-                if !s.is_empty() && s != "Just a moment..." {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    return;
-                }
+        let give_up = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let state = browser
+                .eval_js("JSON.stringify({title: document.title, ready: document.readyState})")
+                .await
+                .ok()
+                .and_then(|value| value.as_str().map(|text| text.to_string()))
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+            let (title, ready) = match &state {
+                Some(value) => (
+                    value.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                    value.get("ready").and_then(|v| v.as_str()).unwrap_or(""),
+                ),
+                None => ("", ""),
+            };
+            // "interactive" is DOMContentLoaded: the elements are there to
+            // read. Waiting for "complete" waits for every subresource the
+            // page is still pulling, which is not what this asks about.
+            let parsed = ready == "interactive" || ready == "complete";
+            if !title.is_empty() && title != "Just a moment..." && parsed {
+                return;
             }
+            if std::time::Instant::now() >= give_up {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
     }
 

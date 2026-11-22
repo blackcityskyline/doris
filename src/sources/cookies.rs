@@ -41,13 +41,36 @@ pub fn load_from_file(path: &Path) -> Result<Vec<Cookie>> {
 /// belongs to `forum.rutracker.org` as well.
 pub fn for_domain<'a>(cookies: &'a [Cookie], host: &str) -> Vec<&'a Cookie> {
     let host = host.trim_start_matches('.').to_ascii_lowercase();
-    cookies
+    let mine: Vec<&Cookie> = cookies
         .iter()
         .filter(|c| {
             let domain = c.domain.trim_start_matches('.').to_ascii_lowercase();
             !domain.is_empty() && (host == domain || host.ends_with(&format!(".{domain}")))
         })
-        .collect()
+        .collect();
+
+    // One cookie per name, path and domain, keeping the last written. A jar
+    // that predates `save_for_domain`'s dedupe holds two `cf_clearance` rows
+    // for the same site -- the file here did on 22.11.2026 -- and the browser
+    // keeps whichever is added last. A stale clearance means Cloudflare
+    // serves a challenge on every page, which cost thirteen seconds per
+    // search and looked exactly like a tracker being slow.
+    let mut seen: Vec<(String, String, String)> = Vec::new();
+    let mut kept: Vec<&Cookie> = Vec::with_capacity(mine.len());
+    for cookie in mine.into_iter().rev() {
+        let key = (
+            cookie.domain.trim_start_matches('.').to_ascii_lowercase(),
+            cookie.name.clone(),
+            cookie.path.clone(),
+        );
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        kept.push(cookie);
+    }
+    kept.reverse();
+    kept
 }
 
 pub fn save_to_file(path: &Path, cookies: &[Cookie]) -> Result<()> {

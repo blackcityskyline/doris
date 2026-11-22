@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub browser: Option<String>,
     /// Browser window visibility: "visible" or "hidden".

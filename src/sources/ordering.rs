@@ -76,18 +76,79 @@ impl SortBy {
     }
 }
 
+/// How much of `query` a title spells out.
+///
+/// The trackers answer a search with whatever their own matching thinks is
+/// close: rutor returns a hundred rows for "the matrix 1999" because most
+/// of them share the word "the". Sorting those by seeds alone puts a
+/// torrent of "The Beast" above "The Matrix", which is what a search
+/// looks like when it is answering the wrong question.
+///
+/// A matched word is worth its length, so "matrix" (6) outranks "the" (3);
+/// a title holding every word of the query, or the whole phrase, outranks
+/// either. Rows are never dropped: a tracker can return a title in another
+/// script or a translation, and only its own index knows why.
+pub fn relevance(title: &str, query: &str) -> u32 {
+    let title = title.to_lowercase();
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return 0;
+    }
+    // A substring test, not a word test, so that a release name written
+    // without separators -- "TheMatrix1999" -- still holds "matrix".
+    let flat: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
+    let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+    let wanted: Vec<&str> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    if wanted.is_empty() {
+        return 0;
+    }
+
+    let phrase = wanted.join(" ");
+    let mut score = if flat.contains(phrase.as_str()) {
+        1000
+    } else {
+        0
+    };
+    let mut matched = 0;
+    for word in &wanted {
+        if title.contains(word) {
+            score += word.chars().count() as u32;
+            matched += 1;
+        }
+    }
+    if matched == wanted.len() {
+        score += 100;
+    }
+    score
+}
+
 /// Put the rows in `sort`'s order.
 ///
 /// `browsing` keeps the source ranking for the default arrangement only:
 /// browse mode is "freshest from the trackers I trust", which is a
 /// different question from "healthiest", and the `o` key asking for size
-/// should still answer it.
-pub fn order(items: &[TorrentItem], sort: SortBy, browsing: bool) -> Vec<TorrentItem> {
+/// should still answer it. A search ranks by how much of `query` each
+/// title spells out before health, so the row asked for is at the top;
+/// size is the user's own arrangement and ignores both.
+pub fn order(
+    items: &[TorrentItem],
+    sort: SortBy,
+    browsing: bool,
+    query: Option<&str>,
+) -> Vec<TorrentItem> {
     let mut out = items.to_vec();
     match sort {
         SortBy::Seeds if !browsing => out.sort_by(|a, b| {
-            b.seeds_n
-                .cmp(&a.seeds_n)
+            let query = query.unwrap_or("");
+            relevance(&b.title, query)
+                .cmp(&relevance(&a.title, query))
+                .then_with(|| b.seeds_n.cmp(&a.seeds_n))
                 .then_with(|| b.added.cmp(&a.added))
         }),
         SortBy::Seeds => {
@@ -109,6 +170,10 @@ pub fn order(items: &[TorrentItem], sort: SortBy, browsing: bool) -> Vec<Torrent
 }
 
 /// The default order: healthiest first (`seeds_n` descending), then newest `added` first.
-pub fn default_order(items: &[TorrentItem], browsing: bool) -> Vec<TorrentItem> {
-    order(items, SortBy::Seeds, browsing)
+pub fn default_order(
+    items: &[TorrentItem],
+    browsing: bool,
+    query: Option<&str>,
+) -> Vec<TorrentItem> {
+    order(items, SortBy::Seeds, browsing, query)
 }

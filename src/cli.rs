@@ -30,36 +30,40 @@ pub struct Args {
     /// starting query, exactly as before.
     pub query: Option<String>,
 
-    #[arg(short, long)]
+    /// These are global because they describe the machine and the session,
+    /// not one subcommand: `doris search --browser helium showcase` is the
+    /// same request as `doris --browser helium search showcase`, and before
+    /// `global` was set the first spelling was a parse error.
+    #[arg(short, long, global = true)]
     pub cookie_file: Option<PathBuf>,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub username: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub password: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub browser: Option<String>,
 
     /// Browser window visibility: "visible" or "hidden" (default: hidden)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub browser_visibility: Option<String>,
 
-    #[arg(long, default_value = crate::torrserver::api::DEFAULT_URL)]
+    #[arg(long, global = true, default_value = crate::torrserver::api::DEFAULT_URL)]
     pub torrserver: String,
 
     /// The extension bridge listens here. Zero switches it off, which is
     /// what every CLI command does: nothing is going to answer on it.
-    #[arg(long, default_value_t = 14141)]
+    #[arg(long, global = true, default_value_t = 14141)]
     pub bridge_port: u16,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub config: Option<PathBuf>,
 
     /// The downloading daemon's RPC address, overriding the config. Not
     /// the streaming one: that is `--torrserver`.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub transmission_url: Option<String>,
 
     /// Search and print, the way `--cli` always did. Kept because scripts
@@ -194,6 +198,14 @@ pub struct SearchArgs {
     /// milliseconds. Zero waits forever.
     #[arg(long, default_value_t = 60_000)]
     pub deadline_ms: u64,
+
+    /// Print each source's answer the moment that source answers: one JSON
+    /// array per line, NDJSON, instead of one array at the end. A reader
+    /// draws the four fast trackers' rows in the first second instead of
+    /// looking at an empty window until the slowest one is through. `--pages`
+    /// beyond the first is the TUI's End key and means nothing here.
+    #[arg(long)]
+    pub stream: bool,
 }
 
 /// How to name the row a command is about.
@@ -212,6 +224,13 @@ pub struct RowArgs {
     /// a row chosen once, by hand, and then reused.
     #[arg(long)]
     pub magnet: Option<String>,
+
+    /// The row itself, as `--json search` printed it. The command then
+    /// acts on exactly that row -- no second search, and no `--index`
+    /// pointing into a list a new ranking may have moved under it. This
+    /// is the way a front end plays what it is showing.
+    #[arg(long, conflicts_with_all = ["magnet", "query"])]
+    pub row: Option<String>,
 
     #[command(flatten)]
     pub search: SearchArgs,
@@ -348,6 +367,7 @@ impl Default for SearchArgs {
             pages: 1,
             limit: None,
             deadline_ms: 60_000,
+            stream: false,
         }
     }
 }

@@ -80,7 +80,7 @@ fn test_search_order_is_most_seeds_then_newest() {
         with(row("warm"), "rutor", 0, 40, 2000),
     ];
 
-    let out = default_order(&list, false);
+    let out = default_order(&list, false, None);
 
     assert_eq!(
         hashes(&out),
@@ -99,7 +99,7 @@ fn test_browse_order_ranks_the_registered_providers_first() {
         with(row("nnm"), "nnmclub", 0, 0, 500),
     ];
 
-    let out = default_order(&list, true);
+    let out = default_order(&list, true, None);
 
     assert_eq!(
         hashes(&out),
@@ -120,7 +120,7 @@ fn test_size_order_is_biggest_first_then_healthiest() {
         with(row("big-healthy"), "rutracker", 20_000_000_000, 40, 1000),
     ];
 
-    let out = order(&list, SortBy::Size, false);
+    let out = order(&list, SortBy::Size, false, None);
 
     assert_eq!(
         hashes(&out),
@@ -138,11 +138,11 @@ fn test_size_order_still_answers_in_browse_mode() {
         with(row("rutor-big"), "rutor", 9_000_000_000, 0, 1000),
     ];
 
-    let out = order(&list, SortBy::Size, true);
+    let out = order(&list, SortBy::Size, true, None);
 
     assert_eq!(hashes(&out), ["rutor-big", "nnm-small"]);
     assert_eq!(
-        hashes(&order(&list, SortBy::Seeds, true)),
+        hashes(&order(&list, SortBy::Seeds, true, None)),
         ["nnm-small", "rutor-big"],
         "the default still ranks the providers"
     );
@@ -155,4 +155,90 @@ fn test_the_sort_key_cycles_both_ways_and_names_itself() {
     assert_eq!(SortBy::Size.next(), SortBy::Seeds);
     assert_eq!(SortBy::Seeds.label(), "seeds");
     assert_eq!(SortBy::Size.label(), "size");
+}
+
+// --- relevance: what a query actually asked for ------------------------------
+
+/// A row whose title is the searchable part.
+fn titled(title: &str, source: &str, seeds: u32) -> TorrentItem {
+    TorrentItem {
+        title: title.to_string(),
+        source: source.to_string(),
+        seeds_n: seeds,
+        ..Default::default()
+    }
+}
+
+/// The rows rutor and tpb actually answered "the matrix 1999" with on
+/// 22.11.2026: the trackers match any word, so a hundred releases sharing
+/// "the" came back beside the film.
+#[test]
+fn test_a_search_puts_the_titles_it_was_asked_for_first() {
+    let list = vec![
+        titled("Зверь / The Beast (2026) WEB-DL 1080p", "rutor", 309),
+        titled(
+            "Вестис / The Westies [S01] (2026) WEBRip 1080p",
+            "rutor",
+            100,
+        ),
+        titled("The Matrix (1999) 1080p BrRip x264", "tpb", 986),
+        titled(
+            "The.Matrix.Reloaded.2003.REMASTERED.1080p.BluRay",
+            "tpb",
+            40,
+        ),
+    ];
+
+    let out = order(&list, SortBy::Seeds, false, Some("the matrix 1999"));
+
+    let titles: Vec<&str> = out.iter().map(|r| r.title.as_str()).collect();
+    assert!(
+        titles[0].starts_with("The Matrix (1999)"),
+        "the film asked for comes first, got {titles:?}"
+    );
+    assert!(
+        titles[1].starts_with("The.Matrix.Reloaded"),
+        "the other matrix release second, got {titles:?}"
+    );
+    assert!(
+        titles[2].contains("The Beast"),
+        "seed count only orders rows that match the query equally well, got {titles:?}"
+    );
+}
+
+#[test]
+fn test_the_whole_phrase_outranks_the_same_words_scattered() {
+    let list = vec![
+        titled("1999 remastered Matrix The collection", "rutor", 900),
+        titled("The Matrix (1999) [2160p]", "yts", 10),
+    ];
+
+    let out = order(&list, SortBy::Seeds, false, Some("the matrix 1999"));
+
+    assert_eq!(
+        out[0].title, "The Matrix (1999) [2160p]",
+        "the title holding the phrase wins over nine hundred seeds"
+    );
+}
+
+#[test]
+fn test_size_is_the_users_arrangement_and_ignores_the_query() {
+    let mut list = vec![
+        titled("The Matrix (1999) [720p]", "yts", 10),
+        titled("Зверь / The Beast (2026) 2160p", "rutor", 900),
+    ];
+    list[0].size_bytes = 700_000_000;
+    list[1].size_bytes = 20_000_000_000;
+
+    let by_size = order(&list, SortBy::Size, false, Some("the matrix 1999"));
+    assert_eq!(
+        by_size[0].title, "Зверь / The Beast (2026) 2160p",
+        "size answers size"
+    );
+
+    let by_seeds = order(&list, SortBy::Seeds, false, Some("the matrix 1999"));
+    assert_eq!(
+        by_seeds[0].title, "The Matrix (1999) [720p]",
+        "seeds answers relevance first, then health"
+    );
 }

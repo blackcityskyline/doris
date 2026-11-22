@@ -28,6 +28,7 @@ use crate::config::Config;
 use crate::filter::Filter;
 use crate::sources::models::TorrentItem;
 use crate::sources::orchestrator::{self, SourceStatus};
+use crate::sources::ordering::{order, SortBy};
 use crate::sources::source::{Group, KNOWN_SOURCES};
 use crate::torrserver::api::{StoragePolicy, TorrServer};
 use crate::ui::view::Modal;
@@ -88,11 +89,112 @@ fn searching(app: &App) -> bool {
 /// `load_more` against the cursors the first page left behind.
 async fn search(args: &Args, a: &SearchArgs, json: bool) -> Result<i32> {
     let mut app = headless_app(args).await?;
+    if a.stream {
+        return stream(&mut app, a).await;
+    }
     let rows = fetch(&mut app, a).await?;
     let found = !rows.is_empty();
     print_rows(&rows, json);
     report_sources(&app, json);
     Ok(i32::from(!found))
+}
+
+/// `search --stream`: one JSON array per source, on its own line, printed the
+/// moment that source answers.
+///
+/// The merged answer is only complete when the slowest tracker is done, and
+/// with rutracker behind Cloudflare that is half a minute -- of an empty
+/// window, in a launcher. The other four answer in under a second; this
+/// prints their rows then, and each later answer as it lands, so the cost of
+/// the slowest tracker is rows arriving late rather than a table that is not
+/// there at all.
+///
+/// The events are the same ones the TUI pumps, and rows land in `ui.results`
+/// exactly as they do there: a streaming search is the normal search, read
+/// out one answer at a time instead of at the end.
+async fn stream(app: &mut App, a: &SearchArgs) -> Result<i32> {
+    let query = a.query.clone().unwrap_or_default();
+    let browsing = query.trim().is_empty();
+    apply_selection(app, a)?;
+    app.start_search(query.clone()).await;
+
+    let filter = a.filter.as_ref().map(|f| Filter::parse(f));
+    let limit = a.limit.unwrap_or(usize::MAX);
+    // Zero waits forever, as the flag says; a stream that gave up at once
+    // would print an empty answer for a search that never ran.
+    let give_up = (a.deadline_ms > 0)
+        .then(|| std::time::Instant::now() + std::time::Duration::from_millis(a.deadline_ms));
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut next = 0usize;
+    let mut printed = 0usize;
+
+    loop {
+        if app.ui.state == crate::ui::view::AppState::Searching {
+            let arrived = match give_up {
+                None => app.event_handler.next().await.ok(),
+                Some(at) => match at.checked_duration_since(std::time::Instant::now()) {
+                    Some(remaining) => {
+                        match tokio::time::timeout(remaining, app.event_handler.next()).await {
+                            Ok(Ok(event)) => Some(event),
+                            // Nothing before the deadline, or the handler
+                            // is gone: what was printed is the answer.
+                            Err(_) | Ok(Err(_)) => None,
+                        }
+                    }
+                    None => None,
+                },
+            };
+            match arrived {
+                Some(event) => app.apply_event(event).await?,
+                None => break,
+            }
+        }
+
+        let mut fresh: Vec<TorrentItem> = unseen(&app.ui.results, next, &mut seen)
+            .into_iter()
+            .filter(|item| filter.as_ref().is_none_or(|f| f.matches(item)))
+            .collect();
+        next = app.ui.results.len();
+        if printed < limit && !fresh.is_empty() {
+            fresh.truncate(limit - printed);
+            printed += fresh.len();
+            let ordered = order(&fresh, SortBy::Seeds, browsing, Some(&query));
+            println!("{}", serde_json::to_string(&ordered)?);
+        }
+        if app.ui.state != crate::ui::view::AppState::Searching {
+            break;
+        }
+    }
+    // A reader waits for a line to know the answer is in. An empty search
+    // still prints its one `[]`, the same as the one-array form, so "found
+    // nothing" and "failed before it could ask" are not the same silence.
+    if printed == 0 {
+        println!("[]");
+    }
+    report_sources(app, true);
+    Ok(i32::from(printed == 0))
+}
+
+/// The rows a streaming search has not printed yet: everything past `from`
+/// that no earlier batch already carried.
+///
+/// Two indices are needed because the two lists are not the same list. A row
+/// arrives once per source, and the same torrent can arrive twice; and the
+/// final event dedupes and re-orders the whole table, so `from` can end up
+/// past the end of it -- which is not an error and not a reason to print
+/// anything twice, because everything in the table has already gone out.
+fn unseen(
+    results: &[TorrentItem],
+    from: usize,
+    seen: &mut std::collections::HashSet<String>,
+) -> Vec<TorrentItem> {
+    results
+        .get(from..)
+        .unwrap_or_default()
+        .iter()
+        .filter(|item| item.info_hash.is_empty() || seen.insert(item.info_hash.clone()))
+        .cloned()
+        .collect()
 }
 
 /// What each asked source actually did, for the ones that did not answer.
@@ -214,6 +316,7 @@ fn select_rows(app: &App, a: &SearchArgs) -> Vec<TorrentItem> {
 
 async fn play(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
     let (mut app, item) = resolve_row(args, a).await?;
+    open_row_session(&mut app, &item).await?;
     // `spawn_stream` reads the selected row, which is the TUI's way of
     // saying the same thing; put this row under the cursor and call it.
     app.ui.selected = 0;
@@ -253,11 +356,15 @@ async fn play(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
     } else {
         println!("{url}");
     }
-    Ok(i32::from(url.is_empty() && failed.is_none()))
+    // No URL means nothing was started, whether a reason was reported or the
+    // wait ran out; a script asking `if doris play` must not see success for
+    // a row that did not play.
+    Ok(i32::from(url.is_empty()))
 }
 
 async fn download(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
     let (mut app, item) = resolve_row(args, a).await?;
+    open_row_session(&mut app, &item).await?;
     app.ui.selected = 0;
     app.ui.results = vec![item.clone()];
     let id = app.download_selected().await;
@@ -282,6 +389,7 @@ async fn download(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
 
 async fn info(args: &Args, a: &RowArgs, json: bool) -> Result<i32> {
     let (mut app, item) = resolve_row(args, a).await?;
+    open_row_session(&mut app, &item).await?;
     app.ui.selected = 0;
     app.ui.results = vec![item.clone()];
     // The detail modal is what `Shift+Enter` opens; it asks the row's own
@@ -414,6 +522,14 @@ async fn resolve_row(args: &Args, a: &RowArgs) -> Result<(App, TorrentItem)> {
             },
         ));
     }
+    if let Some(row) = &a.row {
+        // The row came from this CLI, so it already carries what the action
+        // needs: the magnet, the .torrent link, the page and the source that
+        // fetches it. Searching again would answer a question the caller did
+        // not ask, and answer it slowly.
+        let item = row_from_json(row)?;
+        return Ok((headless_app(args).await?, item));
+    }
     let mut app = headless_app(args).await?;
     let rows = fetch(&mut app, &a.search).await?;
     let item = rows.get(a.index).cloned().ok_or_else(|| {
@@ -429,6 +545,34 @@ async fn resolve_row(args: &Args, a: &RowArgs) -> Result<(App, TorrentItem)> {
 async fn headless_app(args: &Args) -> Result<App> {
     let config = crate::config::load(args.config.as_deref())?;
     App::headless(args.clone(), config).await
+}
+
+/// Open the session a row's tracker needs, since this process never searched.
+///
+/// The TUI's browser is launched by the search, so a row on its table always
+/// has a session by the time Enter reaches it. A CLI command starts cold, and
+/// a browser-backed row acted on without this got "No browser session - search
+/// first" -- from the command that is the search's only user.
+async fn open_row_session(app: &mut App, item: &TorrentItem) -> Result<()> {
+    let Some(info) = crate::sources::source::get_source(&item.source) else {
+        return Ok(());
+    };
+    if !info.requires_browser {
+        return Ok(());
+    }
+    app.open_source_session(info.id).await
+}
+
+/// The row a front end holds, read back. It came from `--json search`, so it
+/// is a [`TorrentItem`] with the fields an action needs filled in; a row with
+/// neither a magnet nor a `.torrent` link names nothing to play.
+fn row_from_json(text: &str) -> Result<TorrentItem> {
+    let item: TorrentItem = serde_json::from_str(text)
+        .map_err(|e| anyhow!("--row is not a row from `doris --json search`: {e}"))?;
+    if item.magnet.is_none() && item.download_url.is_empty() {
+        anyhow::bail!("--row carries neither a magnet nor a .torrent link");
+    }
+    Ok(item)
 }
 
 // --- the pieces the app is made of -------------------------------------
@@ -1037,5 +1181,94 @@ fn print_rows(rows: &[TorrentItem], json: bool) {
             "{:>4}  {:>10}  {:>6}  {:<10}  {}",
             i, row.size, row.seeds, row.source, row.title
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{row_from_json, unseen};
+    use crate::sources::models::TorrentItem;
+
+    /// A row with the one field the streaming reader keys on.
+    fn hashed(hash: &str, title: &str) -> TorrentItem {
+        TorrentItem {
+            title: title.to_string(),
+            info_hash: hash.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn titles(items: &[TorrentItem]) -> Vec<&str> {
+        items.iter().map(|i| i.title.as_str()).collect()
+    }
+
+    #[test]
+    fn test_each_batch_is_printed_once() {
+        let mut seen = Default::default();
+        let results = vec![hashed("a", "first"), hashed("b", "second")];
+
+        let first = unseen(&results, 0, &mut seen);
+        assert_eq!(titles(&first), ["first", "second"]);
+        assert!(unseen(&results, results.len(), &mut seen).is_empty());
+    }
+
+    /// The same torrent can land twice: one hash announced by two sources.
+    #[test]
+    fn test_a_hash_that_arrives_twice_is_printed_once() {
+        let mut seen = Default::default();
+        let first = vec![hashed("a", "first")];
+        unseen(&first, 0, &mut seen);
+
+        let later = vec![hashed("a", "first"), hashed("c", "third")];
+        assert_eq!(titles(&unseen(&later, 0, &mut seen)), ["third"]);
+    }
+
+    /// The final event dedupes and reorders the whole table, so a read
+    /// position can end up past its end. That is not an error, and it is not
+    /// a reason to print anything a second time.
+    #[test]
+    fn test_a_shrunken_table_past_the_read_position_prints_nothing() {
+        let mut seen = Default::default();
+        let full = vec![hashed("a", "a"), hashed("b", "b")];
+        unseen(&full, 0, &mut seen);
+
+        let shrunk = vec![hashed("b", "b")];
+        assert!(unseen(&shrunk, 2, &mut seen).is_empty());
+    }
+
+    /// A row without a hash cannot be deduped, so it is never swallowed:
+    /// dropping it would hide a result rather than repeat one.
+    #[test]
+    fn test_a_row_without_a_hash_is_still_printed() {
+        let mut seen = Default::default();
+        let rows = vec![hashed("", "hashless"), hashed("", "hashless")];
+        assert_eq!(
+            titles(&unseen(&rows, 0, &mut seen)),
+            ["hashless", "hashless"]
+        );
+    }
+
+    /// A row `doris --json search --source rutracker matrix` printed,
+    /// captured 22.11.2026. The hardest case: no magnet, a relative
+    /// `.torrent` path only the browser session can fetch.
+    const RUTRACKER_ROW: &str = r#"{"title":"Матрица / The Matrix (1999) [2160p]","size":"18.45 GB","seeds":"311","download_url":"dl.php?t=6306464","query":"","date":"7-Янв-23","page_url":"viewtopic.php?t=6306464","source":"rutracker","uploader":"","category":"","group":null,"info_hash":"","magnet":null,"size_bytes":18450000000,"seeds_n":311,"leechers":0,"added":0}"#;
+
+    #[test]
+    fn test_a_row_search_printed_comes_back_as_the_same_row() {
+        let row = row_from_json(RUTRACKER_ROW).expect("the shape search prints");
+        assert_eq!(row.source, "rutracker");
+        assert_eq!(row.download_url, "dl.php?t=6306464");
+        assert_eq!(row.page_url, "viewtopic.php?t=6306464");
+        assert!(row.magnet.is_none(), "no magnet is invented on the way");
+        assert_eq!(row.title, "Матрица / The Matrix (1999) [2160p]");
+    }
+
+    #[test]
+    fn test_a_row_that_names_nothing_to_play_is_refused() {
+        let err = row_from_json(r#"{"title":"nothing","source":"rutor"}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("neither a magnet"), "{err}");
+        assert!(row_from_json("not json").is_err());
     }
 }

@@ -69,6 +69,27 @@ fn test_an_empty_query_is_browse_mode_and_is_still_a_search() {
     assert_eq!(a.pages, 1);
 }
 
+/// A streaming search is still a search: same flags, one new one, and the
+/// reader is told to expect an answer per line rather than one at the end.
+#[test]
+fn test_stream_is_a_flag_on_search_and_nowhere_else() {
+    let Some(Command::Search(a)) = parse(&["search", "matrix", "--stream"]).resolve_command()
+    else {
+        panic!("expected a search");
+    };
+    assert!(a.stream);
+
+    let Some(Command::Search(plain)) = parse(&["search", "matrix"]).resolve_command() else {
+        panic!("expected a search");
+    };
+    assert!(!plain.stream, "off unless asked for");
+
+    assert!(
+        Args::try_parse_from(["doris", "sources", "--stream"]).is_err(),
+        "other subcommands must not quietly accept it"
+    );
+}
+
 /// `--json` is global: it is on the root, so it works before or after the
 /// subcommand name and cannot be forgotten on one of ten of them.
 #[test]
@@ -76,6 +97,27 @@ fn test_json_is_global_and_survives_either_order() {
     assert!(parse(&["--json", "sources"]).json);
     assert!(parse(&["sources", "--json"]).json);
     assert!(!parse(&["sources"]).json);
+}
+
+/// The session flags are global too, for the same reason: where the browser
+/// is, which one, and whether it may be seen are facts about the run, not
+/// about one subcommand. `doris search --browser helium x` used to be a
+/// parse error that told the user to pass the flag after `--`.
+#[test]
+fn test_a_session_flag_survives_the_subcommand() {
+    let args = parse(&[
+        "search",
+        "--browser",
+        "helium",
+        "--browser-visibility",
+        "visible",
+        "--cookie-file",
+        "/tmp/jar",
+        "oblivion",
+    ]);
+    assert_eq!(args.browser.as_deref(), Some("helium"));
+    assert_eq!(args.browser_visibility.as_deref(), Some("visible"));
+    assert!(args.cookie_file.is_some());
 }
 
 #[test]
@@ -95,6 +137,31 @@ fn test_a_row_is_named_by_magnet_or_by_where_it_sits_in_the_list() {
     // would answer to the same `--query`.
     assert_eq!(a.search.query.as_deref(), Some("oblivion"));
     assert_eq!(a.index, 3);
+}
+
+#[test]
+fn test_a_row_is_an_answer_to_which_row_as_much_as_a_magnet_is() {
+    let args = parse(&[
+        "download",
+        "--row",
+        r#"{"title":"x","magnet":"magnet:?xt=urn:btih:abc"}"#,
+    ]);
+    let Some(Command::Download(a)) = args.resolve_command() else {
+        panic!("expected a download");
+    };
+    assert!(a.row.is_some());
+    assert!(a.search.query.is_none(), "a row needs no query");
+
+    // Two ways to name one row, and no answer to "which one".
+    let both = Args::try_parse_from([
+        "doris",
+        "play",
+        "--row",
+        r#"{"title":"x","magnet":"magnet:?xt=urn:btih:abc"}"#,
+        "--magnet",
+        "magnet:?xt=urn:btih:def",
+    ]);
+    assert!(both.is_err(), "--row and --magnet cannot both say");
 }
 
 #[test]
