@@ -179,3 +179,56 @@ fn test_a_cache_miss_says_to_spawn_the_source() {
 
     assert!(cached_source_done(&cache, &key("cold"), 7).is_none());
 }
+
+fn temp_file(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("doris-cache-test-{name}"))
+}
+
+#[test]
+fn test_a_persisted_page_is_restored_from_disk() {
+    let path = temp_file("restore.json");
+    let cache = SearchCache::new();
+    cache.put(key("matrix"), page(4, true));
+    cache.save_to(&path);
+
+    let restored = SearchCache::load_from(&path);
+    let hit = restored
+        .get(&key("matrix"))
+        .expect("a page written to disk");
+    assert_eq!(hit.items.len(), 4);
+    assert!(hit.has_more, "the paging verdict survives too");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_a_file_older_than_the_ttl_is_not_restored() {
+    let path = temp_file("expired.json");
+    let cache = SearchCache::new();
+    cache.put(key("matrix"), page(2, true));
+    cache.save_to(&path);
+    let text = std::fs::read_to_string(&path).expect("saved");
+    let mut file: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&text).expect("the file is a map of entries");
+    // Set every timestamp to the epoch: for every TTL the entries are old.
+    for value in file.values_mut() {
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("at".into(), serde_json::json!(0));
+        }
+    }
+    std::fs::write(&path, serde_json::to_string(&file).expect("serialized"))
+        .expect("zeroed the timestamps");
+
+    let restored = SearchCache::load_from(&path);
+    assert!(restored.get(&key("matrix")).is_none(), "expired = a miss");
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_a_corrupt_file_is_an_empty_cache() {
+    let path = temp_file("corrupt.json");
+    std::fs::write(&path, "this is not the cache").expect("wrote garbage");
+    let restored = SearchCache::load_from(&path);
+    assert!(restored.get(&key("matrix")).is_none());
+    let _ = std::fs::remove_file(&path);
+}

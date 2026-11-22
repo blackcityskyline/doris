@@ -601,7 +601,7 @@ impl App {
             sources: HashMap::new(),
             source_has_more: HashMap::new(),
             source_offsets: HashMap::new(),
-            cache: Arc::new(SearchCache::new()),
+            cache: Arc::new(SearchCache::load_or_new()),
             browser_visibility,
             search_tx,
             search_rx,
@@ -864,6 +864,13 @@ impl App {
                 Ok(Ok(event)) => self.apply_event(event).await?,
             }
         }
+    }
+
+    /// Write the search cache back to the file every process reads: the
+    /// point of the cache is that the next search -- this process's, or the
+    /// extension's -- finds its answer on disk.
+    fn save_cache(&self) {
+        self.cache.save_to(&SearchCache::default_path());
     }
 
     pub async fn run(&mut self) -> Result<()> {

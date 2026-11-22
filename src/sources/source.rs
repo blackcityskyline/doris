@@ -93,7 +93,7 @@ impl SearchRequest {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchPage {
     pub items: Vec<TorrentItem>,
     pub has_more: bool,

@@ -171,6 +171,7 @@ async fn stream(app: &mut App, a: &SearchArgs) -> Result<i32> {
     if printed == 0 {
         println!("[]");
     }
+    app.save_cache();
     report_sources(app, true);
     Ok(i32::from(printed == 0))
 }
@@ -251,6 +252,7 @@ async fn fetch(app: &mut App, a: &SearchArgs) -> Result<Vec<TorrentItem>> {
         app.load_more(query.clone()).await;
         app.pump_until(deadline, searching).await?;
     }
+    app.save_cache();
     Ok(select_rows(app, a))
 }
 
